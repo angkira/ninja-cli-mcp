@@ -1,0 +1,118 @@
+{
+  "repo_root": "/path/to/your/repository",
+  "mode": "full",
+  "global_allowed_globs": [
+    "**/*.py",
+    "**/*.md",
+    "**/*.json",
+    "**/*.yaml",
+    "**/*.yml"
+  ],
+  "global_deny_globs": [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/venv/**",
+    "**/__pycache__/**",
+    "**/.env*",
+    "**/secrets/**"
+  ],
+  "steps": [
+    {
+      "id": "step-001",
+      "title": "Create data models",
+      "task": "Create Pydantic models for User and Product in src/models/. User should have id, email, name, created_at fields. Product should have id, name, price, description, user_id fields.",
+      "context_paths": [
+        "src/models/"
+      ],
+      "allowed_globs": [
+        "src/models/**/*.py"
+      ],
+      "deny_globs": [],
+      "max_iterations": 3,
+      "test_plan": {
+        "unit": [
+          "pytest tests/test_models.py -v"
+        ],
+        "e2e": []
+      },
+      "constraints": {
+        "max_tokens": 0,
+        "time_budget_sec": 120
+      }
+    },
+    {
+      "id": "step-002",
+      "title": "Implement user service",
+      "task": "Create a UserService class in src/services/user_service.py with methods: create_user, get_user, update_user, delete_user. Use the User model from step-001.",
+      "context_paths": [
+        "src/services/",
+        "src/models/"
+      ],
+      "allowed_globs": [
+        "src/services/**/*.py"
+      ],
+      "deny_globs": [],
+      "max_iterations": 3,
+      "test_plan": {
+        "unit": [
+          "pytest tests/test_user_service.py -v"
+        ],
+        "e2e": []
+      },
+      "constraints": {
+        "max_tokens": 0,
+        "time_budget_sec": 180
+      }
+    },
+    {
+      "id": "step-003",
+      "title": "Add API routes",
+      "task": "Create FastAPI routes in src/api/users.py for user CRUD operations. Use the UserService from step-002. Include proper error handling and status codes.",
+      "context_paths": [
+        "src/api/",
+        "src/services/"
+      ],
+      "allowed_globs": [
+        "src/api/**/*.py"
+      ],
+      "deny_globs": [],
+      "max_iterations": 3,
+      "test_plan": {
+        "unit": [
+          "pytest tests/test_api.py -v"
+        ],
+        "e2e": [
+          "pytest tests/e2e/ -v --timeout=60"
+        ]
+      },
+      "constraints": {
+        "max_tokens": 0,
+        "time_budget_sec": 240
+      }
+    },
+    {
+      "id": "step-004",
+      "title": "Write comprehensive tests",
+      "task": "Add comprehensive unit tests for all models, services, and API routes. Ensure at least 80% code coverage. Use pytest fixtures for common test data.",
+      "context_paths": [
+        "tests/",
+        "src/"
+      ],
+      "allowed_globs": [
+        "tests/**/*.py"
+      ],
+      "deny_globs": [],
+      "max_iterations": 5,
+      "test_plan": {
+        "unit": [
+          "pytest tests/ -v --cov=src --cov-report=term-missing"
+        ],
+        "e2e": []
+      },
+      "constraints": {
+        "max_tokens": 0,
+        "time_budget_sec": 300
+      }
+    }
+  ]
+}

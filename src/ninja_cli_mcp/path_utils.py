@@ -1,0 +1,200 @@
+"""
+Path utilities with security protections.
+
+This module provides utilities for safe path handling, ensuring that
+all paths remain within allowed boundaries (repo_root).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+
+class PathTraversalError(Exception):
+    """Raised when a path traversal attempt is detected."""
+
+    pass
+
+
+def safe_resolve(path: str | Path, root: str | Path) -> Path:
+    """
+    Resolve a path safely within a root directory.
+
+    Args:
+        path: The path to resolve (can be relative or absolute).
+        root: The root directory that the path must stay within.
+
+    Returns:
+        The resolved absolute path.
+
+    Raises:
+        PathTraversalError: If the resolved path is outside the root.
+    """
+    root_path = Path(root).resolve()
+
+    if Path(path).is_absolute():
+        resolved = Path(path).resolve()
+    else:
+        resolved = (root_path / path).resolve()
+
+    try:
+        resolved.relative_to(root_path)
+    except ValueError:
+        raise PathTraversalError(
+            f"Path '{path}' resolves to '{resolved}' which is outside root '{root_path}'"
+        )
+
+    return resolved
+
+
+def validate_repo_root(repo_root: str) -> Path:
+    """
+    Validate that repo_root exists and is a directory.
+
+    Args:
+        repo_root: The repository root path to validate.
+
+    Returns:
+        The resolved Path object.
+
+    Raises:
+        ValueError: If the path doesn't exist or isn't a directory.
+    """
+    path = Path(repo_root).resolve()
+
+    if not path.exists():
+        raise ValueError(f"Repository root does not exist: {repo_root}")
+
+    if not path.is_dir():
+        raise ValueError(f"Repository root is not a directory: {repo_root}")
+
+    return path
+
+
+def get_internal_dir(repo_root: str | Path) -> Path:
+    """
+    Get the internal directory for ninja-cli-mcp data.
+
+    This is the only directory the MCP server is allowed to write to
+    within the repo (for logs, metadata, task files).
+
+    Args:
+        repo_root: The repository root path.
+
+    Returns:
+        Path to the .ninja-cli-mcp directory.
+    """
+    root = Path(repo_root).resolve()
+    internal = root / ".ninja-cli-mcp"
+    return internal
+
+
+def ensure_internal_dirs(repo_root: str | Path) -> dict[str, Path]:
+    """
+    Ensure internal directories exist and return their paths.
+
+    Args:
+        repo_root: The repository root path.
+
+    Returns:
+        Dict with paths to logs, tasks, and metadata directories.
+    """
+    internal = get_internal_dir(repo_root)
+
+    dirs = {
+        "root": internal,
+        "logs": internal / "logs",
+        "tasks": internal / "tasks",
+        "metadata": internal / "metadata",
+    }
+
+    for dir_path in dirs.values():
+        dir_path.mkdir(parents=True, exist_ok=True)
+
+    return dirs
+
+
+def safe_join(base: str | Path, *parts: str) -> Path:
+    """
+    Safely join path components, preventing traversal.
+
+    Args:
+        base: Base directory path.
+        *parts: Path components to join.
+
+    Returns:
+        Joined path that is guaranteed to be within base.
+
+    Raises:
+        PathTraversalError: If resulting path would be outside base.
+    """
+    base_path = Path(base).resolve()
+
+    # Clean each part to remove any traversal attempts
+    clean_parts = []
+    for part in parts:
+        # Remove leading slashes and resolve any . or ..
+        cleaned = part.lstrip("/\\")
+        # Split and filter out dangerous components
+        segments = cleaned.replace("\\", "/").split("/")
+        safe_segments = [s for s in segments if s and s != ".." and s != "."]
+        clean_parts.extend(safe_segments)
+
+    result = base_path
+    for part in clean_parts:
+        result = result / part
+
+    # Final verification
+    try:
+        result.resolve().relative_to(base_path)
+    except ValueError:
+        raise PathTraversalError(f"Path components {parts} would escape base directory {base_path}")
+
+    return result
+
+
+def is_path_within(path: str | Path, root: str | Path) -> bool:
+    """
+    Check if a path is within a root directory.
+
+    Args:
+        path: Path to check.
+        root: Root directory.
+
+    Returns:
+        True if path is within root, False otherwise.
+    """
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def normalize_globs(globs: list[str], repo_root: str | Path) -> list[str]:
+    """
+    Normalize glob patterns relative to repo root.
+
+    Args:
+        globs: List of glob patterns.
+        repo_root: Repository root path.
+
+    Returns:
+        Normalized glob patterns.
+    """
+    root = Path(repo_root).resolve()
+    normalized = []
+
+    for glob in globs:
+        # If it's an absolute path, make it relative
+        if Path(glob).is_absolute():
+            try:
+                rel = Path(glob).relative_to(root)
+                normalized.append(str(rel))
+            except ValueError:
+                # Path outside repo root, skip it
+                continue
+        else:
+            normalized.append(glob)
+
+    return normalized
