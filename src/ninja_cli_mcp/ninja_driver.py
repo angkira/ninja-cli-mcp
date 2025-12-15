@@ -37,12 +37,13 @@ logger = get_logger(__name__)
 
 # Popular OpenRouter models for code tasks
 RECOMMENDED_MODELS = {
+    # Claude models
+    "anthropic/claude-haiku-4.5-20250929": "Claude Haiku 4.5 - fast and capable",
+    "anthropic/claude-sonnet-4": "Claude Sonnet 4 - excellent for complex code",
+    "anthropic/claude-3.5-sonnet": "Claude 3.5 Sonnet - previous generation",
     # Qwen models
     "qwen/qwen3-coder": "Qwen3 Coder - optimized for code generation",
     "qwen/qwen-2.5-coder-32b-instruct": "Qwen 2.5 Coder 32B - large coding model",
-    # Claude models
-    "anthropic/claude-sonnet-4": "Claude Sonnet 4 - excellent for complex code",
-    "anthropic/claude-3.5-sonnet": "Claude 3.5 Sonnet - fast and capable",
     # GPT models
     "openai/gpt-4o": "GPT-4o - OpenAI's flagship model",
     "openai/gpt-4-turbo": "GPT-4 Turbo - fast GPT-4 variant",
@@ -54,7 +55,7 @@ RECOMMENDED_MODELS = {
     "meta-llama/llama-3.1-70b-instruct": "Llama 3.1 70B - Meta's open model",
 }
 
-DEFAULT_MODEL = "anthropic/claude-sonnet-4"
+DEFAULT_MODEL = "anthropic/claude-haiku-4.5-20250929"
 
 
 @dataclass
