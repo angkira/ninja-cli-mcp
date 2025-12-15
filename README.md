@@ -1,8 +1,27 @@
 # ninja-cli-mcp
 
+[![Tests](https://github.com/angkira/ninja-cli-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/angkira/ninja-cli-mcp/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](#requirements)
+
 An MCP (Model Context Protocol) stdio server that delegates all code-level work to AI coding assistants via **OpenRouter**. This enables a clean separation between planning agents (like Claude Code or GitHub Copilot CLI) and the code executor.
 
-**Supports any OpenRouter model** including Claude, GPT-4, Qwen, DeepSeek, Gemini, Llama, and many more.
+**Supports any OpenRouter model** including Claude, GPT-4, Qwen, DeepSeek, Gemini, Llama, and many more. The default model is `anthropic/claude-haiku-4.5-20250929` for a fast yet capable baseline.
+
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+  - [Register with Claude Code](#register-with-claude-code)
+  - [Register with Copilot CLI](#register-with-copilot-cli)
+- [MCP Tools](#mcp-tools)
+- [Notebooks](#notebooks)
+- [Contributing](#contributing)
+- [Security](#security)
+- [Community](#community)
 
 ## Architecture
 
@@ -42,12 +61,85 @@ An MCP (Model Context Protocol) stdio server that delegates all code-level work 
 │  - Iterates until tests pass (in full mode)                     │
 │                                                                  │
 │  Backend: Any OpenRouter model                                  │
-│  - anthropic/claude-sonnet-4 (default)                          │
+│  - anthropic/claude-haiku-4.5-20250929 (default)                │
 │  - openai/gpt-4o                                                │
 │  - qwen/qwen3-coder                                             │
 │  - deepseek/deepseek-coder                                      │
 │  - And 200+ more models                                         │
 └─────────────────────────────────────────────────────────────────┘
+
+## Features
+
+- 🧠 **Planner/Executor Separation** – MCP planner never touches your repo; AI Code CLI does the heavy lifting.
+- 🔒 **Scoped Execution** – `allowed_globs`/`deny_globs` enforce per-task file access.
+- 🧩 **Multiple Execution Modes** – Quick tasks, sequential plan steps, and parallel fan-out execution.
+- 📊 **LiveBench Insights** – Real benchmark ingestion with deduping, model comparisons, and cost analysis notebooks.
+- 🧪 **Full Test Suite** – Pytest + Ruff + mypy run on every pull request via GitHub Actions.
+- 🧰 **Installer Scripts** – One-line integration with Claude Code or GitHub Copilot CLI.
+
+## Requirements
+
+- **Python 3.11+**
+- **uv** (package manager)
+- **Git**
+- **OpenRouter API key**
+- (Optional) AI Code CLI binary
+
+## Quick Start
+
+```bash
+git clone https://github.com/angkira/ninja-cli-mcp.git
+cd ninja-cli-mcp
+uv sync --all-extras
+```
+
+Run the MCP server locally:
+
+```bash
+uv run python -m ninja_cli_mcp.server
+```
+
+### Interactive Installer
+
+Prefer a guided setup?
+
+```bash
+./scripts/install_interactive.sh
+```
+
+The installer will:
+
+- Verify Python 3.11+ and install `uv` when missing
+- Install dependencies and prompt for your OpenRouter API key (hidden input)
+- Let you pick a model (default: Claude Haiku 4.5)
+- Detect local AI assistants (Claude Code, Copilot CLI, etc.)
+- Auto-register ninja-cli-mcp with Claude Code when available
+- Save configuration to `~/.ninja-cli-mcp.env`
+- Offer to add helper aliases to your shell profile
+
+Once complete, you're ready to delegate tasks from your favorite planner.
+
+## Usage
+
+### Register with Claude Code
+
+```bash
+./scripts/install_claude_code_mcp.sh
+```
+
+This script:
+
+1. Verifies the `claude` CLI is installed
+2. Ensures `OPENROUTER_API_KEY` (or `OPENAI_API_KEY`) is available
+3. Registers `ninja-cli-mcp` via `claude mcp add --transport stdio`
+
+### Register with Copilot CLI
+
+```bash
+./scripts/install_copilot_cli_mcp.sh
+```
+
+Follow on-screen prompts to complete the integration.
 ```
 
 ### Key Design Principle
@@ -66,7 +158,8 @@ ninja-cli-mcp supports **any model available on OpenRouter**. Recommended models
 
 | Model | ID | Description |
 |-------|-----|-------------|
-| Claude Sonnet 4 | `anthropic/claude-sonnet-4` | Default - excellent for complex code |
+| Claude Haiku 4.5 | `anthropic/claude-haiku-4.5-20250929` | Default - fast + high quality |
+| Claude Sonnet 4 | `anthropic/claude-sonnet-4` | Excellent for complex code |
 | Claude 3.5 Sonnet | `anthropic/claude-3.5-sonnet` | Fast and capable |
 | GPT-4o | `openai/gpt-4o` | OpenAI's flagship model |
 | GPT-4 Turbo | `openai/gpt-4-turbo` | Fast GPT-4 variant |
@@ -78,38 +171,22 @@ ninja-cli-mcp supports **any model available on OpenRouter**. Recommended models
 
 See [OpenRouter Models](https://openrouter.ai/models) for the full list.
 
-## Requirements
+## Notebooks
 
-- **Python 3.11+**
-- **uv** (Python package manager) - [Installation guide](https://docs.astral.sh/uv/getting-started/installation/)
-- **git**
-- **OpenRouter API key** - [Get one here](https://openrouter.ai/keys)
-- **AI Code CLI** (optional) - The code executor binary
+| Notebook | Description |
+|----------|-------------|
+| `notebooks/01_model_comparison.ipynb` | Fetches real LiveBench CSV data, deduplicates models, ranks top performers, and runs 5 realistic coding tasks with cost analysis. |
+| `notebooks/02_cost_analysis.ipynb` | Deep dive into pricing, token usage, and scaling scenarios using real execution data. |
 
-## Installation
-
-### Quick Start (Recommended)
-
-**The interactive installer is the single entry point** - it handles everything automatically:
+To run the notebooks:
 
 ```bash
-git clone https://github.com/anthropics/ninja-cli-mcp.git
-cd ninja-cli-mcp
-./scripts/install_interactive.sh
+uv sync --extra notebooks
+uv run python -m ipykernel install --user --name ninja-cli-mcp
 ```
 
-The interactive installer will:
-- 🐍 Check Python 3.11+ (prefers 3.12) and install `uv` if needed
-- 📦 Install all dependencies automatically
-- 🔑 Prompt for your OpenRouter API key (with secure hidden input)
-- 🤖 Let you choose your preferred AI model interactively
-- 🔍 **Auto-detect AI code assistants** (aider, cursor, continue, etc.)
-- 🎯 **Automatically register with Claude Code** if installed
-- ✅ Verify the installation with comprehensive checks
-- ⚙️  Save configuration to `~/.ninja-cli-mcp.env`
-- 🚀 Optionally add to your shell startup
+Then open the notebooks in VS Code or Jupyter and select the `ninja-cli-mcp` kernel.
 
-**That's it!** If you have Claude Code installed, ninja-cli-mcp will be automatically registered and ready to use. No additional steps needed.
 
 ### Manual Installation
 
@@ -118,7 +195,7 @@ If you prefer manual setup:
 #### 1. Clone the repository
 
 ```bash
-git clone https://github.com/anthropics/ninja-cli-mcp.git
+git clone https://github.com/angkira/ninja-cli-mcp.git
 cd ninja-cli-mcp
 ```
 
@@ -140,7 +217,7 @@ This will:
 # Required: OpenRouter API key
 export OPENROUTER_API_KEY='your-api-key-here'
 
-# Optional: Choose a model (default: anthropic/claude-sonnet-4)
+# Optional: Choose a model (default: anthropic/claude-haiku-4.5-20250929)
 export NINJA_MODEL='anthropic/claude-sonnet-4'
 
 # Or use any OpenRouter model:
@@ -711,6 +788,26 @@ python -m ninja_cli_mcp.cli quick-task --repo-root . --task "Add docstrings to u
 export NINJA_MODEL='anthropic/claude-sonnet-4'
 python -m ninja_cli_mcp.cli quick-task --repo-root . --task "Refactor authentication system"
 ```
+
+## Contributing
+
+We welcome issues, feature requests, and pull requests! Please read:
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) – development workflow, testing, commit style
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) – be excellent to each other
+- [CHANGELOG.md](CHANGELOG.md) – keep it updated when submitting PRs
+
+Use the provided issue and PR templates to streamline collaboration.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for supported versions and how to report vulnerabilities. Please **do not** open public issues for security reports—email [security@angkira.com](mailto:security@angkira.com) instead.
+
+## Community
+
+- 💬 Start or join discussions: [GitHub Discussions](https://github.com/angkira/ninja-cli-mcp/discussions)
+- 🐞 Report bugs / request features: use the issue templates
+- 🧠 Share experiments: screenshots, metrics, notebooks welcome in discussions
 
 ## Limitations & Assumptions
 

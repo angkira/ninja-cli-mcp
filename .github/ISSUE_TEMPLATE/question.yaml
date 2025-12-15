@@ -1,0 +1,21 @@
+name: Question / Discussion
+description: Ask a question or start a discussion
+labels: ["question"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please use GitHub Discussions for general questions. This issue template is for specific discussions about the project.
+
+  - type: textarea
+    attributes:
+      label: Your question
+      placeholder: "What would you like to know?"
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Additional context
+      description: Any examples, code snippets, or additional information?

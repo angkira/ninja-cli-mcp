@@ -1,0 +1,53 @@
+name: Bug Report
+description: Report a bug or issue
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Please provide as much detail as possible.
+
+  - type: textarea
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+      placeholder: "What happened?"
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+
+  - type: textarea
+    attributes:
+      label: Expected behavior
+      description: What should happen instead?
+
+  - type: textarea
+    attributes:
+      label: Screenshots or logs
+      description: If applicable, add screenshots, error logs, or other context.
+
+  - type: input
+    attributes:
+      label: Python version
+      description: "e.g., 3.11, 3.12, 3.13"
+      placeholder: "3.11"
+
+  - type: input
+    attributes:
+      label: OS
+      description: "e.g., macOS, Linux, Windows"
+      placeholder: "macOS"
+
+  - type: textarea
+    attributes:
+      label: Additional context
+      description: Any other context that might be helpful.
