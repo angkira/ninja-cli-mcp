@@ -35,6 +35,13 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.10.0",
 ]
+notebooks = [
+    "jupyter>=1.0.0",
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+    "pandas>=2.0.0",
+    "ipykernel>=6.0.0",
+]
 
 [project.scripts]
 ninja-cli-mcp = "ninja_cli_mcp.cli:main"

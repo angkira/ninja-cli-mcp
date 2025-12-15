@@ -531,6 +531,31 @@ python -m ninja_cli_mcp.cli metrics-export \
 
 ninja-cli-mcp automatically tracks token usage and estimated costs for every task execution. Metrics are stored in CSV format within your repository at `.ninja-cli-mcp/metrics/tasks.csv`.
 
+### 📊 Experiment Notebooks
+
+Want to compare models and analyze costs? Check out the **interactive Jupyter notebooks** in `notebooks/`:
+
+- **[Model Comparison](notebooks/01_model_comparison.ipynb)** - Compare Qwen, Claude, Gemini on real tasks
+  - 💰 Cost per task
+  - ⚡ Speed benchmarks  
+  - ✅ Success rates
+  - 💎 Value scores
+  
+- **[Cost Analysis](notebooks/02_cost_analysis.ipynb)** - Deep dive into pricing
+  - 🔄 Real-time OpenRouter pricing
+  - 📅 Monthly cost projections
+  - 💡 Cache savings analysis (~90% off!)
+  - 🎯 Workload scenarios
+
+Install notebook dependencies:
+```bash
+uv sync --extra notebooks
+# or
+uv pip install jupyter matplotlib seaborn pandas
+```
+
+See [notebooks/README.md](notebooks/README.md) for details.
+
 ### What's Tracked
 
 For each task execution, the following metrics are recorded:
