@@ -31,6 +31,7 @@ from ninja_cli_mcp.models import (
 )
 from ninja_cli_mcp.ninja_driver import InstructionBuilder, NinjaDriver, NinjaResult
 from ninja_cli_mcp.path_utils import validate_repo_root
+from ninja_cli_mcp.security import InputValidator, monitored, rate_limited
 
 
 logger = get_logger(__name__)
@@ -68,6 +69,8 @@ class ToolExecutor:
             suspected_touched_paths=result.suspected_touched_paths,
         )
 
+    @rate_limited(max_calls=50, time_window=60)
+    @monitored
     async def quick_task(self, request: QuickTaskRequest) -> QuickTaskResult:
         """
         Execute a quick single-pass task.
@@ -80,6 +83,10 @@ class ToolExecutor:
 
         Returns:
             Quick task result with summary and metadata.
+
+        Raises:
+            PermissionError: If rate limit is exceeded.
+            ValueError: If inputs are invalid.
         """
         logger.info(f"Executing quick task in {request.repo_root}")
 
@@ -87,27 +94,45 @@ class ToolExecutor:
         task_id = str(uuid.uuid4())
         start_time = time.time()
 
-        # Validate repo root
+        # Validate and sanitize inputs
         try:
-            validate_repo_root(request.repo_root)
+            # Validate repo root with security checks
+            repo_path = InputValidator.validate_repo_root(request.repo_root)
+
+            # Sanitize task description
+            task = InputValidator.sanitize_string(request.task, max_length=50000)
+
+            # Validate context paths
+            if request.context_paths:
+                for path in request.context_paths:
+                    InputValidator.sanitize_path(path, base_dir=repo_path)
+
         except ValueError as e:
             # Record failed metrics
             duration = time.time() - start_time
             self._record_metrics(
                 task_id=task_id,
                 tool_name="ninja_quick_task",
-                task_description=request.task,
+                task_description=request.task[:200],  # Truncate for safety
                 output="",
                 duration_sec=duration,
                 success=False,
                 execution_mode="quick",
                 repo_root=request.repo_root,
-                error_message=str(e),
+                error_message=f"Input validation failed: {str(e)}",
             )
             return QuickTaskResult(
                 status="error",
+                summary=f"Input validation failed: {str(e)}",
+                notes="Invalid or potentially unsafe input detected",
+            )
+        except PermissionError as e:
+            # Rate limit exceeded
+            logger.warning(f"Rate limit exceeded for quick_task: {e}")
+            return QuickTaskResult(
+                status="error",
                 summary=str(e),
-                notes="Repository root validation failed",
+                notes="Too many requests - please slow down",
             )
 
         # Build instruction

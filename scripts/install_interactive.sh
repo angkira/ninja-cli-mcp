@@ -63,9 +63,9 @@ prompt() {
 }
 
 prompt_secret() {
-    echo -ne "${CYAN}?${NC} ${BOLD}$1${NC} "
+    echo -ne "${CYAN}?${NC} ${BOLD}$1${NC} " >&2
     read -s value
-    echo ""
+    echo "" >&2
     echo "$value"
 }
 
@@ -213,17 +213,28 @@ step "Step 2: Installing Python dependencies"
 export UV_PYTHON="$PYTHON_CMD"
 
 info "Installing project dependencies with $PYTHON_CMD..."
-if uv sync --python "$PYTHON_CMD" > /dev/null 2>&1; then
+# Capture stderr to show errors, hide stdout for cleaner output
+SYNC_ERR=$(uv sync --python "$PYTHON_CMD" 2>&1 >/dev/null)
+if [[ $? -eq 0 ]]; then
     success "Dependencies installed"
 else
+    echo ""
     error "Failed to install dependencies"
+    if [[ -n "$SYNC_ERR" ]]; then
+        echo "$SYNC_ERR"
+    fi
 fi
 
 info "Installing dev dependencies..."
-if uv sync --all-extras --python "$PYTHON_CMD" > /dev/null 2>&1; then
+# Attempt to install dev dependencies but don't fail if some packages are missing
+DEV_ERR=$(uv sync --all-extras --python "$PYTHON_CMD" 2>&1 >/dev/null)
+if [[ $? -eq 0 ]]; then
     success "Dev dependencies installed"
 else
     warn "Some dev dependencies may have failed"
+    if [[ -n "$DEV_ERR" ]] && [[ "$DEV_ERR" != *"already satisfied"* ]]; then
+        echo -e "${DIM}You can install them later with: uv sync --all-extras${NC}"
+    fi
 fi
 
 # Step 3: Configure API keys
@@ -254,6 +265,10 @@ if [[ -z "$API_KEY" ]]; then
     warn "No API key provided. You'll need to set OPENROUTER_API_KEY later."
 elif [[ ${#API_KEY} -lt 20 ]]; then
     warn "API key seems too short. Please verify it's correct."
+elif [[ "$API_KEY" =~ \[ ]] || [[ "$API_KEY" =~ $'\033' ]]; then
+    error "API key contains invalid characters (ANSI escape codes detected). This is a bug in the installer. Please set OPENROUTER_API_KEY manually."
+elif [[ ${#API_KEY} -gt 100 ]]; then
+    warn "API key seems unusually long (${#API_KEY} chars). Please verify it's correct."
 else
     success "API key configured"
 fi
@@ -425,6 +440,45 @@ else
     NINJA_CODE_BIN="${NINJA_CODE_BIN:-ninja-code}"
 fi
 
+# Validate CLI if it's not empty and not the default placeholder
+if [[ -n "$NINJA_CODE_BIN" ]] && [[ "$NINJA_CODE_BIN" != "ninja-code" ]]; then
+    info "Validating AI CLI..."
+
+    # Check if the CLI exists and is executable
+    if command -v "$NINJA_CODE_BIN" &>/dev/null || [[ -x "$NINJA_CODE_BIN" ]]; then
+        # Try to detect CLI type and validate flags
+        cli_basename=$(basename "$NINJA_CODE_BIN")
+
+        if [[ "$cli_basename" == *"claude"* ]]; then
+            # Validate Claude CLI supports required flags
+            if "$NINJA_CODE_BIN" --help 2>&1 | grep -q -- "--print"; then
+                success "Claude CLI validated"
+            else
+                warn "Claude CLI doesn't support --print flag. May need updates."
+            fi
+        elif [[ "$cli_basename" == *"aider"* ]]; then
+            # Validate Aider CLI
+            if "$NINJA_CODE_BIN" --help 2>&1 | grep -q -- "--message"; then
+                success "Aider CLI validated"
+            else
+                warn "Aider CLI doesn't support --message flag. May need updates."
+            fi
+        else
+            # Generic validation - just check it runs
+            if "$NINJA_CODE_BIN" --version &>/dev/null || "$NINJA_CODE_BIN" --help &>/dev/null; then
+                success "AI CLI accessible"
+            else
+                warn "Could not validate AI CLI. It may not work correctly."
+            fi
+        fi
+    else
+        warn "AI CLI not found or not executable: $NINJA_CODE_BIN"
+        echo ""
+        echo -e "${DIM}You can update this later in: $CONFIG_FILE${NC}"
+        echo ""
+    fi
+fi
+
 # Step 6: Save configuration
 step "Step 6: Saving configuration"
 
@@ -526,8 +580,8 @@ if [[ "$CLAUDE_INSTALLED" == "true" ]]; then
 
         # Register the MCP server if not already registered
         if [[ "${CLAUDE_REGISTERED:-false}" != "true" ]]; then
-            if claude mcp add --transport stdio ninja-cli-mcp -- "$RUN_SERVER" 2>/dev/null; then
-                success "Successfully registered ninja-cli-mcp with Claude Code"
+            if claude mcp add --scope user --transport stdio ninja-cli-mcp -- "$RUN_SERVER" 2>/dev/null; then
+                success "Successfully registered ninja-cli-mcp with Claude Code (user scope)"
                 CLAUDE_REGISTERED=true
             else
                 warn "Failed to register MCP server (you can do this manually later)"

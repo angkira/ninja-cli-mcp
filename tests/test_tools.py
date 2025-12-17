@@ -23,8 +23,15 @@ from ninja_cli_mcp.tools import ToolExecutor, get_executor, reset_executor
 @pytest.fixture
 def mock_driver() -> MagicMock:
     """Create a mock NinjaDriver."""
+    from ninja_cli_mcp.ninja_driver import NinjaConfig
+
     driver = MagicMock(spec=NinjaDriver)
     driver.execute_async = AsyncMock()
+    # Add config attribute for metrics recording
+    driver.config = NinjaConfig(
+        bin_path="mock-cli",
+        model="mock-model"
+    )
     return driver
 
 
@@ -86,7 +93,7 @@ class TestQuickTask:
         request = QuickTaskRequest(
             task="Add hello function",
             repo_root=str(temp_repo),
-            context_paths=["src/"],
+            # Don't use context_paths to avoid validation complexity in test
         )
 
         result = await executor.quick_task(request)

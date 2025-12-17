@@ -97,7 +97,9 @@ info "Registering ninja-cli-mcp with Claude Code..."
 
 # Build the command with environment variable passthrough
 # Note: We pass the API key through so the server subprocess has access
+# Use --scope user to make it available globally (not just in this project)
 claude mcp add \
+    --scope user \
     --transport stdio \
     ninja-cli-mcp \
     -- "$RUN_SERVER"

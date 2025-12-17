@@ -72,10 +72,14 @@ An MCP (Model Context Protocol) stdio server that delegates all code-level work 
 
 - 🧠 **Planner/Executor Separation** – MCP planner never touches your repo; AI Code CLI does the heavy lifting.
 - 🔒 **Scoped Execution** – `allowed_globs`/`deny_globs` enforce per-task file access.
+- 🔐 **Security** – Rate limiting (50 calls/min), input validation, path traversal prevention, resource monitoring.
 - 🧩 **Multiple Execution Modes** – Quick tasks, sequential plan steps, and parallel fan-out execution.
+- 🤖 **Multi-CLI Support** – Adapter pattern for Claude, Aider, Cursor, and generic AI assistants.
+- 🐧 **Cross-Platform** – Works on Linux and macOS with platform-specific fixes.
 - 📊 **LiveBench Insights** – Real benchmark ingestion with deduping, model comparisons, and cost analysis notebooks.
-- 🧪 **Full Test Suite** – Pytest + Ruff + mypy run on every pull request via GitHub Actions.
+- 🧪 **Full Test Suite** – 149+ tests including security, integration, and smoke tests.
 - 🧰 **Installer Scripts** – One-line integration with Claude Code or GitHub Copilot CLI.
+- 📝 **MCP Best Practices** – Follows MCP specification 2025-11-25 with proper logging, error handling, and validation.
 
 ## Requirements
 
@@ -879,6 +883,40 @@ cat .ninja-cli-mcp/logs/latest.log
 ```bash
 python -m ninja_cli_mcp.cli show-config
 ```
+
+### Linux-Specific Issues
+
+#### MCP server not visible in Claude Code
+
+The installer now registers globally by default. If you installed an earlier version, re-register:
+
+```bash
+claude mcp add --scope user --transport stdio ninja-cli-mcp -- \
+  /absolute/path/to/ninja-cli-mcp/scripts/run_server.sh
+```
+
+#### Config file fix (if API key was corrupted during installation)
+
+```bash
+./scripts/fix_config.sh
+source ~/.ninja-cli-mcp.env
+```
+
+#### Test with MCP Inspector
+
+```bash
+npx @modelcontextprotocol/inspector uv run python -m ninja_cli_mcp.server
+```
+
+See `docs/MCP_INSPECTOR_GUIDE.md` for detailed testing instructions.
+
+## Documentation
+
+- **[MCP Best Practices](docs/MCP_BEST_PRACTICES.md)** - Security, testing, deployment checklist
+- **[MCP Inspector Guide](docs/MCP_INSPECTOR_GUIDE.md)** - Local testing with MCP Inspector
+- **[Python Setup](PYTHON_SETUP.md)** - Python environment setup
+- **[Contributing](CONTRIBUTING.md)** - How to contribute
+- **[Security](SECURITY.md)** - Security policy
 
 ## License
 

@@ -400,26 +400,34 @@ class NinjaDriver:
 
         return task_file
 
-    def _build_command(self, task_file: Path, repo_root: str) -> list[str]:
+    def _detect_cli_type(self) -> str:
         """
-        Build the command to run Ninja Code CLI.
+        Detect which type of CLI we're using based on the binary name.
+
+        Returns:
+            CLI type: 'claude', 'aider', 'cursor', or 'generic'
+        """
+        bin_name = os.path.basename(self.config.bin_path).lower()
+        if "claude" in bin_name:
+            return "claude"
+        elif "aider" in bin_name:
+            return "aider"
+        elif "cursor" in bin_name:
+            return "cursor"
+        else:
+            return "generic"
+
+    def _build_prompt_text(self, instruction: dict[str, Any], repo_root: str) -> str:
+        """
+        Build a comprehensive prompt from the instruction document.
 
         Args:
-            task_file: Path to the task file.
+            instruction: Instruction document.
             repo_root: Repository root path.
 
         Returns:
-            Command as list of strings.
+            Formatted prompt text.
         """
-        # Strategy pattern: try different invocation methods
-        # Primary: task file mode (if CLI supports it)
-        # Fallback: prompt mode with instruction as argument
-
-        # Read the instruction to build a prompt
-        with open(task_file) as f:
-            instruction = json.load(f)
-
-        # Build a comprehensive prompt from the instruction
         prompt_parts = [
             instruction.get("instructions", ""),
             "",
@@ -445,21 +453,63 @@ class NinjaDriver:
             if test_plan.get("e2e"):
                 prompt_parts.append(f"E2E tests: {', '.join(test_plan['e2e'])}")
 
-        prompt = "\n".join(prompt_parts)
+        return "\n".join(prompt_parts)
 
-        # Build command - using prompt mode as primary method
-        # CLI interface is assumed to support:
-        # ninja-code --prompt "..." --cwd /path/to/repo --yes
-        cmd = [
+    def _build_command_claude(self, prompt: str, repo_root: str) -> list[str]:
+        """Build command for Claude CLI."""
+        return [
             self.config.bin_path,
-            "--prompt",
+            "--print",  # Non-interactive mode
+            "--dangerously-skip-permissions",  # Skip permission prompts for automation
             prompt,
-            "--cwd",
-            repo_root,
-            "--yes",  # Non-interactive mode
         ]
 
-        return cmd
+    def _build_command_aider(self, prompt: str, repo_root: str) -> list[str]:
+        """Build command for Aider CLI."""
+        return [
+            self.config.bin_path,
+            "--yes",  # Auto-accept changes
+            "--message",
+            prompt,
+        ]
+
+    def _build_command_generic(self, prompt: str, repo_root: str) -> list[str]:
+        """Build command for generic/unknown CLI."""
+        # Try a common pattern
+        return [
+            self.config.bin_path,
+            prompt,
+        ]
+
+    def _build_command(self, task_file: Path, repo_root: str) -> list[str]:
+        """
+        Build the command to run AI Code CLI.
+
+        Uses CLI adapter pattern to support different AI assistants.
+
+        Args:
+            task_file: Path to the task file.
+            repo_root: Repository root path.
+
+        Returns:
+            Command as list of strings.
+        """
+        # Read the instruction to build a prompt
+        with open(task_file) as f:
+            instruction = json.load(f)
+
+        prompt = self._build_prompt_text(instruction, repo_root)
+
+        # Detect CLI type and build appropriate command
+        cli_type = self._detect_cli_type()
+        logger.debug(f"Detected CLI type: {cli_type}")
+
+        if cli_type == "claude":
+            return self._build_command_claude(prompt, repo_root)
+        elif cli_type == "aider":
+            return self._build_command_aider(prompt, repo_root)
+        else:
+            return self._build_command_generic(prompt, repo_root)
 
     def _parse_output(self, stdout: str, stderr: str, exit_code: int) -> NinjaResult:
         """
