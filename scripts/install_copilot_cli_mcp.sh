@@ -119,13 +119,22 @@ fi
 
 # Build MCP server configuration
 # Format for Copilot CLI v0.0.365+
+# Note: 'tools' array is required - lists the MCP tools provided by this server
 MCP_SERVER_CONFIG=$(cat <<EOF
 {
   "mcpServers": {
     "ninja-cli-mcp": {
+      "type": "local",
       "command": "$RUN_SERVER",
       "args": [],
-      "env": {}
+      "env": {},
+      "tools": [
+        "ninja_quick_task",
+        "execute_plan_sequential",
+        "execute_plan_parallel",
+        "run_tests",
+        "apply_patch"
+      ]
     }
   }
 }
