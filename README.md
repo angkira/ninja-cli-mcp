@@ -16,7 +16,7 @@ An MCP (Model Context Protocol) stdio server that delegates all code-level work 
 - [Quick Start](#quick-start)
 - [Usage](#usage)
   - [Register with Claude Code](#register-with-claude-code)
-  - [Register with Copilot CLI](#register-with-copilot-cli)
+  - [IDE Integrations](#ide-integrations)
 - [MCP Tools](#mcp-tools)
 - [Notebooks](#notebooks)
 - [Contributing](#contributing)
@@ -78,7 +78,7 @@ An MCP (Model Context Protocol) stdio server that delegates all code-level work 
 - 🐧 **Cross-Platform** – Works on Linux and macOS with platform-specific fixes.
 - 📊 **LiveBench Insights** – Real benchmark ingestion with deduping, model comparisons, and cost analysis notebooks.
 - 🧪 **Full Test Suite** – 149+ tests including security, integration, and smoke tests.
-- 🧰 **Installer Scripts** – One-line integration with Claude Code or GitHub Copilot CLI.
+- 🧰 **IDE Integrations** – One-line installers for VS Code, Zed, Claude Code, and GitHub Copilot CLI.
 - 📝 **MCP Best Practices** – Follows MCP specification 2025-11-25 with proper logging, error handling, and validation.
 
 ## Requirements
@@ -137,14 +137,52 @@ This script:
 2. Ensures `OPENROUTER_API_KEY` (or `OPENAI_API_KEY`) is available
 3. Registers `ninja-cli-mcp` via `claude mcp add --transport stdio`
 
-### Register with Copilot CLI
+### IDE Integrations
 
+ninja-cli-mcp can be integrated with multiple IDEs and AI coding assistants:
+
+#### Quick Install (All IDEs)
+
+Automatically detect and configure all installed IDEs:
+
+```bash
+./scripts/install_ide_integrations.sh
+```
+
+This will detect and configure:
+- **VS Code** with GitHub Copilot (requires VS Code 1.99+)
+- **Zed** editor with AI Assistant
+- **GitHub Copilot CLI** (if installed)
+
+#### Individual IDE Setup
+
+Configure specific IDEs individually:
+
+**VS Code:**
+```bash
+./scripts/install_vscode_mcp.sh          # User-level (all workspaces)
+./scripts/install_vscode_mcp.sh --workspace  # Current workspace only
+```
+
+**Zed:**
+```bash
+./scripts/install_zed_mcp.sh
+```
+
+**Copilot CLI:**
 ```bash
 ./scripts/install_copilot_cli_mcp.sh
 ```
 
-Follow on-screen prompts to complete the integration.
-```
+#### IDE Configuration Details
+
+| IDE | Config Location | MCP Support |
+|-----|----------------|-------------|
+| **VS Code** | `~/.config/Code/User/mcp.json` or `.vscode/mcp.json` | Native MCP support (1.99+) |
+| **Zed** | `~/.config/zed/settings.json` | Context servers (MCP compatible) |
+| **Copilot CLI** | `~/.config/copilot-cli/mcp-servers.json` | Experimental MCP support |
+
+After configuration, restart your IDE and the MCP tools will be available in the AI assistant interface.
 
 ### Key Design Principle
 
