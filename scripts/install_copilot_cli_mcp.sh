@@ -61,21 +61,32 @@ else
     echo ""
 fi
 
-# Check for Copilot CLI extension
+# Check for Copilot CLI
 info "Checking for GitHub Copilot CLI..."
 
 COPILOT_FOUND=0
+COPILOT_CMD=""
 
 # Check for gh extension
-if gh extension list 2>/dev/null | grep -q "copilot"; then
+if command -v gh &> /dev/null && gh extension list 2>/dev/null | grep -q "copilot"; then
     success "GitHub Copilot CLI extension found (gh copilot)"
     COPILOT_FOUND=1
+    COPILOT_CMD="gh copilot"
 fi
 
-# Check for npm global package
-if command -v github-copilot-cli &> /dev/null; then
-    success "GitHub Copilot CLI npm package found"
+# Check for npm global package (@github/copilot)
+if command -v copilot &> /dev/null; then
+    COPILOT_VERSION=$(copilot --version 2>/dev/null | head -n1 || echo "unknown")
+    success "GitHub Copilot CLI found: v$COPILOT_VERSION"
     COPILOT_FOUND=1
+    COPILOT_CMD="copilot"
+fi
+
+# Legacy check for github-copilot-cli
+if command -v github-copilot-cli &> /dev/null; then
+    success "GitHub Copilot CLI npm package found (legacy)"
+    COPILOT_FOUND=1
+    COPILOT_CMD="github-copilot-cli"
 fi
 
 if [[ $COPILOT_FOUND -eq 0 ]]; then
@@ -92,8 +103,9 @@ if [[ $COPILOT_FOUND -eq 0 ]]; then
 fi
 
 # Create MCP configuration directory
-CONFIG_DIR="$HOME/.config/copilot-cli"
-MCP_CONFIG="$CONFIG_DIR/mcp-servers.json"
+# Copilot CLI v0.0.365+ uses ~/.copilot/mcp-config.json
+CONFIG_DIR="$HOME/.copilot"
+MCP_CONFIG="$CONFIG_DIR/mcp-config.json"
 
 info "Setting up MCP configuration..."
 mkdir -p "$CONFIG_DIR"
@@ -106,18 +118,14 @@ if [[ ! -x "$RUN_SERVER" ]]; then
 fi
 
 # Build MCP server configuration
+# Format for Copilot CLI v0.0.365+
 MCP_SERVER_CONFIG=$(cat <<EOF
 {
-  "servers": {
+  "mcpServers": {
     "ninja-cli-mcp": {
-      "transport": "stdio",
       "command": "$RUN_SERVER",
-      "description": "AI code executor for code operations (supports any OpenRouter model)",
-      "env": {
-        "OPENROUTER_API_KEY": "\${OPENROUTER_API_KEY}",
-        "NINJA_MODEL": "\${NINJA_MODEL:-anthropic/claude-sonnet-4}",
-        "NINJA_CODE_BIN": "\${NINJA_CODE_BIN:-ninja-code}"
-      }
+      "args": [],
+      "env": {}
     }
   }
 }
@@ -157,31 +165,36 @@ echo ""
 
 echo "=========================================="
 echo ""
-echo "IMPORTANT: MCP integration with Copilot CLI"
+echo "Testing Copilot CLI"
 echo "=========================================="
 echo ""
-echo "GitHub Copilot CLI's MCP support is evolving. The configuration"
-echo "above may need adjustment based on your Copilot CLI version."
+echo "The ninja-cli-mcp server is now configured for Copilot CLI."
 echo ""
-echo "Current status:"
-echo "  - The MCP config file is at: $MCP_CONFIG"
-echo "  - The server command is: $RUN_SERVER"
+echo "Configuration file: $MCP_CONFIG"
+echo "Server command: $RUN_SERVER"
 echo ""
-echo "Manual integration steps (if automatic config doesn't work):"
+echo "To use with Copilot CLI:"
 echo ""
-echo "1. Check Copilot CLI documentation for MCP support:"
-echo "   https://docs.github.com/en/copilot"
-echo ""
-echo "2. The MCP server can be started manually:"
-echo "   $RUN_SERVER"
-echo ""
-echo "3. For stdio transport, the server communicates via stdin/stdout"
-echo "   using the MCP protocol."
-echo ""
-echo "Environment variables to set before running Copilot CLI:"
-echo "  export OPENROUTER_API_KEY='your-key-here'"
-echo "  export NINJA_MODEL='anthropic/claude-sonnet-4'  # optional, this is the default"
-echo "  export NINJA_CODE_BIN='ninja-code'              # optional"
+if [[ -n "$COPILOT_CMD" ]]; then
+    echo "  $COPILOT_CMD"
+    echo ""
+    echo "The MCP server will be automatically loaded from ~/.copilot/mcp-config.json"
+    echo ""
+    echo "Copilot CLI will have access to these tools:"
+    echo "  - ninja_quick_task - Execute quick tasks"
+    echo "  - execute_plan_sequential - Run sequential plan steps"
+    echo "  - execute_plan_parallel - Run parallel plan steps"
+    echo "  - run_tests - Execute test commands"
+    echo ""
+else
+    echo "  copilot   (if installed via npm)"
+    echo "  gh copilot (if installed as gh extension)"
+    echo ""
+fi
+echo "Environment variables (set in ~/.ninja-cli-mcp.env):"
+echo "  OPENROUTER_API_KEY - Your OpenRouter API key (required)"
+echo "  NINJA_MODEL - Model to use (default: anthropic/claude-sonnet-4)"
+echo "  NINJA_CODE_BIN - AI code CLI binary (default: ninja-code)"
 echo ""
 echo "Supported models (set via NINJA_MODEL):"
 echo "  - anthropic/claude-sonnet-4 (default)"
@@ -192,18 +205,6 @@ echo "  - deepseek/deepseek-coder"
 echo "  - google/gemini-pro-1.5"
 echo "  - And many more via OpenRouter"
 echo ""
-
-# Alternative: VS Code settings hint
-echo "Alternative: VS Code with GitHub Copilot"
-echo "=========================================="
-echo ""
-echo "If using VS Code with GitHub Copilot Chat, you can configure"
-echo "MCP servers in your VS Code settings.json:"
-echo ""
-echo "  \"github.copilot.chat.mcpServers\": {"
-echo "    \"ninja-cli-mcp\": {"
-echo "      \"command\": \"$RUN_SERVER\","
-echo "      \"transport\": \"stdio\""
-echo "    }"
-echo "  }"
+echo "For other IDE integrations (VS Code, Zed):"
+echo "  ./scripts/install_ide_integrations.sh"
 echo ""

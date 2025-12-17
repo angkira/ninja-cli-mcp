@@ -118,7 +118,14 @@ else
 fi
 
 # Check for Copilot CLI
-if gh extension list 2>/dev/null | grep -q "copilot" || command -v github-copilot-cli &> /dev/null; then
+if command -v copilot &> /dev/null; then
+    COPILOT_VERSION=$(copilot --version 2>/dev/null | head -n1 || echo "unknown")
+    COPILOT_AVAILABLE=1
+    echo -e "  ${GREEN}✓${NC} GitHub Copilot CLI: v$COPILOT_VERSION"
+elif command -v gh &> /dev/null && gh extension list 2>/dev/null | grep -q "copilot"; then
+    COPILOT_AVAILABLE=1
+    echo -e "  ${GREEN}✓${NC} GitHub Copilot CLI: gh extension"
+elif command -v github-copilot-cli &> /dev/null; then
     COPILOT_AVAILABLE=1
     echo -e "  ${GREEN}✓${NC} GitHub Copilot CLI: Available"
 else

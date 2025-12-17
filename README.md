@@ -180,7 +180,7 @@ Configure specific IDEs individually:
 |-----|----------------|-------------|
 | **VS Code** | `~/.config/Code/User/mcp.json` or `.vscode/mcp.json` | Native MCP support (1.99+) |
 | **Zed** | `~/.config/zed/settings.json` | Context servers (MCP compatible) |
-| **Copilot CLI** | `~/.config/copilot-cli/mcp-servers.json` | Experimental MCP support |
+| **Copilot CLI** | `~/.copilot/mcp-config.json` | Native MCP support (v0.0.365+) |
 
 After configuration, restart your IDE and the MCP tools will be available in the AI assistant interface.
 
