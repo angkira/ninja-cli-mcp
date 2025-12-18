@@ -50,9 +50,9 @@ TOOLS: list[Tool] = [
     Tool(
         name="ninja_quick_task",
         description=(
-            "Execute a quick single-pass task using the AI code CLI. "
-            "The CLI has full read/write access to files within the specified scope. "
-            "Returns only summary and metadata - no raw file contents. "
+            "Execute a single-pass code task via Aider (AI agent). "
+            "Aider reads files, makes changes, and returns results. You don't need to read files yourself. "
+            "Use for: docstrings, type hints, refactoring, creating files, bug fixes. "
             "Supports any OpenRouter model (Claude, GPT, Qwen, DeepSeek, etc.)"
         ),
         inputSchema={
@@ -303,8 +303,53 @@ TOOLS: list[Tool] = [
 
 
 def create_server() -> Server:
-    """Create and configure the MCP server."""
-    server = Server("ninja-cli-mcp")
+    """
+    Create and configure the MCP server with detailed instructions.
+
+    Returns:
+        Configured MCP Server instance.
+    """
+    server = Server(
+        "ninja-cli-mcp",
+        version="1.0.0",
+        instructions="""ninja-cli-mcp: Delegate ALL code work to AI agent (Aider via OpenRouter)
+
+CRITICAL: You MUST NOT read/view/inspect files yourself. ALWAYS delegate to ninja-cli-mcp.
+
+What ninja-cli-mcp does:
+• Executes code changes via Aider (AI coding agent)
+• Creates, edits, deletes files automatically  
+• Runs tests and validates changes
+• Handles full implementation without your involvement
+
+Your role as planner:
+1. Break task into clear steps
+2. Call ninja-cli-mcp tools with descriptions
+3. Review status/summary (NOT source code)
+4. Move to next step
+
+DO NOT:
+❌ Read files (delegate to ninja tools)
+❌ Write code snippets (delegate to ninja tools)  
+❌ Inspect implementation (trust the tool)
+
+DO:
+✅ Use ninja_quick_task for single changes
+✅ Use execute_plan_sequential for multi-step tasks
+✅ Use execute_plan_parallel for independent tasks
+✅ Review returned status only
+
+Example:
+User: "Add authentication module"
+You: execute_plan_sequential([
+  "Create auth.py with login/logout",
+  "Add password hashing utils",
+  "Create session management", 
+  "Add middleware",
+  "Write tests"
+])
+Aider implements each step completely."""
+    )
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
