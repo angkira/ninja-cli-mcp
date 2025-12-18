@@ -23,6 +23,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
+# Load environment config if it exists
+if [[ -f "$HOME/.ninja-cli-mcp.env" ]]; then
+    source "$HOME/.ninja-cli-mcp.env"
+fi
+
 # Check for API key
 if [[ -z "${OPENROUTER_API_KEY:-}" ]] && [[ -z "${OPENAI_API_KEY:-}" ]]; then
     echo "Warning: Neither OPENROUTER_API_KEY nor OPENAI_API_KEY is set" >&2

@@ -120,6 +120,10 @@ fi
 # Build MCP server configuration
 # Format for Copilot CLI v0.0.365+
 # Note: 'tools' array is required - lists the MCP tools provided by this server
+
+# Load environment variables to pass to MCP server
+source "$HOME/.ninja-cli-mcp.env" 2>/dev/null || true
+
 MCP_SERVER_CONFIG=$(cat <<EOF
 {
   "mcpServers": {
@@ -127,7 +131,11 @@ MCP_SERVER_CONFIG=$(cat <<EOF
       "type": "local",
       "command": "$RUN_SERVER",
       "args": [],
-      "env": {},
+      "env": {
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY:-}",
+        "NINJA_MODEL": "${NINJA_MODEL:-anthropic/claude-sonnet-4}",
+        "NINJA_CODE_BIN": "${NINJA_CODE_BIN:-ninja-code}"
+      },
       "tools": [
         "ninja_quick_task",
         "execute_plan_sequential",

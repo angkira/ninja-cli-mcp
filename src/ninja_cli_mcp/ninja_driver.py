@@ -405,13 +405,17 @@ class NinjaDriver:
         Detect which type of CLI we're using based on the binary name.
 
         Returns:
-            CLI type: 'claude', 'aider', 'cursor', or 'generic'
+            CLI type: 'aider', 'qwen', 'claude', 'gemini', 'cursor', or 'generic'
         """
         bin_name = os.path.basename(self.config.bin_path).lower()
-        if "claude" in bin_name:
-            return "claude"
-        elif "aider" in bin_name:
+        if "aider" in bin_name:
             return "aider"
+        elif "qwen" in bin_name:
+            return "qwen"
+        elif "claude" in bin_name:
+            return "claude"
+        elif "gemini" in bin_name:
+            return "gemini"
         elif "cursor" in bin_name:
             return "cursor"
         else:
@@ -466,11 +470,23 @@ class NinjaDriver:
 
     def _build_command_aider(self, prompt: str, repo_root: str) -> list[str]:
         """Build command for Aider CLI."""
+        # Aider command structure:
+        # aider --yes --model <model> --message "<task>"
         return [
             self.config.bin_path,
             "--yes",  # Auto-accept changes
-            "--message",
-            prompt,
+            "--no-auto-commits",  # Don't auto-commit (let user decide)
+            "--model", f"openrouter/{self.config.model}",  # OpenRouter model
+            "--message", prompt,
+        ]
+    
+    def _build_command_qwen(self, prompt: str, repo_root: str) -> list[str]:
+        """Build command for Qwen Code CLI."""
+        # Qwen CLI uses similar interface to Gemini CLI
+        return [
+            self.config.bin_path,
+            "--non-interactive",
+            "--message", prompt,
         ]
 
     def _build_command_generic(self, prompt: str, repo_root: str) -> list[str]:
@@ -504,10 +520,14 @@ class NinjaDriver:
         cli_type = self._detect_cli_type()
         logger.debug(f"Detected CLI type: {cli_type}")
 
-        if cli_type == "claude":
-            return self._build_command_claude(prompt, repo_root)
-        elif cli_type == "aider":
+        if cli_type == "aider":
             return self._build_command_aider(prompt, repo_root)
+        elif cli_type == "qwen":
+            return self._build_command_qwen(prompt, repo_root)
+        elif cli_type == "claude":
+            return self._build_command_claude(prompt, repo_root)
+        elif cli_type == "gemini":
+            return self._build_command_qwen(prompt, repo_root)  # Similar to Qwen
         else:
             return self._build_command_generic(prompt, repo_root)
 

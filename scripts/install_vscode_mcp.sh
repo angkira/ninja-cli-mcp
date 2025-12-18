@@ -138,13 +138,20 @@ fi
 info "Setting up MCP configuration for $CONFIG_SCOPE..."
 
 # Build MCP server configuration
+# Load environment variables to pass to MCP server
+source "$HOME/.ninja-cli-mcp.env" 2>/dev/null || true
+
 MCP_SERVER_CONFIG=$(cat <<EOF
 {
   "mcpServers": {
     "ninja-cli-mcp": {
       "command": "$RUN_SERVER",
       "args": [],
-      "env": {},
+      "env": {
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY:-}",
+        "NINJA_MODEL": "${NINJA_MODEL:-anthropic/claude-sonnet-4}",
+        "NINJA_CODE_BIN": "${NINJA_CODE_BIN:-ninja-code}"
+      },
       "disabled": false
     }
   }
