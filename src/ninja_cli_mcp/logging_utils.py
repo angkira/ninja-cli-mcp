@@ -62,7 +62,10 @@ class TaskLogger:
     """
     Logger for individual task executions.
 
-    Writes detailed logs to files in the .ninja-cli-mcp/logs directory.
+    Writes detailed logs to centralized cache directory:
+    ~/.cache/ninja-cli-mcp/<repo_hash>-<repo_name>/logs/
+    
+    This prevents polluting project directories with log files.
     """
 
     def __init__(self, repo_root: str | Path, step_id: str):

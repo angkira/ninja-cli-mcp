@@ -298,16 +298,20 @@ The model is selected in this order:
 
 ### Directory Layout
 
-When the server runs, it creates a `.ninja-cli-mcp/` directory in the repository root:
+Logs and metadata are stored in a centralized cache directory to avoid polluting your projects:
 
 ```
-.ninja-cli-mcp/
+~/.cache/ninja-cli-mcp/<repo_hash>-<repo_name>/
 ├── logs/           # Execution logs
-├── tasks/          # Task instruction files (JSON)
-└── metadata/       # Additional metadata
+├── tasks/          # Task instruction files
+├── metadata/       # Additional metadata
+└── metrics/        # Task metrics (CSV)
 ```
 
-This is the **only** directory the MCP server writes to. All actual code changes are made by the AI code CLI.
+This is a **centralized cache** - the MCP server does NOT create files in your project directory.
+All logs and metadata are stored in `~/.cache/ninja-cli-mcp/` (or `%LOCALAPPDATA%\ninja-cli-mcp` on Windows).
+
+The code changes are made by the AI code CLI (Aider) directly in your repository.
 
 ## Running the Server
 
@@ -897,11 +901,15 @@ export OPENROUTER_API_KEY='your-key-here'
 
 ### View execution logs
 
-Logs are stored in `.ninja-cli-mcp/logs/`:
+Logs are stored in the centralized cache directory:
 
 ```bash
-ls -la .ninja-cli-mcp/logs/
-cat .ninja-cli-mcp/logs/latest.log
+ls -la ~/.cache/ninja-cli-mcp/
+# Find your repo's logs directory
+ls -la ~/.cache/ninja-cli-mcp/*/logs/
+# View latest log
+cat ~/.cache/ninja-cli-mcp/*/logs/$(ls -t ~/.cache/ninja-cli-mcp/*/logs/ | head -1)
+```
 ```
 
 ### MCP connection issues

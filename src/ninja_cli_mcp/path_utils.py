@@ -75,17 +75,32 @@ def get_internal_dir(repo_root: str | Path) -> Path:
     """
     Get the internal directory for ninja-cli-mcp data.
 
-    This is the only directory the MCP server is allowed to write to
-    within the repo (for logs, metadata, task files).
+    Uses a centralized cache directory instead of polluting project directories.
+    Logs and metadata are stored in ~/.cache/ninja-cli-mcp/<repo_hash>/
 
     Args:
         repo_root: The repository root path.
 
     Returns:
-        Path to the .ninja-cli-mcp directory.
+        Path to the ninja-cli-mcp cache directory for this repo.
     """
+    import hashlib
+    import os
+    
+    # Get cache directory (XDG Base Directory compliant)
+    if os.name == "nt":  # Windows
+        cache_base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    else:  # Linux/macOS
+        cache_base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    
+    # Create a stable hash of the repo path
     root = Path(repo_root).resolve()
-    internal = root / ".ninja-cli-mcp"
+    repo_hash = hashlib.sha256(str(root).encode()).hexdigest()[:16]
+    
+    # Use format: ~/.cache/ninja-cli-mcp/<hash>-<repo_name>/
+    repo_name = root.name
+    internal = cache_base / "ninja-cli-mcp" / f"{repo_hash}-{repo_name}"
+    
     return internal
 
 
@@ -93,11 +108,14 @@ def ensure_internal_dirs(repo_root: str | Path) -> dict[str, Path]:
     """
     Ensure internal directories exist and return their paths.
 
+    Creates directories in the centralized cache location (~/.cache/ninja-cli-mcp/)
+    instead of polluting the project directory.
+
     Args:
-        repo_root: The repository root path.
+        repo_root: The repository root path (used to generate unique cache dir).
 
     Returns:
-        Dict with paths to logs, tasks, and metadata directories.
+        Dict with paths to logs, tasks, and metadata directories in cache.
     """
     internal = get_internal_dir(repo_root)
 

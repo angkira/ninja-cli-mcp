@@ -182,10 +182,14 @@ class MetricsTracker:
         Initialize metrics tracker.
 
         Args:
-            repo_root: Repository root path
+            repo_root: Repository root path (used to generate unique cache dir).
         """
+        from ninja_cli_mcp.path_utils import get_internal_dir
+        
         self.repo_root = repo_root
-        self.metrics_dir = repo_root / ".ninja-cli-mcp" / "metrics"
+        # Use centralized cache directory instead of polluting project
+        internal_dir = get_internal_dir(repo_root)
+        self.metrics_dir = internal_dir / "metrics"
         self.metrics_file = self.metrics_dir / "tasks.csv"
         self._ensure_metrics_dir()
 
