@@ -158,3 +158,4 @@ Thumbs.db
 secrets/
 *.pem
 *.key
+.aider*
