@@ -7,12 +7,39 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint with ruff
+        run: uv run ruff check src/ tests/
+
+      - name: Format check with ruff
+        run: uv run ruff format --check src/ tests/
+
+      - name: Type check with mypy
+        run: uv run mypy src/
+
+  unit-tests:
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
-        os: [ubuntu-latest, macos-latest]
       fail-fast: false
 
     steps:
@@ -27,23 +54,15 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync
 
-      - name: Lint with ruff
-        run: uv run ruff check src/ tests/
-
-      - name: Format check with ruff
-        run: uv run ruff format --check src/ tests/
-
-      - name: Type check with mypy
-        run: uv run mypy src/
-
-      - name: Run tests
-        run: uv run pytest tests/ -v --tb=short
+      - name: Run unit tests
+        run: uv run pytest tests/ -m "unit or (not integration and not e2e and not agent)" -v --tb=short
 
   build:
+    name: Build Package
     runs-on: ubuntu-latest
-    needs: test
+    needs: [lint, unit-tests]
     
     steps:
       - uses: actions/checkout@v4

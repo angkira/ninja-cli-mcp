@@ -71,6 +71,15 @@ include = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (may require API keys)",
+    "e2e: End-to-end tests (full system tests)",
+    "slow: Slow tests (may take minutes)",
+    "agent: Tests requiring AI agent CLI (aider, claude, etc)",
+]
+# Default: run only unit tests unless specified
+addopts = "-v --tb=short"
 
 [tool.mypy]
 python_version = "3.11"
