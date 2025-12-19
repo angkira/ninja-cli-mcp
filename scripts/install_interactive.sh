@@ -70,7 +70,7 @@ prompt_secret() {
 }
 
 confirm() {
-    echo -ne "${CYAN}?${NC} ${BOLD}$1${NC} ${DIM}[y/N]${NC} "
+    echo -ne "${CYAN}?${NC} ${BOLD}$1${NC} ${DIM}[y/N]${NC} " >&2
     read -r response
     [[ "$response" =~ ^[Yy]$ ]]
 }
@@ -247,12 +247,15 @@ echo ""
 
 # Check if API key already exists
 EXISTING_KEY="${OPENROUTER_API_KEY:-${OPENAI_API_KEY:-}}"
+USE_EXISTING_KEY=false
 
 if [[ -n "$EXISTING_KEY" ]]; then
     MASKED_KEY="${EXISTING_KEY:0:8}...${EXISTING_KEY: -4}"
     info "Found existing API key: $MASKED_KEY"
     if ! confirm "Would you like to use a different API key?"; then
         API_KEY="$EXISTING_KEY"
+        USE_EXISTING_KEY=true
+        success "Using existing API key"
     else
         API_KEY=$(prompt_secret "Enter your OpenRouter API key (input hidden):")
     fi
@@ -260,17 +263,23 @@ else
     API_KEY=$(prompt_secret "Enter your OpenRouter API key (input hidden):")
 fi
 
-# Validate API key format
-if [[ -z "$API_KEY" ]]; then
-    warn "No API key provided. You'll need to set OPENROUTER_API_KEY later."
-elif [[ ${#API_KEY} -lt 20 ]]; then
-    warn "API key seems too short. Please verify it's correct."
-elif [[ "$API_KEY" =~ \[ ]] || [[ "$API_KEY" =~ $'\033' ]]; then
-    error "API key contains invalid characters (ANSI escape codes detected). This is a bug in the installer. Please set OPENROUTER_API_KEY manually."
-elif [[ ${#API_KEY} -gt 100 ]]; then
-    warn "API key seems unusually long (${#API_KEY} chars). Please verify it's correct."
-else
-    success "API key configured"
+# Only validate new keys, not existing ones (they're already working)
+if [[ "$USE_EXISTING_KEY" != "true" ]]; then
+    # Strip any ANSI escape codes from the API key (can happen with terminal quirks)
+    API_KEY=$(echo "$API_KEY" | sed 's/\x1b\[[0-9;]*m//g')
+
+    # Validate API key format
+    if [[ -z "$API_KEY" ]]; then
+        warn "No API key provided. You'll need to set OPENROUTER_API_KEY later."
+    elif [[ ${#API_KEY} -lt 20 ]]; then
+        warn "API key seems too short. Please verify it's correct."
+    elif [[ "$API_KEY" =~ [^a-zA-Z0-9_-] ]]; then
+        error "API key contains invalid characters. OpenRouter keys should only contain alphanumeric, dash, and underscore."
+    elif [[ ${#API_KEY} -gt 100 ]]; then
+        warn "API key seems unusually long (${#API_KEY} chars). Please verify it's correct."
+    else
+        success "API key configured"
+    fi
 fi
 
 # Step 4: Choose model
@@ -283,10 +292,9 @@ echo -e "  ${BOLD}1.${NC} anthropic/claude-sonnet-4     ${DIM}(Recommended - Bes
 echo -e "  ${BOLD}2.${NC} openai/gpt-4o                ${DIM}(Fast and capable)${NC}"
 echo -e "  ${BOLD}3.${NC} qwen/qwen3-coder              ${DIM}(Free tier available)${NC}"
 echo -e "  ${BOLD}4.${NC} deepseek/deepseek-coder       ${DIM}(Cost-effective)${NC}"
-echo -e "  ${BOLD}5.${NC} Custom model ID"
 echo ""
 
-prompt "Enter your choice [1-5] (default: 1):"
+prompt "Enter choice [1-4] or model ID (e.g., meta-llama/llama-3.1-70b) (default: 1):"
 read -r model_choice
 
 case "${model_choice:-1}" in
@@ -294,11 +302,15 @@ case "${model_choice:-1}" in
     2) NINJA_MODEL="openai/gpt-4o" ;;
     3) NINJA_MODEL="qwen/qwen3-coder" ;;
     4) NINJA_MODEL="deepseek/deepseek-coder" ;;
-    5)
-        prompt "Enter model ID (e.g., meta-llama/llama-3.1-70b-instruct):"
-        read -r NINJA_MODEL
+    *)
+        # If input contains a slash, treat it as a model ID
+        if [[ "$model_choice" =~ / ]]; then
+            NINJA_MODEL="$model_choice"
+        else
+            warn "Invalid choice, using default"
+            NINJA_MODEL="anthropic/claude-sonnet-4"
+        fi
         ;;
-    *) NINJA_MODEL="anthropic/claude-sonnet-4" ;;
 esac
 
 success "Model: $NINJA_MODEL"
@@ -590,6 +602,44 @@ if [[ "$CLAUDE_INSTALLED" == "true" ]]; then
     fi
 fi
 
+# Step 8b: Copilot CLI integration
+step "Step 8b: Copilot CLI Integration"
+
+echo ""
+COPILOT_INSTALLED=false
+
+# Check for copilot command
+if command -v copilot &> /dev/null; then
+    COPILOT_VERSION=$(copilot --version 2>/dev/null | head -n1 || echo "unknown")
+    success "GitHub Copilot CLI found: $COPILOT_VERSION"
+    COPILOT_INSTALLED=true
+elif command -v gh &> /dev/null && gh extension list 2>/dev/null | grep -q "copilot"; then
+    success "GitHub Copilot CLI found: gh extension"
+    COPILOT_INSTALLED=true
+else
+    warn "GitHub Copilot CLI not found"
+    echo ""
+    echo -e "${DIM}GitHub Copilot CLI can use ninja-cli-mcp via MCP.${NC}"
+    echo -e "${DIM}Install: ${CYAN}npm install -g @githubnext/github-copilot-cli${NC}"
+    echo -e "${DIM}Or: ${CYAN}gh extension install github/gh-copilot${NC}"
+    echo ""
+fi
+
+COPILOT_REGISTERED=false
+if [[ "$COPILOT_INSTALLED" == "true" ]]; then
+    if confirm "Would you like to configure ninja-cli-mcp for Copilot CLI?"; then
+        info "Configuring Copilot CLI..."
+        
+        # Run the Copilot CLI installer script
+        if ./scripts/install_copilot_cli_mcp.sh; then
+            success "Successfully configured ninja-cli-mcp for Copilot CLI"
+            COPILOT_REGISTERED=true
+        else
+            warn "Failed to configure Copilot CLI (you can do this manually later)"
+        fi
+    fi
+fi
+
 # Step 9: Verification
 step "Step 9: Verifying Installation"
 
@@ -652,10 +702,18 @@ fi
 echo ""
 if confirm "Would you like to run tests to verify functionality?"; then
     info "Running tests..."
-    if uv run pytest tests/test_metrics.py tests/test_paths.py -v --tb=short 2>&1 | tail -20; then
+    TEST_OUTPUT=$(uv run pytest tests/test_metrics.py tests/test_paths.py -v --tb=short 2>&1)
+    TEST_EXIT_CODE=$?
+    
+    # Show last 20 lines of output
+    echo "$TEST_OUTPUT" | tail -20
+    
+    if [[ $TEST_EXIT_CODE -eq 0 ]]; then
         success "Core tests passed"
     else
-        warn "Some tests failed (this may be OK if you haven't configured the AI CLI)"
+        error "Tests failed! Please review the output above."
+        warn "This may indicate configuration issues or bugs."
+        VERIFICATION_PASSED=false
     fi
 fi
 
@@ -684,6 +742,20 @@ if [[ "${CLAUDE_REGISTERED:-false}" == "true" ]]; then
     echo -e "  ${BOLD}2.${NC} Check available MCP tools: ${CYAN}/mcp${NC}"
     echo -e "  ${BOLD}3.${NC} Ask Claude to use ninja tools for code tasks"
     echo ""
+fi
+
+if [[ "${COPILOT_REGISTERED:-false}" == "true" ]]; then
+    echo -e "${BOLD}Copilot CLI Integration:${NC}"
+    echo -e "  ${GREEN}${CHECK}${NC} ninja-cli-mcp is configured for Copilot CLI"
+    echo ""
+    echo -e "${BOLD}To use ninja-cli-mcp in Copilot CLI:${NC}"
+    echo -e "  ${BOLD}1.${NC} Start Copilot CLI: ${CYAN}copilot${NC}"
+    echo -e "  ${BOLD}2.${NC} The MCP server will load automatically"
+    echo -e "  ${BOLD}3.${NC} Ask Copilot to use ninja tools for code tasks"
+    echo ""
+fi
+
+if [[ "${CLAUDE_REGISTERED:-false}" == "true" ]] || [[ "${COPILOT_REGISTERED:-false}" == "true" ]]; then
     echo -e "${DIM}Available MCP tools:${NC}"
     echo -e "  ${BULLET} ninja_quick_task - Quick single-pass task execution"
     echo -e "  ${BULLET} execute_plan_sequential - Execute plan steps in order"
@@ -698,9 +770,12 @@ echo ""
 echo -e "  ${BOLD}1.${NC} Load the configuration:"
 echo -e "     ${DIM}source $CONFIG_FILE${NC}"
 echo ""
-if [[ "${CLAUDE_REGISTERED:-false}" != "true" ]]; then
-    echo -e "  ${BOLD}2.${NC} (Optional) Register with Claude Code manually:"
-    echo -e "     ${DIM}./scripts/install_claude_code_mcp.sh${NC}"
+if [[ "${CLAUDE_REGISTERED:-false}" != "true" ]] && [[ "${COPILOT_REGISTERED:-false}" != "true" ]]; then
+    echo -e "  ${BOLD}2.${NC} (Optional) Register with an IDE/CLI:"
+    echo -e "     ${DIM}• Claude Code:  ./scripts/install_claude_code_mcp.sh${NC}"
+    echo -e "     ${DIM}• Copilot CLI:  ./scripts/install_copilot_cli_mcp.sh${NC}"
+    echo -e "     ${DIM}• VS Code:      ./scripts/install_vscode_mcp.sh${NC}"
+    echo -e "     ${DIM}• All detected: ./scripts/install_ide_integrations.sh${NC}"
     echo ""
     echo -e "  ${BOLD}3.${NC} Or start the MCP server standalone:"
     echo -e "     ${DIM}./scripts/run_server.sh${NC}"
