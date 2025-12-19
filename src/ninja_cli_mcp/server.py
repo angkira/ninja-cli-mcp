@@ -360,9 +360,6 @@ Aider implements each step completely."""
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any], context: RequestContext) -> Sequence[TextContent]:
         """Handle tool invocations."""
-        logger.info(f"Tool called: {name}")
-        logger.debug(f"Arguments: {json.dumps(arguments, indent=2)}")
-
         # Extract client/session ID from the request context
         client_id = "default"
         if context and hasattr(context, 'session_id'):
@@ -370,6 +367,9 @@ Aider implements each step completely."""
         elif context and hasattr(context, 'metadata'):
             # Try to extract from metadata if session_id is not directly available
             client_id = context.metadata.get('client_id', 'default') if context.metadata else "default"
+        
+        logger.info(f"[{client_id}] Tool called: {name}")
+        logger.debug(f"[{client_id}] Arguments: {json.dumps(arguments, indent=2)}")
 
         executor = get_executor()
 
@@ -405,7 +405,7 @@ Aider implements each step completely."""
             # Serialize result to JSON
             result_json = result.model_dump()
             logger.info(
-                f"Tool {name} completed with status: {result_json.get('status', 'unknown')}"
+                f"[{client_id}] Tool {name} completed with status: {result_json.get('status', 'unknown')}"
             )
 
             return [
@@ -416,7 +416,7 @@ Aider implements each step completely."""
             ]
 
         except Exception as e:
-            logger.error(f"Tool {name} failed: {e}", exc_info=True)
+            logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
             return [
                 TextContent(
                     type="text",
