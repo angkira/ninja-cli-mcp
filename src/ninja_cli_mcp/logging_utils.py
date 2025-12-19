@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,6 +99,38 @@ class TaskLogger:
             "repo_root": str(self.repo_root),
         }
 
+    def _redact_sensitive_data(self, text: str) -> str:
+        """
+        Redact sensitive data from text.
+
+        Args:
+            text: Text to redact.
+
+        Returns:
+            Redacted text.
+        """
+        if not isinstance(text, str):
+            return text
+            
+        # Patterns to redact
+        patterns = [
+            # API keys (common formats)
+            (r'(sk-[a-zA-Z0-9]{20,})', '[REDACTED_API_KEY]'),
+            (r'(api[_-]key[a-zA-Z0-9]{10,})', '[REDACTED_API_KEY]'),
+            (r'(token[a-zA-Z0-9]{10,})', '[REDACTED_TOKEN]'),
+            # Passwords in various formats
+            (r'(["\']?(password|passwd|pwd)["\']?\s*[:=]\s*["\'][^"\']{3,}["\'])', '[REDACTED_PASSWORD]'),
+            (r'(["\']?(secret|key)["\']?\s*[:=]\s*["\'][^"\']{3,}["\'])', '[REDACTED_SECRET]'),
+            # Email addresses (basic pattern)
+            (r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', '[REDACTED_EMAIL]'),
+        ]
+        
+        redacted_text = text
+        for pattern, replacement in patterns:
+            redacted_text = re.sub(pattern, replacement, redacted_text, flags=re.IGNORECASE)
+            
+        return redacted_text
+
     def log(self, level: str, message: str, **extra: Any) -> None:
         """
         Log a message.
@@ -107,18 +140,27 @@ class TaskLogger:
             message: Log message.
             **extra: Additional context to include.
         """
+        # Redact sensitive data from message and extra fields
+        redacted_message = self._redact_sensitive_data(message)
+        redacted_extra = {}
+        for key, value in extra.items():
+            if isinstance(value, str):
+                redacted_extra[key] = self._redact_sensitive_data(value)
+            else:
+                redacted_extra[key] = value
+        
         entry = {
             "time": datetime.now(timezone.utc).isoformat(),
             "level": level,
-            "message": message,
-            **extra,
+            "message": redacted_message,
+            **redacted_extra,
         }
         self._entries.append(entry)
 
         # Also log to the main logger
         logger = get_logger()
         log_func = getattr(logger, level.lower(), logger.info)
-        log_func(f"[{self.step_id}] {message}")
+        log_func(f"[{self.step_id}] {redacted_message}")
 
     def info(self, message: str, **extra: Any) -> None:
         """Log an info message."""
@@ -138,7 +180,11 @@ class TaskLogger:
 
     def set_metadata(self, key: str, value: Any) -> None:
         """Set metadata for this task."""
-        self._metadata[key] = value
+        # Redact sensitive metadata
+        if isinstance(value, str):
+            self._metadata[key] = self._redact_sensitive_data(value)
+        else:
+            self._metadata[key] = value
 
     def log_subprocess(
         self,
@@ -156,20 +202,25 @@ class TaskLogger:
             stdout: Standard output.
             stderr: Standard error.
         """
+        # Redact sensitive data from command, stdout, and stderr
+        redacted_command = [self._redact_sensitive_data(str(arg)) for arg in command]
+        redacted_stdout = self._redact_sensitive_data(stdout)
+        redacted_stderr = self._redact_sensitive_data(stderr)
+        
         self.info(
             "Subprocess completed",
-            command=command,
+            command=redacted_command,
             exit_code=exit_code,
-            stdout_length=len(stdout),
-            stderr_length=len(stderr),
+            stdout_length=len(redacted_stdout),
+            stderr_length=len(redacted_stderr),
         )
 
-        # Store full output in metadata
+        # Store redacted output in metadata
         self._metadata["subprocess"] = {
-            "command": command,
+            "command": redacted_command,
             "exit_code": exit_code,
-            "stdout": stdout,
-            "stderr": stderr,
+            "stdout": redacted_stdout,
+            "stderr": redacted_stderr,
         }
 
     def save(self) -> str:
@@ -190,7 +241,12 @@ class TaskLogger:
                 # Write extra fields
                 for key, value in entry.items():
                     if key not in ("time", "level", "message"):
-                        f.write(f"  {key}: {value}\n")
+                        # Redact sensitive data in saved logs as well
+                        if isinstance(value, str):
+                            redacted_value = self._redact_sensitive_data(value)
+                        else:
+                            redacted_value = value
+                        f.write(f"  {key}: {redacted_value}\n")
 
         # Write JSON metadata
         self._metadata["entries"] = self._entries

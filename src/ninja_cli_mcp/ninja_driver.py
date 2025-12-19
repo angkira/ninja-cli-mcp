@@ -4,7 +4,7 @@ Ninja Code CLI driver.
 This module handles all interactions with the AI code CLI binary.
 It constructs instruction documents and manages subprocess execution.
 
-IMPORTANT: This is the only module that launches the AI code CLI.
+IMPORTANT: This module is the only module that launches the AI code CLI.
 The MCP server never directly reads/writes user project files.
 
 Supports any OpenRouter-compatible model including:
@@ -22,6 +22,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -362,12 +363,36 @@ class NinjaDriver:
         self.config = config or NinjaConfig.from_env()
 
     def _get_env(self) -> dict[str, str]:
-        """Get environment variables for Ninja Code CLI subprocess."""
+        """Get environment variables for Ninja Code CLI subprocess with security filtering."""
         env = os.environ.copy()
+        
+        # Set required environment variables
         env["OPENAI_BASE_URL"] = self.config.openai_base_url
         env["OPENAI_API_KEY"] = self.config.openai_api_key
         env["OPENAI_MODEL"] = self.config.model
-        return env
+        
+        # Filter out potentially sensitive environment variables
+        sensitive_patterns = [
+            'KEY', 'SECRET', 'PASSWORD', 'TOKEN', 'CREDENTIAL', 
+            'AUTH', 'PASS', 'PWD', 'API_', 'PRIVATE'
+        ]
+        
+        filtered_env = {}
+        for key, value in env.items():
+            # Always include required variables
+            if key in ["OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL", "PATH", "HOME"]:
+                filtered_env[key] = value
+                continue
+                
+            # Filter out sensitive variables
+            key_upper = key.upper()
+            if not any(pattern in key_upper for pattern in sensitive_patterns):
+                filtered_env[key] = value
+            else:
+                # Log that we're filtering a variable (but don't log the value)
+                logger.debug(f"Filtering sensitive environment variable: {key}")
+        
+        return filtered_env
 
     def _write_task_file(
         self,
@@ -376,7 +401,7 @@ class NinjaDriver:
         instruction: dict[str, Any],
     ) -> Path:
         """
-        Write instruction document to a task file.
+        Write instruction document to a secure task file.
 
         Args:
             repo_root: Repository root path.
@@ -390,15 +415,31 @@ class NinjaDriver:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in step_id)
 
-        task_file = safe_join(dirs["tasks"], f"{timestamp}_{safe_id}.json")
-
-        # Add model info to instruction
-        instruction["model"] = self.config.model
-
-        with open(task_file, "w") as f:
-            json.dump(instruction, f, indent=2)
-
-        return task_file
+        # Use secure temporary file creation
+        task_file_path = safe_join(dirs["tasks"], f"{timestamp}_{safe_id}.json")
+        
+        # Create secure temporary file with restricted permissions
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            suffix='.json',
+            dir=dirs["tasks"],
+            delete=False,
+            prefix=f"{timestamp}_{safe_id}_"
+        ) as tmp_file:
+            # Add model info to instruction
+            instruction["model"] = self.config.model
+            json.dump(instruction, tmp_file, indent=2)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+            temp_path = Path(tmp_file.name)
+        
+        # Set secure permissions (read/write for owner only)
+        os.chmod(temp_path, 0o600)
+        
+        # Atomically move to final location
+        temp_path.rename(task_file_path)
+        
+        return task_file_path
 
     def _detect_cli_type(self) -> str:
         """
@@ -460,41 +501,50 @@ class NinjaDriver:
         return "\n".join(prompt_parts)
 
     def _build_command_claude(self, prompt: str, repo_root: str) -> list[str]:
-        """Build command for Claude CLI."""
+        """Build command for Claude CLI with secure argument handling."""
+        # Use proper argument escaping to prevent command injection
+        import shlex
+        
         return [
             self.config.bin_path,
             "--print",  # Non-interactive mode
             "--dangerously-skip-permissions",  # Skip permission prompts for automation
-            prompt,
+            shlex.quote(prompt),  # Properly escape the prompt
         ]
 
     def _build_command_aider(self, prompt: str, repo_root: str) -> list[str]:
-        """Build command for Aider CLI."""
+        """Build command for Aider CLI with secure argument handling."""
         # Aider command structure:
         # aider --yes --model <model> --message "<task>"
+        import shlex
+        
         return [
             self.config.bin_path,
             "--yes",  # Auto-accept changes
             "--no-auto-commits",  # Don't auto-commit (let user decide)
             "--model", f"openrouter/{self.config.model}",  # OpenRouter model
-            "--message", prompt,
+            "--message", shlex.quote(prompt),  # Properly escape the prompt
         ]
     
     def _build_command_qwen(self, prompt: str, repo_root: str) -> list[str]:
-        """Build command for Qwen Code CLI."""
+        """Build command for Qwen Code CLI with secure argument handling."""
         # Qwen CLI uses similar interface to Gemini CLI
+        import shlex
+        
         return [
             self.config.bin_path,
             "--non-interactive",
-            "--message", prompt,
+            "--message", shlex.quote(prompt),  # Properly escape the prompt
         ]
 
     def _build_command_generic(self, prompt: str, repo_root: str) -> list[str]:
-        """Build command for generic/unknown CLI."""
-        # Try a common pattern
+        """Build command for generic/unknown CLI with secure argument handling."""
+        import shlex
+        
+        # Try a common pattern with proper escaping
         return [
             self.config.bin_path,
-            prompt,
+            shlex.quote(prompt),  # Properly escape the prompt
         ]
 
     def _build_command(self, task_file: Path, repo_root: str) -> list[str]:
@@ -605,6 +655,41 @@ class NinjaDriver:
             model_used=self.config.model,
         )
 
+    def _create_isolated_workdir(self, repo_root: str, step_id: str) -> Path:
+        """
+        Create an isolated working directory for the task.
+        
+        Args:
+            repo_root: Repository root path.
+            step_id: Step identifier.
+            
+        Returns:
+            Path to the isolated working directory.
+        """
+        dirs = ensure_internal_dirs(repo_root)
+        workdir_path = safe_join(dirs["work"], f"task_{step_id}")
+        
+        # Create the isolated work directory
+        workdir_path.mkdir(parents=True, exist_ok=True)
+        
+        logger.debug(f"Created isolated work directory: {workdir_path}")
+        return workdir_path
+
+    def _cleanup_isolated_workdir(self, workdir_path: Path) -> None:
+        """
+        Clean up the isolated working directory after execution.
+        
+        Args:
+            workdir_path: Path to the isolated working directory.
+        """
+        try:
+            import shutil
+            if workdir_path.exists():
+                shutil.rmtree(workdir_path)
+                logger.debug(f"Cleaned up isolated work directory: {workdir_path}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up isolated work directory {workdir_path}: {e}")
+
     def execute_sync(
         self,
         repo_root: str,
@@ -629,13 +714,17 @@ class NinjaDriver:
         task_logger.set_metadata("instruction", instruction)
         task_logger.set_metadata("model", self.config.model)
 
+        # Create isolated working directory
+        workdir_path = self._create_isolated_workdir(repo_root, step_id)
+        task_logger.info(f"Using isolated work directory: {workdir_path}")
+
         try:
             # Write task file
             task_file = self._write_task_file(repo_root, step_id, instruction)
             task_logger.info(f"Wrote task file: {task_file}")
 
             # Build command
-            cmd = self._build_command(task_file, repo_root)
+            cmd = self._build_command(task_file, str(workdir_path))
             task_logger.info(f"Running command: {' '.join(cmd)}")
 
             # Get environment
@@ -645,7 +734,7 @@ class NinjaDriver:
             timeout = timeout_sec or self.config.timeout_sec
             process = subprocess.run(
                 cmd,
-                cwd=repo_root,
+                cwd=str(workdir_path),  # Execute in isolated work directory
                 env=env,
                 capture_output=True,
                 text=True,
@@ -698,6 +787,9 @@ class NinjaDriver:
                 exit_code=-1,
                 model_used=self.config.model,
             )
+        finally:
+            # Clean up isolated work directory
+            self._cleanup_isolated_workdir(workdir_path)
 
     async def execute_async(
         self,
@@ -723,13 +815,17 @@ class NinjaDriver:
         task_logger.set_metadata("instruction", instruction)
         task_logger.set_metadata("model", self.config.model)
 
+        # Create isolated working directory
+        workdir_path = self._create_isolated_workdir(repo_root, step_id)
+        task_logger.info(f"Using isolated work directory: {workdir_path}")
+
         try:
             # Write task file
             task_file = self._write_task_file(repo_root, step_id, instruction)
             task_logger.info(f"Wrote task file: {task_file}")
 
             # Build command
-            cmd = self._build_command(task_file, repo_root)
+            cmd = self._build_command(task_file, str(workdir_path))
             task_logger.info(f"Running command: {' '.join(cmd)}")
 
             # Get environment
@@ -740,7 +836,7 @@ class NinjaDriver:
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
-                cwd=repo_root,
+                cwd=str(workdir_path),  # Execute in isolated work directory
                 env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -804,6 +900,9 @@ class NinjaDriver:
                 exit_code=-1,
                 model_used=self.config.model,
             )
+        finally:
+            # Clean up isolated work directory
+            self._cleanup_isolated_workdir(workdir_path)
 
 
 # Backwards compatibility aliases

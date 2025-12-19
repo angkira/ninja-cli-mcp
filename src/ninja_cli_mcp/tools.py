@@ -69,9 +69,9 @@ class ToolExecutor:
             suspected_touched_paths=result.suspected_touched_paths,
         )
 
-    @rate_limited(max_calls=50, time_window=60)
+    @rate_limited(max_calls=50, time_window=60, client_id="default")
     @monitored
-    async def quick_task(self, request: QuickTaskRequest) -> QuickTaskResult:
+    async def quick_task(self, request: QuickTaskRequest, client_id: str = "default") -> QuickTaskResult:
         """
         Execute a quick single-pass task.
 
@@ -80,6 +80,7 @@ class ToolExecutor:
 
         Args:
             request: Quick task request parameters.
+            client_id: Client identifier for isolation and rate limiting.
 
         Returns:
             Quick task result with summary and metadata.
@@ -88,7 +89,7 @@ class ToolExecutor:
             PermissionError: If rate limit is exceeded.
             ValueError: If inputs are invalid.
         """
-        logger.info(f"Executing quick task in {request.repo_root}")
+        logger.info(f"Executing quick task in {request.repo_root} for client {client_id}")
 
         # Generate task ID and start timer
         task_id = str(uuid.uuid4())
@@ -120,6 +121,7 @@ class ToolExecutor:
                 execution_mode="quick",
                 repo_root=request.repo_root,
                 error_message=f"Input validation failed: {str(e)}",
+                client_id=client_id,
             )
             return QuickTaskResult(
                 status="error",
@@ -128,7 +130,7 @@ class ToolExecutor:
             )
         except PermissionError as e:
             # Rate limit exceeded
-            logger.warning(f"Rate limit exceeded for quick_task: {e}")
+            logger.warning(f"Rate limit exceeded for quick_task (client {client_id}): {e}")
             return QuickTaskResult(
                 status="error",
                 summary=str(e),
@@ -165,6 +167,7 @@ class ToolExecutor:
             repo_root=request.repo_root,
             file_scope=file_scope,
             error_message=result.summary if not result.success else None,
+            client_id=client_id,
         )
 
         return QuickTaskResult(
@@ -187,6 +190,7 @@ class ToolExecutor:
         repo_root: str,
         file_scope: str | None = None,
         error_message: str | None = None,
+        client_id: str = "default",
     ) -> None:
         """Record metrics for a task execution."""
         try:
@@ -204,13 +208,16 @@ class ToolExecutor:
                 file_scope=file_scope,
                 error_message=error_message,
             )
+            # Add client_id to metrics
+            metrics.client_id = client_id
             tracker.record_task(metrics)
         except Exception as e:
-            logger.warning(f"Failed to record metrics: {e}")
+            logger.warning(f"Failed to record metrics for client {client_id}: {e}")
 
     async def execute_plan_sequential(
         self,
         request: SequentialPlanRequest,
+        client_id: str = "default"
     ) -> PlanExecutionResult:
         """
         Execute plan steps sequentially.
@@ -220,11 +227,12 @@ class ToolExecutor:
 
         Args:
             request: Sequential plan request parameters.
+            client_id: Client identifier for isolation and rate limiting.
 
         Returns:
             Plan execution result with per-step results.
         """
-        logger.info(f"Executing {len(request.steps)} steps sequentially in {request.repo_root}")
+        logger.info(f"Executing {len(request.steps)} steps sequentially in {request.repo_root} for client {client_id}")
 
         # Generate task ID and start timer
         plan_task_id = str(uuid.uuid4())
@@ -246,7 +254,7 @@ class ToolExecutor:
         any_success = False
 
         for step in request.steps:
-            logger.info(f"Executing step {step.id}: {step.title}")
+            logger.info(f"Executing step {step.id}: {step.title} for client {client_id}")
 
             # Track each step separately
             step_task_id = str(uuid.uuid4())
@@ -289,13 +297,14 @@ class ToolExecutor:
                 repo_root=request.repo_root,
                 file_scope=file_scope,
                 error_message=result.summary if not result.success else None,
+                client_id=client_id,
             )
 
             if result.success:
                 any_success = True
             else:
                 all_success = False
-                logger.warning(f"Step {step.id} failed: {result.summary}")
+                logger.warning(f"Step {step.id} failed for client {client_id}: {result.summary}")
 
         # Determine overall status
         if all_success:
@@ -324,6 +333,7 @@ class ToolExecutor:
             execution_mode=request.mode.value,
             repo_root=request.repo_root,
             error_message=overall_summary if not all_success else None,
+            client_id=client_id,
         )
 
         return PlanExecutionResult(
@@ -335,6 +345,7 @@ class ToolExecutor:
     async def execute_plan_parallel(
         self,
         request: ParallelPlanRequest,
+        client_id: str = "default"
     ) -> PlanExecutionResult:
         """
         Execute plan steps in parallel.
@@ -348,13 +359,14 @@ class ToolExecutor:
 
         Args:
             request: Parallel plan request parameters.
+            client_id: Client identifier for isolation and rate limiting.
 
         Returns:
             Plan execution result with per-step results and merge report.
         """
         logger.info(
             f"Executing {len(request.steps)} steps in parallel "
-            f"(fanout={request.fanout}) in {request.repo_root}"
+            f"(fanout={request.fanout}) in {request.repo_root} for client {client_id}"
         )
 
         # Generate task ID and start timer
@@ -382,7 +394,7 @@ class ToolExecutor:
             step_start_time = time.time()
 
             async with semaphore:
-                logger.info(f"Starting parallel step {step.id}: {step.title}")
+                logger.info(f"Starting parallel step {step.id}: {step.title} for client {client_id}")
 
                 # Build instruction with parallel execution hint
                 instruction = builder.build_plan_step(
@@ -458,6 +470,7 @@ class ToolExecutor:
                     repo_root=request.repo_root,
                     file_scope=file_scope,
                     error_message=result.summary if not result.success else None,
+                    client_id=client_id,
                 )
 
                 if result.success:
@@ -506,6 +519,7 @@ class ToolExecutor:
             execution_mode=request.mode.value,
             repo_root=request.repo_root,
             error_message=overall_summary if not all_success else None,
+            client_id=client_id,
         )
 
         return PlanExecutionResult(
@@ -515,7 +529,7 @@ class ToolExecutor:
             merge_report=merge_report,
         )
 
-    async def run_tests(self, request: RunTestsRequest) -> TestResult:
+    async def run_tests(self, request: RunTestsRequest, client_id: str = "default") -> TestResult:
         """
         Run test commands via the AI code CLI.
 
@@ -524,11 +538,12 @@ class ToolExecutor:
 
         Args:
             request: Run tests request parameters.
+            client_id: Client identifier for isolation and rate limiting.
 
         Returns:
             Test result with summary and logs reference.
         """
-        logger.info(f"Running {len(request.commands)} test commands in {request.repo_root}")
+        logger.info(f"Running {len(request.commands)} test commands in {request.repo_root} for client {client_id}")
 
         # Generate task ID and start timer
         task_id = str(uuid.uuid4())
@@ -550,6 +565,7 @@ class ToolExecutor:
                 execution_mode="test",
                 repo_root=request.repo_root,
                 error_message=str(e),
+                client_id=client_id,
             )
             return TestResult(
                 status="error",
@@ -591,6 +607,7 @@ class ToolExecutor:
             execution_mode="test",
             repo_root=request.repo_root,
             error_message=result.summary if not result.success else None,
+            client_id=client_id,
         )
 
         return TestResult(
@@ -599,7 +616,7 @@ class ToolExecutor:
             logs_ref=result.raw_logs_path,
         )
 
-    async def apply_patch(self, request: ApplyPatchRequest) -> ApplyPatchResult:
+    async def apply_patch(self, request: ApplyPatchRequest, client_id: str = "default") -> ApplyPatchResult:
         """
         Apply a patch (not supported - delegated to AI code CLI).
 
@@ -611,11 +628,12 @@ class ToolExecutor:
 
         Args:
             request: Apply patch request parameters.
+            client_id: Client identifier for isolation and rate limiting.
 
         Returns:
             Apply patch result with not_supported status.
         """
-        logger.info("apply_patch called - this is a no-op shim")
+        logger.info(f"apply_patch called for client {client_id} - this is a no-op shim")
 
         return ApplyPatchResult(
             status="not_supported",

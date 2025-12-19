@@ -8,6 +8,8 @@ according to MCP best practices (December 2025).
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import re
 import time
 from collections import defaultdict
@@ -42,6 +44,9 @@ class RateLimiter:
         self.time_window = time_window
         self.calls: dict[str, list[float]] = defaultdict(list)
         self._lock = asyncio.Lock()
+        
+        # Try to load persistent rate limit data
+        self._load_persistent_data()
 
     async def check_limit(self, client_id: str = "default") -> bool:
         """
@@ -68,26 +73,74 @@ class RateLimiter:
                 return False
 
             client_calls.append(now)
+            self._save_persistent_data()
             return True
 
     def reset(self, client_id: str = "default") -> None:
         """Reset rate limit for a client."""
         if client_id in self.calls:
             del self.calls[client_id]
+        self._save_persistent_data()
+
+    def _get_persistence_file(self) -> Path:
+        """Get the file path for persistent rate limit data."""
+        # Use XDG cache directory for persistence
+        if os.name == "nt":  # Windows
+            cache_base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        else:  # Linux/macOS
+            cache_base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+        
+        persistence_dir = cache_base / "ninja-cli-mcp" / "persistence"
+        persistence_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(persistence_dir, 0o700)  # Secure permissions
+        
+        return persistence_dir / "rate_limits.json"
+
+    def _load_persistent_data(self) -> None:
+        """Load rate limit data from persistent storage."""
+        try:
+            persistence_file = self._get_persistence_file()
+            if persistence_file.exists():
+                with open(persistence_file, 'r') as f:
+                    data = json.load(f)
+                    # Only load recent data (within last 2*time_window)
+                    cutoff_time = time.time() - (2 * self.time_window)
+                    for client_id, call_times in data.items():
+                        recent_calls = [t for t in call_times if t > cutoff_time]
+                        if recent_calls:
+                            self.calls[client_id] = recent_calls
+        except Exception as e:
+            logger.debug(f"Could not load persistent rate limit data: {e}")
+
+    def _save_persistent_data(self) -> None:
+        """Save rate limit data to persistent storage."""
+        try:
+            # Only save recent data to prevent file from growing indefinitely
+            cutoff_time = time.time() - (2 * self.time_window)
+            data_to_save = {}
+            for client_id, call_times in self.calls.items():
+                recent_calls = [t for t in call_times if t > cutoff_time]
+                if recent_calls:
+                    data_to_save[client_id] = recent_calls
+            
+            persistence_file = self._get_persistence_file()
+            with open(persistence_file, 'w') as f:
+                json.dump(data_to_save, f)
+        except Exception as e:
+            logger.debug(f"Could not save persistent rate limit data: {e}")
 
 
 # Global rate limiter instance
 _rate_limiter = RateLimiter(max_calls=100, time_window=60)
 
 
-def rate_limited(max_calls: int = 100, time_window: int = 60, client_id: str = "default"):
+def rate_limited(max_calls: int = 100, time_window: int = 60):
     """
     Decorator for rate-limiting async functions.
 
     Args:
         max_calls: Maximum number of calls allowed in time window.
         time_window: Time window in seconds.
-        client_id: Identifier for the client.
 
     Example:
         @rate_limited(max_calls=10, time_window=60)
@@ -100,9 +153,12 @@ def rate_limited(max_calls: int = 100, time_window: int = 60, client_id: str = "
 
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # Extract client_id from kwargs or use default
+            client_id = kwargs.get('client_id', 'default')
             if not await limiter.check_limit(client_id):
                 raise PermissionError(
-                    f"Rate limit exceeded: maximum {max_calls} calls per {time_window}s"
+                    f"Rate limit exceeded for client {client_id}: "
+                    f"maximum {max_calls} calls per {time_window}s"
                 )
             return await func(*args, **kwargs)
 
@@ -150,8 +206,12 @@ class InputValidator:
         if base_dir:
             base_path = Path(base_dir).resolve()
             try:
+                # Additional check for symbolic links
+                if path_obj.is_symlink():
+                    target = Path(os.readlink(path_obj)).resolve()
+                    target.relative_to(base_path)
                 path_obj.relative_to(base_path)
-            except ValueError:
+            except (ValueError, OSError):
                 raise ValueError(f"Path {path} is outside allowed directory {base_dir}")
 
         return path_obj
@@ -221,6 +281,9 @@ class ResourceMonitor:
         self.task_count = 0
         self.total_duration = 0.0
         self.start_time = time.time()
+        self.max_concurrent_tasks = 10  # Default limit
+        self.current_concurrent_tasks = 0
+        self._lock = asyncio.Lock()
 
     def record_task(self, duration: float) -> None:
         """Record a task execution."""
@@ -238,6 +301,8 @@ class ResourceMonitor:
             "total_duration": self.total_duration,
             "average_task_duration": avg_duration,
             "tasks_per_minute": (self.task_count / uptime) * 60 if uptime > 0 else 0,
+            "current_concurrent_tasks": self.current_concurrent_tasks,
+            "max_concurrent_tasks": self.max_concurrent_tasks,
         }
 
     async def check_resources(self, warn_threshold: float = 0.8) -> dict[str, Any]:
@@ -273,11 +338,46 @@ class ResourceMonitor:
                 stats["warnings"].append(f"High CPU usage: {cpu_percent:.1f}%")
                 logger.warning(f"High CPU usage: {cpu_percent:.1f}%")
 
+            # Check disk space
+            disk = psutil.disk_usage("/")
+            disk_percent = (disk.used / disk.total) * 100
+            stats["disk_percent"] = disk_percent
+            if disk_percent > warn_threshold * 100:
+                stats["warnings"].append(f"High disk usage: {disk_percent:.1f}%")
+                logger.warning(f"High disk usage: {disk_percent:.1f}%")
+
         except ImportError:
             logger.debug("psutil not available, skipping resource monitoring")
             stats["psutil_available"] = False
 
         return stats
+
+    async def acquire_task_slot(self) -> bool:
+        """
+        Acquire a slot for a concurrent task.
+        
+        Returns:
+            True if slot acquired, False if at limit.
+        """
+        async with self._lock:
+            if self.current_concurrent_tasks < self.max_concurrent_tasks:
+                self.current_concurrent_tasks += 1
+                return True
+            return False
+
+    def release_task_slot(self) -> None:
+        """Release a concurrent task slot."""
+        async def _release():
+            async with self._lock:
+                if self.current_concurrent_tasks > 0:
+                    self.current_concurrent_tasks -= 1
+        # Run the async function in the current event loop
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_release())
+        except RuntimeError:
+            # No event loop running, run synchronously
+            pass
 
 
 # Global resource monitor
@@ -302,6 +402,12 @@ def monitored(func: F) -> F:
     @wraps(func)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         monitor = get_resource_monitor()
+        
+        # Try to acquire a concurrent task slot
+        slot_acquired = await monitor.acquire_task_slot()
+        if not slot_acquired:
+            raise PermissionError("Maximum concurrent tasks limit reached")
+            
         start_time = time.time()
 
         try:
@@ -310,6 +416,7 @@ def monitored(func: F) -> F:
         finally:
             duration = time.time() - start_time
             monitor.record_task(duration)
+            monitor.release_task_slot()
 
             # Check resources periodically
             if monitor.task_count % 10 == 0:

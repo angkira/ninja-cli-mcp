@@ -25,6 +25,7 @@ from typing import Any, Sequence
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
+    RequestContext,
     TextContent,
     Tool,
 )
@@ -357,33 +358,41 @@ Aider implements each step completely."""
         return TOOLS
 
     @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[TextContent]:
+    async def call_tool(name: str, arguments: dict[str, Any], context: RequestContext) -> Sequence[TextContent]:
         """Handle tool invocations."""
         logger.info(f"Tool called: {name}")
         logger.debug(f"Arguments: {json.dumps(arguments, indent=2)}")
+
+        # Extract client/session ID from the request context
+        client_id = "default"
+        if context and hasattr(context, 'session_id'):
+            client_id = context.session_id or "default"
+        elif context and hasattr(context, 'metadata'):
+            # Try to extract from metadata if session_id is not directly available
+            client_id = context.metadata.get('client_id', 'default') if context.metadata else "default"
 
         executor = get_executor()
 
         try:
             if name == "ninja_quick_task":
                 request = QuickTaskRequest(**arguments)
-                result = await executor.quick_task(request)
+                result = await executor.quick_task(request, client_id=client_id)
 
             elif name == "execute_plan_sequential":
                 request = SequentialPlanRequest(**arguments)
-                result = await executor.execute_plan_sequential(request)
+                result = await executor.execute_plan_sequential(request, client_id=client_id)
 
             elif name == "execute_plan_parallel":
                 request = ParallelPlanRequest(**arguments)
-                result = await executor.execute_plan_parallel(request)
+                result = await executor.execute_plan_parallel(request, client_id=client_id)
 
             elif name == "run_tests":
                 request = RunTestsRequest(**arguments)
-                result = await executor.run_tests(request)
+                result = await executor.run_tests(request, client_id=client_id)
 
             elif name == "apply_patch":
                 request = ApplyPatchRequest(**arguments)
-                result = await executor.apply_patch(request)
+                result = await executor.apply_patch(request, client_id=client_id)
 
             else:
                 return [

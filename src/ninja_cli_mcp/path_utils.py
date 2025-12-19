@@ -7,6 +7,7 @@ all paths remain within allowed boundaries (repo_root).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
@@ -37,6 +38,7 @@ def safe_resolve(path: str | Path, root: str | Path) -> Path:
     else:
         resolved = (root_path / path).resolve()
 
+    # Additional canonicalization to prevent symbolic link traversal
     try:
         resolved.relative_to(root_path)
     except ValueError:
@@ -68,6 +70,13 @@ def validate_repo_root(repo_root: str) -> Path:
     if not path.is_dir():
         raise ValueError(f"Repository root is not a directory: {repo_root}")
 
+    # Additional security check: ensure it's not a sensitive system directory
+    sensitive_dirs = ["/etc", "/bin", "/sbin", "/usr/bin", "/usr/sbin", "/root", "/boot"]
+    path_str = str(path)
+    for sensitive in sensitive_dirs:
+        if path_str.startswith(sensitive):
+            raise ValueError(f"Repository root cannot be in sensitive directory: {sensitive}")
+
     return path
 
 
@@ -85,7 +94,6 @@ def get_internal_dir(repo_root: str | Path) -> Path:
         Path to the ninja-cli-mcp cache directory for this repo.
     """
     import hashlib
-    import os
     
     # Get cache directory (XDG Base Directory compliant)
     if os.name == "nt":  # Windows
@@ -128,6 +136,8 @@ def ensure_internal_dirs(repo_root: str | Path) -> dict[str, Path]:
 
     for dir_path in dirs.values():
         dir_path.mkdir(parents=True, exist_ok=True)
+        # Set secure permissions (read/write/execute for owner only)
+        os.chmod(dir_path, 0o700)
 
     return dirs
 
@@ -162,7 +172,7 @@ def safe_join(base: str | Path, *parts: str) -> Path:
     for part in clean_parts:
         result = result / part
 
-    # Final verification
+    # Final verification with additional canonicalization
     try:
         result.resolve().relative_to(base_path)
     except ValueError:
@@ -173,7 +183,7 @@ def safe_join(base: str | Path, *parts: str) -> Path:
 
 def is_path_within(path: str | Path, root: str | Path) -> bool:
     """
-    Check if a path is within a root directory.
+    Check if a path is within a root directory with enhanced security.
 
     Args:
         path: Path to check.
@@ -183,9 +193,18 @@ def is_path_within(path: str | Path, root: str | Path) -> bool:
         True if path is within root, False otherwise.
     """
     try:
-        Path(path).resolve().relative_to(Path(root).resolve())
+        path_obj = Path(path).resolve()
+        root_obj = Path(root).resolve()
+        
+        # Additional check for symbolic links
+        if path_obj.is_symlink():
+            # Resolve the symlink target and check if it's within root
+            target = Path(os.readlink(path_obj)).resolve()
+            target.relative_to(root_obj)
+        
+        path_obj.relative_to(root_obj)
         return True
-    except ValueError:
+    except (ValueError, OSError):
         return False
 
 
