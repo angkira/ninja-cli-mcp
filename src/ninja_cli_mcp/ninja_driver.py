@@ -31,6 +31,7 @@ from typing import Any
 from ninja_cli_mcp.logging_utils import TaskLogger, create_task_logger, get_logger
 from ninja_cli_mcp.models import ExecutionMode, PlanStep
 from ninja_cli_mcp.path_utils import ensure_internal_dirs, safe_join
+from ninja_cli_mcp.task_queue import get_task_queue
 
 
 logger = get_logger(__name__)

@@ -132,6 +132,7 @@ def ensure_internal_dirs(repo_root: str | Path) -> dict[str, Path]:
         "logs": internal / "logs",
         "tasks": internal / "tasks",
         "metadata": internal / "metadata",
+        "work": internal / "work",  # Isolated work directories for concurrent tasks
     }
 
     for dir_path in dirs.values():
