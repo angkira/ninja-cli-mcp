@@ -1,4 +1,0 @@
-
-### 2. Per-Client Rate Limiting
-Implement rate limiting based on actual client identifiers rather than a shared "default":
-

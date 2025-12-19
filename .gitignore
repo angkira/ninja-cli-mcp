@@ -159,3 +159,6 @@ secrets/
 *.pem
 *.key
 .aider*
+*.key
+*.pem
+*secret*
