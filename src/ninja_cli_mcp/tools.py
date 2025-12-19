@@ -69,7 +69,7 @@ class ToolExecutor:
             suspected_touched_paths=result.suspected_touched_paths,
         )
 
-    @rate_limited(max_calls=50, time_window=60, client_id="default")
+    @rate_limited(max_calls=50, time_window=60)
     @monitored
     async def quick_task(self, request: QuickTaskRequest, client_id: str = "default") -> QuickTaskResult:
         """
