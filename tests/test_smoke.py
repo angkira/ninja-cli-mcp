@@ -222,3 +222,59 @@ def test_instruction_builder():
         assert instruction["file_scope"]["context_paths"] == ["test.py"]
         assert "*.py" in instruction["file_scope"]["allowed_globs"]
         assert "__pycache__" in instruction["file_scope"]["deny_globs"]
+
+
+def test_fibonacci_implementation():
+    """Test a simple fibonacci implementation to verify basic Python functionality."""
+    def fibonacci(n: int) -> int:
+        """Calculate the nth Fibonacci number."""
+        if n <= 0:
+            return 0
+        elif n == 1:
+            return 1
+        else:
+            return fibonacci(n - 1) + fibonacci(n - 2)
+    
+    # Test basic Fibonacci sequence
+    assert fibonacci(0) == 0
+    assert fibonacci(1) == 1
+    assert fibonacci(2) == 1
+    assert fibonacci(3) == 2
+    assert fibonacci(4) == 3
+    assert fibonacci(5) == 5
+    assert fibonacci(6) == 8
+    assert fibonacci(7) == 13
+    assert fibonacci(8) == 21
+    assert fibonacci(10) == 55
+    
+    # Test edge cases
+    assert fibonacci(-1) == 0
+    assert fibonacci(-5) == 0
+
+
+def test_fibonacci_iterative():
+    """Test iterative Fibonacci for better performance verification."""
+    def fibonacci_iterative(n: int) -> int:
+        """Calculate nth Fibonacci number iteratively."""
+        if n <= 0:
+            return 0
+        elif n == 1:
+            return 1
+        
+        prev, curr = 0, 1
+        for _ in range(2, n + 1):
+            prev, curr = curr, prev + curr
+        return curr
+    
+    # Compare with expected values
+    expected = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610]
+    for i, expected_val in enumerate(expected):
+        assert fibonacci_iterative(i) == expected_val, f"fibonacci({i}) should be {expected_val}"
+    
+    # Test larger number for performance
+    result = fibonacci_iterative(20)
+    assert result == 6765
+    
+    result = fibonacci_iterative(30)
+    assert result == 832040
+

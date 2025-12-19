@@ -68,11 +68,15 @@ class TestGetInternalDir:
 
     def test_returns_correct_path(self, temp_dir: Path) -> None:
         result = get_internal_dir(temp_dir)
-        assert result == (temp_dir / ".ninja-cli-mcp").resolve()
+        # Should use cache directory: ~/.cache/ninja-cli-mcp/<hash>-<name>
+        assert result.parent.name == "ninja-cli-mcp"
+        assert str(result).startswith(str(Path.home() / ".cache" / "ninja-cli-mcp"))
 
     def test_accepts_string_path(self, temp_dir: Path) -> None:
         result = get_internal_dir(str(temp_dir))
-        assert result == (temp_dir / ".ninja-cli-mcp").resolve()
+        # Should use cache directory: ~/.cache/ninja-cli-mcp/<hash>-<name>
+        assert result.parent.name == "ninja-cli-mcp"
+        assert str(result).startswith(str(Path.home() / ".cache" / "ninja-cli-mcp"))
 
 
 class TestEnsureInternalDirs:
@@ -95,9 +99,11 @@ class TestEnsureInternalDirs:
     def test_correct_structure(self, temp_dir: Path) -> None:
         dirs = ensure_internal_dirs(temp_dir)
 
-        assert dirs["logs"] == (temp_dir / ".ninja-cli-mcp" / "logs").resolve()
-        assert dirs["tasks"] == (temp_dir / ".ninja-cli-mcp" / "tasks").resolve()
-        assert dirs["metadata"] == (temp_dir / ".ninja-cli-mcp" / "metadata").resolve()
+        # Should use cache directory with proper structure
+        internal_dir = get_internal_dir(temp_dir)
+        assert dirs["logs"] == (internal_dir / "logs").resolve()
+        assert dirs["tasks"] == (internal_dir / "tasks").resolve()
+        assert dirs["metadata"] == (internal_dir / "metadata").resolve()
 
 
 class TestSafeJoin:
