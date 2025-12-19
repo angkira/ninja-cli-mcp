@@ -1,0 +1,28 @@
+[Unit]
+Description=ninja-cli-mcp MCP Server
+Documentation=https://github.com/angkira/ninja-cli-mcp
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=%h/Project/software/ninja-cli-mcp
+Environment="PATH=%h/.local/bin:%h/.nvm/versions/node/v25.0.0/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=-%h/.ninja-cli-mcp.env
+ExecStart=/usr/bin/env bash %h/Project/software/ninja-cli-mcp/scripts/run_server.sh
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ninja-cli-mcp
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.cache/ninja-cli-mcp
+
+[Install]
+WantedBy=default.target
