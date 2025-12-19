@@ -137,8 +137,11 @@ echo ""
 echo "4. Start the MCP server:"
 echo "   ./scripts/run_server.sh"
 echo ""
-echo "5. Connect to Claude Code:"
-echo "   ./scripts/install_claude_code_mcp.sh"
+echo "5. Connect to your IDE/CLI:"
+echo "   • Claude Code:     ./scripts/install_claude_code_mcp.sh"
+echo "   • Copilot CLI:     ./scripts/install_copilot_cli_mcp.sh"
+echo "   • VS Code:         ./scripts/install_vscode_mcp.sh"
+echo "   • All detected:    ./scripts/install_ide_integrations.sh"
 echo ""
 
 # Check if OPENROUTER_API_KEY is set
