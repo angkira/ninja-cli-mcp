@@ -534,6 +534,12 @@ class NinjaDriver:
                 "--openai-api-base", self.config.openai_base_url,  # Force OpenRouter
             ])
         
+        # Add conservative limits to avoid incomplete responses
+        cmd.extend([
+            "--max-chat-history-tokens", "8000",  # Limit context to avoid token limits
+            "--timeout", "120",  # 2 minute timeout for API calls
+        ])
+        
         cmd.extend(["--message", shlex.quote(prompt)])  # Properly escape the prompt
         
         return cmd
@@ -655,6 +661,13 @@ class NinjaDriver:
 
         if not success and stderr:
             notes = stderr[:500] if len(stderr) > 500 else stderr
+            
+            # Detect specific OpenRouter/API errors
+            if "finish_reason" in stderr.lower():
+                notes += "\n\nThis appears to be an incomplete API response from OpenRouter. "
+                notes += "The model may have hit a token limit or timed out. "
+                notes += "Consider: 1) Using a smaller context, 2) Breaking the task into smaller steps, "
+                notes += "3) Trying a different model with higher limits."
 
         return NinjaResult(
             success=success,
