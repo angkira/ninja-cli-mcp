@@ -687,6 +687,37 @@ class NinjaDriver:
         logger.debug(f"Created isolated work directory: {workdir_path}")
         return workdir_path
 
+    def _sync_workdir_to_repo(self, workdir_path: Path, repo_root: Path, task_logger) -> None:
+        """
+        Sync modified files from isolated work directory back to target repo.
+        
+        Args:
+            workdir_path: Path to isolated work directory
+            repo_root: Path to target repository
+            task_logger: Logger instance
+        """
+        import shutil
+        
+        if not workdir_path.exists():
+            return
+            
+        try:
+            # Copy all files from work dir to repo (excluding .git, .ninja-cli-mcp, etc)
+            for item in workdir_path.rglob('*'):
+                if item.is_file():
+                    # Skip hidden dirs and internal files
+                    relative_parts = item.relative_to(workdir_path).parts
+                    if any(part.startswith('.') for part in relative_parts):
+                        continue
+                    
+                    target_path = repo_root / item.relative_to(workdir_path)
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(item, target_path)
+                    task_logger.debug(f"Synced: {item.relative_to(workdir_path)} -> {target_path}")
+                    
+        except Exception as e:
+            task_logger.warning(f"Failed to sync work directory to repo: {e}")
+
     def _cleanup_isolated_workdir(self, workdir_path: Path) -> None:
         """
         Clean up the isolated working directory after execution.
@@ -762,6 +793,10 @@ class NinjaDriver:
             task_logger.info(
                 f"Task {'succeeded' if result.success else 'failed'}: {result.summary}"
             )
+
+            # Copy modified files back to target repo before cleanup
+            if result.success:
+                self._sync_workdir_to_repo(workdir_path, Path(repo_root), task_logger)
 
             return result
 
@@ -886,6 +921,10 @@ class NinjaDriver:
             task_logger.info(
                 f"Task {'succeeded' if result.success else 'failed'}: {result.summary}"
             )
+
+            # Copy modified files back to target repo before cleanup
+            if result.success:
+                self._sync_workdir_to_repo(workdir_path, Path(repo_root), task_logger)
 
             return result
 

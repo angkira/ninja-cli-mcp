@@ -1,6 +1,22 @@
 #!/usr/bin/env python3
 """
-HTTP/SSE transport wrapper for ninja-cli-mcp daemon implementing proper MCP protocol.
+HTTP/SSE transport wrapper for ninja-cli-mcp daemon.
+
+This allows a single daemon to serve multiple MCP clients over HTTP/SSE
+instead of stdin/stdout.
+
+Usage:
+    python3 http_server.py --port 3000
+
+Then configure Copilot with:
+{
+  "mcpServers": {
+    "ninja-cli-mcp": {
+      "type": "sse",
+      "url": "http://localhost:3000/sse"
+    }
+  }
+}
 """
 
 import argparse
@@ -12,19 +28,21 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
+from sse_starlette import EventSourceResponse
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ninja_cli_mcp.tools import get_executor, get_tool_definitions
+from ninja_cli_mcp.tools import get_executor
 from ninja_cli_mcp.models import QuickTaskRequest, SequentialPlanRequest, ParallelPlanRequest, RunTestsRequest
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 # Global executor instance
 executor = None
@@ -53,53 +71,46 @@ async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[st
         else:
             return {"error": f"Unknown tool: {tool_name}"}
         
-        return {"content": [{"type": "text", "text": json.dumps(result.model_dump(), indent=2)}]}
+        return result.model_dump()
     
     except Exception as e:
         logger.error(f"Error executing {tool_name}: {e}", exc_info=True)
-        return {"content": [{"type": "text", "text": f"Error: {str(e)}"}], "isError": True}
+        return {"error": str(e)}
 
 
-async def mcp_endpoint(request: Request):
-    """Unified MCP endpoint handling all JSON-RPC methods."""
+async def sse_endpoint(request: Request):
+    """SSE endpoint for MCP protocol."""
+    async def event_generator():
+        # Send initial connection message
+        yield {
+            "event": "message",
+            "data": json.dumps({
+                "jsonrpc": "2.0",
+                "method": "server/initialized",
+                "params": {"capabilities": {}}
+            })
+        }
+        
+        # Keep connection alive and handle messages
+        # In a real implementation, this would properly handle MCP protocol
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            logger.info("SSE connection closed")
+    
+    return EventSourceResponse(event_generator())
+
+
+async def http_endpoint(request: Request):
+    """HTTP endpoint for MCP tool calls."""
     body = await request.json()
     
     method = body.get("method")
     params = body.get("params", {})
     request_id = body.get("id")
     
-    logger.info(f"MCP request: method={method}, id={request_id}")
-    
-    # Handle initialize
-    if method == "initialize":
-        return JSONResponse({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
-                "protocolVersion": "2024-11-05",
-                "serverInfo": {
-                    "name": "ninja-cli-mcp",
-                    "version": "0.1.0"
-                },
-                "capabilities": {
-                    "tools": {}
-                }
-            }
-        })
-    
-    # Handle tools/list
-    elif method == "tools/list":
-        tools = get_tool_definitions()
-        return JSONResponse({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
-                "tools": tools
-            }
-        })
-    
-    # Handle tools/call
-    elif method == "tools/call":
+    if method == "tools/call":
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
         
@@ -111,21 +122,28 @@ async def mcp_endpoint(request: Request):
             "result": result
         })
     
-    else:
+    elif method == "tools/list":
         return JSONResponse({
             "jsonrpc": "2.0",
             "id": request_id,
-            "error": {
-                "code": -32601,
-                "message": f"Method not found: {method}"
+            "result": {
+                "tools": [
+                    {"name": "ninja_quick_task"},
+                    {"name": "execute_plan_sequential"},
+                    {"name": "execute_plan_parallel"},
+                    {"name": "run_tests"},
+                    {"name": "apply_patch"},
+                ]
             }
-        }, status_code=400)
+        })
+    
+    return JSONResponse({"error": "Unknown method"}, status_code=400)
 
 
 app = Starlette(
     routes=[
-        Route("/sse", mcp_endpoint, methods=["GET", "POST"]),
-        Route("/mcp", mcp_endpoint, methods=["POST"]),
+        Route("/sse", sse_endpoint),
+        Route("/mcp", http_endpoint, methods=["POST"]),
     ]
 )
 
@@ -137,6 +155,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     logger.info(f"Starting ninja-cli-mcp HTTP/SSE server on {args.host}:{args.port}")
-    logger.info(f"MCP endpoints: http://{args.host}:{args.port}/sse and /mcp")
+    logger.info(f"SSE endpoint: http://{args.host}:{args.port}/sse")
+    logger.info(f"HTTP endpoint: http://{args.host}:{args.port}/mcp")
     
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(app, host=args.host, port=args.port)

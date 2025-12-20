@@ -661,3 +661,70 @@ def reset_executor() -> None:
     """Reset the global tool executor (for testing)."""
     global _executor
     _executor = None
+
+
+def get_tool_definitions() -> list[dict]:
+    """Return MCP tool definitions for HTTP/SSE transport."""
+    return [
+        {
+            "name": "ninja_quick_task",
+            "description": "Execute a single-pass code task via AI agent",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string"},
+                    "repo_root": {"type": "string"},
+                },
+                "required": ["task", "repo_root"]
+            }
+        },
+        {
+            "name": "execute_plan_sequential",
+            "description": "Execute multi-step plan sequentially",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "plan_description": {"type": "string"},
+                    "repo_root": {"type": "string"},
+                    "steps": {"type": "array"},
+                },
+                "required": ["plan_description", "repo_root", "steps"]
+            }
+        },
+        {
+            "name": "execute_plan_parallel",
+            "description": "Execute multi-step plan in parallel",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "plan_description": {"type": "string"},
+                    "repo_root": {"type": "string"},
+                    "steps": {"type": "array"},
+                },
+                "required": ["plan_description", "repo_root", "steps"]
+            }
+        },
+        {
+            "name": "run_tests",
+            "description": "Run test suite",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo_root": {"type": "string"},
+                },
+                "required": ["repo_root"]
+            }
+        },
+        {
+            "name": "apply_patch",
+            "description": "Apply git patch",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo_root": {"type": "string"},
+                    "patch_content": {"type": "string"},
+                },
+                "required": ["repo_root", "patch_content"]
+            }
+        },
+    ]
