@@ -848,7 +848,7 @@ class NinjaDriver:
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
-                cwd=str(workdir_path),  # Execute in isolated work directory
+                cwd=repo_root,  # Execute in actual repository, not isolated work dir
                 env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
