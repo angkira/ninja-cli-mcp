@@ -491,8 +491,37 @@ if [[ -n "$NINJA_CODE_BIN" ]] && [[ "$NINJA_CODE_BIN" != "ninja-code" ]]; then
     fi
 fi
 
-# Step 6: Save configuration
-step "Step 6: Saving configuration"
+# Step 6: HTTP Daemon Port Configuration
+step "Step 6: HTTP Daemon Port Configuration"
+
+echo ""
+echo -e "${DIM}Configure the port for HTTP/SSE daemon mode${NC}"
+echo ""
+echo "The daemon listens on this port for MCP client connections."
+echo ""
+echo "Default: 8947 (less likely to conflict)"
+echo "Common alternatives: 3000, 8080, 9000"
+echo ""
+
+# Default to a less popular port
+DEFAULT_PORT=8947
+HTTP_PORT=""
+
+read -p "$(echo -e "${BLUE}?${NC} Enter HTTP port [default: ${DEFAULT_PORT}]: ")" port_input
+
+if [[ -z "$port_input" ]]; then
+    HTTP_PORT="$DEFAULT_PORT"
+elif [[ "$port_input" =~ ^[0-9]+$ ]] && [[ "$port_input" -ge 1024 ]] && [[ "$port_input" -le 65535" ]]; then
+    HTTP_PORT="$port_input"
+else
+    warn "Invalid port number. Using default: $DEFAULT_PORT"
+    HTTP_PORT="$DEFAULT_PORT"
+fi
+
+success "HTTP Port: $HTTP_PORT"
+
+# Step 7: Save configuration
+step "Step 7: Saving configuration"
 
 echo ""
 info "Creating configuration file at: $CONFIG_FILE"
@@ -510,6 +539,9 @@ export NINJA_MODEL='$NINJA_MODEL'
 # AI Code CLI Binary
 export NINJA_CODE_BIN='$NINJA_CODE_BIN'
 
+# HTTP Daemon Port
+export NINJA_HTTP_PORT=$HTTP_PORT
+
 # Optional: Timeout in seconds
 # export NINJA_TIMEOUT_SEC=600
 EOF
@@ -517,8 +549,8 @@ EOF
 chmod 600 "$CONFIG_FILE"
 success "Configuration saved"
 
-# Step 7: Shell integration
-step "Step 7: Shell integration"
+# Step 8: Shell integration
+step "Step 8: Shell integration"
 
 echo ""
 SHELL_RC=""
@@ -546,8 +578,8 @@ fi
 # Source the config for current session
 source "$CONFIG_FILE"
 
-# Step 8: Claude Code Integration
-step "Step 8: Claude Code Integration"
+# Step 9: Claude Code Integration
+step "Step 9: Claude Code Integration"
 
 echo ""
 echo -e "${DIM}Checking for Claude Code...${NC}"
@@ -602,8 +634,8 @@ if [[ "$CLAUDE_INSTALLED" == "true" ]]; then
     fi
 fi
 
-# Step 8b: Copilot CLI integration
-step "Step 8b: Copilot CLI Integration"
+# Step 9b: Copilot CLI integration
+step "Step 9b: Copilot CLI Integration"
 
 echo ""
 COPILOT_INSTALLED=false
@@ -640,8 +672,8 @@ if [[ "$COPILOT_INSTALLED" == "true" ]]; then
     fi
 fi
 
-# Step 9: Verification
-step "Step 9: Verifying Installation"
+# Step 10: Verification
+step "Step 10: Verifying Installation"
 
 echo ""
 info "Running installation verification..."
@@ -717,7 +749,7 @@ if confirm "Would you like to run tests to verify functionality?"; then
     fi
 fi
 
-# Step 10: Final summary
+# Step 11: Final summary
 echo ""
 echo -e "${BOLD}${MAGENTA}╔══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}${MAGENTA}║                                                          ║${NC}"
