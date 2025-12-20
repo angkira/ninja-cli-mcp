@@ -516,16 +516,27 @@ class NinjaDriver:
     def _build_command_aider(self, prompt: str, repo_root: str) -> list[str]:
         """Build command for Aider CLI with secure argument handling."""
         # Aider command structure:
-        # aider --yes --model <model> --message "<task>"
+        # aider --yes --model <model> --openai-api-key <key> --message "<task>"
         import shlex
         
-        return [
+        cmd = [
             self.config.bin_path,
             "--yes",  # Auto-accept changes
             "--no-auto-commits",  # Don't auto-commit (let user decide)
             "--model", f"openrouter/{self.config.model}",  # OpenRouter model
-            "--message", shlex.quote(prompt),  # Properly escape the prompt
         ]
+        
+        # IMPORTANT: Explicitly pass API key to override aider's cached key
+        # Aider caches keys in ~/.aider*/oauth-keys.env and might use that instead
+        if self.config.openai_api_key:
+            cmd.extend([
+                "--openai-api-key", self.config.openai_api_key,  # Force our key
+                "--openai-api-base", self.config.openai_base_url,  # Force OpenRouter
+            ])
+        
+        cmd.extend(["--message", shlex.quote(prompt)])  # Properly escape the prompt
+        
+        return cmd
     
     def _build_command_qwen(self, prompt: str, repo_root: str) -> list[str]:
         """Build command for Qwen Code CLI with secure argument handling."""
