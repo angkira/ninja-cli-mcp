@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 
 def test_server_starts_without_error(tmp_path):
     """Test that the server can start without immediate errors."""

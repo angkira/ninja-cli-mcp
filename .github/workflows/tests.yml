@@ -34,21 +34,38 @@ jobs:
       - name: Type check with mypy
         run: uv run mypy src/
 
-  unit-tests:
-    name: Unit Tests (Python ${{ matrix.python-version }})
+  smoke-tests:
+    name: Smoke Tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
-      fail-fast: false
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run smoke tests
+        run: uv run pytest tests/test_smoke.py -v --tb=short
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v2
@@ -57,12 +74,36 @@ jobs:
         run: uv sync
 
       - name: Run unit tests
-        run: uv run pytest tests/ -m "unit or (not integration and not e2e and not agent)" -v --tb=short
+        run: uv run pytest tests/ -m "unit" -v --tb=short
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run integration tests
+        run: uv run pytest tests/ -m "integration and not agent" -v --tb=short
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
   build:
     name: Build Package
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests]
+    needs: [lint, smoke-tests, unit-tests]
     
     steps:
       - uses: actions/checkout@v4
