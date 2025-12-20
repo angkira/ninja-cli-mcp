@@ -16,7 +16,7 @@ if [[ -f "$HOME/.ninja-cli-mcp.env" ]]; then
 fi
 
 # Configuration
-PORT="${NINJA_HTTP_PORT:-3000}"
+PORT="${NINJA_HTTP_PORT:-8947}"
 HOST="${NINJA_HTTP_HOST:-127.0.0.1}"
 
 echo "Starting ninja-cli-mcp HTTP/SSE daemon on $HOST:$PORT" >&2
