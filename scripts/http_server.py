@@ -58,7 +58,7 @@ async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[st
     try:
         if tool_name == "ninja_quick_task":
             request = QuickTaskRequest(**arguments)
-            result = await executor.execute_quick_task(request)
+            result = await executor.quick_task(request)
         elif tool_name == "execute_plan_sequential":
             request = SequentialPlanRequest(**arguments)
             result = await executor.execute_plan_sequential(request)
@@ -74,7 +74,7 @@ async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[st
         return result.model_dump()
     
     except Exception as e:
-        logger.error(f"Error executing {tool_name}: {e}")
+        logger.error(f"Error executing {tool_name}: {e}", exc_info=True)
         return {"error": str(e)}
 
 
