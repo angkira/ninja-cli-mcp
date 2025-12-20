@@ -71,7 +71,9 @@ class ToolExecutor:
 
     @rate_limited(max_calls=50, time_window=60)
     @monitored
-    async def quick_task(self, request: QuickTaskRequest, client_id: str = "default") -> QuickTaskResult:
+    async def quick_task(
+        self, request: QuickTaskRequest, client_id: str = "default"
+    ) -> QuickTaskResult:
         """
         Execute a quick single-pass task.
 
@@ -215,9 +217,7 @@ class ToolExecutor:
             logger.warning(f"Failed to record metrics for client {client_id}: {e}")
 
     async def execute_plan_sequential(
-        self,
-        request: SequentialPlanRequest,
-        client_id: str = "default"
+        self, request: SequentialPlanRequest, client_id: str = "default"
     ) -> PlanExecutionResult:
         """
         Execute plan steps sequentially.
@@ -232,7 +232,9 @@ class ToolExecutor:
         Returns:
             Plan execution result with per-step results.
         """
-        logger.info(f"Executing {len(request.steps)} steps sequentially in {request.repo_root} for client {client_id}")
+        logger.info(
+            f"Executing {len(request.steps)} steps sequentially in {request.repo_root} for client {client_id}"
+        )
 
         # Generate task ID and start timer
         plan_task_id = str(uuid.uuid4())
@@ -343,9 +345,7 @@ class ToolExecutor:
         )
 
     async def execute_plan_parallel(
-        self,
-        request: ParallelPlanRequest,
-        client_id: str = "default"
+        self, request: ParallelPlanRequest, client_id: str = "default"
     ) -> PlanExecutionResult:
         """
         Execute plan steps in parallel.
@@ -394,7 +394,9 @@ class ToolExecutor:
             step_start_time = time.time()
 
             async with semaphore:
-                logger.info(f"Starting parallel step {step.id}: {step.title} for client {client_id}")
+                logger.info(
+                    f"Starting parallel step {step.id}: {step.title} for client {client_id}"
+                )
 
                 # Build instruction with parallel execution hint
                 instruction = builder.build_plan_step(
@@ -543,7 +545,9 @@ class ToolExecutor:
         Returns:
             Test result with summary and logs reference.
         """
-        logger.info(f"Running {len(request.commands)} test commands in {request.repo_root} for client {client_id}")
+        logger.info(
+            f"Running {len(request.commands)} test commands in {request.repo_root} for client {client_id}"
+        )
 
         # Generate task ID and start timer
         task_id = str(uuid.uuid4())
@@ -616,7 +620,9 @@ class ToolExecutor:
             logs_ref=result.raw_logs_path,
         )
 
-    async def apply_patch(self, request: ApplyPatchRequest, client_id: str = "default") -> ApplyPatchResult:
+    async def apply_patch(
+        self, request: ApplyPatchRequest, client_id: str = "default"
+    ) -> ApplyPatchResult:
         """
         Apply a patch (not supported - delegated to AI code CLI).
 
@@ -675,8 +681,8 @@ def get_tool_definitions() -> list[dict]:
                     "task": {"type": "string"},
                     "repo_root": {"type": "string"},
                 },
-                "required": ["task", "repo_root"]
-            }
+                "required": ["task", "repo_root"],
+            },
         },
         {
             "name": "execute_plan_sequential",
@@ -688,8 +694,8 @@ def get_tool_definitions() -> list[dict]:
                     "repo_root": {"type": "string"},
                     "steps": {"type": "array"},
                 },
-                "required": ["plan_description", "repo_root", "steps"]
-            }
+                "required": ["plan_description", "repo_root", "steps"],
+            },
         },
         {
             "name": "execute_plan_parallel",
@@ -701,8 +707,8 @@ def get_tool_definitions() -> list[dict]:
                     "repo_root": {"type": "string"},
                     "steps": {"type": "array"},
                 },
-                "required": ["plan_description", "repo_root", "steps"]
-            }
+                "required": ["plan_description", "repo_root", "steps"],
+            },
         },
         {
             "name": "run_tests",
@@ -712,8 +718,8 @@ def get_tool_definitions() -> list[dict]:
                 "properties": {
                     "repo_root": {"type": "string"},
                 },
-                "required": ["repo_root"]
-            }
+                "required": ["repo_root"],
+            },
         },
         {
             "name": "apply_patch",
@@ -724,7 +730,7 @@ def get_tool_definitions() -> list[dict]:
                     "repo_root": {"type": "string"},
                     "patch_content": {"type": "string"},
                 },
-                "required": ["repo_root", "patch_content"]
-            }
+                "required": ["repo_root", "patch_content"],
+            },
         },
     ]

@@ -70,18 +70,14 @@ def test_get_top_models_by_category():
 
     # Test without filtering (should return models)
     print("\n3a. WITHOUT OpenRouter filtering:")
-    top_coding_unfiltered = get_top_models_by_category(
-        "coding", top_n=10, filter_available=False
-    )
+    top_coding_unfiltered = get_top_models_by_category("coding", top_n=10, filter_available=False)
     print(f"✓ Found {len(top_coding_unfiltered)} models")
     for i, (model, score) in enumerate(top_coding_unfiltered[:5], 1):
         print(f"  {i}. {model}: {score:.1f}%")
 
     # Test with filtering (might return empty if no matches)
     print("\n3b. WITH OpenRouter filtering:")
-    top_coding_filtered = get_top_models_by_category(
-        "coding", top_n=10, filter_available=True
-    )
+    top_coding_filtered = get_top_models_by_category("coding", top_n=10, filter_available=True)
     print(f"✓ Found {len(top_coding_filtered)} models")
 
     if top_coding_filtered:
@@ -166,10 +162,7 @@ def test_model_name_matching():
     matches = []
     for lb_model in list(scores.keys())[:20]:  # Check first 20
         for or_model in available:
-            if (
-                lb_model.lower() in or_model.lower()
-                or or_model.lower() in lb_model.lower()
-            ):
+            if lb_model.lower() in or_model.lower() or or_model.lower() in lb_model.lower():
                 matches.append((lb_model, or_model))
                 break
 

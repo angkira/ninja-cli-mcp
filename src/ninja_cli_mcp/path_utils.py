@@ -94,21 +94,21 @@ def get_internal_dir(repo_root: str | Path) -> Path:
         Path to the ninja-cli-mcp cache directory for this repo.
     """
     import hashlib
-    
+
     # Get cache directory (XDG Base Directory compliant)
     if os.name == "nt":  # Windows
         cache_base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
     else:  # Linux/macOS
         cache_base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    
+
     # Create a stable hash of the repo path
     root = Path(repo_root).resolve()
     repo_hash = hashlib.sha256(str(root).encode()).hexdigest()[:16]
-    
+
     # Use format: ~/.cache/ninja-cli-mcp/<hash>-<repo_name>/
     repo_name = root.name
     internal = cache_base / "ninja-cli-mcp" / f"{repo_hash}-{repo_name}"
-    
+
     return internal
 
 
@@ -196,13 +196,13 @@ def is_path_within(path: str | Path, root: str | Path) -> bool:
     try:
         path_obj = Path(path).resolve()
         root_obj = Path(root).resolve()
-        
+
         # Additional check for symbolic links
         if path_obj.is_symlink():
             # Resolve the symlink target and check if it's within root
             target = Path(os.readlink(path_obj)).resolve()
             target.relative_to(root_obj)
-        
+
         path_obj.relative_to(root_obj)
         return True
     except (ValueError, OSError):

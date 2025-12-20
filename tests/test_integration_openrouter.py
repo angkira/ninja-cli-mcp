@@ -26,11 +26,15 @@ def test_openrouter_api_key_format():
 
     # Check API key doesn't contain ANSI codes
     assert "\x1b" not in api_key, "API key contains ANSI escape codes"
-    assert "[" not in api_key or api_key.startswith("sk-or-v1-"), "API key might contain terminal formatting"
+    assert "[" not in api_key or api_key.startswith("sk-or-v1-"), (
+        "API key might contain terminal formatting"
+    )
 
     # Check reasonable length
     assert len(api_key) > 20, f"API key too short: {len(api_key)} chars"
-    assert len(api_key) < 100, f"API key too long: {len(api_key)} chars (might contain escape codes)"
+    assert len(api_key) < 100, (
+        f"API key too long: {len(api_key)} chars (might contain escape codes)"
+    )
 
     # Check starts with expected prefix
     assert api_key.startswith("sk-"), f"API key doesn't start with 'sk-'"
@@ -105,15 +109,15 @@ def test_openrouter_chat_completion_minimal():
             },
             json={
                 "model": test_model,
-                "messages": [
-                    {"role": "user", "content": "Say 'OK'"}
-                ],
+                "messages": [{"role": "user", "content": "Say 'OK'"}],
                 "max_tokens": 10,
             },
             timeout=30.0,
         )
 
-        assert response.status_code in [200, 400, 401, 402], f"Unexpected status: {response.status_code}"
+        assert response.status_code in [200, 400, 401, 402], (
+            f"Unexpected status: {response.status_code}"
+        )
 
         if response.status_code == 200:
             data = response.json()

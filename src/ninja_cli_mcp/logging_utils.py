@@ -65,7 +65,7 @@ class TaskLogger:
 
     Writes detailed logs to centralized cache directory:
     ~/.cache/ninja-cli-mcp/<repo_hash>-<repo_name>/logs/
-    
+
     This prevents polluting project directories with log files.
     """
 
@@ -111,24 +111,27 @@ class TaskLogger:
         """
         if not isinstance(text, str):
             return text
-            
+
         # Patterns to redact
         patterns = [
             # API keys (common formats)
-            (r'(sk-[a-zA-Z0-9]{20,})', '[REDACTED_API_KEY]'),
-            (r'(api[_-]key[a-zA-Z0-9]{10,})', '[REDACTED_API_KEY]'),
-            (r'(token[a-zA-Z0-9]{10,})', '[REDACTED_TOKEN]'),
+            (r"(sk-[a-zA-Z0-9]{20,})", "[REDACTED_API_KEY]"),
+            (r"(api[_-]key[a-zA-Z0-9]{10,})", "[REDACTED_API_KEY]"),
+            (r"(token[a-zA-Z0-9]{10,})", "[REDACTED_TOKEN]"),
             # Passwords in various formats
-            (r'(["\']?(password|passwd|pwd)["\']?\s*[:=]\s*["\'][^"\']{3,}["\'])', '[REDACTED_PASSWORD]'),
-            (r'(["\']?(secret|key)["\']?\s*[:=]\s*["\'][^"\']{3,}["\'])', '[REDACTED_SECRET]'),
+            (
+                r'(["\']?(password|passwd|pwd)["\']?\s*[:=]\s*["\'][^"\']{3,}["\'])',
+                "[REDACTED_PASSWORD]",
+            ),
+            (r'(["\']?(secret|key)["\']?\s*[:=]\s*["\'][^"\']{3,}["\'])', "[REDACTED_SECRET]"),
             # Email addresses (basic pattern)
-            (r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', '[REDACTED_EMAIL]'),
+            (r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", "[REDACTED_EMAIL]"),
         ]
-        
+
         redacted_text = text
         for pattern, replacement in patterns:
             redacted_text = re.sub(pattern, replacement, redacted_text, flags=re.IGNORECASE)
-            
+
         return redacted_text
 
     def log(self, level: str, message: str, **extra: Any) -> None:
@@ -148,7 +151,7 @@ class TaskLogger:
                 redacted_extra[key] = self._redact_sensitive_data(value)
             else:
                 redacted_extra[key] = value
-        
+
         entry = {
             "time": datetime.now(timezone.utc).isoformat(),
             "level": level,
@@ -206,7 +209,7 @@ class TaskLogger:
         redacted_command = [self._redact_sensitive_data(str(arg)) for arg in command]
         redacted_stdout = self._redact_sensitive_data(stdout)
         redacted_stderr = self._redact_sensitive_data(stderr)
-        
+
         self.info(
             "Subprocess completed",
             command=redacted_command,

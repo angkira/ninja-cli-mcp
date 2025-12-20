@@ -33,6 +33,7 @@ def test_server_starts_without_error(tmp_path):
     try:
         # Give it a moment to start
         import time
+
         time.sleep(1)
 
         # Check if it's still running (didn't crash immediately)
@@ -139,6 +140,7 @@ def test_path_validation():
 
     # Should work for existing directory
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmpdir:
         path = validate_repo_root(tmpdir)
         assert path.exists()
@@ -190,10 +192,11 @@ def test_api_key_validation():
     for key in invalid_keys:
         # These should fail validation checks
         is_invalid = (
-            len(key) < 20 or
-            len(key) > 100 or
-            "\x1b" in key or
-            "[" in key and not key.startswith("sk-")
+            len(key) < 20
+            or len(key) > 100
+            or "\x1b" in key
+            or "[" in key
+            and not key.startswith("sk-")
         )
         assert is_invalid, f"Key should be invalid: {key[:50]}..."
 
@@ -204,6 +207,7 @@ def test_instruction_builder():
     from ninja_cli_mcp.models import ExecutionMode
 
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmpdir:
         builder = InstructionBuilder(tmpdir, ExecutionMode.QUICK)
 
@@ -228,6 +232,7 @@ def test_instruction_builder():
 
 def test_fibonacci_implementation():
     """Test a simple fibonacci implementation to verify basic Python functionality."""
+
     def fibonacci(n: int) -> int:
         """Calculate the nth Fibonacci number."""
         if n <= 0:
@@ -236,7 +241,7 @@ def test_fibonacci_implementation():
             return 1
         else:
             return fibonacci(n - 1) + fibonacci(n - 2)
-    
+
     # Test basic Fibonacci sequence
     assert fibonacci(0) == 0
     assert fibonacci(1) == 1
@@ -248,7 +253,7 @@ def test_fibonacci_implementation():
     assert fibonacci(7) == 13
     assert fibonacci(8) == 21
     assert fibonacci(10) == 55
-    
+
     # Test edge cases
     assert fibonacci(-1) == 0
     assert fibonacci(-5) == 0
@@ -256,27 +261,27 @@ def test_fibonacci_implementation():
 
 def test_fibonacci_iterative():
     """Test iterative Fibonacci for better performance verification."""
+
     def fibonacci_iterative(n: int) -> int:
         """Calculate nth Fibonacci number iteratively."""
         if n <= 0:
             return 0
         elif n == 1:
             return 1
-        
+
         prev, curr = 0, 1
         for _ in range(2, n + 1):
             prev, curr = curr, prev + curr
         return curr
-    
+
     # Compare with expected values
     expected = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610]
     for i, expected_val in enumerate(expected):
         assert fibonacci_iterative(i) == expected_val, f"fibonacci({i}) should be {expected_val}"
-    
+
     # Test larger number for performance
     result = fibonacci_iterative(20)
     assert result == 6765
-    
+
     result = fibonacci_iterative(30)
     assert result == 832040
-

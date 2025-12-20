@@ -38,7 +38,12 @@ from starlette.routing import Route
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ninja_cli_mcp.tools import get_executor
-from ninja_cli_mcp.models import QuickTaskRequest, SequentialPlanRequest, ParallelPlanRequest, RunTestsRequest
+from ninja_cli_mcp.models import (
+    QuickTaskRequest,
+    SequentialPlanRequest,
+    ParallelPlanRequest,
+    RunTestsRequest,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,10 +56,10 @@ executor = None
 async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle MCP tool call."""
     global executor
-    
+
     if executor is None:
         executor = get_executor()
-    
+
     try:
         if tool_name == "ninja_quick_task":
             request = QuickTaskRequest(**arguments)
@@ -70,9 +75,9 @@ async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[st
             result = await executor.run_tests(request)
         else:
             return {"error": f"Unknown tool: {tool_name}"}
-        
+
         return result.model_dump()
-    
+
     except Exception as e:
         logger.error(f"Error executing {tool_name}: {e}", exc_info=True)
         return {"error": str(e)}
@@ -80,17 +85,16 @@ async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[st
 
 async def sse_endpoint(request: Request):
     """SSE endpoint for MCP protocol."""
+
     async def event_generator():
         # Send initial connection message
         yield {
             "event": "message",
-            "data": json.dumps({
-                "jsonrpc": "2.0",
-                "method": "server/initialized",
-                "params": {"capabilities": {}}
-            })
+            "data": json.dumps(
+                {"jsonrpc": "2.0", "method": "server/initialized", "params": {"capabilities": {}}}
+            ),
         }
-        
+
         # Keep connection alive and handle messages
         # In a real implementation, this would properly handle MCP protocol
         try:
@@ -98,45 +102,43 @@ async def sse_endpoint(request: Request):
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
             logger.info("SSE connection closed")
-    
+
     return EventSourceResponse(event_generator())
 
 
 async def http_endpoint(request: Request):
     """HTTP endpoint for MCP tool calls."""
     body = await request.json()
-    
+
     method = body.get("method")
     params = body.get("params", {})
     request_id = body.get("id")
-    
+
     if method == "tools/call":
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
-        
+
         result = await handle_tool_call(tool_name, arguments)
-        
-        return JSONResponse({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": result
-        })
-    
+
+        return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": result})
+
     elif method == "tools/list":
-        return JSONResponse({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
-                "tools": [
-                    {"name": "ninja_quick_task"},
-                    {"name": "execute_plan_sequential"},
-                    {"name": "execute_plan_parallel"},
-                    {"name": "run_tests"},
-                    {"name": "apply_patch"},
-                ]
+        return JSONResponse(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "tools": [
+                        {"name": "ninja_quick_task"},
+                        {"name": "execute_plan_sequential"},
+                        {"name": "execute_plan_parallel"},
+                        {"name": "run_tests"},
+                        {"name": "apply_patch"},
+                    ]
+                },
             }
-        })
-    
+        )
+
     return JSONResponse({"error": "Unknown method"}, status_code=400)
 
 
@@ -153,9 +155,9 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=3000)
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
-    
+
     logger.info(f"Starting ninja-cli-mcp HTTP/SSE server on {args.host}:{args.port}")
     logger.info(f"SSE endpoint: http://{args.host}:{args.port}/sse")
     logger.info(f"HTTP endpoint: http://{args.host}:{args.port}/mcp")
-    
+
     uvicorn.run(app, host=args.host, port=args.port)

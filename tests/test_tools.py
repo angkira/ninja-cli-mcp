@@ -28,10 +28,7 @@ def mock_driver() -> MagicMock:
     driver = MagicMock(spec=NinjaDriver)
     driver.execute_async = AsyncMock()
     # Add config attribute for metrics recording
-    driver.config = NinjaConfig(
-        bin_path="mock-cli",
-        model="mock-model"
-    )
+    driver.config = NinjaConfig(bin_path="mock-cli", model="mock-model")
     return driver
 
 

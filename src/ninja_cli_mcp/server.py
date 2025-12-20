@@ -348,7 +348,7 @@ You: execute_plan_sequential([
   "Add middleware",
   "Write tests"
 ])
-Aider implements each step completely."""
+Aider implements each step completely.""",
     )
 
     @server.list_tools()
@@ -363,7 +363,7 @@ Aider implements each step completely."""
         # Note: RequestContext is not available in current mcp version
         # Client ID extraction will be added when MCP library supports it
         client_id = "default"
-        
+
         logger.info(f"[{client_id}] Tool called: {name}")
         logger.debug(f"[{client_id}] Arguments: {json.dumps(arguments, indent=2)}")
 

@@ -35,10 +35,7 @@ async def forward_request(request: dict[str, Any]) -> dict[str, Any]:
             return {
                 "jsonrpc": "2.0",
                 "id": request.get("id"),
-                "error": {
-                    "code": -32603,
-                    "message": f"Proxy error: {str(e)}"
-                }
+                "error": {"code": -32603, "message": f"Proxy error: {str(e)}"},
             }
 
 
@@ -55,16 +52,16 @@ async def stdio_loop():
             if not line:
                 break
 
-            line = line.decode('utf-8').strip()
+            line = line.decode("utf-8").strip()
             if not line:
                 continue
 
             # Parse JSON-RPC request
             request = json.loads(line)
-            
+
             # Forward to daemon
             response = await forward_request(request)
-            
+
             # Write response to stdout
             sys.stdout.write(json.dumps(response) + "\n")
             sys.stdout.flush()
@@ -73,10 +70,7 @@ async def stdio_loop():
             error_response = {
                 "jsonrpc": "2.0",
                 "id": None,
-                "error": {
-                    "code": -32700,
-                    "message": f"Parse error: {str(e)}"
-                }
+                "error": {"code": -32700, "message": f"Parse error: {str(e)}"},
             }
             sys.stdout.write(json.dumps(error_response) + "\n")
             sys.stdout.flush()
@@ -94,7 +88,7 @@ def main():
         sys.stderr.write("Warning: Daemon PID file not found. Is daemon running?\n")
         sys.stderr.write("Start daemon: systemctl --user start ninja-cli-mcp\n")
         sys.stderr.flush()
-    
+
     # Run stdio loop
     try:
         asyncio.run(stdio_loop())

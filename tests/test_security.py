@@ -11,7 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from ninja_cli_mcp.security import InputValidator, RateLimiter, ResourceMonitor, monitored, rate_limited
+from ninja_cli_mcp.security import (
+    InputValidator,
+    RateLimiter,
+    ResourceMonitor,
+    monitored,
+    rate_limited,
+)
 
 
 class TestInputValidator:

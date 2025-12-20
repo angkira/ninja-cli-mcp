@@ -6,6 +6,7 @@ This script calculates and displays Fibonacci numbers using an iterative approac
 for better efficiency with larger numbers.
 """
 
+
 def fibonacci(n: int) -> int:
     """
     Calculate the nth Fibonacci number using an iterative approach.
@@ -26,14 +27,14 @@ def fibonacci(n: int) -> int:
     """
     if n < 0:
         raise ValueError("n must be non-negative")
-    
+
     if n <= 1:
         return n
-    
+
     a, b = 0, 1
     for _ in range(2, n + 1):
         a, b = b, a + b
-    
+
     return b
 
 
@@ -41,7 +42,7 @@ def main() -> None:
     """Calculate and print Fibonacci numbers from 0 to 10."""
     print("Fibonacci numbers from 0 to 10:")
     print("-" * 30)
-    
+
     for i in range(11):
         result = fibonacci(i)
         print(f"F({i:2d}) = {result:3d}")

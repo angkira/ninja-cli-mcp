@@ -21,7 +21,12 @@ from starlette.routing import Route
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ninja_cli_mcp.tools import get_executor, get_tool_definitions
-from ninja_cli_mcp.models import QuickTaskRequest, SequentialPlanRequest, ParallelPlanRequest, RunTestsRequest
+from ninja_cli_mcp.models import (
+    QuickTaskRequest,
+    SequentialPlanRequest,
+    ParallelPlanRequest,
+    RunTestsRequest,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,10 +38,10 @@ executor = None
 async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle MCP tool call."""
     global executor
-    
+
     if executor is None:
         executor = get_executor()
-    
+
     try:
         if tool_name == "ninja_quick_task":
             request = QuickTaskRequest(**arguments)
@@ -52,9 +57,9 @@ async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[st
             result = await executor.run_tests(request)
         else:
             return {"error": f"Unknown tool: {tool_name}"}
-        
+
         return {"content": [{"type": "text", "text": json.dumps(result.model_dump(), indent=2)}]}
-    
+
     except Exception as e:
         logger.error(f"Error executing {tool_name}: {e}", exc_info=True)
         return {"content": [{"type": "text", "text": f"Error: {str(e)}"}], "isError": True}
@@ -63,63 +68,50 @@ async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[st
 async def mcp_endpoint(request: Request):
     """Unified MCP endpoint handling all JSON-RPC methods."""
     body = await request.json()
-    
+
     method = body.get("method")
     params = body.get("params", {})
     request_id = body.get("id")
-    
+
     logger.info(f"MCP request: method={method}, id={request_id}")
-    
+
     # Handle initialize
     if method == "initialize":
-        return JSONResponse({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
-                "protocolVersion": "2024-11-05",
-                "serverInfo": {
-                    "name": "ninja-cli-mcp",
-                    "version": "0.1.0"
+        return JSONResponse(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "serverInfo": {"name": "ninja-cli-mcp", "version": "0.1.0"},
+                    "capabilities": {"tools": {}},
                 },
-                "capabilities": {
-                    "tools": {}
-                }
             }
-        })
-    
+        )
+
     # Handle tools/list
     elif method == "tools/list":
         tools = get_tool_definitions()
-        return JSONResponse({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
-                "tools": tools
-            }
-        })
-    
+        return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": {"tools": tools}})
+
     # Handle tools/call
     elif method == "tools/call":
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
-        
+
         result = await handle_tool_call(tool_name, arguments)
-        
-        return JSONResponse({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": result
-        })
-    
+
+        return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": result})
+
     else:
-        return JSONResponse({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {
-                "code": -32601,
-                "message": f"Method not found: {method}"
-            }
-        }, status_code=400)
+        return JSONResponse(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32601, "message": f"Method not found: {method}"},
+            },
+            status_code=400,
+        )
 
 
 app = Starlette(
@@ -135,8 +127,8 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=3000)
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
-    
+
     logger.info(f"Starting ninja-cli-mcp HTTP/SSE server on {args.host}:{args.port}")
     logger.info(f"MCP endpoints: http://{args.host}:{args.port}/sse and /mcp")
-    
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

@@ -101,9 +101,7 @@ def deduplicate_models(models: List[Dict], strategy: str = "best") -> List[Dict]
         if strategy == "best":
             # Take variant with best score
             best = max(variants, key=lambda x: x["coding_score"])
-            unique_models.append(
-                {**best, "base_name": base_name, "variants_count": len(variants)}
-            )
+            unique_models.append({**best, "base_name": base_name, "variants_count": len(variants)})
         elif strategy == "average":
             # Average scores of all variants
             avg_score = sum(v["coding_score"] for v in variants) / len(variants)
@@ -175,9 +173,7 @@ def fetch_top_models(
 
             # Calculate average coding score
             coding_scores = [
-                s
-                for s in [code_gen, code_comp, python_score, js_score, ts_score]
-                if s > 0
+                s for s in [code_gen, code_comp, python_score, js_score, ts_score] if s > 0
             ]
 
             if coding_scores:
@@ -202,9 +198,7 @@ def fetch_top_models(
         if unique:
             before_count = len(models)
             models = deduplicate_models(models, dedup_strategy)
-            print(
-                f"🔄 After deduplication: {len(models)} unique models (was {before_count})"
-            )
+            print(f"🔄 After deduplication: {len(models)} unique models (was {before_count})")
 
         # Top-3 for debug
         if len(models) >= 3:
@@ -237,9 +231,7 @@ def get_model_pricing(model_name: str) -> float:
     elif "claude-sonnet-3.5" in name_lower or "grok" in name_lower:
         return 0.000003  # $3 per 1M tokens
     elif (
-        "gemini-flash" in name_lower
-        or "haiku" in name_lower
-        or "qwen-2.5-coder-14b" in name_lower
+        "gemini-flash" in name_lower or "haiku" in name_lower or "qwen-2.5-coder-14b" in name_lower
     ):
         return 0.0000005  # $0.5 per 1M tokens
     elif "gpt-4o-mini" in name_lower or "phi" in name_lower:
@@ -315,9 +307,7 @@ def get_top_overall(models: List[Dict], top_n: int = 3) -> List[Dict]:
         price_norm = 1 - ((m["price"] - min_price) / (max_price - min_price + 0.000001))
 
         # Overall score = weighted average
-        m["overall_score"] = (
-            (quality_norm * 0.4) + (price_norm * 0.3) + (speed_norm * 0.3)
-        )
+        m["overall_score"] = (quality_norm * 0.4) + (price_norm * 0.3) + (speed_norm * 0.3)
 
     sorted_models = sorted(models, key=lambda x: x["overall_score"], reverse=True)
     return sorted_models[:top_n]

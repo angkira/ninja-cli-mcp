@@ -366,25 +366,33 @@ class NinjaDriver:
     def _get_env(self) -> dict[str, str]:
         """Get environment variables for Ninja Code CLI subprocess with security filtering."""
         env = os.environ.copy()
-        
+
         # Set required environment variables
         env["OPENAI_BASE_URL"] = self.config.openai_base_url
         env["OPENAI_API_KEY"] = self.config.openai_api_key
         env["OPENAI_MODEL"] = self.config.model
-        
+
         # Filter out potentially sensitive environment variables
         sensitive_patterns = [
-            'KEY', 'SECRET', 'PASSWORD', 'TOKEN', 'CREDENTIAL', 
-            'AUTH', 'PASS', 'PWD', 'API_', 'PRIVATE'
+            "KEY",
+            "SECRET",
+            "PASSWORD",
+            "TOKEN",
+            "CREDENTIAL",
+            "AUTH",
+            "PASS",
+            "PWD",
+            "API_",
+            "PRIVATE",
         ]
-        
+
         filtered_env = {}
         for key, value in env.items():
             # Always include required variables
             if key in ["OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL", "PATH", "HOME"]:
                 filtered_env[key] = value
                 continue
-                
+
             # Filter out sensitive variables
             key_upper = key.upper()
             if not any(pattern in key_upper for pattern in sensitive_patterns):
@@ -392,7 +400,7 @@ class NinjaDriver:
             else:
                 # Log that we're filtering a variable (but don't log the value)
                 logger.debug(f"Filtering sensitive environment variable: {key}")
-        
+
         return filtered_env
 
     def _write_task_file(
@@ -418,14 +426,14 @@ class NinjaDriver:
 
         # Use secure temporary file creation
         task_file_path = safe_join(dirs["tasks"], f"{timestamp}_{safe_id}.json")
-        
+
         # Create secure temporary file with restricted permissions
         with tempfile.NamedTemporaryFile(
-            mode='w',
-            suffix='.json',
+            mode="w",
+            suffix=".json",
             dir=dirs["tasks"],
             delete=False,
-            prefix=f"{timestamp}_{safe_id}_"
+            prefix=f"{timestamp}_{safe_id}_",
         ) as tmp_file:
             # Add model info to instruction
             instruction["model"] = self.config.model
@@ -433,13 +441,13 @@ class NinjaDriver:
             tmp_file.flush()
             os.fsync(tmp_file.fileno())
             temp_path = Path(tmp_file.name)
-        
+
         # Set secure permissions (read/write for owner only)
         os.chmod(temp_path, 0o600)
-        
+
         # Atomically move to final location
         temp_path.rename(task_file_path)
-        
+
         return task_file_path
 
     def _detect_cli_type(self) -> str:
@@ -505,7 +513,7 @@ class NinjaDriver:
         """Build command for Claude CLI with secure argument handling."""
         # Use proper argument escaping to prevent command injection
         import shlex
-        
+
         return [
             self.config.bin_path,
             "--print",  # Non-interactive mode
@@ -518,47 +526,57 @@ class NinjaDriver:
         # Aider command structure:
         # aider --yes --model <model> --openai-api-key <key> --message "<task>"
         import shlex
-        
+
         cmd = [
             self.config.bin_path,
             "--yes",  # Auto-accept changes
             "--no-auto-commits",  # Don't auto-commit (let user decide)
-            "--model", f"openrouter/{self.config.model}",  # OpenRouter model
+            "--model",
+            f"openrouter/{self.config.model}",  # OpenRouter model
         ]
-        
+
         # IMPORTANT: Explicitly pass API key to override aider's cached key
         # Aider caches keys in ~/.aider*/oauth-keys.env and might use that instead
         if self.config.openai_api_key:
-            cmd.extend([
-                "--openai-api-key", self.config.openai_api_key,  # Force our key
-                "--openai-api-base", self.config.openai_base_url,  # Force OpenRouter
-            ])
-        
+            cmd.extend(
+                [
+                    "--openai-api-key",
+                    self.config.openai_api_key,  # Force our key
+                    "--openai-api-base",
+                    self.config.openai_base_url,  # Force OpenRouter
+                ]
+            )
+
         # Add conservative limits to avoid incomplete responses
-        cmd.extend([
-            "--max-chat-history-tokens", "8000",  # Limit context to avoid token limits
-            "--timeout", "120",  # 2 minute timeout for API calls
-        ])
-        
+        cmd.extend(
+            [
+                "--max-chat-history-tokens",
+                "8000",  # Limit context to avoid token limits
+                "--timeout",
+                "120",  # 2 minute timeout for API calls
+            ]
+        )
+
         cmd.extend(["--message", shlex.quote(prompt)])  # Properly escape the prompt
-        
+
         return cmd
-    
+
     def _build_command_qwen(self, prompt: str, repo_root: str) -> list[str]:
         """Build command for Qwen Code CLI with secure argument handling."""
         # Qwen CLI uses similar interface to Gemini CLI
         import shlex
-        
+
         return [
             self.config.bin_path,
             "--non-interactive",
-            "--message", shlex.quote(prompt),  # Properly escape the prompt
+            "--message",
+            shlex.quote(prompt),  # Properly escape the prompt
         ]
 
     def _build_command_generic(self, prompt: str, repo_root: str) -> list[str]:
         """Build command for generic/unknown CLI with secure argument handling."""
         import shlex
-        
+
         # Try a common pattern with proper escaping
         return [
             self.config.bin_path,
@@ -661,7 +679,7 @@ class NinjaDriver:
 
         if not success and stderr:
             notes = stderr[:500] if len(stderr) > 500 else stderr
-            
+
             # Detect specific OpenRouter/API errors
             if "finish_reason" in stderr.lower():
                 notes += "\n\nThis appears to be an incomplete API response from OpenRouter. "
@@ -683,63 +701,64 @@ class NinjaDriver:
     def _create_isolated_workdir(self, repo_root: str, step_id: str) -> Path:
         """
         Create an isolated working directory for the task.
-        
+
         Args:
             repo_root: Repository root path.
             step_id: Step identifier.
-            
+
         Returns:
             Path to the isolated working directory.
         """
         dirs = ensure_internal_dirs(repo_root)
         workdir_path = safe_join(dirs["work"], f"task_{step_id}")
-        
+
         # Create the isolated work directory
         workdir_path.mkdir(parents=True, exist_ok=True)
-        
+
         logger.debug(f"Created isolated work directory: {workdir_path}")
         return workdir_path
 
     def _sync_workdir_to_repo(self, workdir_path: Path, repo_root: Path, task_logger) -> None:
         """
         Sync modified files from isolated work directory back to target repo.
-        
+
         Args:
             workdir_path: Path to isolated work directory
             repo_root: Path to target repository
             task_logger: Logger instance
         """
         import shutil
-        
+
         if not workdir_path.exists():
             return
-            
+
         try:
             # Copy all files from work dir to repo (excluding .git, .ninja-cli-mcp, etc)
-            for item in workdir_path.rglob('*'):
+            for item in workdir_path.rglob("*"):
                 if item.is_file():
                     # Skip hidden dirs and internal files
                     relative_parts = item.relative_to(workdir_path).parts
-                    if any(part.startswith('.') for part in relative_parts):
+                    if any(part.startswith(".") for part in relative_parts):
                         continue
-                    
+
                     target_path = repo_root / item.relative_to(workdir_path)
                     target_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(item, target_path)
                     task_logger.debug(f"Synced: {item.relative_to(workdir_path)} -> {target_path}")
-                    
+
         except Exception as e:
             task_logger.warning(f"Failed to sync work directory to repo: {e}")
 
     def _cleanup_isolated_workdir(self, workdir_path: Path) -> None:
         """
         Clean up the isolated working directory after execution.
-        
+
         Args:
             workdir_path: Path to the isolated working directory.
         """
         try:
             import shutil
+
             if workdir_path.exists():
                 shutil.rmtree(workdir_path)
                 logger.debug(f"Cleaned up isolated work directory: {workdir_path}")

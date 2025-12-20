@@ -185,7 +185,7 @@ class MetricsTracker:
             repo_root: Repository root path (used to generate unique cache dir).
         """
         from ninja_cli_mcp.path_utils import get_internal_dir
-        
+
         self.repo_root = repo_root
         # Use centralized cache directory instead of polluting project
         internal_dir = get_internal_dir(repo_root)

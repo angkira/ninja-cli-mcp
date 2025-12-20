@@ -44,7 +44,7 @@ class RateLimiter:
         self.time_window = time_window
         self.calls: dict[str, list[float]] = defaultdict(list)
         self._lock = asyncio.Lock()
-        
+
         # Try to load persistent rate limit data
         self._load_persistent_data()
 
@@ -63,7 +63,9 @@ class RateLimiter:
             client_calls = self.calls[client_id]
 
             # Remove calls outside the time window
-            client_calls[:] = [call_time for call_time in client_calls if call_time > now - self.time_window]
+            client_calls[:] = [
+                call_time for call_time in client_calls if call_time > now - self.time_window
+            ]
 
             if len(client_calls) >= self.max_calls:
                 logger.warning(
@@ -89,11 +91,11 @@ class RateLimiter:
             cache_base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
         else:  # Linux/macOS
             cache_base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-        
+
         persistence_dir = cache_base / "ninja-cli-mcp" / "persistence"
         persistence_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(persistence_dir, 0o700)  # Secure permissions
-        
+
         return persistence_dir / "rate_limits.json"
 
     def _load_persistent_data(self) -> None:
@@ -101,7 +103,7 @@ class RateLimiter:
         try:
             persistence_file = self._get_persistence_file()
             if persistence_file.exists():
-                with open(persistence_file, 'r') as f:
+                with open(persistence_file, "r") as f:
                     data = json.load(f)
                     # Only load recent data (within last 2*time_window)
                     cutoff_time = time.time() - (2 * self.time_window)
@@ -122,9 +124,9 @@ class RateLimiter:
                 recent_calls = [t for t in call_times if t > cutoff_time]
                 if recent_calls:
                     data_to_save[client_id] = recent_calls
-            
+
             persistence_file = self._get_persistence_file()
-            with open(persistence_file, 'w') as f:
+            with open(persistence_file, "w") as f:
                 json.dump(data_to_save, f)
         except Exception as e:
             logger.debug(f"Could not save persistent rate limit data: {e}")
@@ -154,7 +156,7 @@ def rate_limited(max_calls: int = 100, time_window: int = 60):
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Extract client_id from kwargs or use default
-            client_id = kwargs.get('client_id', 'default')
+            client_id = kwargs.get("client_id", "default")
             if not await limiter.check_limit(client_id):
                 raise PermissionError(
                     f"Rate limit exceeded for client {client_id}: "
@@ -355,7 +357,7 @@ class ResourceMonitor:
     async def acquire_task_slot(self) -> bool:
         """
         Acquire a slot for a concurrent task.
-        
+
         Returns:
             True if slot acquired, False if at limit.
         """
@@ -367,10 +369,12 @@ class ResourceMonitor:
 
     def release_task_slot(self) -> None:
         """Release a concurrent task slot."""
+
         async def _release():
             async with self._lock:
                 if self.current_concurrent_tasks > 0:
                     self.current_concurrent_tasks -= 1
+
         # Run the async function in the current event loop
         try:
             loop = asyncio.get_running_loop()
@@ -402,12 +406,12 @@ def monitored(func: F) -> F:
     @wraps(func)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         monitor = get_resource_monitor()
-        
+
         # Try to acquire a concurrent task slot
         slot_acquired = await monitor.acquire_task_slot()
         if not slot_acquired:
             raise PermissionError("Maximum concurrent tasks limit reached")
-            
+
         start_time = time.time()
 
         try:
