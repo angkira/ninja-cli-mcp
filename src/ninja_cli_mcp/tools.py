@@ -103,7 +103,7 @@ class ToolExecutor:
             repo_path = InputValidator.validate_repo_root(request.repo_root)
 
             # Sanitize task description
-            task = InputValidator.sanitize_string(request.task, max_length=50000)
+            InputValidator.sanitize_string(request.task, max_length=50000)
 
             # Validate context paths
             if request.context_paths:
@@ -122,12 +122,12 @@ class ToolExecutor:
                 success=False,
                 execution_mode="quick",
                 repo_root=request.repo_root,
-                error_message=f"Input validation failed: {str(e)}",
+                error_message=f"Input validation failed: {e!s}",
                 client_id=client_id,
             )
             return QuickTaskResult(
                 status="error",
-                summary=f"Input validation failed: {str(e)}",
+                summary=f"Input validation failed: {e!s}",
                 notes="Invalid or potentially unsafe input detected",
             )
         except PermissionError as e:
@@ -344,7 +344,7 @@ class ToolExecutor:
             overall_summary=overall_summary,
         )
 
-    async def execute_plan_parallel(
+    async def execute_plan_parallel(  # noqa: PLR0915
         self, request: ParallelPlanRequest, client_id: str = "default"
     ) -> PlanExecutionResult:
         """
@@ -621,7 +621,7 @@ class ToolExecutor:
         )
 
     async def apply_patch(
-        self, request: ApplyPatchRequest, client_id: str = "default"
+        self, request: ApplyPatchRequest, client_id: str = "default"  # noqa: ARG002
     ) -> ApplyPatchResult:
         """
         Apply a patch (not supported - delegated to AI code CLI).
@@ -657,7 +657,7 @@ _executor: ToolExecutor | None = None
 
 def get_executor() -> ToolExecutor:
     """Get the global tool executor instance."""
-    global _executor
+    global _executor  # noqa: PLW0603
     if _executor is None:
         _executor = ToolExecutor()
     return _executor
@@ -665,7 +665,7 @@ def get_executor() -> ToolExecutor:
 
 def reset_executor() -> None:
     """Reset the global tool executor (for testing)."""
-    global _executor
+    global _executor  # noqa: PLW0603
     _executor = None
 
 

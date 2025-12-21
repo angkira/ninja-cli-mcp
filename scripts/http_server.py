@@ -4,7 +4,6 @@ HTTP/SSE transport wrapper for ninja-cli-mcp daemon implementing proper MCP prot
 """
 
 import argparse
-import asyncio
 import json
 import logging
 import sys
@@ -14,19 +13,21 @@ from typing import Any
 import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
 from starlette.routing import Route
+
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ninja_cli_mcp.tools import get_executor, get_tool_definitions
 from ninja_cli_mcp.models import (
-    QuickTaskRequest,
-    SequentialPlanRequest,
     ParallelPlanRequest,
+    QuickTaskRequest,
     RunTestsRequest,
+    SequentialPlanRequest,
 )
+from ninja_cli_mcp.tools import get_executor, get_tool_definitions
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ executor = None
 
 async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle MCP tool call."""
-    global executor
+    global executor  # noqa: PLW0603
 
     if executor is None:
         executor = get_executor()
@@ -62,7 +63,7 @@ async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[st
 
     except Exception as e:
         logger.error(f"Error executing {tool_name}: {e}", exc_info=True)
-        return {"content": [{"type": "text", "text": f"Error: {str(e)}"}], "isError": True}
+        return {"content": [{"type": "text", "text": f"Error: {e!s}"}], "isError": True}
 
 
 async def mcp_endpoint(request: Request):

@@ -13,11 +13,21 @@ import os
 import re
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, ClassVar, TypeVar
+
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None
+    PSUTIL_AVAILABLE = False
 
 from ninja_cli_mcp.logging_utils import get_logger
+from ninja_cli_mcp.path_utils import validate_repo_root as _validate
 
 
 logger = get_logger(__name__)
@@ -94,7 +104,7 @@ class RateLimiter:
 
         persistence_dir = cache_base / "ninja-cli-mcp" / "persistence"
         persistence_dir.mkdir(parents=True, exist_ok=True)
-        os.chmod(persistence_dir, 0o700)  # Secure permissions
+        persistence_dir.chmod(0o700)  # Secure permissions
 
         return persistence_dir / "rate_limits.json"
 
@@ -103,7 +113,7 @@ class RateLimiter:
         try:
             persistence_file = self._get_persistence_file()
             if persistence_file.exists():
-                with open(persistence_file, "r") as f:
+                with persistence_file.open() as f:
                     data = json.load(f)
                     # Only load recent data (within last 2*time_window)
                     cutoff_time = time.time() - (2 * self.time_window)
@@ -126,7 +136,7 @@ class RateLimiter:
                     data_to_save[client_id] = recent_calls
 
             persistence_file = self._get_persistence_file()
-            with open(persistence_file, "w") as f:
+            with persistence_file.open("w") as f:
                 json.dump(data_to_save, f)
         except Exception as e:
             logger.debug(f"Could not save persistent rate limit data: {e}")
@@ -173,7 +183,7 @@ class InputValidator:
     """Validates and sanitizes user inputs to prevent injection attacks."""
 
     # Dangerous patterns that might indicate injection attempts
-    DANGEROUS_PATTERNS = [
+    DANGEROUS_PATTERNS: ClassVar[list[str]] = [
         r"(\||;|&|`|\$\(|\$\{)",  # Shell metacharacters
         r"(\.\.\/|\.\.\\)",  # Path traversal
         r"(<script|javascript:|on\w+=)",  # XSS attempts
@@ -210,11 +220,11 @@ class InputValidator:
             try:
                 # Additional check for symbolic links
                 if path_obj.is_symlink():
-                    target = Path(os.readlink(path_obj)).resolve()
+                    target = path_obj.readlink().resolve()  # Fixed PTH115
                     target.relative_to(base_path)
                 path_obj.relative_to(base_path)
             except (ValueError, OSError):
-                raise ValueError(f"Path {path} is outside allowed directory {base_dir}")
+                raise ValueError(f"Path {path} is outside allowed directory {base_dir}") from None
 
         return path_obj
 
@@ -258,8 +268,6 @@ class InputValidator:
         Raises:
             ValueError: If path is not safe.
         """
-        from ninja_cli_mcp.path_utils import validate_repo_root as _validate
-
         # Use existing validation
         path = _validate(repo_root)
 
@@ -322,9 +330,12 @@ class ResourceMonitor:
             "warnings": [],
         }
 
-        try:
-            import psutil
+        if not PSUTIL_AVAILABLE:
+            logger.debug("psutil not available, skipping resource monitoring")
+            stats["psutil_available"] = False
+            return stats
 
+        try:
             # Check memory
             memory = psutil.virtual_memory()
             stats["memory_percent"] = memory.percent
@@ -348,9 +359,8 @@ class ResourceMonitor:
                 stats["warnings"].append(f"High disk usage: {disk_percent:.1f}%")
                 logger.warning(f"High disk usage: {disk_percent:.1f}%")
 
-        except ImportError:
-            logger.debug("psutil not available, skipping resource monitoring")
-            stats["psutil_available"] = False
+        except Exception as e:
+            logger.warning(f"Error checking system resources: {e}")
 
         return stats
 
@@ -378,7 +388,7 @@ class ResourceMonitor:
         # Run the async function in the current event loop
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(_release())
+            loop.create_task(_release())  # noqa: RUF006
         except RuntimeError:
             # No event loop running, run synchronously
             pass

@@ -6,9 +6,15 @@ These tests perform quick sanity checks without requiring API keys.
 
 import os
 import subprocess
-from pathlib import Path
+import tempfile
+import time
 
 import pytest
+
+from ninja_cli_mcp.models import ExecutionMode
+from ninja_cli_mcp.ninja_driver import InstructionBuilder, NinjaConfig, NinjaDriver
+from ninja_cli_mcp.path_utils import validate_repo_root
+
 
 pytestmark = pytest.mark.unit
 
@@ -32,8 +38,6 @@ def test_server_starts_without_error(tmp_path):
 
     try:
         # Give it a moment to start
-        import time
-
         time.sleep(1)
 
         # Check if it's still running (didn't crash immediately)
@@ -52,7 +56,7 @@ def test_cli_help():
     """Test that CLI help works."""
     result = subprocess.run(
         ["uv", "run", "python", "-m", "ninja_cli_mcp.cli", "--help"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=10,
     )
@@ -65,7 +69,7 @@ def test_list_models():
     """Test that list-models command works."""
     result = subprocess.run(
         ["uv", "run", "python", "-m", "ninja_cli_mcp.cli", "list-models"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=10,
     )
@@ -80,7 +84,7 @@ def test_show_config():
     """Test that show-config command works."""
     result = subprocess.run(
         ["uv", "run", "python", "-m", "ninja_cli_mcp.cli", "show-config"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=10,
     )
@@ -97,7 +101,7 @@ def test_config_from_env():
 
     result = subprocess.run(
         ["uv", "run", "python", "-m", "ninja_cli_mcp.cli", "show-config"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         env=env,
         timeout=10,
@@ -121,7 +125,7 @@ def test_metrics_summary_empty_repo(tmp_path):
             "--repo-root",
             str(tmp_path),
         ],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=10,
     )
@@ -132,15 +136,11 @@ def test_metrics_summary_empty_repo(tmp_path):
 
 def test_path_validation():
     """Test that path validation works."""
-    from ninja_cli_mcp.path_utils import validate_repo_root
-
     # Should fail for non-existent path
     with pytest.raises(ValueError, match="does not exist"):
         validate_repo_root("/nonexistent/path/that/does/not/exist")
 
     # Should work for existing directory
-    import tempfile
-
     with tempfile.TemporaryDirectory() as tmpdir:
         path = validate_repo_root(tmpdir)
         assert path.exists()
@@ -149,8 +149,6 @@ def test_path_validation():
 
 def test_cli_adapter_detection():
     """Test that CLI adapter detects different CLI types."""
-    from ninja_cli_mcp.ninja_driver import NinjaConfig, NinjaDriver
-
     # Test Claude detection
     config = NinjaConfig(bin_path="claude")
     driver = NinjaDriver(config)
@@ -195,19 +193,14 @@ def test_api_key_validation():
             len(key) < 20
             or len(key) > 100
             or "\x1b" in key
-            or "[" in key
-            and not key.startswith("sk-")
+            or ("[" in key
+            and not key.startswith("sk-"))
         )
         assert is_invalid, f"Key should be invalid: {key[:50]}..."
 
 
 def test_instruction_builder():
     """Test that instruction builder creates valid instructions."""
-    from ninja_cli_mcp.ninja_driver import InstructionBuilder
-    from ninja_cli_mcp.models import ExecutionMode
-
-    import tempfile
-
     with tempfile.TemporaryDirectory() as tmpdir:
         builder = InstructionBuilder(tmpdir, ExecutionMode.QUICK)
 

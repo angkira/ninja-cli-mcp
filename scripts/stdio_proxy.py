@@ -11,13 +11,15 @@ Architecture:
 """
 
 import asyncio
+import contextlib
 import json
-import sys
-from typing import Any
-from pathlib import Path
 import os
+import sys
+from pathlib import Path
+from typing import Any
 
 import httpx
+
 
 # Configuration
 DAEMON_URL = os.environ.get("NINJA_HTTP_URL", "http://127.0.0.1:8947/mcp")
@@ -35,7 +37,7 @@ async def forward_request(request: dict[str, Any]) -> dict[str, Any]:
             return {
                 "jsonrpc": "2.0",
                 "id": request.get("id"),
-                "error": {"code": -32603, "message": f"Proxy error: {str(e)}"},
+                "error": {"code": -32603, "message": f"Proxy error: {e!s}"},
             }
 
 
@@ -70,7 +72,7 @@ async def stdio_loop():
             error_response = {
                 "jsonrpc": "2.0",
                 "id": None,
-                "error": {"code": -32700, "message": f"Parse error: {str(e)}"},
+                "error": {"code": -32700, "message": f"Parse error: {e!s}"},
             }
             sys.stdout.write(json.dumps(error_response) + "\n")
             sys.stdout.flush()
@@ -90,10 +92,8 @@ def main():
         sys.stderr.flush()
 
     # Run stdio loop
-    try:
+    with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(stdio_loop())
-    except KeyboardInterrupt:
-        pass
 
 
 if __name__ == "__main__":

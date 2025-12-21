@@ -6,7 +6,6 @@ import pytest
 from pydantic import ValidationError
 
 from ninja_cli_mcp.models import (
-    ApplyPatchRequest,
     ApplyPatchResult,
     ExecutionMode,
     MergeReport,

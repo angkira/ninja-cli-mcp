@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import Generator
+from typing import TYPE_CHECKING
 
 import pytest
+
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 @pytest.fixture

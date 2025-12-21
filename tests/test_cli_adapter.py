@@ -7,10 +7,6 @@ configured with the correct command-line arguments.
 
 import json
 import os
-from pathlib import Path
-from unittest.mock import Mock, patch
-
-import pytest
 
 from ninja_cli_mcp.ninja_driver import NinjaConfig, NinjaDriver
 

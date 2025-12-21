@@ -2,29 +2,31 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from ninja_cli_mcp.models import (
     ApplyPatchRequest,
-    ExecutionMode,
     ParallelPlanRequest,
     PlanStep,
     QuickTaskRequest,
     RunTestsRequest,
     SequentialPlanRequest,
+    StepConstraints,
 )
-from ninja_cli_mcp.ninja_driver import NinjaDriver, NinjaResult
+from ninja_cli_mcp.ninja_driver import NinjaConfig, NinjaDriver, NinjaResult
 from ninja_cli_mcp.tools import ToolExecutor, get_executor, reset_executor
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
 def mock_driver() -> MagicMock:
     """Create a mock NinjaDriver."""
-    from ninja_cli_mcp.ninja_driver import NinjaConfig
-
     driver = MagicMock(spec=NinjaDriver)
     driver.execute_async = AsyncMock()
     # Add config attribute for metrics recording
@@ -228,8 +230,6 @@ class TestExecutePlanSequential:
         temp_repo: Path,
     ) -> None:
         mock_driver.execute_async.return_value = NinjaResult(success=True, summary="OK")
-
-        from ninja_cli_mcp.models import StepConstraints
 
         steps = [
             PlanStep(

@@ -15,7 +15,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import shutil
 import sys
+from pathlib import Path
 from typing import Any
 
 from ninja_cli_mcp.logging_utils import get_logger, setup_logging
@@ -29,7 +31,6 @@ from ninja_cli_mcp.models import (
     TestPlan,
 )
 from ninja_cli_mcp.ninja_driver import DEFAULT_MODEL, RECOMMENDED_MODELS, NinjaConfig
-from ninja_cli_mcp.path_utils import safe_resolve
 from ninja_cli_mcp.tools import get_executor
 
 
@@ -39,10 +40,7 @@ logger = get_logger(__name__)
 
 def print_result(result: Any) -> None:
     """Print a result as formatted JSON."""
-    if hasattr(result, "model_dump"):
-        data = result.model_dump()
-    else:
-        data = result
+    data = result.model_dump() if hasattr(result, "model_dump") else result
     print(json.dumps(data, indent=2))
 
 
@@ -80,7 +78,7 @@ async def cmd_run_tests(args: argparse.Namespace) -> int:
 
 async def cmd_execute_plan(args: argparse.Namespace) -> int:
     """Execute a plan from a JSON file."""
-    with open(args.plan_file) as f:
+    with Path(args.plan_file).open() as f:
         plan_data = json.load(f)
 
     # Parse steps
@@ -181,8 +179,6 @@ def cmd_show_config(_args: argparse.Namespace) -> int:
 
 def cmd_metrics_summary(args: argparse.Namespace) -> int:
     """Show metrics summary."""
-    from pathlib import Path
-
     repo_root = Path(args.repo_root).resolve()
     tracker = MetricsTracker(repo_root)
 
@@ -211,8 +207,6 @@ def cmd_metrics_summary(args: argparse.Namespace) -> int:
 
 def cmd_metrics_recent(args: argparse.Namespace) -> int:
     """Show recent tasks."""
-    from pathlib import Path
-
     repo_root = Path(args.repo_root).resolve()
     tracker = MetricsTracker(repo_root)
 
@@ -251,9 +245,6 @@ def cmd_metrics_recent(args: argparse.Namespace) -> int:
 
 def cmd_metrics_export(args: argparse.Namespace) -> int:
     """Export metrics to a file."""
-    import shutil
-    from pathlib import Path
-
     repo_root = Path(args.repo_root).resolve()
     tracker = MetricsTracker(repo_root)
 

@@ -10,13 +10,14 @@ executed through the Ninja CLI MCP server, including:
 
 import csv
 import json
-import os
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 from urllib import request as urllib_request
 from urllib.error import URLError
+
+from ninja_cli_mcp.path_utils import get_internal_dir
 
 
 # OpenRouter pricing per million tokens (as of 2024)
@@ -55,7 +56,7 @@ DEFAULT_PRICING = {"input": 1.0, "output": 2.0, "cache_read": 0.0, "cache_write"
 
 # Cache for OpenRouter model pricing (to avoid repeated API calls)
 _pricing_cache: dict[str, dict] = {}
-_pricing_cache_time: Optional[datetime] = None
+_pricing_cache_time: datetime | None = None
 PRICING_CACHE_TTL = timedelta(hours=24)  # Cache pricing for 24 hours
 
 
@@ -66,12 +67,11 @@ def fetch_openrouter_pricing() -> dict[str, dict]:
     Returns:
         Dictionary mapping model IDs to pricing information
     """
-    global _pricing_cache, _pricing_cache_time
+    global _pricing_cache, _pricing_cache_time  # noqa: PLW0603
 
     # Return cached pricing if still valid
-    if _pricing_cache and _pricing_cache_time:
-        if datetime.now() - _pricing_cache_time < PRICING_CACHE_TTL:
-            return _pricing_cache
+    if _pricing_cache and _pricing_cache_time and datetime.now() - _pricing_cache_time < PRICING_CACHE_TTL:
+        return _pricing_cache
 
     try:
         # Fetch models from OpenRouter API
@@ -103,7 +103,7 @@ def fetch_openrouter_pricing() -> dict[str, dict]:
 
         return pricing_map
 
-    except (URLError, json.JSONDecodeError, KeyError, ValueError) as e:
+    except (URLError, json.JSONDecodeError, KeyError, ValueError):
         # If API fails, return empty dict (will fall back to static pricing)
         return {}
 
@@ -169,9 +169,9 @@ class TaskMetrics:
     cache_write_cost: float = 0.0
 
     # Additional context
-    repo_root: Optional[str] = None
-    file_scope: Optional[str] = None
-    error_message: Optional[str] = None
+    repo_root: str | None = None
+    file_scope: str | None = None
+    error_message: str | None = None
 
 
 class MetricsTracker:
@@ -184,8 +184,6 @@ class MetricsTracker:
         Args:
             repo_root: Repository root path (used to generate unique cache dir).
         """
-        from ninja_cli_mcp.path_utils import get_internal_dir
-
         self.repo_root = repo_root
         # Use centralized cache directory instead of polluting project
         internal_dir = get_internal_dir(repo_root)
@@ -199,7 +197,7 @@ class MetricsTracker:
 
         # Create CSV with headers if it doesn't exist
         if not self.metrics_file.exists():
-            with open(self.metrics_file, "w", newline="") as f:
+            with self.metrics_file.open("w", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=self._get_fieldnames())
                 writer.writeheader()
 
@@ -268,7 +266,7 @@ class MetricsTracker:
         Args:
             metrics: TaskMetrics instance to record
         """
-        with open(self.metrics_file, "a", newline="") as f:
+        with self.metrics_file.open("a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=self._get_fieldnames())
             writer.writerow(asdict(metrics))
 
@@ -295,7 +293,7 @@ class MetricsTracker:
         failed_tasks = 0
         model_usage = {}
 
-        with open(self.metrics_file, "r", newline="") as f:
+        with self.metrics_file.open(newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
                 total_tasks += 1
@@ -333,7 +331,7 @@ class MetricsTracker:
             return []
 
         tasks = []
-        with open(self.metrics_file, "r", newline="") as f:
+        with self.metrics_file.open(newline="") as f:
             reader = csv.DictReader(f)
             tasks = list(reader)
 
@@ -354,21 +352,12 @@ def extract_token_usage(output: str) -> tuple[int, int, int, int]:
     Returns:
         Tuple of (input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
     """
-    import re
-
     input_tokens = 0
     output_tokens = 0
     cache_read_tokens = 0
     cache_write_tokens = 0
 
     # Try to find token usage patterns in output
-    # Common patterns:
-    # - "Input tokens: 1234"
-    # - "Output tokens: 5678"
-    # - "cache_read_tokens: 100"
-    # - "cache_write_tokens: 200"
-    # - Usage: {"input": 1234, "output": 5678, "cached_tokens": 100}
-
     # Pattern for "input tokens: 1234" or "input_tokens: 1234" (case-insensitive)
     input_pattern = r"input[_ ]tokens?\s*:\s*(\d+)"
     input_match = re.search(input_pattern, output, re.IGNORECASE)
@@ -417,9 +406,9 @@ def create_task_metrics(
     duration_sec: float,
     success: bool,
     execution_mode: str = "quick",
-    repo_root: Optional[str] = None,
-    file_scope: Optional[str] = None,
-    error_message: Optional[str] = None,
+    repo_root: str | None = None,
+    file_scope: str | None = None,
+    error_message: str | None = None,
 ) -> TaskMetrics:
     """
     Create TaskMetrics from task execution results.

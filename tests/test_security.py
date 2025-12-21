@@ -5,7 +5,7 @@ These tests verify input validation, rate limiting, and resource monitoring.
 """
 
 import asyncio
-import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -15,6 +15,7 @@ from ninja_cli_mcp.security import (
     InputValidator,
     RateLimiter,
     ResourceMonitor,
+    get_resource_monitor,
     monitored,
     rate_limited,
 )
@@ -107,7 +108,7 @@ class TestRateLimiter:
         limiter = RateLimiter(max_calls=10, time_window=60)
 
         # Should allow first 10 calls
-        for i in range(10):
+        for _i in range(10):
             assert await limiter.check_limit() is True
 
     @pytest.mark.asyncio
@@ -116,7 +117,7 @@ class TestRateLimiter:
         limiter = RateLimiter(max_calls=5, time_window=60)
 
         # Allow first 5
-        for i in range(5):
+        for _i in range(5):
             assert await limiter.check_limit() is True
 
         # Block 6th
@@ -242,11 +243,9 @@ class TestResourceMonitor:
     async def test_monitor_check_resources_without_psutil(self, monkeypatch):
         """Test resource checking when psutil is not available."""
         # Simulate psutil import error
-        import sys
-
         psutil_backup = sys.modules.get("psutil")
         if psutil_backup:
-            monkeypatch.delitem(sys.modules, "psutil")
+            sys.modules.pop("psutil", None)
 
         monitor = ResourceMonitor()
         stats = await monitor.check_resources()
@@ -265,8 +264,6 @@ class TestMonitoredDecorator:
     @pytest.mark.asyncio
     async def test_monitored_decorator_records_execution(self):
         """Test that decorator records task execution."""
-        from ninja_cli_mcp.security import get_resource_monitor
-
         monitor = get_resource_monitor()
         initial_count = monitor.task_count
 
@@ -288,8 +285,6 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_combined_rate_limit_and_monitoring(self):
         """Test combining rate limiting and monitoring."""
-        from ninja_cli_mcp.security import get_resource_monitor
-
         monitor = get_resource_monitor()
         initial_count = monitor.task_count
 

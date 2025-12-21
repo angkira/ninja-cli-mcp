@@ -34,20 +34,21 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ninja_cli_mcp.tools import get_executor
 from ninja_cli_mcp.models import (
-    QuickTaskRequest,
-    SequentialPlanRequest,
     ParallelPlanRequest,
+    QuickTaskRequest,
     RunTestsRequest,
+    SequentialPlanRequest,
 )
+from ninja_cli_mcp.tools import get_executor
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 # Global executor instance
 executor = None
@@ -55,7 +56,7 @@ executor = None
 
 async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle MCP tool call."""
-    global executor
+    global executor  # noqa: PLW0603
 
     if executor is None:
         executor = get_executor()
@@ -83,7 +84,7 @@ async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[st
         return {"error": str(e)}
 
 
-async def sse_endpoint(request: Request):
+async def sse_endpoint(request: Request):  # noqa: ARG001
     """SSE endpoint for MCP protocol."""
 
     async def event_generator():

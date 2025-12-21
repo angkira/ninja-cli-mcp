@@ -9,9 +9,13 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from ninja_cli_mcp.logging_utils import get_logger
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 logger = get_logger(__name__)
@@ -98,7 +102,7 @@ class RepoTaskQueue:
         Returns:
             Dict mapping repo paths to their queue status.
         """
-        return {repo: self.get_queue_status(repo) for repo in self._task_counts.keys()}
+        return {repo: self.get_queue_status(repo) for repo in self._task_counts}
 
 
 # Global task queue instance

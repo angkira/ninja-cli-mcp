@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from ninja_cli_mcp.path_utils import get_internal_dir
+
 
 @pytest.mark.e2e
 @pytest.mark.agent
@@ -62,7 +64,7 @@ def test_complete_workflow_fibonacci():
 
         try:
             # Send request
-            stdout, stderr = proc.communicate(input=json.dumps(mcp_request) + "\n", timeout=180)
+            stdout, _stderr = proc.communicate(input=json.dumps(mcp_request) + "\n", timeout=180)
 
             # Parse response
             response = json.loads(stdout.strip())
@@ -126,8 +128,6 @@ def test_sequential_plan_execution():
 def test_work_directory_isolation():
     """Test that work directories are properly isolated per task."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        from ninja_cli_mcp.path_utils import get_internal_dir
-
         repo_path = Path(tmpdir)
         internal_dir = get_internal_dir(repo_path)
 
@@ -145,8 +145,6 @@ def test_logs_generation():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         repo_path = Path(tmpdir)
-
-        from ninja_cli_mcp.path_utils import get_internal_dir
 
         internal_dir = get_internal_dir(repo_path)
         logs_dir = internal_dir / "logs"
@@ -193,7 +191,7 @@ def test_error_handling_invalid_task():
         )
 
         try:
-            stdout, stderr = proc.communicate(input=json.dumps(mcp_request) + "\n", timeout=60)
+            stdout, _stderr = proc.communicate(input=json.dumps(mcp_request) + "\n", timeout=60)
 
             response = json.loads(stdout.strip())
 

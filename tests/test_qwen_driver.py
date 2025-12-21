@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -16,6 +16,10 @@ from ninja_cli_mcp.ninja_driver import (
     NinjaDriver,
     NinjaResult,
 )
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestNinjaConfig:
@@ -223,7 +227,7 @@ class TestNinjaDriver:
         assert task_file.suffix == ".json"
         assert "test-step" in task_file.name
 
-        with open(task_file) as f:
+        with task_file.open() as f:
             data = json.load(f)
         assert data["task"] == "test"
 

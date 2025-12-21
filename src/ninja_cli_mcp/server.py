@@ -20,7 +20,7 @@ import asyncio
 import json
 import logging
 import sys
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -38,6 +38,10 @@ from ninja_cli_mcp.models import (
     SequentialPlanRequest,
 )
 from ninja_cli_mcp.tools import get_executor
+
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 # Set up logging to stderr (stdout is for MCP protocol)
@@ -318,7 +322,7 @@ CRITICAL: You MUST NOT read/view/inspect files yourself. ALWAYS delegate to ninj
 
 What ninja-cli-mcp does:
 • Executes code changes via Aider (AI coding agent)
-• Creates, edits, deletes files automatically  
+• Creates, edits, deletes files automatically
 • Runs tests and validates changes
 • Handles full implementation without your involvement
 
@@ -330,7 +334,7 @@ Your role as planner:
 
 DO NOT:
 ❌ Read files (delegate to ninja tools)
-❌ Write code snippets (delegate to ninja tools)  
+❌ Write code snippets (delegate to ninja tools)
 ❌ Inspect implementation (trust the tool)
 
 DO:
@@ -344,7 +348,7 @@ User: "Add authentication module"
 You: execute_plan_sequential([
   "Create auth.py with login/logout",
   "Add password hashing utils",
-  "Create session management", 
+  "Create session management",
   "Add middleware",
   "Write tests"
 ])

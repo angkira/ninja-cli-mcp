@@ -15,10 +15,8 @@ Example: if you see "table_2025_12_15.csv", then LIVEBENCH_DATE = "2025_12_15"
 
 import csv
 import io
-import json
 import time
 import urllib.request
-from typing import Dict, List
 
 
 # Cache
@@ -75,7 +73,7 @@ def _extract_base_model_name(model_name: str) -> str:
     return base.strip("-")
 
 
-def deduplicate_models(models: List[Dict], strategy: str = "best") -> List[Dict]:
+def deduplicate_models(models: list[dict], strategy: str = "best") -> list[dict]:
     """
     Removes duplicate models, keeping only unique base names.
 
@@ -120,7 +118,7 @@ def deduplicate_models(models: List[Dict], strategy: str = "best") -> List[Dict]
 
 def fetch_top_models(
     top_n: int = 100, unique: bool = False, dedup_strategy: str = "best"
-) -> List[Dict]:
+) -> list[dict]:
     """
     Fetches top-N models from LiveBench.
     Takes REAL data from CSV with coding benchmarks.
@@ -150,12 +148,12 @@ def fetch_top_models(
         req = urllib.request.Request(url)
         req.add_header("User-Agent", "Mozilla/5.0")
 
-        print(f"  📊 Downloading CSV from LiveBench...")
+        print("  📊 Downloading CSV from LiveBench...")
 
         with urllib.request.urlopen(req, timeout=15) as response:
             csv_data = response.read().decode("utf-8")
 
-        print(f"  ✅ CSV downloaded")
+        print("  ✅ CSV downloaded")
 
         # Parse CSV
         reader = csv.DictReader(io.StringIO(csv_data))
@@ -215,7 +213,7 @@ def fetch_top_models(
 
     except Exception as e:
         print(f"⚠️ Error loading from LiveBench: {e}")
-        print(f"💡 Try updating LIVEBENCH_DATE in code or check https://livebench.ai/")
+        print("💡 Try updating LIVEBENCH_DATE in code or check https://livebench.ai/")
 
         # Return empty list - DO NOT use fallback
         return []
@@ -262,9 +260,9 @@ def estimate_model_speed(model_name: str) -> float:
         return 100.0
 
 
-def enrich_models_with_metrics(models: List[Dict]) -> List[Dict]:
+def enrich_models_with_metrics(models: list[dict]) -> list[dict]:
     """Enrich models with price and speed."""
-    print(f"💰 Adding prices and speeds...")
+    print("💰 Adding prices and speeds...")
 
     for model in models:
         model["price"] = get_model_pricing(model["model"])
@@ -273,25 +271,25 @@ def enrich_models_with_metrics(models: List[Dict]) -> List[Dict]:
     return models
 
 
-def get_top_by_quality(models: List[Dict], top_n: int = 3) -> List[Dict]:
+def get_top_by_quality(models: list[dict], top_n: int = 3) -> list[dict]:
     """Top-N smartest models."""
     sorted_models = sorted(models, key=lambda x: x["coding_score"], reverse=True)
     return sorted_models[:top_n]
 
 
-def get_top_by_speed(models: List[Dict], top_n: int = 3) -> List[Dict]:
+def get_top_by_speed(models: list[dict], top_n: int = 3) -> list[dict]:
     """Top-N fastest models."""
     sorted_models = sorted(models, key=lambda x: x["speed"], reverse=True)
     return sorted_models[:top_n]
 
 
-def get_top_by_price(models: List[Dict], top_n: int = 3) -> List[Dict]:
+def get_top_by_price(models: list[dict], top_n: int = 3) -> list[dict]:
     """Top-N cheapest models."""
     sorted_models = sorted(models, key=lambda x: x["price"])
     return sorted_models[:top_n]
 
 
-def get_top_overall(models: List[Dict], top_n: int = 3) -> List[Dict]:
+def get_top_overall(models: list[dict], top_n: int = 3) -> list[dict]:
     """Top-N best overall: balance of quality, price, and speed."""
     # Normalize metrics to 0-1
     max_score = max(m["coding_score"] for m in models)

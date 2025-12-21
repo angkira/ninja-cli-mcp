@@ -5,17 +5,16 @@ Tests for livebench_data.py - Debug why models aren't showing up
 import sys
 from pathlib import Path
 
+
 # Add parent dir to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from livebench_data import (
     fetch_livebench_scores,
-    get_top_models_by_category,
+    get_available_models_on_openrouter,
     get_fastest_models,
     get_model_recommendations,
-    get_model_pricing,
-    fetch_model_throughput,
-    get_available_models_on_openrouter,
+    get_top_models_by_category,
 )
 
 
@@ -92,11 +91,11 @@ def test_get_top_models_by_category():
         available = get_available_models_on_openrouter()
 
         if scores and available:
-            print(f"\nLiveBench models (first 5):")
+            print("\nLiveBench models (first 5):")
             for model in list(scores.keys())[:5]:
                 print(f"  - {model}")
 
-            print(f"\nOpenRouter models (first 5):")
+            print("\nOpenRouter models (first 5):")
             for model in available[:5]:
                 print(f"  - {model}")
 

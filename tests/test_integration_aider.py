@@ -11,6 +11,10 @@ from pathlib import Path
 
 import pytest
 
+from ninja_cli_mcp.cli_adapters.aider_adapter import AiderAdapter
+from ninja_cli_mcp.models import ExecutionMode
+from ninja_cli_mcp.ninja_driver import NinjaConfig, NinjaDriver
+
 
 @pytest.mark.integration
 @pytest.mark.agent
@@ -18,7 +22,7 @@ def test_aider_detection():
     """Test that aider can be detected in PATH."""
     result = subprocess.run(
         ["which", "aider"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
     )
 
@@ -36,7 +40,7 @@ def test_aider_version():
     """Test that aider --version works."""
     result = subprocess.run(
         ["aider", "--version"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=10,
     )
@@ -53,7 +57,7 @@ def test_aider_help():
     """Test that aider --help works."""
     result = subprocess.run(
         ["aider", "--help"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=10,
     )
@@ -92,7 +96,7 @@ def test_aider_with_openrouter():
                 "Add a comment",
                 str(test_file),
             ],
-            capture_output=True,
+            check=False, capture_output=True,
             text=True,
             cwd=tmpdir,
             env=env,
@@ -107,8 +111,6 @@ def test_aider_with_openrouter():
 @pytest.mark.integration
 def test_ninja_driver_aider_adapter():
     """Test that NinjaDriver can configure aider adapter."""
-    from ninja_cli_mcp.ninja_driver import NinjaConfig, NinjaDriver
-
     config = NinjaConfig(bin_path="aider")
     driver = NinjaDriver(config)
 
@@ -119,9 +121,6 @@ def test_ninja_driver_aider_adapter():
 @pytest.mark.agent
 def test_aider_adapter_command_building():
     """Test that aider adapter builds correct commands."""
-    from ninja_cli_mcp.cli_adapters.aider_adapter import AiderAdapter
-    from ninja_cli_mcp.models import ExecutionMode
-
     adapter = AiderAdapter()
 
     with tempfile.TemporaryDirectory() as tmpdir:

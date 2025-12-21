@@ -94,6 +94,13 @@ warn_unused_ignores = true
 target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
+exclude = [
+    ".venv",
+    ".git",
+    "__pycache__",
+    "*.egg-info",
+    "notebooks",
+]
 
 [tool.ruff.lint]
 select = [
@@ -114,6 +121,12 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["ninja_cli_mcp"]
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/**/*.ipynb" = ["ALL"]
+"notebooks/*.ipynb" = ["ALL"]
+"notebooks/**/*.py" = ["ALL"]
+"notebooks/*.py" = ["ALL"]
 
 [tool.uv]
 dev-dependencies = [

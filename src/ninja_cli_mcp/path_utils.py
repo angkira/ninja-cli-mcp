@@ -7,6 +7,7 @@ all paths remain within allowed boundaries (repo_root).
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -33,18 +34,15 @@ def safe_resolve(path: str | Path, root: str | Path) -> Path:
     """
     root_path = Path(root).resolve()
 
-    if Path(path).is_absolute():
-        resolved = Path(path).resolve()
-    else:
-        resolved = (root_path / path).resolve()
+    resolved = Path(path).resolve() if Path(path).is_absolute() else (root_path / path).resolve()
 
     # Additional canonicalization to prevent symbolic link traversal
     try:
         resolved.relative_to(root_path)
-    except ValueError:
+    except ValueError as err:
         raise PathTraversalError(
             f"Path '{path}' resolves to '{resolved}' which is outside root '{root_path}'"
-        )
+        ) from err
 
     return resolved
 
@@ -93,8 +91,6 @@ def get_internal_dir(repo_root: str | Path) -> Path:
     Returns:
         Path to the ninja-cli-mcp cache directory for this repo.
     """
-    import hashlib
-
     # Get cache directory (XDG Base Directory compliant)
     if os.name == "nt":  # Windows
         cache_base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
@@ -138,7 +134,7 @@ def ensure_internal_dirs(repo_root: str | Path) -> dict[str, Path]:
     for dir_path in dirs.values():
         dir_path.mkdir(parents=True, exist_ok=True)
         # Set secure permissions (read/write/execute for owner only)
-        os.chmod(dir_path, 0o700)
+        dir_path.chmod(0o700)
 
     return dirs
 
@@ -166,7 +162,7 @@ def safe_join(base: str | Path, *parts: str) -> Path:
         cleaned = part.lstrip("/\\")
         # Split and filter out dangerous components
         segments = cleaned.replace("\\", "/").split("/")
-        safe_segments = [s for s in segments if s and s != ".." and s != "."]
+        safe_segments = [s for s in segments if s and s not in {"..", "."}]
         clean_parts.extend(safe_segments)
 
     result = base_path
@@ -176,8 +172,8 @@ def safe_join(base: str | Path, *parts: str) -> Path:
     # Final verification with additional canonicalization
     try:
         result.resolve().relative_to(base_path)
-    except ValueError:
-        raise PathTraversalError(f"Path components {parts} would escape base directory {base_path}")
+    except ValueError as err:
+        raise PathTraversalError(f"Path components {parts} would escape base directory {base_path}") from err
 
     return result
 
@@ -200,7 +196,7 @@ def is_path_within(path: str | Path, root: str | Path) -> bool:
         # Additional check for symbolic links
         if path_obj.is_symlink():
             # Resolve the symlink target and check if it's within root
-            target = Path(os.readlink(path_obj)).resolve()
+            target = path_obj.readlink().resolve()
             target.relative_to(root_obj)
 
         path_obj.relative_to(root_obj)

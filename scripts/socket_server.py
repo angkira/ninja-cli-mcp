@@ -15,14 +15,12 @@ Usage:
 import asyncio
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from ninja_cli_mcp.server import app, logger as server_logger
 
 SOCKET_PATH = "/tmp/ninja-cli-mcp.sock"
 
@@ -67,13 +65,13 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 async def main():
     """Start the socket server."""
     # Remove old socket if exists
-    if os.path.exists(SOCKET_PATH):
-        os.remove(SOCKET_PATH)
+    if Path(SOCKET_PATH).exists():
+        Path(SOCKET_PATH).unlink()
 
     server = await asyncio.start_unix_server(handle_client, path=SOCKET_PATH)
 
     # Make socket accessible
-    os.chmod(SOCKET_PATH, 0o666)
+    Path(SOCKET_PATH).chmod(0o666)
 
     logger.info(f"ninja-cli-mcp daemon listening on {SOCKET_PATH}")
 
@@ -91,5 +89,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("Shutting down...")
     finally:
-        if os.path.exists(SOCKET_PATH):
-            os.remove(SOCKET_PATH)
+        if Path(SOCKET_PATH).exists():
+            Path(SOCKET_PATH).unlink()

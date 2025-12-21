@@ -7,9 +7,10 @@ the system works end-to-end with real AI models.
 
 import os
 import subprocess
-from pathlib import Path
 
 import pytest
+
+from ninja_cli_mcp.metrics import fetch_openrouter_pricing
 
 
 # Skip these tests if not in integration test mode
@@ -63,7 +64,7 @@ def test_quick_task_minimal(temp_project):
             "--allowed-globs",
             "*.py",
         ],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=30,
     )
@@ -101,7 +102,7 @@ def test_metrics_tracking(temp_project):
             "--allowed-globs",
             "*.py",
         ],
-        capture_output=True,
+        check=False, capture_output=True,
         timeout=30,
     )
 
@@ -125,7 +126,7 @@ def test_list_models_command():
     """
     result = subprocess.run(
         ["uv", "run", "python", "-m", "ninja_cli_mcp.cli", "list-models"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=10,
     )
@@ -142,7 +143,7 @@ def test_show_config_command():
     """
     result = subprocess.run(
         ["uv", "run", "python", "-m", "ninja_cli_mcp.cli", "show-config"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=10,
     )
@@ -168,7 +169,7 @@ def test_metrics_summary_empty(temp_project):
             "--repo-root",
             str(temp_project),
         ],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=10,
     )
@@ -184,7 +185,6 @@ def test_openrouter_api_pricing():
     Test that we can fetch pricing from OpenRouter API.
     This is marked as slow since it makes a network request.
     """
-    from ninja_cli_mcp.metrics import fetch_openrouter_pricing
 
     # Fetch pricing
     pricing = fetch_openrouter_pricing()
@@ -235,7 +235,7 @@ def test_small_chat_interaction(temp_project):
             "--allowed-globs",
             "math.py",
         ],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=30,
     )

@@ -511,7 +511,7 @@ read -p "$(echo -e "${BLUE}?${NC} Enter HTTP port [default: ${DEFAULT_PORT}]: ")
 
 if [[ -z "$port_input" ]]; then
     HTTP_PORT="$DEFAULT_PORT"
-elif [[ "$port_input" =~ ^[0-9]+$ ]] && [[ "$port_input" -ge 1024 ]] && [[ "$port_input" -le 65535" ]]; then
+elif [[ "$port_input" =~ ^[0-9]+$ ]] && [[ "$port_input" -ge 1024 ]] && [[ "$port_input" -le 65535 ]]; then
     HTTP_PORT="$port_input"
 else
     warn "Invalid port number. Using default: $DEFAULT_PORT"

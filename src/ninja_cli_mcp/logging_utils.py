@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -79,7 +79,7 @@ class TaskLogger:
         """
         self.repo_root = Path(repo_root)
         self.step_id = step_id
-        self.timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        self.timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
 
         # Ensure directories exist
         dirs = ensure_internal_dirs(repo_root)
@@ -153,7 +153,7 @@ class TaskLogger:
                 redacted_extra[key] = value
 
         entry = {
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
             "level": level,
             "message": redacted_message,
             **redacted_extra,
@@ -234,7 +234,7 @@ class TaskLogger:
             Path to the log file.
         """
         # Write human-readable log
-        with open(self.log_file, "w") as f:
+        with self.log_file.open("w") as f:
             for entry in self._entries:
                 ts = entry.get("time", "")
                 level = entry.get("level", "INFO")
@@ -253,7 +253,7 @@ class TaskLogger:
 
         # Write JSON metadata
         self._metadata["entries"] = self._entries
-        with open(self.metadata_file, "w") as f:
+        with self.metadata_file.open("w") as f:
             json.dump(self._metadata, f, indent=2, default=str)
 
         return str(self.log_file)

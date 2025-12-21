@@ -6,8 +6,10 @@ These tests verify the connection to OpenRouter and model availability.
 
 import os
 
-import pytest
 import httpx
+import pytest
+
+from ninja_cli_mcp.ninja_driver import NinjaConfig
 
 
 # Skip these tests if not in integration test mode
@@ -37,7 +39,7 @@ def test_openrouter_api_key_format():
     )
 
     # Check starts with expected prefix
-    assert api_key.startswith("sk-"), f"API key doesn't start with 'sk-'"
+    assert api_key.startswith("sk-"), "API key doesn't start with 'sk-'"
 
 
 @pytest.mark.slow
@@ -151,7 +153,6 @@ def test_openrouter_chat_completion_minimal():
 
 def test_openrouter_config_from_env():
     """Test that configuration is properly loaded from environment."""
-    from ninja_cli_mcp.ninja_driver import NinjaConfig
 
     # Save original env vars
     original_key = os.environ.get("OPENROUTER_API_KEY")

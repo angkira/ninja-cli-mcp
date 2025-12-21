@@ -5,8 +5,6 @@ Tests for metrics tracking functionality.
 import csv
 from pathlib import Path
 
-import pytest
-
 from ninja_cli_mcp.metrics import (
     MODEL_PRICING,
     MetricsTracker,
@@ -20,7 +18,7 @@ def test_model_pricing_structure():
     """Test that model pricing data has the correct structure."""
     assert len(MODEL_PRICING) > 0
 
-    for model_id, pricing in MODEL_PRICING.items():
+    for _model_id, pricing in MODEL_PRICING.items():
         assert "input" in pricing
         assert "output" in pricing
         assert isinstance(pricing["input"], (int, float))
@@ -66,7 +64,7 @@ def test_metrics_tracker_initialization(tmp_path: Path):
     assert tracker.metrics_file.exists()
 
     # Check that CSV has headers
-    with open(tracker.metrics_file, "r") as f:
+    with tracker.metrics_file.open() as f:
         reader = csv.reader(f)
         headers = next(reader)
         assert "task_id" in headers
@@ -148,7 +146,7 @@ def test_record_task(tmp_path: Path):
     tracker.record_task(metrics)
 
     # Verify the task was recorded
-    with open(tracker.metrics_file, "r") as f:
+    with tracker.metrics_file.open() as f:
         reader = csv.DictReader(f)
         rows = list(reader)
         assert len(rows) == 1
@@ -358,7 +356,7 @@ def test_metrics_with_error(tmp_path: Path):
     tracker.record_task(metrics)
 
     # Verify error was recorded
-    with open(tracker.metrics_file, "r") as f:
+    with tracker.metrics_file.open() as f:
         reader = csv.DictReader(f)
         rows = list(reader)
         assert len(rows) == 1
@@ -389,7 +387,7 @@ def test_metrics_file_scope(tmp_path: Path):
     tracker.record_task(metrics)
 
     # Verify file scope was recorded
-    with open(tracker.metrics_file, "r") as f:
+    with tracker.metrics_file.open() as f:
         reader = csv.DictReader(f)
         rows = list(reader)
         assert len(rows) == 1

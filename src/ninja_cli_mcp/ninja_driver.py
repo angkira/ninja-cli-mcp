@@ -21,17 +21,18 @@ import asyncio
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ninja_cli_mcp.logging_utils import TaskLogger, create_task_logger, get_logger
+from ninja_cli_mcp.logging_utils import create_task_logger, get_logger
 from ninja_cli_mcp.models import ExecutionMode, PlanStep
 from ninja_cli_mcp.path_utils import ensure_internal_dirs, safe_join
-from ninja_cli_mcp.task_queue import get_task_queue
 
 
 logger = get_logger(__name__)
@@ -71,7 +72,7 @@ class NinjaConfig:
     timeout_sec: int = 600
 
     @classmethod
-    def from_env(cls) -> "NinjaConfig":
+    def from_env(cls) -> NinjaConfig:
         """Create config from environment variables."""
         api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
 
@@ -91,7 +92,7 @@ class NinjaConfig:
             timeout_sec=int(os.environ.get("NINJA_TIMEOUT_SEC", "600")),
         )
 
-    def with_model(self, model: str) -> "NinjaConfig":
+    def with_model(self, model: str) -> NinjaConfig:
         """Create a new config with a different model."""
         return NinjaConfig(
             bin_path=self.bin_path,
@@ -162,7 +163,7 @@ class InstructionBuilder:
         return {
             "version": "1.0",
             "type": "quick_task",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "repo_root": self.repo_root,
             "task": task,
             "mode": "quick",
@@ -199,7 +200,7 @@ class InstructionBuilder:
         return {
             "version": "1.0",
             "type": "plan_step",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "repo_root": self.repo_root,
             "step": {
                 "id": step.id,
@@ -243,7 +244,7 @@ class InstructionBuilder:
         return {
             "version": "1.0",
             "type": "test_task",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "repo_root": self.repo_root,
             "task": "Run the specified test commands and report results",
             "test_commands": commands,
@@ -421,7 +422,7 @@ class NinjaDriver:
             Path to the task file.
         """
         dirs = ensure_internal_dirs(repo_root)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in step_id)
 
         # Use secure temporary file creation
@@ -443,7 +444,7 @@ class NinjaDriver:
             temp_path = Path(tmp_file.name)
 
         # Set secure permissions (read/write for owner only)
-        os.chmod(temp_path, 0o600)
+        Path(temp_path).chmod(0o600)
 
         # Atomically move to final location
         temp_path.rename(task_file_path)
@@ -457,7 +458,7 @@ class NinjaDriver:
         Returns:
             CLI type: 'aider', 'qwen', 'claude', 'gemini', 'cursor', or 'generic'
         """
-        bin_name = os.path.basename(self.config.bin_path).lower()
+        bin_name = Path(self.config.bin_path).name.lower()
         if "aider" in bin_name:
             return "aider"
         elif "qwen" in bin_name:
@@ -509,11 +510,8 @@ class NinjaDriver:
 
         return "\n".join(prompt_parts)
 
-    def _build_command_claude(self, prompt: str, repo_root: str) -> list[str]:
+    def _build_command_claude(self, prompt: str, repo_root: str) -> list[str]:  # noqa: ARG002
         """Build command for Claude CLI with secure argument handling."""
-        # Use proper argument escaping to prevent command injection
-        import shlex
-
         return [
             self.config.bin_path,
             "--print",  # Non-interactive mode
@@ -521,12 +519,8 @@ class NinjaDriver:
             shlex.quote(prompt),  # Properly escape the prompt
         ]
 
-    def _build_command_aider(self, prompt: str, repo_root: str) -> list[str]:
+    def _build_command_aider(self, prompt: str, repo_root: str) -> list[str]:  # noqa: ARG002
         """Build command for Aider CLI with secure argument handling."""
-        # Aider command structure:
-        # aider --yes --model <model> --openai-api-key <key> --message "<task>"
-        import shlex
-
         cmd = [
             self.config.bin_path,
             "--yes",  # Auto-accept changes
@@ -561,11 +555,8 @@ class NinjaDriver:
 
         return cmd
 
-    def _build_command_qwen(self, prompt: str, repo_root: str) -> list[str]:
+    def _build_command_qwen(self, prompt: str, repo_root: str) -> list[str]:  # noqa: ARG002
         """Build command for Qwen Code CLI with secure argument handling."""
-        # Qwen CLI uses similar interface to Gemini CLI
-        import shlex
-
         return [
             self.config.bin_path,
             "--non-interactive",
@@ -573,10 +564,8 @@ class NinjaDriver:
             shlex.quote(prompt),  # Properly escape the prompt
         ]
 
-    def _build_command_generic(self, prompt: str, repo_root: str) -> list[str]:
+    def _build_command_generic(self, prompt: str, repo_root: str) -> list[str]:  # noqa: ARG002
         """Build command for generic/unknown CLI with secure argument handling."""
-        import shlex
-
         # Try a common pattern with proper escaping
         return [
             self.config.bin_path,
@@ -597,7 +586,7 @@ class NinjaDriver:
             Command as list of strings.
         """
         # Read the instruction to build a prompt
-        with open(task_file) as f:
+        with Path(task_file).open() as f:
             instruction = json.load(f)
 
         prompt = self._build_prompt_text(instruction, repo_root)
@@ -672,10 +661,9 @@ class NinjaDriver:
             skip_prefixes = ("$", ">", "#", "debug:", "info:", "[", "loading", "starting")
             for line in lines[-10:]:  # Check last 10 lines
                 lower = line.lower()
-                if not any(lower.startswith(p) for p in skip_prefixes):
-                    if len(line) < 200:  # Reasonable summary length
-                        summary = line
-                        break
+                if not any(lower.startswith(p) for p in skip_prefixes) and len(line) < 200:  # Reasonable summary length
+                    summary = line
+                    break
 
         if not success and stderr:
             notes = stderr[:500] if len(stderr) > 500 else stderr
@@ -727,7 +715,6 @@ class NinjaDriver:
             repo_root: Path to target repository
             task_logger: Logger instance
         """
-        import shutil
 
         if not workdir_path.exists():
             return
@@ -757,8 +744,6 @@ class NinjaDriver:
             workdir_path: Path to the isolated working directory.
         """
         try:
-            import shutil
-
             if workdir_path.exists():
                 shutil.rmtree(workdir_path)
                 logger.debug(f"Cleaned up isolated work directory: {workdir_path}")
@@ -809,7 +794,7 @@ class NinjaDriver:
             timeout = timeout_sec or self.config.timeout_sec
             process = subprocess.run(
                 cmd,
-                cwd=str(workdir_path),  # Execute in isolated work directory
+                check=False, cwd=str(workdir_path),  # Execute in isolated work directory
                 env=env,
                 capture_output=True,
                 text=True,
@@ -915,7 +900,7 @@ class NinjaDriver:
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
-                cwd=repo_root,  # Execute in actual repository, not isolated work dir
+                cwd=str(workdir_path),  # Execute in isolated work directory
                 env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -930,7 +915,7 @@ class NinjaDriver:
                 stderr = stderr_bytes.decode() if stderr_bytes else ""
                 exit_code = process.returncode or 0
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 process.kill()
                 await process.wait()
                 task_logger.error(f"Task timed out after {timeout}s")
