@@ -54,17 +54,29 @@ TOOLS: list[Tool] = [
     Tool(
         name="ninja_quick_task",
         description=(
-            "Execute a single-pass code task via Aider (AI agent). "
-            "Aider reads files, makes changes, and returns results. You don't need to read files yourself. "
-            "Use for: docstrings, type hints, refactoring, creating files, bug fixes. "
-            "Supports any OpenRouter model (Claude, GPT, Qwen, DeepSeek, etc.)"
+            "Delegate CODE WRITING ONLY to Ninja AI agent (via Aider). "
+            "Ninja ONLY writes/edits code files based on your specification. "
+            "\n\n"
+            "✅ USE FOR: Writing code, creating files, refactoring, adding features, fixing bugs, "
+            "adding docstrings/types, implementing functions/classes. "
+            "\n\n"
+            "❌ NEVER USE FOR: Running commands, executing tests, checking output, bash/shell operations, "
+            "reading file contents (you should read files yourself if needed for planning). "
+            "\n\n"
+            "YOU provide the specification, Ninja writes the code. "
+            "Ninja returns ONLY a summary (file paths changed, brief description). "
+            "NO source code is returned to you - Ninja writes directly to files."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "task": {
                     "type": "string",
-                    "description": "Task description for the AI code CLI to execute",
+                    "description": (
+                        "DETAILED code writing specification. Be specific about WHAT to implement, "
+                        "not HOW to implement it. Example: 'Create a User class with email validation "
+                        "and password hashing methods' NOT 'add some user stuff'"
+                    ),
                 },
                 "repo_root": {
                     "type": "string",
@@ -73,25 +85,25 @@ TOOLS: list[Tool] = [
                 "context_paths": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Paths to pay special attention to",
+                    "description": "Files/directories Ninja should focus on (for context)",
                     "default": [],
                 },
                 "allowed_globs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Glob patterns for allowed file operations",
+                    "description": "Glob patterns for files Ninja can modify (e.g., ['src/**/*.py'])",
                     "default": [],
                 },
                 "deny_globs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Glob patterns to deny file operations",
+                    "description": "Glob patterns for files Ninja must NOT touch",
                     "default": [],
                 },
                 "mode": {
                     "type": "string",
                     "enum": ["quick"],
-                    "description": "Execution mode (future-proof)",
+                    "description": "Execution mode (always 'quick' for single-pass code writing)",
                     "default": "quick",
                 },
             },
@@ -101,9 +113,17 @@ TOOLS: list[Tool] = [
     Tool(
         name="execute_plan_sequential",
         description=(
-            "Execute a multi-step plan sequentially. Each step is executed in order, "
-            "with the AI code CLI handling all file operations. "
-            "Supports quick mode (single pass) or full mode (with review/test loops)."
+            "Execute a multi-step CODE WRITING plan sequentially. "
+            "Each step delegates code writing to Ninja AI agent. "
+            "\n\n"
+            "✅ USE FOR: Multi-step code implementations where steps must happen in order. "
+            "Each step writes code based on your specification. "
+            "\n\n"
+            "❌ NEVER USE FOR: Running tests, executing commands, checking outputs. "
+            "This is ONLY for writing code in multiple sequential steps. "
+            "\n\n"
+            "Returns summary of each step (files changed, brief description). "
+            "NO source code is returned - Ninja writes directly to files."
         ),
         inputSchema={
             "type": "object",
@@ -115,30 +135,33 @@ TOOLS: list[Tool] = [
                 "mode": {
                     "type": "string",
                     "enum": ["quick", "full"],
-                    "description": "Execution mode",
+                    "description": "Execution mode: 'quick' for fast single-pass, 'full' for review loops",
                     "default": "quick",
                 },
                 "global_allowed_globs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Global allowed glob patterns",
+                    "description": "Global allowed glob patterns for all steps",
                     "default": [],
                 },
                 "global_deny_globs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Global deny glob patterns",
+                    "description": "Global deny glob patterns for all steps",
                     "default": [],
                 },
                 "steps": {
                     "type": "array",
-                    "description": "Plan steps to execute in order",
+                    "description": "Code writing steps to execute in order",
                     "items": {
                         "type": "object",
                         "properties": {
                             "id": {"type": "string", "description": "Unique step identifier"},
                             "title": {"type": "string", "description": "Human-readable step title"},
-                            "task": {"type": "string", "description": "Detailed task description"},
+                            "task": {
+                                "type": "string",
+                                "description": "DETAILED specification of what code to write in this step",
+                            },
                             "context_paths": {
                                 "type": "array",
                                 "items": {"type": "string"},
@@ -187,9 +210,17 @@ TOOLS: list[Tool] = [
     Tool(
         name="execute_plan_parallel",
         description=(
-            "Execute plan steps in parallel with a configurable fanout limit. "
-            "Each step runs in its own subprocess. Steps should have non-overlapping "
-            "scopes for best results. Returns a merge report for coordination."
+            "Execute CODE WRITING steps in parallel with configurable concurrency. "
+            "Each step delegates code writing to Ninja AI agent. "
+            "\n\n"
+            "✅ USE FOR: Independent code writing tasks that can happen simultaneously "
+            "(e.g., creating separate modules, different feature implementations). "
+            "\n\n"
+            "❌ NEVER USE FOR: Running tests, executing commands, tasks with dependencies. "
+            "Steps should have non-overlapping file scopes to avoid conflicts. "
+            "\n\n"
+            "Returns summary of each step plus merge report. "
+            "NO source code is returned - Ninja writes directly to files."
         ),
         inputSchema={
             "type": "object",
@@ -208,7 +239,7 @@ TOOLS: list[Tool] = [
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 16,
-                    "description": "Maximum concurrent executions",
+                    "description": "Maximum concurrent code writing tasks",
                     "default": 4,
                 },
                 "global_allowed_globs": {
@@ -225,13 +256,16 @@ TOOLS: list[Tool] = [
                 },
                 "steps": {
                     "type": "array",
-                    "description": "Plan steps to execute in parallel",
+                    "description": "Independent code writing steps to execute in parallel",
                     "items": {
                         "type": "object",
                         "properties": {
                             "id": {"type": "string"},
                             "title": {"type": "string"},
-                            "task": {"type": "string"},
+                            "task": {
+                                "type": "string",
+                                "description": "DETAILED specification of what code to write",
+                            },
                             "context_paths": {"type": "array", "items": {"type": "string"}},
                             "allowed_globs": {"type": "array", "items": {"type": "string"}},
                             "deny_globs": {"type": "array", "items": {"type": "string"}},
@@ -249,8 +283,12 @@ TOOLS: list[Tool] = [
     Tool(
         name="run_tests",
         description=(
-            "Run test commands via the AI code CLI. The CLI executes the specified "
-            "test commands and reports results. Returns summary and logs reference."
+            "⚠️ DEPRECATED - DO NOT USE. "
+            "\n\n"
+            "Ninja is for CODE WRITING ONLY, not for running tests or commands. "
+            "\n\n"
+            "To run tests: Use bash tool or execute commands yourself. "
+            "Ninja only writes code based on specifications."
         ),
         inputSchema={
             "type": "object",
@@ -262,7 +300,7 @@ TOOLS: list[Tool] = [
                 "commands": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Test commands to execute",
+                    "description": "Test commands (NOT SUPPORTED - use bash tool instead)",
                 },
                 "timeout_sec": {
                     "type": "integer",
@@ -278,9 +316,12 @@ TOOLS: list[Tool] = [
     Tool(
         name="apply_patch",
         description=(
-            "Apply a patch (not supported - delegated to AI code CLI). "
-            "In this architecture, patches are owned by the AI code CLI. "
-            "Include patch content in task descriptions for other tools instead."
+            "⚠️ NOT SUPPORTED. "
+            "\n\n"
+            "Ninja writes code based on specifications, not patches. "
+            "\n\n"
+            "To apply changes: Describe what code to write in ninja_quick_task. "
+            "Ninja will implement it directly."
         ),
         inputSchema={
             "type": "object",
@@ -291,12 +332,12 @@ TOOLS: list[Tool] = [
                 },
                 "patch_content": {
                     "type": "string",
-                    "description": "Patch content (if applicable)",
+                    "description": "Patch content (NOT SUPPORTED)",
                     "default": "",
                 },
                 "patch_description": {
                     "type": "string",
-                    "description": "Description of the patch",
+                    "description": "Description of the patch (NOT SUPPORTED)",
                     "default": "",
                 },
             },
@@ -316,43 +357,106 @@ def create_server() -> Server:
     server = Server(
         "ninja-cli-mcp",
         version="1.0.0",
-        instructions="""ninja-cli-mcp: Delegate ALL code work to AI agent (Aider via OpenRouter)
+        instructions="""🥷 Ninja MCP: Delegate CODE WRITING to AI Agent (Aider)
 
-CRITICAL: You MUST NOT read/view/inspect files yourself. ALWAYS delegate to ninja-cli-mcp.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-What ninja-cli-mcp does:
-• Executes code changes via Aider (AI coding agent)
-• Creates, edits, deletes files automatically
-• Runs tests and validates changes
-• Handles full implementation without your involvement
+⚠️  CRITICAL: Ninja ONLY writes code. NO bash, NO tests, NO file reading for you.
 
-Your role as planner:
-1. Break task into clear steps
-2. Call ninja-cli-mcp tools with descriptions
-3. Review status/summary (NOT source code)
-4. Move to next step
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-DO NOT:
-❌ Read files (delegate to ninja tools)
-❌ Write code snippets (delegate to ninja tools)
-❌ Inspect implementation (trust the tool)
+📋 WHAT NINJA DOES:
+   ✅ Writes/edits code files based on your specification
+   ✅ Creates new files and directories
+   ✅ Refactors existing code
+   ✅ Adds features, fixes bugs, implements functions/classes
+   ✅ Returns ONLY summary: "Modified X files: brief description"
 
-DO:
-✅ Use ninja_quick_task for single changes
-✅ Use execute_plan_sequential for multi-step tasks
-✅ Use execute_plan_parallel for independent tasks
-✅ Review returned status only
+🚫 WHAT NINJA DOES NOT DO:
+   ❌ Run commands (bash, shell, npm, pytest, etc.)
+   ❌ Execute tests or check test output
+   ❌ Read files for you (YOU read files for planning)
+   ❌ Return source code to you (writes directly to disk)
+   ❌ Validate or check anything (YOU validate after)
 
-Example:
-User: "Add authentication module"
-You: execute_plan_sequential([
-  "Create auth.py with login/logout",
-  "Add password hashing utils",
-  "Create session management",
-  "Add middleware",
-  "Write tests"
-])
-Aider implements each step completely.""",
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 YOUR WORKFLOW:
+
+1. 📖 READ files yourself (if needed for planning)
+2. 🧠 PLAN what code needs to be written
+3. 📝 WRITE detailed specification for Ninja
+4. 🥷 CALL ninja_quick_task with specification
+5. ✅ REVIEW Ninja's summary (files changed)
+6. 🧪 RUN tests yourself (using bash tool)
+7. 🔄 REPEAT if needed
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📝 SPECIFICATION QUALITY:
+
+❌ BAD:  "add authentication"
+❌ BAD:  "fix the bug"
+❌ BAD:  "improve the code"
+
+✅ GOOD: "Create src/auth.py with User class containing:
+          - email: str field with validation
+          - password_hash: str field
+          - hash_password(password: str) method using bcrypt
+          - verify_password(password: str) -> bool method
+          Add type hints and docstrings."
+
+✅ GOOD: "In src/api/routes.py, add POST /login endpoint that:
+          - Accepts JSON with email and password
+          - Validates credentials using User.verify_password
+          - Returns JWT token on success
+          - Returns 401 on failure
+          Handle all error cases with proper status codes."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 AVAILABLE TOOLS:
+
+• ninja_quick_task
+  Single code writing task. Use for most implementations.
+  Returns: Summary only (files changed, brief description)
+
+• execute_plan_sequential
+  Multi-step code writing where order matters.
+  Returns: Summary per step
+
+• execute_plan_parallel
+  Independent code writing tasks (non-overlapping files).
+  Returns: Summary per step + merge report
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 EXAMPLES:
+
+User: "Add user authentication"
+
+You:
+1. Read existing code structure (if needed)
+2. Plan: Need User model, auth routes, password hashing
+3. Call ninja_quick_task with detailed spec:
+   "Create authentication system:
+    - src/models/user.py: User class with email, password_hash
+    - src/auth/password.py: hash_password and verify_password using bcrypt
+    - src/api/auth.py: /login and /register endpoints
+    Include type hints, docstrings, error handling"
+4. Review Ninja's summary
+5. Run tests yourself: bash "pytest tests/test_auth.py"
+6. If tests fail, call ninja_quick_task again with fix specification
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ REMEMBER:
+   • Ninja writes code, YOU orchestrate
+   • Ninja returns summaries, NOT source code
+   • YOU read files, run tests, validate
+   • Write detailed specs, get quality code
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""",
     )
 
     @server.list_tools()

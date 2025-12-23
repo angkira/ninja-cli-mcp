@@ -254,30 +254,71 @@ class InstructionBuilder:
         }
 
     def _build_quick_instructions(self, task: str, context_paths: list[str]) -> str:
-        """Build instruction text for quick mode."""
+        """Build instruction text for quick mode with reasoning prompt."""
         paths_text = ", ".join(context_paths) if context_paths else "the repository"
 
-        return f"""You are an AI code assistant operating in QUICK mode.
+        return f"""You are Ninja, an AI code writing specialist.
 
-TASK: {task}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-FOCUS AREA: {paths_text}
+🎯 YOUR TASK:
+{task}
 
-YOUR RESPONSIBILITIES:
-1. Read the relevant source files to understand the context
-2. Make the necessary code changes to complete the task
-3. Create new files if needed
-4. Run quick sanity checks (linter, type check) if appropriate
-5. Stay within the allowed file scope
+📂 FOCUS AREA: {paths_text}
 
-EXECUTION MODE: Single pass - implement the change efficiently without extensive review cycles.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-You have full read/write access to files within the allowed scope.
-The orchestrator will NOT inspect or modify source files itself.
-You are the sole executor of code changes."""
+🧠 REASONING PHASE (spend tokens thinking):
+
+Before writing ANY code, think through:
+
+1. UNDERSTANDING:
+   - What exactly is being asked?
+   - What are the key requirements?
+   - What files need to be created/modified?
+
+2. CONTEXT ANALYSIS:
+   - What existing code is relevant?
+   - What patterns/conventions are used in this codebase?
+   - What dependencies/imports are needed?
+
+3. IMPLEMENTATION PLAN:
+   - What's the logical order of changes?
+   - What edge cases need handling?
+   - What validation/error handling is needed?
+
+4. QUALITY CHECKS:
+   - Are type hints needed?
+   - Are docstrings needed?
+   - Does this follow the codebase style?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ YOUR RESPONSIBILITIES:
+1. Read relevant source files to understand context
+2. Think through the implementation (use reasoning above)
+3. Write clean, well-structured code
+4. Create new files if needed
+5. Add type hints and docstrings where appropriate
+6. Stay within the allowed file scope
+
+⚠️  EXECUTION MODE: Single pass - implement efficiently and correctly.
+
+🔒 SCOPE: You have full read/write access within allowed file patterns.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 REMEMBER:
+   • Think before coding (reasoning phase)
+   • Write quality code, not quick hacks
+   • Follow existing patterns in the codebase
+   • The orchestrator will NOT see your code, only a summary
+   • Make your changes count - this is a single pass
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
     def _build_step_instructions(self, step: PlanStep) -> str:
-        """Build instruction text for plan step execution."""
+        """Build instruction text for plan step execution with reasoning."""
         if self.mode == ExecutionMode.QUICK:
             pipeline = "Single coder pass"
             extra = ""
@@ -298,26 +339,67 @@ After implementing, you MUST:
 
         paths_text = ", ".join(step.context_paths) if step.context_paths else "the repository"
 
-        return f"""You are an AI code assistant executing plan step: {step.title}
+        return f"""You are Ninja, an AI code writing specialist executing: {step.title}
 
-STEP ID: {step.id}
-TASK: {step.task}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-FOCUS AREA: {paths_text}
+🎯 STEP ID: {step.id}
 
-EXECUTION PIPELINE: {pipeline}
+📋 TASK SPECIFICATION:
+{step.task}
+
+📂 FOCUS AREA: {paths_text}
+
+⚙️  EXECUTION PIPELINE: {pipeline}
 {extra}
 
-YOUR RESPONSIBILITIES:
-1. Read relevant source files to understand context
-2. Implement the required changes
-3. Create new files if needed
-4. Validate your changes according to the execution mode
-5. Stay within the allowed file scope
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-You have full read/write access to files within the allowed scope.
-The orchestrator will NOT inspect or modify source files itself.
-You are the sole executor of code changes."""
+🧠 REASONING PHASE (spend tokens thinking):
+
+Before writing ANY code, think through:
+
+1. UNDERSTANDING:
+   - What exactly is this step asking for?
+   - How does it fit into the larger plan?
+   - What are the acceptance criteria?
+
+2. CONTEXT ANALYSIS:
+   - What code from previous steps is relevant?
+   - What existing patterns should I follow?
+   - What dependencies exist?
+
+3. IMPLEMENTATION STRATEGY:
+   - What's the best approach for this step?
+   - What files need changes?
+   - What's the logical order?
+
+4. QUALITY & TESTING:
+   - What edge cases exist?
+   - What validation is needed?
+   - How will this be tested?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ YOUR RESPONSIBILITIES:
+1. Read relevant source files to understand context
+2. Think through the implementation (use reasoning above)
+3. Implement the required changes with high quality
+4. Create new files if needed
+5. Validate according to the execution mode
+6. Stay within the allowed file scope
+
+🔒 SCOPE: You have full read/write access within allowed file patterns.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 REMEMBER:
+   • Think deeply before coding (reasoning phase)
+   • This step is part of a larger plan - make it solid
+   • The orchestrator will NOT see your code, only a summary
+   • Quality over speed - get it right
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
     def _build_test_instructions(self, commands: list[str]) -> str:
         """Build instruction text for test execution."""
@@ -343,7 +425,7 @@ You have access to run commands and read files as needed for testing."""
             "file_access": "You (AI assistant) are responsible for all file read/write operations",
             "orchestrator_role": "The orchestrator will NOT inspect or modify source files",
             "scope_enforcement": "You must respect the allowed_globs and deny_globs constraints",
-            "test_execution": "You are responsible for running any specified tests",
+            "response_format": "Return ONLY a brief summary - the orchestrator does not need source code",
         }
 
 
@@ -608,7 +690,10 @@ class NinjaDriver:
 
     def _parse_output(self, stdout: str, stderr: str, exit_code: int) -> NinjaResult:
         """
-        Parse Ninja Code CLI output to extract results.
+        Parse Ninja Code CLI output to extract CONCISE results.
+
+        IMPORTANT: This extracts only summary information, NOT source code.
+        The orchestrator should receive minimal information about what changed.
 
         Args:
             stdout: Standard output.
@@ -616,17 +701,12 @@ class NinjaDriver:
             exit_code: Process exit code.
 
         Returns:
-            Parsed result.
+            Parsed result with concise summary.
         """
         success = exit_code == 0
 
-        # Try to extract summary from output
-        summary = "Task completed" if success else "Task failed"
-        notes = ""
+        # Extract file changes (what was modified)
         suspected_paths: list[str] = []
-
-        # Look for common patterns in output that indicate file changes
-        # This is best-effort extraction
         file_patterns = [
             r"(?:wrote|created|modified|updated|edited)\s+['\"]?([^\s'\"]+)['\"]?",
             r"(?:writing|creating|modifying|updating|editing)\s+['\"]?([^\s'\"]+)['\"]?",
@@ -643,37 +723,48 @@ class NinjaDriver:
         # Deduplicate paths
         suspected_paths = list(set(suspected_paths))
 
-        # Try to extract summary from structured output if present
-        # Look for JSON in output
+        # Build CONCISE summary (no code, just what happened)
+        if success:
+            if suspected_paths:
+                file_count = len(suspected_paths)
+                file_list = ", ".join(suspected_paths[:5])  # Max 5 files in summary
+                if file_count > 5:
+                    file_list += f" and {file_count - 5} more"
+                summary = f"✅ Modified {file_count} file(s): {file_list}"
+            else:
+                summary = "✅ Task completed successfully"
+        else:
+            summary = "❌ Task failed"
+
+        # Extract brief notes (error messages, warnings) - keep it SHORT
+        notes = ""
+        if not success and stderr:
+            # Extract just the error message, not full stack traces
+            error_lines = [line.strip() for line in stderr.split("\n") if line.strip()]
+            # Look for common error indicators
+            for line in error_lines[-10:]:  # Last 10 lines only
+                lower = line.lower()
+                if any(indicator in lower for indicator in ["error:", "failed:", "exception:", "traceback"]):
+                    notes = line[:200]  # Max 200 chars
+                    break
+            
+            if not notes and error_lines:
+                notes = error_lines[-1][:200]  # Last line, max 200 chars
+
+            # Detect specific OpenRouter/API errors
+            if "finish_reason" in stderr.lower():
+                notes = "⚠️ Incomplete API response (token limit or timeout). Try smaller context or different model."
+
+        # Try to extract structured summary if present (but keep it concise)
         try:
             json_match = re.search(r'\{[^{}]*"summary"[^{}]*\}', combined_output)
             if json_match:
                 result_json = json.loads(json_match.group())
-                summary = result_json.get("summary", summary)
-                notes = result_json.get("notes", notes)
+                extracted_summary = result_json.get("summary", "")
+                if extracted_summary and len(extracted_summary) < 300:  # Only use if concise
+                    summary = extracted_summary
         except (json.JSONDecodeError, AttributeError):
             pass
-
-        # If no structured summary, try to extract first meaningful line
-        if summary in ("Task completed", "Task failed"):
-            lines = [line.strip() for line in combined_output.split("\n") if line.strip()]
-            # Skip typical CLI output lines
-            skip_prefixes = ("$", ">", "#", "debug:", "info:", "[", "loading", "starting")
-            for line in lines[-10:]:  # Check last 10 lines
-                lower = line.lower()
-                if not any(lower.startswith(p) for p in skip_prefixes) and len(line) < 200:  # Reasonable summary length
-                    summary = line
-                    break
-
-        if not success and stderr:
-            notes = stderr[:500] if len(stderr) > 500 else stderr
-
-            # Detect specific OpenRouter/API errors
-            if "finish_reason" in stderr.lower():
-                notes += "\n\nThis appears to be an incomplete API response from OpenRouter. "
-                notes += "The model may have hit a token limit or timed out. "
-                notes += "Consider: 1) Using a smaller context, 2) Breaking the task into smaller steps, "
-                notes += "3) Trying a different model with higher limits."
 
         return NinjaResult(
             success=success,
@@ -681,8 +772,8 @@ class NinjaDriver:
             notes=notes,
             suspected_touched_paths=suspected_paths,
             exit_code=exit_code,
-            stdout=stdout,
-            stderr=stderr,
+            stdout=stdout,  # Full output saved to logs, not returned to orchestrator
+            stderr=stderr,  # Full output saved to logs, not returned to orchestrator
             model_used=self.config.model,
         )
 
@@ -803,7 +894,7 @@ class NinjaDriver:
 
             task_logger.log_subprocess(cmd, process.returncode, process.stdout, process.stderr)
 
-            # Parse result
+            # Parse result (extracts CONCISE summary only)
             result = self._parse_output(process.stdout, process.stderr, process.returncode)
             result.raw_logs_path = task_logger.save()
 
@@ -822,7 +913,7 @@ class NinjaDriver:
             logs_path = task_logger.save()
             return NinjaResult(
                 success=False,
-                summary="Task timed out",
+                summary="⏱️ Task timed out",
                 notes=f"Execution exceeded {timeout_sec or self.config.timeout_sec}s timeout",
                 raw_logs_path=logs_path,
                 exit_code=-1,
@@ -833,7 +924,7 @@ class NinjaDriver:
             logs_path = task_logger.save()
             return NinjaResult(
                 success=False,
-                summary="Ninja Code CLI not found",
+                summary="❌ Ninja Code CLI not found",
                 notes=f"Could not find executable: {self.config.bin_path}. "
                 f"Install Ninja Code CLI or set NINJA_CODE_BIN environment variable.",
                 raw_logs_path=logs_path,
@@ -845,8 +936,8 @@ class NinjaDriver:
             logs_path = task_logger.save()
             return NinjaResult(
                 success=False,
-                summary="Execution error",
-                notes=str(e),
+                summary="❌ Execution error",
+                notes=str(e)[:200],  # Keep error message concise
                 raw_logs_path=logs_path,
                 exit_code=-1,
                 model_used=self.config.model,
@@ -922,7 +1013,7 @@ class NinjaDriver:
                 logs_path = task_logger.save()
                 return NinjaResult(
                     success=False,
-                    summary="Task timed out",
+                    summary="⏱️ Task timed out",
                     notes=f"Execution exceeded {timeout}s timeout",
                     raw_logs_path=logs_path,
                     exit_code=-1,
@@ -931,7 +1022,7 @@ class NinjaDriver:
 
             task_logger.log_subprocess(cmd, exit_code, stdout, stderr)
 
-            # Parse result
+            # Parse result (extracts CONCISE summary only)
             result = self._parse_output(stdout, stderr, exit_code)
             result.raw_logs_path = task_logger.save()
 
@@ -950,7 +1041,7 @@ class NinjaDriver:
             logs_path = task_logger.save()
             return NinjaResult(
                 success=False,
-                summary="Ninja Code CLI not found",
+                summary="❌ Ninja Code CLI not found",
                 notes=f"Could not find executable: {self.config.bin_path}. "
                 f"Install Ninja Code CLI or set NINJA_CODE_BIN environment variable.",
                 raw_logs_path=logs_path,
@@ -962,8 +1053,8 @@ class NinjaDriver:
             logs_path = task_logger.save()
             return NinjaResult(
                 success=False,
-                summary="Execution error",
-                notes=str(e),
+                summary="❌ Execution error",
+                notes=str(e)[:200],  # Keep error message concise
                 raw_logs_path=logs_path,
                 exit_code=-1,
                 model_used=self.config.model,

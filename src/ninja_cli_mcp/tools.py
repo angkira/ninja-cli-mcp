@@ -3,6 +3,8 @@ MCP tool implementations.
 
 This module contains the business logic for all MCP tools exposed by the server.
 Tools are implemented as async functions that delegate execution to the AI code CLI.
+
+IMPORTANT: Tools return ONLY concise summaries to the orchestrator, never source code.
 """
 
 from __future__ import annotations
@@ -43,6 +45,8 @@ class ToolExecutor:
 
     This class provides the implementation for all tools exposed by the MCP server.
     All code execution is delegated to the AI code CLI.
+    
+    IMPORTANT: All responses are kept concise - only summaries, never source code.
     """
 
     def __init__(self, driver: NinjaDriver | None = None):
@@ -55,18 +59,28 @@ class ToolExecutor:
         self.driver = driver or NinjaDriver()
 
     def _result_to_step_result(self, step_id: str, result: NinjaResult) -> StepResult:
-        """Convert NinjaResult to StepResult."""
+        """
+        Convert NinjaResult to StepResult.
+        
+        Returns ONLY concise summary information, no source code.
+        """
         status: str = "ok" if result.success else "fail"
         if result.exit_code == -1:  # Special case for errors
             status = "error"
 
+        # Ensure summary is concise (max 500 chars)
+        summary = result.summary[:500] if len(result.summary) > 500 else result.summary
+        
+        # Ensure notes are concise (max 300 chars)
+        notes = result.notes[:300] if len(result.notes) > 300 else result.notes
+
         return StepResult(
             id=step_id,
             status=status,  # type: ignore
-            summary=result.summary,
-            notes=result.notes,
+            summary=summary,
+            notes=notes,
             logs_ref=result.raw_logs_path,
-            suspected_touched_paths=result.suspected_touched_paths,
+            suspected_touched_paths=result.suspected_touched_paths[:10],  # Max 10 paths
         )
 
     @rate_limited(max_calls=50, time_window=60)
@@ -75,17 +89,19 @@ class ToolExecutor:
         self, request: QuickTaskRequest, client_id: str = "default"
     ) -> QuickTaskResult:
         """
-        Execute a quick single-pass task.
+        Execute a quick single-pass CODE WRITING task.
 
-        This tool runs the AI code CLI in quick mode for fast execution.
+        This tool runs the AI code CLI in quick mode for fast code writing.
         The CLI has full responsibility for reading/writing files.
+        
+        Returns ONLY a concise summary - NO source code is returned.
 
         Args:
             request: Quick task request parameters.
             client_id: Client identifier for isolation and rate limiting.
 
         Returns:
-            Quick task result with summary and metadata.
+            Quick task result with CONCISE summary and metadata (no source code).
 
         Raises:
             PermissionError: If rate limit is exceeded.
@@ -127,7 +143,7 @@ class ToolExecutor:
             )
             return QuickTaskResult(
                 status="error",
-                summary=f"Input validation failed: {e!s}",
+                summary=f"❌ Input validation failed: {e!s}",
                 notes="Invalid or potentially unsafe input detected",
             )
         except PermissionError as e:
@@ -135,7 +151,7 @@ class ToolExecutor:
             logger.warning(f"Rate limit exceeded for quick_task (client {client_id}): {e}")
             return QuickTaskResult(
                 status="error",
-                summary=str(e),
+                summary=f"⚠️ Rate limit exceeded: {e!s}",
                 notes="Too many requests - please slow down",
             )
 
@@ -172,12 +188,13 @@ class ToolExecutor:
             client_id=client_id,
         )
 
+        # Return CONCISE result (no source code)
         return QuickTaskResult(
             status="ok" if result.success else "error",
-            summary=result.summary,
-            notes=result.notes,
+            summary=result.summary[:500],  # Ensure concise
+            notes=result.notes[:300],  # Ensure concise
             logs_ref=result.raw_logs_path,
-            suspected_touched_paths=result.suspected_touched_paths,
+            suspected_touched_paths=result.suspected_touched_paths[:10],  # Max 10 paths
         )
 
     def _record_metrics(
@@ -220,17 +237,19 @@ class ToolExecutor:
         self, request: SequentialPlanRequest, client_id: str = "default"
     ) -> PlanExecutionResult:
         """
-        Execute plan steps sequentially.
+        Execute CODE WRITING plan steps sequentially.
 
         Each step is executed in order, with each step completing before
         the next begins. The AI code CLI handles all file operations.
+        
+        Returns ONLY concise summaries per step - NO source code.
 
         Args:
             request: Sequential plan request parameters.
             client_id: Client identifier for isolation and rate limiting.
 
         Returns:
-            Plan execution result with per-step results.
+            Plan execution result with per-step CONCISE summaries (no source code).
         """
         logger.info(
             f"Executing {len(request.steps)} steps sequentially in {request.repo_root} for client {client_id}"
@@ -247,7 +266,7 @@ class ToolExecutor:
             return PlanExecutionResult(
                 status="error",
                 results=[],
-                overall_summary=str(e),
+                overall_summary=f"❌ {e!s}",
             )
 
         builder = InstructionBuilder(request.repo_root, request.mode)
@@ -316,12 +335,16 @@ class ToolExecutor:
         else:
             status = "error"
 
-        # Build overall summary
+        # Build CONCISE overall summary
         ok_count = sum(1 for r in results if r.status == "ok")
         fail_count = sum(1 for r in results if r.status == "fail")
         error_count = sum(1 for r in results if r.status == "error")
 
-        overall_summary = f"Completed {len(results)} steps: {ok_count} ok, {fail_count} failed, {error_count} errors"
+        overall_summary = (
+            f"{'✅' if all_success else '⚠️' if any_success else '❌'} "
+            f"Completed {len(results)} steps: "
+            f"{ok_count} ok, {fail_count} failed, {error_count} errors"
+        )
 
         # Record overall plan metrics
         plan_duration = time.time() - plan_start_time
@@ -348,10 +371,12 @@ class ToolExecutor:
         self, request: ParallelPlanRequest, client_id: str = "default"
     ) -> PlanExecutionResult:
         """
-        Execute plan steps in parallel.
+        Execute CODE WRITING plan steps in parallel.
 
         Steps are executed concurrently up to the fanout limit. Each step
         runs in its own subprocess calling the AI code CLI.
+        
+        Returns ONLY concise summaries per step - NO source code.
 
         Note: For stronger isolation, consider using git worktrees for each
         parallel execution. This implementation runs against the same repo
@@ -362,7 +387,7 @@ class ToolExecutor:
             client_id: Client identifier for isolation and rate limiting.
 
         Returns:
-            Plan execution result with per-step results and merge report.
+            Plan execution result with per-step CONCISE summaries and merge report.
         """
         logger.info(
             f"Executing {len(request.steps)} steps in parallel "
@@ -380,7 +405,7 @@ class ToolExecutor:
             return PlanExecutionResult(
                 status="error",
                 results=[],
-                overall_summary=str(e),
+                overall_summary=f"❌ {e!s}",
             )
 
         builder = InstructionBuilder(request.repo_root, request.mode)
@@ -448,8 +473,8 @@ class ToolExecutor:
                     StepResult(
                         id="unknown",
                         status="error",
-                        summary=f"Exception: {item}",
-                        notes=str(item),
+                        summary=f"❌ Exception: {item!s}"[:200],
+                        notes=str(item)[:200],
                     )
                 )
                 all_success = False
@@ -488,24 +513,23 @@ class ToolExecutor:
         else:
             status = "error"
 
-        # Build overall summary
+        # Build CONCISE overall summary
         ok_count = sum(1 for r in results if r.status == "ok")
         fail_count = sum(1 for r in results if r.status == "fail")
         error_count = sum(1 for r in results if r.status == "error")
 
         overall_summary = (
+            f"{'✅' if all_success else '⚠️' if any_success else '❌'} "
             f"Completed {len(results)} parallel steps: "
             f"{ok_count} ok, {fail_count} failed, {error_count} errors"
         )
 
-        # Create merge report
+        # Create CONCISE merge report
         merge_report = MergeReport(
             strategy="scope_isolation",
             notes=(
-                "Steps executed in parallel against same repository. "
-                "Each step was instructed to respect its allowed_globs scope. "
-                "Manual review recommended if steps had overlapping scopes. "
-                "For stronger isolation, consider using git worktrees."
+                "Steps executed in parallel with scope isolation. "
+                "Manual review recommended if steps had overlapping scopes."
             ),
         )
 
@@ -533,91 +557,28 @@ class ToolExecutor:
 
     async def run_tests(self, request: RunTestsRequest, client_id: str = "default") -> TestResult:
         """
-        Run test commands via the AI code CLI.
+        ⚠️ DEPRECATED - Run test commands via the AI code CLI.
 
-        This tool delegates test execution to the AI code CLI, which will
-        run the specified commands and report results.
+        This tool is deprecated because Ninja is for CODE WRITING ONLY.
+        Use bash tool or execute commands yourself to run tests.
 
         Args:
             request: Run tests request parameters.
             client_id: Client identifier for isolation and rate limiting.
 
         Returns:
-            Test result with summary and logs reference.
+            Test result indicating this tool is deprecated.
         """
-        logger.info(
-            f"Running {len(request.commands)} test commands in {request.repo_root} for client {client_id}"
-        )
-
-        # Generate task ID and start timer
-        task_id = str(uuid.uuid4())
-        start_time = time.time()
-
-        # Validate repo root
-        try:
-            validate_repo_root(request.repo_root)
-        except ValueError as e:
-            # Record failed metrics
-            duration = time.time() - start_time
-            self._record_metrics(
-                task_id=task_id,
-                tool_name="ninja_run_tests",
-                task_description=f"Run {len(request.commands)} test commands",
-                output="",
-                duration_sec=duration,
-                success=False,
-                execution_mode="test",
-                repo_root=request.repo_root,
-                error_message=str(e),
-                client_id=client_id,
-            )
-            return TestResult(
-                status="error",
-                summary=str(e),
-            )
-
-        # Build instruction for test execution
-        builder = InstructionBuilder(request.repo_root)
-        instruction = builder.build_test_task(
-            commands=request.commands,
-            timeout_sec=request.timeout_sec,
-        )
-
-        # Execute via AI code CLI
-        result = await self.driver.execute_async(
-            repo_root=request.repo_root,
-            step_id="run_tests",
-            instruction=instruction,
-            timeout_sec=request.timeout_sec,
-        )
-
-        # Determine status
-        if result.success:
-            status = "ok"
-        elif result.exit_code == -1:
-            status = "error"
-        else:
-            status = "fail"
-
-        # Record metrics
-        duration = time.time() - start_time
-        self._record_metrics(
-            task_id=task_id,
-            tool_name="ninja_run_tests",
-            task_description=f"Run {len(request.commands)} test commands: {', '.join(request.commands[:3])}{'...' if len(request.commands) > 3 else ''}",
-            output=result.stdout,
-            duration_sec=duration,
-            success=result.success,
-            execution_mode="test",
-            repo_root=request.repo_root,
-            error_message=result.summary if not result.success else None,
-            client_id=client_id,
+        logger.warning(
+            f"run_tests called for client {client_id} - this tool is deprecated"
         )
 
         return TestResult(
-            status=status,  # type: ignore
-            summary=result.summary,
-            logs_ref=result.raw_logs_path,
+            status="error",
+            summary=(
+                "⚠️ DEPRECATED: Ninja is for code writing only. "
+                "Use bash tool to run tests: bash 'pytest tests/'"
+            ),
         )
 
     async def apply_patch(
@@ -644,9 +605,8 @@ class ToolExecutor:
         return ApplyPatchResult(
             status="not_supported",
             message=(
-                "Patches are owned by the AI code CLI; this MCP server is plan- and "
-                "status-oriented. To apply patches, include them in the task "
-                "description for ninja_quick_task or plan execution tools."
+                "⚠️ NOT SUPPORTED: Ninja writes code based on specifications, not patches. "
+                "To apply changes, describe what code to write in ninja_quick_task."
             ),
         )
 
@@ -674,11 +634,11 @@ def get_tool_definitions() -> list[dict]:
     return [
         {
             "name": "ninja_quick_task",
-            "description": "Execute a single-pass code task via AI agent",
+            "description": "Execute a single-pass CODE WRITING task via AI agent (Aider)",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "task": {"type": "string"},
+                    "task": {"type": "string", "description": "Detailed code writing specification"},
                     "repo_root": {"type": "string"},
                 },
                 "required": ["task", "repo_root"],
@@ -686,7 +646,7 @@ def get_tool_definitions() -> list[dict]:
         },
         {
             "name": "execute_plan_sequential",
-            "description": "Execute multi-step plan sequentially",
+            "description": "Execute multi-step CODE WRITING plan sequentially",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -699,7 +659,7 @@ def get_tool_definitions() -> list[dict]:
         },
         {
             "name": "execute_plan_parallel",
-            "description": "Execute multi-step plan in parallel",
+            "description": "Execute independent CODE WRITING steps in parallel",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -712,7 +672,7 @@ def get_tool_definitions() -> list[dict]:
         },
         {
             "name": "run_tests",
-            "description": "Run test suite",
+            "description": "⚠️ DEPRECATED - Use bash tool instead",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -723,7 +683,7 @@ def get_tool_definitions() -> list[dict]:
         },
         {
             "name": "apply_patch",
-            "description": "Apply git patch",
+            "description": "⚠️ NOT SUPPORTED - Use ninja_quick_task with specification instead",
             "inputSchema": {
                 "type": "object",
                 "properties": {
