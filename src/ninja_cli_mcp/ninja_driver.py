@@ -292,6 +292,11 @@ Before writing ANY code, think through:
    - Are docstrings needed?
    - Does this follow the codebase style?
 
+5. TEST COVERAGE:
+   - What unit tests are needed for this code?
+   - What test cases cover the main functionality?
+   - What edge cases should be tested?
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ✅ YOUR RESPONSIBILITIES:
@@ -300,7 +305,16 @@ Before writing ANY code, think through:
 3. Write clean, well-structured code
 4. Create new files if needed
 5. Add type hints and docstrings where appropriate
-6. Stay within the allowed file scope
+6. **WRITE UNIT TESTS** for all new/modified code
+7. Stay within the allowed file scope
+
+🧪 TESTING REQUIREMENTS:
+   • ALWAYS write unit tests for new functions/classes/methods
+   • Place tests in appropriate test files (tests/ directory or alongside code)
+   • Follow existing test patterns in the codebase
+   • Cover main functionality and edge cases
+   • Use appropriate test framework (pytest, unittest, etc.)
+   • Include docstrings in test functions explaining what they test
 
 ⚠️  EXECUTION MODE: Single pass - implement efficiently and correctly.
 
@@ -312,6 +326,7 @@ Before writing ANY code, think through:
    • Think before coding (reasoning phase)
    • Write quality code, not quick hacks
    • Follow existing patterns in the codebase
+   • **ALWAYS include unit tests** - untested code is incomplete
    • The orchestrator will NOT see your code, only a summary
    • Make your changes count - this is a single pass
 
@@ -378,6 +393,7 @@ Before writing ANY code, think through:
    - What edge cases exist?
    - What validation is needed?
    - How will this be tested?
+   - What unit tests are required?
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -386,8 +402,18 @@ Before writing ANY code, think through:
 2. Think through the implementation (use reasoning above)
 3. Implement the required changes with high quality
 4. Create new files if needed
-5. Validate according to the execution mode
-6. Stay within the allowed file scope
+5. **WRITE UNIT TESTS** for all new/modified code
+6. Validate according to the execution mode
+7. Stay within the allowed file scope
+
+🧪 TESTING REQUIREMENTS:
+   • ALWAYS write unit tests for new functions/classes/methods
+   • Place tests in appropriate test files (tests/ directory or alongside code)
+   • Follow existing test patterns in the codebase
+   • Cover main functionality and edge cases
+   • Use appropriate test framework (pytest, unittest, etc.)
+   • Include docstrings in test functions explaining what they test
+   • Ensure tests are runnable and pass
 
 🔒 SCOPE: You have full read/write access within allowed file patterns.
 
@@ -396,6 +422,7 @@ Before writing ANY code, think through:
 💡 REMEMBER:
    • Think deeply before coding (reasoning phase)
    • This step is part of a larger plan - make it solid
+   • **ALWAYS include unit tests** - untested code is incomplete
    • The orchestrator will NOT see your code, only a summary
    • Quality over speed - get it right
 
@@ -426,6 +453,7 @@ You have access to run commands and read files as needed for testing."""
             "orchestrator_role": "The orchestrator will NOT inspect or modify source files",
             "scope_enforcement": "You must respect the allowed_globs and deny_globs constraints",
             "response_format": "Return ONLY a brief summary - the orchestrator does not need source code",
+            "test_coverage": "You MUST write unit tests for all new/modified code - untested code is incomplete",
         }
 
 
