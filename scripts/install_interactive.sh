@@ -89,7 +89,7 @@ print_header
 
 echo -e "${DIM}Welcome! This installer will help you set up Ninja MCP modules:${NC}"
 echo -e "${DIM}  • Coder - AI code execution${NC}"
-echo -e "${DIM}  • Researcher - Web search & reports (coming soon)${NC}"
+echo -e "${DIM}  • Researcher - Web search & reports${NC}"
 echo -e "${DIM}  • Secretary - Documentation & codebase exploration (coming soon)${NC}"
 echo ""
 
@@ -114,7 +114,7 @@ else
 fi
 
 echo ""
-echo -e "  ${BOLD}2.${NC} Researcher ${DIM}(Web search & reports - under development)${NC}"
+echo -e "  ${BOLD}2.${NC} Researcher ${DIM}(Web search & reports)${NC}"
 if confirm "Install Researcher module?"; then
     INSTALL_RESEARCHER=true
     success "Researcher module selected"
@@ -242,19 +242,37 @@ if [[ "$INSTALL_CODER" == "true" ]]; then
     fi
 fi
 
-# Tavily API key (for Researcher)
-TAVILY_KEY=""
+# Serper API key (for Researcher)
+SERPER_KEY=""
 if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
     echo ""
-    echo -e "${BOLD}Tavily API Key${NC} ${DIM}(optional for Researcher - DuckDuckGo is free fallback)${NC}"
-    echo -e "${DIM}Get your key from: ${CYAN}https://tavily.com${NC}"
+    echo -e "${BOLD}Serper.dev API Key${NC} ${DIM}(optional for Researcher - DuckDuckGo is free fallback)${NC}"
+    echo -e "${DIM}Get your key from: ${CYAN}https://serper.dev${NC}"
+    echo -e "${DIM}Free tier: 2,500 searches/month${NC}"
     echo ""
     
-    if confirm "Configure Tavily API key?"; then
-        TAVILY_KEY=$(prompt_secret "Enter Tavily API key:")
-        success "Tavily key configured"
+    EXISTING_SERPER="${SERPER_API_KEY:-}"
+    if [[ -n "$EXISTING_SERPER" ]]; then
+        MASKED_SERPER="${EXISTING_SERPER:0:8}...${EXISTING_SERPER: -4}"
+        info "Found existing Serper key: $MASKED_SERPER"
+        if confirm "Use existing key?"; then
+            SERPER_KEY="$EXISTING_SERPER"
+            success "Using existing Serper key"
+        else
+            if confirm "Configure Serper API key?"; then
+                SERPER_KEY=$(prompt_secret "Enter Serper API key:")
+                success "Serper key configured"
+            else
+                info "Skipping Serper (will use DuckDuckGo)"
+            fi
+        fi
     else
-        info "Skipping Tavily (will use DuckDuckGo)"
+        if confirm "Configure Serper API key?"; then
+            SERPER_KEY=$(prompt_secret "Enter Serper API key:")
+            success "Serper key configured"
+        else
+            info "Skipping Serper (will use DuckDuckGo)"
+        fi
     fi
 fi
 
@@ -428,14 +446,14 @@ cat > "$CONFIG_FILE" << EOF
 # OpenRouter API Key (for Coder and Researcher)
 export OPENROUTER_API_KEY='$OPENROUTER_KEY'
 
-# ============================================================================
-# Coder Module
-# ============================================================================
-
 EOF
 
 if [[ "$INSTALL_CODER" == "true" ]]; then
     cat >> "$CONFIG_FILE" << EOF
+# ============================================================================
+# Coder Module
+# ============================================================================
+
 # Coder model
 export NINJA_CODER_MODEL='$CODER_MODEL'
 
@@ -457,8 +475,8 @@ if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
 # Researcher model
 export NINJA_RESEARCHER_MODEL='$RESEARCHER_MODEL'
 
-# Tavily API key (optional - DuckDuckGo is free fallback)
-export NINJA_TAVILY_API_KEY='$TAVILY_KEY'
+# Serper.dev API key (optional - DuckDuckGo is free fallback)
+export SERPER_API_KEY='$SERPER_KEY'
 
 # Max sources per research
 export NINJA_RESEARCHER_MAX_SOURCES=20
@@ -520,11 +538,66 @@ echo -e "${BOLD}Register with IDEs:${NC}"
 echo ""
 
 # Claude Code
-if [[ "$CLAUDE_INSTALLED" == "true" ]] && [[ "$INSTALL_CODER" == "true" ]]; then
-    if confirm "Register Coder with Claude Code?"; then
-        info "Registering ninja-coder with Claude Code..."
-        # TODO: Implement Claude Code registration for ninja-coder
-        warn "Claude Code integration coming soon"
+if [[ "$CLAUDE_INSTALLED" == "true" ]]; then
+    if confirm "Register modules with Claude Code?"; then
+        info "Registering with Claude Code..."
+        
+        # Create Claude MCP config directory
+        CLAUDE_CONFIG_DIR="$HOME/.config/claude"
+        mkdir -p "$CLAUDE_CONFIG_DIR"
+        
+        # Create or update mcp.json
+        CLAUDE_MCP_CONFIG="$CLAUDE_CONFIG_DIR/mcp.json"
+        
+        if [[ -f "$CLAUDE_MCP_CONFIG" ]]; then
+            info "Backing up existing Claude config..."
+            cp "$CLAUDE_MCP_CONFIG" "$CLAUDE_MCP_CONFIG.backup"
+        fi
+        
+        # Build MCP config
+        cat > "$CLAUDE_MCP_CONFIG" << 'EOF'
+{
+  "mcpServers": {
+EOF
+        
+        if [[ "$INSTALL_CODER" == "true" ]]; then
+            cat >> "$CLAUDE_MCP_CONFIG" << 'EOF'
+    "ninja-coder": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "ninja_coder.server"]
+    },
+EOF
+        fi
+        
+        if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
+            cat >> "$CLAUDE_MCP_CONFIG" << 'EOF'
+    "ninja-researcher": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "ninja_researcher.server"]
+    },
+EOF
+        fi
+        
+        if [[ "$INSTALL_SECRETARY" == "true" ]]; then
+            cat >> "$CLAUDE_MCP_CONFIG" << 'EOF'
+    "ninja-secretary": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "ninja_secretary.server"]
+    },
+EOF
+        fi
+        
+        # Remove trailing comma and close JSON
+        cat >> "$CLAUDE_MCP_CONFIG" << 'EOF'
+  }
+}
+EOF
+        
+        # Fix trailing comma issue
+        sed -i.tmp 's/},$/}/g' "$CLAUDE_MCP_CONFIG" 2>/dev/null || sed -i '' 's/},$/}/g' "$CLAUDE_MCP_CONFIG" 2>/dev/null || true
+        rm -f "$CLAUDE_MCP_CONFIG.tmp"
+        
+        success "Registered with Claude Code"
     fi
 fi
 
@@ -532,8 +605,8 @@ fi
 if [[ "$VSCODE_INSTALLED" == "true" ]]; then
     if confirm "Register modules with VS Code?"; then
         info "Registering with VS Code..."
-        # TODO: Implement VS Code registration
-        warn "VS Code integration coming soon"
+        warn "VS Code integration coming soon - manual configuration required"
+        echo -e "${DIM}See README.md for VS Code setup instructions${NC}"
     fi
 fi
 
@@ -541,8 +614,8 @@ fi
 if [[ "$ZED_INSTALLED" == "true" ]]; then
     if confirm "Register modules with Zed?"; then
         info "Registering with Zed..."
-        # TODO: Implement Zed registration
-        warn "Zed integration coming soon"
+        warn "Zed integration coming soon - manual configuration required"
+        echo -e "${DIM}See README.md for Zed setup instructions${NC}"
     fi
 fi
 
@@ -566,6 +639,8 @@ echo -e "  ${BULLET} Config file: ${DIM}$CONFIG_FILE${NC}"
 [[ -n "$CODER_MODEL" ]] && echo -e "  ${BULLET} Coder model: ${CYAN}$CODER_MODEL${NC}"
 [[ -n "$RESEARCHER_MODEL" ]] && echo -e "  ${BULLET} Researcher model: ${CYAN}$RESEARCHER_MODEL${NC}"
 [[ -n "$SECRETARY_MODEL" ]] && echo -e "  ${BULLET} Secretary model: ${CYAN}$SECRETARY_MODEL${NC}"
+[[ -n "$SERPER_KEY" ]] && echo -e "  ${BULLET} Serper.dev: ${GREEN}Configured${NC}"
+[[ -z "$SERPER_KEY" ]] && [[ "$INSTALL_RESEARCHER" == "true" ]] && echo -e "  ${BULLET} Serper.dev: ${DIM}Not configured (using DuckDuckGo)${NC}"
 echo ""
 
 echo -e "${BOLD}Next Steps:${NC}"
@@ -590,6 +665,15 @@ else
 fi
 
 echo ""
+echo -e "  ${BOLD}3.${NC} Test the installation:"
+if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
+    echo -e "     ${DIM}# Test researcher${NC}"
+    echo -e "     ${DIM}source $CONFIG_FILE${NC}"
+    echo -e "     ${DIM}ninja-researcher${NC}"
+    echo -e "     ${DIM}# Then in Claude/IDE: researcher_web_search({\"query\": \"test\"})${NC}"
+fi
+echo ""
+
 echo -e "${DIM}For more information, see: ${CYAN}README.md${NC}"
 echo ""
 echo -e "${GREEN}Happy coding! 🥷${NC}"
