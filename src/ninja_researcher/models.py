@@ -22,8 +22,8 @@ class WebSearchRequest(BaseModel):
     query: str = Field(..., description="Search query")
     max_results: int = Field(default=10, ge=1, le=50, description="Maximum number of results")
     search_provider: str = Field(
-        default="tavily",
-        description="Search provider to use (tavily, duckduckgo, serper, brave)",
+        default="duckduckgo",
+        description="Search provider to use (duckduckgo, serper)",
     )
 
 

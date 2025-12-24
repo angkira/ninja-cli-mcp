@@ -7,7 +7,7 @@
 A multi-module MCP (Model Context Protocol) server system for AI-powered development workflows. Ninja MCP consists of three specialized modules:
 
 - **🥷 Coder** - AI code execution and modification
-- **🔍 Researcher** - Web search and report generation *(coming soon)*
+- **🔍 Researcher** - Web search and report generation
 - **📋 Secretary** - Codebase exploration and documentation *(coming soon)*
 
 Each module runs as an independent MCP server and can be used standalone or together.
@@ -64,12 +64,12 @@ Each module runs as an independent MCP server and can be used standalone or toge
 - 📊 **Metrics Tracking** – Token usage and cost analysis
 - 🧪 **Full Test Suite** – 149+ tests
 
-### Researcher Module (Coming Soon)
+### Researcher Module (Available Now)
 
-- 🔍 **Web Search** – Multiple providers (Tavily, DuckDuckGo, Brave, Serper)
+- 🔍 **Web Search** – Multiple providers (DuckDuckGo, Serper.dev)
 - 📊 **Deep Research** – Multi-query research with parallel agents
-- 📝 **Report Generation** – Synthesize sources into comprehensive reports
-- ✅ **Fact Checking** – Verify claims against sources
+- 📝 **Report Generation** – Synthesize sources into comprehensive reports *(coming soon)*
+- ✅ **Fact Checking** – Verify claims against sources *(coming soon)*
 
 ### Secretary Module (Coming Soon)
 
@@ -84,7 +84,7 @@ Each module runs as an independent MCP server and can be used standalone or toge
 - **uv** (package manager)
 - **Git**
 - **OpenRouter API key** (for Coder and Researcher)
-- (Optional) **Tavily API key** (for Researcher - DuckDuckGo is free fallback)
+- (Optional) **Serper API key** (for Researcher - DuckDuckGo is free fallback)
 - (Optional) AI Code CLI binary (for Coder - e.g., Aider)
 
 ## Quick Start
@@ -168,21 +168,21 @@ ninja-daemon stop coder
 
 See [docs/CODER.md](docs/CODER.md) for detailed documentation.
 
-### Researcher Module *(Coming Soon)*
+### Researcher Module
 
 Web search and research report generation.
 
 **Tools:**
-- `researcher_web_search` - Search the web
-- `researcher_deep_research` - Multi-query research
-- `researcher_generate_report` - Generate reports
-- `researcher_fact_check` - Verify claims
-- `researcher_summarize_sources` - Summarize sources
+- `researcher_web_search` - Search the web (DuckDuckGo or Serper.dev)
+- `researcher_deep_research` - Multi-query research with parallel agents
+- `researcher_generate_report` - Generate reports *(coming soon)*
+- `researcher_fact_check` - Verify claims *(coming soon)*
+- `researcher_summarize_sources` - Summarize sources *(coming soon)*
 
 **Configuration:**
 ```bash
 export NINJA_RESEARCHER_MODEL='anthropic/claude-sonnet-4'
-export NINJA_TAVILY_API_KEY='your-key'  # Optional
+export SERPER_API_KEY='your-key'  # Optional
 export NINJA_RESEARCHER_MAX_SOURCES=20
 export NINJA_RESEARCHER_PARALLEL_AGENTS=4
 ```
@@ -312,7 +312,7 @@ Update `~/.config/zed/settings.json`:
 | `NINJA_CODE_BIN` | Coder | No | `aider` | AI Code CLI path |
 | `NINJA_CODER_TIMEOUT` | Coder | No | `600` | Timeout in seconds |
 | `NINJA_RESEARCHER_MODEL` | Researcher | No | `anthropic/claude-sonnet-4` | Researcher model |
-| `NINJA_TAVILY_API_KEY` | Researcher | No | - | Tavily API key |
+| `SERPER_API_KEY` | Researcher | No | - | Serper.dev API key |
 | `NINJA_SECRETARY_MODEL` | Secretary | No | `anthropic/claude-haiku-4.5-20250929` | Secretary model |
 
 *At least one of `OPENROUTER_API_KEY` or `OPENAI_API_KEY` must be set.
