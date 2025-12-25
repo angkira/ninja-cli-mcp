@@ -6,9 +6,20 @@ These models define the API surface for the researcher module.
 
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+def get_default_search_provider() -> str:
+    """
+    Get default search provider from environment or fallback to duckduckgo.
+
+    Returns:
+        Default search provider name.
+    """
+    return os.environ.get("NINJA_SEARCH_PROVIDER", "duckduckgo")
 
 
 # ============================================================================
@@ -22,8 +33,8 @@ class WebSearchRequest(BaseModel):
     query: str = Field(..., description="Search query")
     max_results: int = Field(default=10, ge=1, le=50, description="Maximum number of results")
     search_provider: str = Field(
-        default="duckduckgo",
-        description="Search provider to use (duckduckgo, serper)",
+        default_factory=get_default_search_provider,
+        description="Search provider to use (duckduckgo, serper, perplexity)",
     )
 
 

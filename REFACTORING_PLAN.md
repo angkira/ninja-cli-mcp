@@ -24,21 +24,19 @@
 - [ ] Create `src/ninja_coder/cli.py` for coder-specific CLI commands
 
 ### Phase 2: Create Researcher Module (Priority 2)
-- [ ] Create `src/ninja_researcher/__init__.py`
-- [ ] Create `src/ninja_researcher/models.py` - Research-specific models
-- [ ] Create `src/ninja_researcher/search_providers.py` - Tavily, DuckDuckGo integration
-- [ ] Create `src/ninja_researcher/tools.py` - Research tools
-- [ ] Create `src/ninja_researcher/server.py` - Researcher MCP server
-- [ ] Create `src/ninja_researcher/report_generator.py` - Parallel report generation
+- [x] Create `src/ninja_researcher/__init__.py`
+- [x] Create `src/ninja_researcher/models.py` - Research-specific models
+- [x] Create `src/ninja_researcher/search_providers.py` - DuckDuckGo, Serper.dev integration
+- [x] Create `src/ninja_researcher/tools.py` - Research tools (web search, deep research, report generation, fact check, summarize)
+- [x] Create `src/ninja_researcher/server.py` - Researcher MCP server
+- [x] Implement parallel report generation within tools.py
 
 ### Phase 3: Create Secretary Module (Priority 3)
-- [ ] Create `src/ninja_secretary/__init__.py`
-- [ ] Create `src/ninja_secretary/models.py` - Secretary-specific models
-- [ ] Create `src/ninja_secretary/codebase_explorer.py` - Code analysis with tree-sitter
-- [ ] Create `src/ninja_secretary/session_protocol.py` - Session tracking
-- [ ] Create `src/ninja_secretary/doc_manager.py` - Documentation CRUD
-- [ ] Create `src/ninja_secretary/tools.py` - Secretary tools
-- [ ] Create `src/ninja_secretary/server.py` - Secretary MCP server
+- [x] Create `src/ninja_secretary/__init__.py`
+- [x] Create `src/ninja_secretary/models.py` - Secretary-specific models
+- [x] Create `src/ninja_secretary/tools.py` - File reading, grep, search, tree generation, codebase reports, session tracking, doc management
+- [x] Create `src/ninja_secretary/server.py` - Secretary MCP server
+- [x] Implement session tracking and documentation management within tools.py
 
 ### Phase 4: Update Configuration (Priority 1)
 - [ ] Update `pyproject.toml` with new module structure
@@ -61,7 +59,7 @@
 ### Phase 7: Documentation (Priority 3)
 - [ ] Update README.md with new architecture
 - [ ] Create ARCHITECTURE.md (already provided in previous response)
-- [ ] Create module-specific documentation
+- [x] Create module-specific documentation (docs/researcher/README.md, docs/secretary/README.md)
 - [ ] Update CONTRIBUTING.md
 
 ## File Migration Map

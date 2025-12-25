@@ -9,9 +9,100 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import httpx
+from mcp.client.session import ClientSession
+from mcp.client.sse import sse_client
+
 from ninja_common.logging_utils import get_logger
 
 logger = get_logger(__name__)
+
+
+async def stdio_to_http_proxy(url: str) -> None:
+    """Forward stdio to HTTP/SSE daemon.
+
+    This acts as a proxy that bridges stdio (used by MCP clients like Claude Code)
+    to HTTP/SSE (used by persistent daemons).
+
+    Args:
+        url: HTTP/SSE endpoint URL (e.g., http://127.0.0.1:8100/sse)
+    """
+    import aiohttp
+    import sys
+
+    # Extract base URL
+    base_url = url.rsplit("/sse", 1)[0]
+    messages_url = None
+
+    async with aiohttp.ClientSession() as session:
+        # Connect to SSE stream for server messages
+        async with session.get(url) as sse_response:
+            # Task to read from SSE and write to stdout
+            async def forward_from_daemon():
+                nonlocal messages_url
+                buffer = b""
+
+                async for chunk in sse_response.content.iter_any():
+                    buffer += chunk
+
+                    # Process complete lines
+                    while b"\n" in buffer:
+                        line, buffer = buffer.split(b"\n", 1)
+                        line_str = line.decode("utf-8").strip()
+
+                        if not line_str:
+                            continue
+
+                        # Extract session endpoint from SSE
+                        if line_str.startswith("data: ") and messages_url is None:
+                            endpoint = line_str[6:].strip()
+                            if endpoint.startswith("/messages"):
+                                messages_url = f"{base_url}{endpoint}"
+                                logger.debug(f"Session endpoint: {messages_url}")
+                                continue
+
+                        # Forward data messages to stdout (skip pings and endpoint events)
+                        if line_str.startswith("data: "):
+                            data = line_str[6:].strip()
+                            if data and data != "[DONE]" and not data.startswith(": ping"):
+                                sys.stdout.write(data + "\n")
+                                sys.stdout.flush()
+
+            # Task to read from stdin and POST to daemon
+            async def forward_to_daemon():
+                loop = asyncio.get_event_loop()
+
+                # Wait for session endpoint to be set
+                while messages_url is None:
+                    await asyncio.sleep(0.1)
+
+                while True:
+                    try:
+                        # Read line from stdin (non-blocking)
+                        line = await loop.run_in_executor(None, sys.stdin.readline)
+                        if not line:
+                            break
+
+                        # POST message to daemon (fire-and-forget, response comes via SSE)
+                        async with session.post(
+                            messages_url,
+                            json=json.loads(line),
+                            headers={"Content-Type": "application/json"},
+                        ) as resp:
+                            # Accept 200 or 202 (Accepted)
+                            if resp.status not in (200, 202):
+                                logger.error(f"HTTP error: {resp.status}")
+                            # Don't wait for body - response comes through SSE
+
+                    except Exception as e:
+                        logger.error(f"Error forwarding to daemon: {e}")
+                        break
+
+            # Run both directions concurrently
+            await asyncio.gather(
+                forward_from_daemon(),
+                forward_to_daemon(),
+            )
 
 
 class DaemonManager:
@@ -37,8 +128,17 @@ class DaemonManager:
         return self.daemon_dir / f"{module}.pid"
 
     def _get_sock_file(self, module: str) -> Path:
-        """Get socket file path for module."""
+        """Get socket file path for module (deprecated, kept for compatibility)."""
         return self.daemon_dir / f"{module}.sock"
+
+    def _get_port(self, module: str) -> int:
+        """Get HTTP port for module."""
+        ports = {
+            "coder": 8100,
+            "researcher": 8101,
+            "secretary": 8102,
+        }
+        return ports.get(module, 8100)
 
     def _get_log_file(self, module: str) -> Path:
         """Get log file path for module."""
@@ -84,20 +184,16 @@ class DaemonManager:
 
         # Start daemon process
         log_file = self._get_log_file(module)
-        sock_file = self._get_sock_file(module)
+        port = self._get_port(module)
 
-        # Remove old socket file
-        if sock_file.exists():
-            sock_file.unlink()
-
-        # Start server process
+        # Start server process with HTTP mode
         cmd = [
             sys.executable,
             "-m",
             f"ninja_{module}.server",
-            "--daemon",
-            "--socket",
-            str(sock_file),
+            "--http",
+            "--port",
+            str(port),
         ]
 
         try:
@@ -116,7 +212,7 @@ class DaemonManager:
             else:
                 # Parent process
                 self._write_pid(module, pid)
-                logger.info(f"Started {module} daemon (PID {pid})")
+                logger.info(f"Started {module} daemon (PID {pid}) on port {port}")
                 return True
         except OSError as e:
             logger.error(f"Failed to start {module} daemon: {e}")
@@ -143,12 +239,13 @@ class DaemonManager:
 
         # Send SIGTERM
         try:
+            import time
             os.kill(pid, signal.SIGTERM)
             # Wait for process to exit
             for _ in range(50):  # 5 seconds
                 if not self._is_running(pid):
                     break
-                asyncio.sleep(0.1)
+                time.sleep(0.1)
             else:
                 # Force kill
                 os.kill(pid, signal.SIGKILL)
@@ -171,14 +268,23 @@ class DaemonManager:
             Status dictionary
         """
         pid = self._read_pid(module)
+        port = self._get_port(module)
+
         if not pid:
-            return {"running": False, "pid": None}
+            return {
+                "running": False,
+                "pid": None,
+                "port": port,
+                "url": f"http://127.0.0.1:{port}/sse",
+                "log": str(self._get_log_file(module)),
+            }
 
         running = self._is_running(pid)
         return {
             "running": running,
             "pid": pid if running else None,
-            "socket": str(self._get_sock_file(module)),
+            "port": port,
+            "url": f"http://127.0.0.1:{port}/sse" if running else None,
             "log": str(self._get_log_file(module)),
         }
 
@@ -271,15 +377,22 @@ def main() -> int:
         return 0
 
     elif args.command == "connect":
-        # For MCP clients - forward stdio to socket
-        sock_file = manager._get_sock_file(args.module)
-        if not sock_file.exists():
+        # For MCP clients - forward stdio to HTTP/SSE daemon
+        status = manager.status(args.module)
+        if not status["running"]:
             print(f"Error: {args.module} daemon not running", file=sys.stderr)
             return 1
 
-        # TODO: Implement socket forwarding
-        print(f"Connecting to {sock_file}...", file=sys.stderr)
-        return 0
+        # Forward stdio to HTTP/SSE endpoint
+        port = manager._get_port(args.module)
+        url = f"http://127.0.0.1:{port}/sse"
+
+        try:
+            asyncio.run(stdio_to_http_proxy(url))
+            return 0
+        except Exception as e:
+            print(f"Error connecting to daemon: {e}", file=sys.stderr)
+            return 1
 
     return 1
 

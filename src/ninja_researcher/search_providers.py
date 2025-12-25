@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import httpx
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 from ninja_common.logging_utils import get_logger
 
@@ -183,6 +183,113 @@ class SerperProvider(SearchProvider):
         return "serper"
 
 
+class PerplexityProvider(SearchProvider):
+    """Perplexity AI search provider."""
+
+    def __init__(self, api_key: str | None = None):
+        """
+        Initialize Perplexity provider.
+
+        Args:
+            api_key: Perplexity API key. If None, reads from PERPLEXITY_API_KEY env var.
+        """
+        self.api_key = api_key or os.environ.get("PERPLEXITY_API_KEY", "")
+        self.base_url = "https://api.perplexity.ai/chat/completions"
+
+    async def search(self, query: str, max_results: int = 10) -> list[dict[str, Any]]:
+        """
+        Search using Perplexity AI.
+
+        Args:
+            query: Search query.
+            max_results: Maximum number of results (used for response length hint).
+
+        Returns:
+            List of search results extracted from Perplexity response.
+        """
+        if not self.api_key:
+            logger.error("Perplexity API key not configured")
+            return []
+
+        try:
+            logger.info(f"Searching Perplexity AI for: {query}")
+
+            # Use Perplexity's sonar model for search
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self.base_url,
+                    json={
+                        "model": "sonar",
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": f"You are a search engine. Return up to {max_results} relevant search results with URLs. Format each result as: TITLE | URL | SNIPPET",
+                            },
+                            {"role": "user", "content": query},
+                        ],
+                        "return_citations": True,
+                        "return_related_questions": False,
+                    },
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            # Extract citations from Perplexity response
+            normalized = []
+            citations = data.get("citations", [])
+
+            for idx, url in enumerate(citations[:max_results]):
+                # Perplexity returns URLs in citations
+                normalized.append(
+                    {
+                        "title": f"Search result {idx + 1}",  # Perplexity doesn't provide titles
+                        "url": url,
+                        "snippet": data.get("choices", [{}])[0]
+                        .get("message", {})
+                        .get("content", "")[:200],  # First 200 chars of response
+                        "score": 1.0 - (idx * 0.05),
+                    }
+                )
+
+            # If no citations, create a single result with the response
+            if not normalized and data.get("choices"):
+                content = data["choices"][0].get("message", {}).get("content", "")
+                if content:
+                    normalized.append(
+                        {
+                            "title": "Perplexity AI Response",
+                            "url": "https://www.perplexity.ai/",
+                            "snippet": content[:500],
+                            "score": 1.0,
+                        }
+                    )
+
+            logger.info(f"Perplexity AI returned {len(normalized)} results")
+            return normalized
+
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Perplexity AI HTTP error: {e.response.status_code} - {e.response.text}"
+            )
+            return []
+        except Exception as e:
+            logger.error(f"Perplexity AI search failed: {e}")
+            return []
+
+    def is_available(self) -> bool:
+        """Check if Perplexity API key is configured."""
+        return bool(self.api_key)
+
+    def get_name(self) -> str:
+        """Get provider name."""
+        return "perplexity"
+
+
 class SearchProviderFactory:
     """Factory for creating search providers."""
 
@@ -194,7 +301,7 @@ class SearchProviderFactory:
         Get a search provider by name.
 
         Args:
-            provider_name: Provider name (duckduckgo, serper).
+            provider_name: Provider name (duckduckgo, serper, perplexity).
 
         Returns:
             SearchProvider instance.
@@ -208,6 +315,8 @@ class SearchProviderFactory:
                 cls._providers[provider_name] = DuckDuckGoProvider()
             elif provider_name == "serper":
                 cls._providers[provider_name] = SerperProvider()
+            elif provider_name == "perplexity":
+                cls._providers[provider_name] = PerplexityProvider()
             else:
                 raise ValueError(f"Unsupported search provider: {provider_name}")
 
@@ -230,6 +339,10 @@ class SearchProviderFactory:
         if os.environ.get("SERPER_API_KEY"):
             available.append("serper")
 
+        # Check Perplexity
+        if os.environ.get("PERPLEXITY_API_KEY"):
+            available.append("perplexity")
+
         return available
 
     @classmethod
@@ -237,11 +350,13 @@ class SearchProviderFactory:
         """
         Get the default provider.
 
-        Returns Serper if API key is configured, otherwise DuckDuckGo.
+        Priority: Perplexity > Serper > DuckDuckGo.
 
         Returns:
             Default provider name.
         """
+        if os.environ.get("PERPLEXITY_API_KEY"):
+            return "perplexity"
         if os.environ.get("SERPER_API_KEY"):
             return "serper"
         return "duckduckgo"

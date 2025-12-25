@@ -537,9 +537,9 @@ You:
     return server
 
 
-async def main() -> None:
-    """Run the MCP server."""
-    logger.info("Starting ninja-coder server")
+async def main_stdio() -> None:
+    """Run the MCP server over stdio."""
+    logger.info("Starting ninja-coder server (stdio mode)")
 
     server = create_server()
 
@@ -552,10 +552,75 @@ async def main() -> None:
         )
 
 
+async def main_http(host: str, port: int) -> None:
+    """Run the MCP server over HTTP with SSE."""
+    from mcp.server.sse import SseServerTransport
+    from starlette.requests import Request
+    from starlette.responses import Response
+    import uvicorn
+
+    logger.info(f"Starting ninja-coder server (HTTP/SSE mode) on {host}:{port}")
+
+    server = create_server()
+    sse = SseServerTransport("/messages")
+
+    async def handle_sse(request):
+        async with sse.connect_sse(
+            request.scope, request.receive, request._send
+        ) as streams:
+            await server.run(
+                streams[0], streams[1], server.create_initialization_options()
+            )
+        return Response()
+
+    async def handle_messages(scope, receive, send):
+        await sse.handle_post_message(scope, receive, send)
+
+    async def app(scope, receive, send):
+        path = scope.get("path", "")
+        if path == "/sse":
+            request = Request(scope, receive, send)
+            await handle_sse(request)
+        elif path == "/messages" and scope.get("method") == "POST":
+            await handle_messages(scope, receive, send)
+        else:
+            await Response("Not Found", status_code=404)(scope, receive, send)
+
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    server_instance = uvicorn.Server(config)
+    await server_instance.serve()
+
+
 def run() -> None:
     """Entry point for running the server."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Ninja Coder MCP Server")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Run server in HTTP/SSE mode (default: stdio)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8100,
+        help="Port for HTTP server (default: 8100)",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1)",
+    )
+
+    args = parser.parse_args()
+
     try:
-        asyncio.run(main())
+        if args.http:
+            asyncio.run(main_http(args.host, args.port))
+        else:
+            asyncio.run(main_stdio())
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
     except Exception as e:

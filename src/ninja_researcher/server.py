@@ -42,49 +42,18 @@ logger = get_logger(__name__)
 # Tool definitions
 TOOLS: list[Tool] = [
     Tool(
-        name="researcher_web_search",
-        description=(
-            "Search the web for information using DuckDuckGo or Serper.dev (Google Search). "
-            "Returns a list of relevant search results with titles, URLs, and snippets. "
-            "\n\n"
-            "Use this for: Finding information, gathering sources, researching topics. "
-            "\n\n"
-            "Providers: "
-            "- duckduckgo (free, no API key) "
-            "- serper (Google Search, requires SERPER_API_KEY)"
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query",
-                },
-                "max_results": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 50,
-                    "default": 10,
-                    "description": "Maximum number of results to return",
-                },
-                "search_provider": {
-                    "type": "string",
-                    "enum": ["duckduckgo", "serper"],
-                    "default": "duckduckgo",
-                    "description": "Search provider to use",
-                },
-            },
-            "required": ["query"],
-        },
-    ),
-    Tool(
         name="researcher_deep_research",
         description=(
-            "Perform deep research on a topic using multiple queries and parallel agents. "
-            "Automatically decomposes the topic into sub-queries and gathers comprehensive sources. "
+            "Perform comprehensive deep research on topics by decomposing them into "
+            "sub-queries and using parallel search agents with Perplexity AI. Gathers multiple sources, "
+            "identifies diverse perspectives, and builds detailed knowledge bases. "
             "\n\n"
-            "Use this for: Comprehensive research, gathering multiple perspectives, "
-            "building knowledge base on a topic."
+            "Use when: researching complex topics, needing comprehensive coverage, "
+            "gathering evidence from multiple angles, building knowledge bases, exploring "
+            "trending topics, finding best practices, or when broad topic understanding is needed. "
+            "\n\n"
+            "Better than basic web search for: multi-faceted research, comparing alternatives, "
+            "academic research, market analysis, technical deep-dives."
         ),
         inputSchema={
             "type": "object",
@@ -120,8 +89,13 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_generate_report",
         description=(
-            "Generate a comprehensive report from research sources using parallel sub-agents. "
-            "Each agent analyzes a subset of sources, then results are synthesized. "
+            "Synthesize research sources into structured, comprehensive reports using parallel "
+            "analysis agents. Analyzes multiple sources simultaneously, identifies key themes, "
+            "and generates organized reports. "
+            "\n\n"
+            "Use when: creating research reports, summarizing findings, organizing information "
+            "by topic, creating analysis documents, producing executive summaries, or synthesizing "
+            "multiple sources into coherent narratives. "
             "\n\n"
             "⚠️ NOTE: This tool is under development."
         ),
@@ -157,7 +131,12 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_fact_check",
         description=(
-            "Verify a claim against web sources. "
+            "Verify claims and statements against reliable web sources. Cross-references "
+            "information, identifies supporting and contradicting evidence, and validates accuracy. "
+            "\n\n"
+            "Use when: validating statements, checking accuracy of claims, finding sources for "
+            "assertions, identifying misinformation, verifying facts before publishing, or "
+            "investigating controversial statements. "
             "\n\n"
             "⚠️ NOTE: This tool is under development."
         ),
@@ -181,7 +160,11 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_summarize_sources",
         description=(
-            "Summarize multiple web sources into a cohesive summary. "
+            "Extract key information and main points from multiple sources and create concise "
+            "summaries. Condenses information while preserving essential insights and findings. "
+            "\n\n"
+            "Use when: condensing lengthy sources, extracting key insights, creating quick "
+            "overviews, getting the gist of multiple articles, or preparing briefing materials. "
             "\n\n"
             "⚠️ NOTE: This tool is under development."
         ),
@@ -217,7 +200,7 @@ def create_server() -> Server:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 WHAT RESEARCHER DOES:
-   ✅ Search the web for information (DuckDuckGo, Serper/Google)
+   ✅ Search the web for information (DuckDuckGo, Serper/Google, Perplexity AI)
    ✅ Perform deep research with multiple queries
    ✅ Aggregate and deduplicate sources
    ✅ Generate comprehensive reports (coming soon)
@@ -227,13 +210,9 @@ def create_server() -> Server:
 
 🔧 AVAILABLE TOOLS:
 
-• researcher_web_search
-  Search the web using DuckDuckGo (free) or Serper.dev (Google Search).
-  Returns: List of search results with titles, URLs, snippets.
-
 • researcher_deep_research
-  Multi-query research with parallel agents.
-  Returns: Aggregated and deduplicated sources.
+  Multi-query research with parallel agents using Perplexity AI.
+  Returns: Aggregated and deduplicated sources with AI-generated insights.
 
 • researcher_generate_report (coming soon)
   Generate comprehensive reports from sources.
@@ -246,31 +225,9 @@ def create_server() -> Server:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔑 SEARCH PROVIDERS:
-
-• DuckDuckGo (default)
-  - Free, no API key required
-  - Good for general searches
-  - Rate limited by DuckDuckGo
-
-• Serper.dev (Google Search)
-  - Requires SERPER_API_KEY environment variable
-  - Higher quality results (Google Search)
-  - Free tier: 2,500 searches/month
-  - Get key from: https://serper.dev
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 💡 USAGE EXAMPLES:
 
-1. Simple web search:
-   researcher_web_search({
-     "query": "Python async best practices",
-     "max_results": 10,
-     "search_provider": "duckduckgo"
-   })
-
-2. Deep research:
+1. Deep research:
    researcher_deep_research({
      "topic": "MCP protocol implementation",
      "max_sources": 20,
@@ -312,11 +269,7 @@ def create_server() -> Server:
         executor = get_executor()
 
         try:
-            if name == "researcher_web_search":
-                request = WebSearchRequest(**arguments)
-                result = await executor.web_search(request, client_id=client_id)
-
-            elif name == "researcher_deep_research":
+            if name == "researcher_deep_research":
                 request = DeepResearchRequest(**arguments)
                 result = await executor.deep_research(request, client_id=client_id)
 
@@ -371,9 +324,9 @@ def create_server() -> Server:
     return server
 
 
-async def main() -> None:
-    """Run the MCP server."""
-    logger.info("Starting ninja-researcher server")
+async def main_stdio() -> None:
+    """Run the MCP server over stdio."""
+    logger.info("Starting ninja-researcher server (stdio mode)")
 
     server = create_server()
 
@@ -386,10 +339,75 @@ async def main() -> None:
         )
 
 
+async def main_http(host: str, port: int) -> None:
+    """Run the MCP server over HTTP with SSE."""
+    from mcp.server.sse import SseServerTransport
+    from starlette.requests import Request
+    from starlette.responses import Response
+    import uvicorn
+
+    logger.info(f"Starting ninja-researcher server (HTTP/SSE mode) on {host}:{port}")
+
+    server = create_server()
+    sse = SseServerTransport("/messages")
+
+    async def handle_sse(request):
+        async with sse.connect_sse(
+            request.scope, request.receive, request._send
+        ) as streams:
+            await server.run(
+                streams[0], streams[1], server.create_initialization_options()
+            )
+        return Response()
+
+    async def handle_messages(scope, receive, send):
+        await sse.handle_post_message(scope, receive, send)
+
+    async def app(scope, receive, send):
+        path = scope.get("path", "")
+        if path == "/sse":
+            request = Request(scope, receive, send)
+            await handle_sse(request)
+        elif path == "/messages" and scope.get("method") == "POST":
+            await handle_messages(scope, receive, send)
+        else:
+            await Response("Not Found", status_code=404)(scope, receive, send)
+
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    server_instance = uvicorn.Server(config)
+    await server_instance.serve()
+
+
 def run() -> None:
     """Entry point for running the server."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Ninja Researcher MCP Server")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Run server in HTTP/SSE mode (default: stdio)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8101,
+        help="Port for HTTP server (default: 8101)",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1)",
+    )
+
+    args = parser.parse_args()
+
     try:
-        asyncio.run(main())
+        if args.http:
+            asyncio.run(main_http(args.host, args.port))
+        else:
+            asyncio.run(main_stdio())
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
     except Exception as e:

@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "ninja-coder": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/iuriimedvedev/Project/ninja-coder/ninja-cli-mcp",
+        "run",
+        "ninja-daemon",
+        "connect",
+        "coder"
+      ]
+    },
+    "ninja-researcher": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/iuriimedvedev/Project/ninja-coder/ninja-cli-mcp",
+        "run",
+        "ninja-daemon",
+        "connect",
+        "researcher"
+      ]
+    },
+    "ninja-secretary": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/iuriimedvedev/Project/ninja-coder/ninja-cli-mcp",
+        "run",
+        "ninja-daemon",
+        "connect",
+        "secretary"
+      ]
+    }
+  }
+}
