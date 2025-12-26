@@ -81,18 +81,39 @@ info "Setting up MCP context server configuration..."
 # Check if settings.json exists
 if [[ ! -f "$ZED_SETTINGS" ]]; then
     info "Creating new Zed settings.json"
+
+    # Load environment variables for JSON
+    source "$HOME/.ninja-cli-mcp.env" 2>/dev/null || true
+
     # Create minimal settings with just context_servers
-    cat > "$ZED_SETTINGS" <<EOF
-{
-  "context_servers": {
-    "ninja-cli-mcp": {
-      "command": "$RUN_SERVER",
-      "args": [],
-      "env": {}
+    python3 <<PYTHON_EOF
+import json
+import os
+
+env_vars = {}
+if os.environ.get("OPENROUTER_API_KEY"):
+    env_vars["OPENROUTER_API_KEY"] = os.environ.get("OPENROUTER_API_KEY")
+if os.environ.get("OPENAI_API_KEY"):
+    env_vars["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY")
+if os.environ.get("NINJA_MODEL"):
+    env_vars["NINJA_MODEL"] = os.environ.get("NINJA_MODEL")
+if os.environ.get("NINJA_CODE_BIN"):
+    env_vars["NINJA_CODE_BIN"] = os.environ.get("NINJA_CODE_BIN")
+
+settings = {
+    "context_servers": {
+        "ninja-cli-mcp": {
+            "command": "$RUN_SERVER",
+            "args": [],
+            "env": env_vars
+        }
     }
-  }
 }
-EOF
+
+with open("$ZED_SETTINGS", 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+PYTHON_EOF
     success "Configuration created at $ZED_SETTINGS"
 else
     # Settings file exists, need to merge
@@ -158,11 +179,23 @@ except json.JSONDecodeError as e:
 if "context_servers" not in settings:
     settings["context_servers"] = {}
 
+# Load environment variables
+import os
+env_vars = {}
+if os.environ.get("OPENROUTER_API_KEY"):
+    env_vars["OPENROUTER_API_KEY"] = os.environ.get("OPENROUTER_API_KEY")
+if os.environ.get("OPENAI_API_KEY"):
+    env_vars["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY")
+if os.environ.get("NINJA_MODEL"):
+    env_vars["NINJA_MODEL"] = os.environ.get("NINJA_MODEL")
+if os.environ.get("NINJA_CODE_BIN"):
+    env_vars["NINJA_CODE_BIN"] = os.environ.get("NINJA_CODE_BIN")
+
 # Add or update ninja-cli-mcp
 settings["context_servers"]["ninja-cli-mcp"] = {
     "command": "$RUN_SERVER",
     "args": [],
-    "env": {}
+    "env": env_vars
 }
 
 # Write back
@@ -204,12 +237,24 @@ except json.JSONDecodeError as e:
     print(f"Error: Invalid JSON in settings file: {e}", file=sys.stderr)
     sys.exit(1)
 
+# Load environment variables
+import os
+env_vars = {}
+if os.environ.get("OPENROUTER_API_KEY"):
+    env_vars["OPENROUTER_API_KEY"] = os.environ.get("OPENROUTER_API_KEY")
+if os.environ.get("OPENAI_API_KEY"):
+    env_vars["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY")
+if os.environ.get("NINJA_MODEL"):
+    env_vars["NINJA_MODEL"] = os.environ.get("NINJA_MODEL")
+if os.environ.get("NINJA_CODE_BIN"):
+    env_vars["NINJA_CODE_BIN"] = os.environ.get("NINJA_CODE_BIN")
+
 # Add context_servers
 settings["context_servers"] = {
     "ninja-cli-mcp": {
         "command": "$RUN_SERVER",
         "args": [],
-        "env": {}
+        "env": env_vars
     }
 }
 
