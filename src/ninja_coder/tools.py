@@ -567,9 +567,7 @@ class ToolExecutor:
         Returns:
             Test result indicating this tool is deprecated.
         """
-        logger.warning(
-            f"run_tests called for client {client_id} - this tool is deprecated"
-        )
+        logger.warning(f"run_tests called for client {client_id} - this tool is deprecated")
 
         return TestResult(
             status="error",
@@ -580,7 +578,9 @@ class ToolExecutor:
         )
 
     async def apply_patch(
-        self, request: ApplyPatchRequest, client_id: str = "default"  # noqa: ARG002
+        self,
+        request: ApplyPatchRequest,  # noqa: ARG002
+        client_id: str = "default",
     ) -> ApplyPatchResult:
         """
         Apply a patch (not supported - delegated to AI code CLI).

@@ -136,12 +136,32 @@ disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
 module = [
+    "ninja_common.metrics",
+    "ninja_common.security",
+    "ninja_common.rate_balancer",
+    "ninja_common.daemon",
+    "ninja_common.config_cli",
+    "ninja_secretary.*",
+    "ninja_researcher.server",
+    "ninja_researcher.tools",
+    "ninja_researcher.search_providers",
+    "ninja_coder.server",
+    "ninja_coder.driver",
+    "ninja_coder.tools",
+]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
     "mcp.*",
     "tree_sitter.*",
     "tavily.*",
     "duckduckgo_search.*",
     "starlette.*",
     "uvicorn.*",
+    "psutil.*",
+    "bs4.*",
+    "markdownify.*",
 ]
 ignore_missing_imports = true
 

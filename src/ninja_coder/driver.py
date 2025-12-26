@@ -772,7 +772,10 @@ class NinjaDriver:
             # Look for common error indicators
             for line in error_lines[-10:]:  # Last 10 lines only
                 lower = line.lower()
-                if any(indicator in lower for indicator in ["error:", "failed:", "exception:", "traceback"]):
+                if any(
+                    indicator in lower
+                    for indicator in ["error:", "failed:", "exception:", "traceback"]
+                ):
                     notes = line[:200]  # Max 200 chars
                     break
 

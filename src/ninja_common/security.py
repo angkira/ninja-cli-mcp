@@ -21,6 +21,7 @@ from typing import Any, ClassVar, TypeVar
 
 try:
     import psutil
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     psutil = None

@@ -173,7 +173,9 @@ def safe_join(base: str | Path, *parts: str) -> Path:
     try:
         result.resolve().relative_to(base_path)
     except ValueError as err:
-        raise PathTraversalError(f"Path components {parts} would escape base directory {base_path}") from err
+        raise PathTraversalError(
+            f"Path components {parts} would escape base directory {base_path}"
+        ) from err
 
     return result
 

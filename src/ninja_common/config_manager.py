@@ -34,7 +34,7 @@ class ConfigManager:
         Returns:
             Dictionary of environment variables.
         """
-        config = {}
+        config: dict[str, str] = {}
 
         if not self.config_file.exists():
             return config
@@ -63,7 +63,7 @@ class ConfigManager:
             config: Dictionary of environment variables to write.
         """
         # Read existing file to preserve structure
-        lines = []
+        lines: list[str] = []
 
         if self.config_file.exists():
             with self.config_file.open() as f:
@@ -101,9 +101,13 @@ class ConfigManager:
             lines.append("# Ninja MCP Configuration\n")
             lines.append(f"# Generated on {__import__('datetime').datetime.now()}\n")
             lines.append("\n")
-            lines.append("# ============================================================================\n")
+            lines.append(
+                "# ============================================================================\n"
+            )
             lines.append("# Common Configuration\n")
-            lines.append("# ============================================================================\n")
+            lines.append(
+                "# ============================================================================\n"
+            )
             lines.append("\n")
 
         # Add any remaining config items (new variables)

@@ -238,6 +238,7 @@ class DaemonManager:
         # Send SIGTERM
         try:
             import time  # noqa: PLC0415
+
             os.kill(pid, signal.SIGTERM)
             # Wait for process to exit
             for _ in range(50):  # 5 seconds

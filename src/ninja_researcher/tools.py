@@ -38,7 +38,9 @@ class ResearchToolExecutor:
         """Initialize the research tool executor."""
         self.provider_factory = SearchProviderFactory()
 
-    @rate_balanced(max_calls=30, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=60.0)
+    @rate_balanced(
+        max_calls=30, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=60.0
+    )
     @monitored
     async def web_search(
         self, request: WebSearchRequest, client_id: str = "default"
@@ -101,7 +103,9 @@ class ResearchToolExecutor:
                 error_message=str(e),
             )
 
-    @rate_balanced(max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=60.0)
+    @rate_balanced(
+        max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=60.0
+    )
     @monitored
     async def deep_research(
         self, request: DeepResearchRequest, client_id: str = "default"
@@ -140,7 +144,9 @@ class ResearchToolExecutor:
             async def search_query(query: str) -> list[dict[str, Any]]:
                 """Search a single query with semaphore control."""
                 async with semaphore:
-                    return await provider.search(query, max_results=request.max_sources // len(queries))
+                    return await provider.search(
+                        query, max_results=request.max_sources // len(queries)
+                    )
 
             # Execute searches in parallel
             search_tasks = [search_query(q) for q in queries]
@@ -188,7 +194,9 @@ class ResearchToolExecutor:
                 summary=f"Research failed: {e}",
             )
 
-    @rate_balanced(max_calls=5, time_window=60, max_retries=3, initial_backoff=2.0, max_backoff=60.0)
+    @rate_balanced(
+        max_calls=5, time_window=60, max_retries=3, initial_backoff=2.0, max_backoff=60.0
+    )
     @monitored
     async def generate_report(
         self, request: GenerateReportRequest, client_id: str = "default"
@@ -203,7 +211,9 @@ class ResearchToolExecutor:
         Returns:
             Report result with generated markdown report.
         """
-        logger.info(f"Generating {request.report_type} report on '{request.topic}' (client: {client_id})")
+        logger.info(
+            f"Generating {request.report_type} report on '{request.topic}' (client: {client_id})"
+        )
 
         try:
             if not request.sources:
@@ -217,7 +227,7 @@ class ResearchToolExecutor:
             # Divide sources among parallel agents
             sources_per_agent = max(1, len(request.sources) // request.parallel_agents)
             source_chunks = [
-                request.sources[i:i + sources_per_agent]
+                request.sources[i : i + sources_per_agent]
                 for i in range(0, len(request.sources), sources_per_agent)
             ]
 
@@ -245,13 +255,21 @@ class ResearchToolExecutor:
 
             # Generate report based on type
             if request.report_type == "executive":
-                report = self._generate_executive_report(request.topic, chunk_analyses, request.sources)
+                report = self._generate_executive_report(
+                    request.topic, chunk_analyses, request.sources
+                )
             elif request.report_type == "technical":
-                report = self._generate_technical_report(request.topic, chunk_analyses, request.sources)
+                report = self._generate_technical_report(
+                    request.topic, chunk_analyses, request.sources
+                )
             elif request.report_type == "summary":
-                report = self._generate_summary_report(request.topic, chunk_analyses, request.sources)
+                report = self._generate_summary_report(
+                    request.topic, chunk_analyses, request.sources
+                )
             else:  # comprehensive
-                report = self._generate_comprehensive_report(request.topic, chunk_analyses, request.sources)
+                report = self._generate_comprehensive_report(
+                    request.topic, chunk_analyses, request.sources
+                )
 
             word_count = len(report.split())
 
@@ -271,7 +289,9 @@ class ResearchToolExecutor:
                 word_count=0,
             )
 
-    def _generate_executive_report(self, topic: str, analyses: list[str], sources: list[dict]) -> str:
+    def _generate_executive_report(
+        self, topic: str, analyses: list[str], sources: list[dict]
+    ) -> str:
         """Generate an executive summary report."""
         report = f"# Executive Summary: {topic}\n\n"
         report += "## Key Findings\n\n"
@@ -279,7 +299,9 @@ class ResearchToolExecutor:
         report += f"\n\n## Sources\n\n{len(sources)} sources consulted\n"
         return report
 
-    def _generate_technical_report(self, topic: str, analyses: list[str], sources: list[dict]) -> str:
+    def _generate_technical_report(
+        self, topic: str, analyses: list[str], sources: list[dict]
+    ) -> str:
         """Generate a technical report."""
         report = f"# Technical Report: {topic}\n\n"
         report += "## Overview\n\n"
@@ -302,7 +324,9 @@ class ResearchToolExecutor:
         report += f"\n\n*Based on {len(sources)} sources*\n"
         return report
 
-    def _generate_comprehensive_report(self, topic: str, analyses: list[str], sources: list[dict]) -> str:
+    def _generate_comprehensive_report(
+        self, topic: str, analyses: list[str], sources: list[dict]
+    ) -> str:
         """Generate a comprehensive report."""
         report = f"# Comprehensive Report: {topic}\n\n"
         report += "## Table of Contents\n\n"
@@ -316,13 +340,15 @@ class ResearchToolExecutor:
             report += f"### Section {i}\n\n{analysis}\n\n"
         report += "## Sources\n\n"
         for i, source in enumerate(sources, 1):
-            title = source.get('title', 'Untitled')
-            url = source.get('url', '')
-            snippet = source.get('snippet', '')
+            title = source.get("title", "Untitled")
+            url = source.get("url", "")
+            snippet = source.get("snippet", "")
             report += f"{i}. **{title}**\n   - URL: {url}\n   - Summary: {snippet}\n\n"
         return report
 
-    @rate_balanced(max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=60.0)
+    @rate_balanced(
+        max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=60.0
+    )
     @monitored
     async def fact_check(
         self, request: FactCheckRequest, client_id: str = "default"
@@ -422,7 +448,9 @@ class ResearchToolExecutor:
                 confidence=0.0,
             )
 
-    @rate_balanced(max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=60.0)
+    @rate_balanced(
+        max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=60.0
+    )
     @monitored
     async def summarize_sources(
         self, request: SummarizeSourcesRequest, client_id: str = "default"
@@ -451,24 +479,24 @@ class ResearchToolExecutor:
                         response.raise_for_status()
 
                         # Parse HTML and extract text
-                        soup = BeautifulSoup(response.text, 'html.parser')
+                        soup = BeautifulSoup(response.text, "html.parser")
 
                         # Remove script and style elements
                         for script in soup(["script", "style", "nav", "footer", "header"]):
                             script.decompose()
 
                         # Get text
-                        text = soup.get_text(separator=' ', strip=True)
+                        text = soup.get_text(separator=" ", strip=True)
 
                         # Clean up text
                         lines = (line.strip() for line in text.splitlines())
                         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-                        text = ' '.join(chunk for chunk in chunks if chunk)
+                        text = " ".join(chunk for chunk in chunks if chunk)
 
                         # Create summary (first N words)
                         words = text.split()
                         summary_length = min(200, len(words))
-                        summary = ' '.join(words[:summary_length])
+                        summary = " ".join(words[:summary_length])
 
                         if len(words) > summary_length:
                             summary += "..."
@@ -477,7 +505,7 @@ class ResearchToolExecutor:
                             "url": url,
                             "status": "ok",
                             "summary": summary,
-                            "word_count": len(words)
+                            "word_count": len(words),
                         }
 
                 except Exception as e:
@@ -486,7 +514,7 @@ class ResearchToolExecutor:
                         "url": url,
                         "status": "error",
                         "summary": f"Failed to fetch: {e}",
-                        "word_count": 0
+                        "word_count": 0,
                     }
 
             # Fetch all sources in parallel (with limit)
@@ -496,9 +524,7 @@ class ResearchToolExecutor:
                 async with semaphore:
                     return await fetch_and_summarize(url)
 
-            summaries = await asyncio.gather(
-                *[fetch_with_semaphore(url) for url in request.urls]
-            )
+            summaries = await asyncio.gather(*[fetch_with_semaphore(url) for url in request.urls])
 
             # Create combined summary
             successful_summaries = [s for s in summaries if s["status"] == "ok"]
@@ -522,13 +548,13 @@ class ResearchToolExecutor:
                 words_to_add = min(len(words), request.max_length - total_words)
 
                 if words_to_add > 0:
-                    combined_parts.append(' '.join(words[:words_to_add]))
+                    combined_parts.append(" ".join(words[:words_to_add]))
                     total_words += words_to_add
 
                 if total_words >= request.max_length:
                     break
 
-            combined_summary = '\n\n'.join(combined_parts)
+            combined_summary = "\n\n".join(combined_parts)
 
             status = "ok" if len(successful_summaries) == len(summaries) else "partial"
 

@@ -71,7 +71,11 @@ def fetch_openrouter_pricing() -> dict[str, dict]:
     global _pricing_cache, _pricing_cache_time  # noqa: PLW0603
 
     # Return cached pricing if still valid
-    if _pricing_cache and _pricing_cache_time and datetime.now() - _pricing_cache_time < PRICING_CACHE_TTL:
+    if (
+        _pricing_cache
+        and _pricing_cache_time
+        and datetime.now() - _pricing_cache_time < PRICING_CACHE_TTL
+    ):
         return _pricing_cache
 
     try:

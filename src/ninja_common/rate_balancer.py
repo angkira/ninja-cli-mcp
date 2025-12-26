@@ -77,9 +77,7 @@ class TokenBucket:
             # Refill tokens based on time passed
             now = time.time()
             time_passed = now - self.last_refill
-            self.tokens = min(
-                self.max_tokens, self.tokens + (time_passed * self.refill_rate)
-            )
+            self.tokens = min(self.max_tokens, self.tokens + (time_passed * self.refill_rate))
             self.last_refill = now
 
             # Check if we have enough tokens
@@ -224,9 +222,7 @@ class RateBalancer:
                     )
                     await asyncio.sleep(backoff)
                 else:
-                    logger.error(
-                        f"{func_name} failed after {config.max_retries + 1} attempts: {e}"
-                    )
+                    logger.error(f"{func_name} failed after {config.max_retries + 1} attempts: {e}")
 
         # All retries failed
         metrics.end_time = time.time()

@@ -274,9 +274,7 @@ class PerplexityProvider(SearchProvider):
             return normalized
 
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Perplexity AI HTTP error: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"Perplexity AI HTTP error: {e.response.status_code} - {e.response.text}")
             return []
         except Exception as e:
             logger.error(f"Perplexity AI search failed: {e}")
