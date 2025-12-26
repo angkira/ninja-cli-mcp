@@ -21,13 +21,14 @@ from typing import Any, ClassVar, TypeVar
 
 try:
     import psutil
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     psutil = None
     PSUTIL_AVAILABLE = False
 
-from ninja_cli_mcp.logging_utils import get_logger
-from ninja_cli_mcp.path_utils import validate_repo_root as _validate
+from ninja_common.logging_utils import get_logger
+from ninja_common.path_utils import validate_repo_root as _validate
 
 
 logger = get_logger(__name__)
@@ -102,7 +103,7 @@ class RateLimiter:
         else:  # Linux/macOS
             cache_base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
 
-        persistence_dir = cache_base / "ninja-cli-mcp" / "persistence"
+        persistence_dir = cache_base / "ninja-mcp" / "persistence"
         persistence_dir.mkdir(parents=True, exist_ok=True)
         persistence_dir.chmod(0o700)  # Secure permissions
 
@@ -220,7 +221,7 @@ class InputValidator:
             try:
                 # Additional check for symbolic links
                 if path_obj.is_symlink():
-                    target = path_obj.readlink().resolve()  # Fixed PTH115
+                    target = path_obj.readlink().resolve()
                     target.relative_to(base_path)
                 path_obj.relative_to(base_path)
             except (ValueError, OSError):

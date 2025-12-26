@@ -1,7 +1,7 @@
 """
-MCP tool implementations.
+MCP tool implementations for the Coder module.
 
-This module contains the business logic for all MCP tools exposed by the server.
+This module contains the business logic for all code-related MCP tools.
 Tools are implemented as async functions that delegate execution to the AI code CLI.
 
 IMPORTANT: Tools return ONLY concise summaries to the orchestrator, never source code.
@@ -14,9 +14,8 @@ import time
 import uuid
 from pathlib import Path
 
-from ninja_cli_mcp.logging_utils import get_logger
-from ninja_cli_mcp.metrics import MetricsTracker, create_task_metrics
-from ninja_cli_mcp.models import (
+from ninja_coder.driver import InstructionBuilder, NinjaDriver, NinjaResult
+from ninja_coder.models import (
     ApplyPatchRequest,
     ApplyPatchResult,
     ExecutionMode,
@@ -31,9 +30,10 @@ from ninja_cli_mcp.models import (
     StepResult,
     TestResult,
 )
-from ninja_cli_mcp.ninja_driver import InstructionBuilder, NinjaDriver, NinjaResult
-from ninja_cli_mcp.path_utils import validate_repo_root
-from ninja_cli_mcp.security import InputValidator, monitored, rate_limited
+from ninja_common.logging_utils import get_logger
+from ninja_common.metrics import MetricsTracker, create_task_metrics
+from ninja_common.path_utils import validate_repo_root
+from ninja_common.security import InputValidator, monitored, rate_limited
 
 
 logger = get_logger(__name__)
@@ -45,7 +45,7 @@ class ToolExecutor:
 
     This class provides the implementation for all tools exposed by the MCP server.
     All code execution is delegated to the AI code CLI.
-    
+
     IMPORTANT: All responses are kept concise - only summaries, never source code.
     """
 
@@ -61,7 +61,7 @@ class ToolExecutor:
     def _result_to_step_result(self, step_id: str, result: NinjaResult) -> StepResult:
         """
         Convert NinjaResult to StepResult.
-        
+
         Returns ONLY concise summary information, no source code.
         """
         status: str = "ok" if result.success else "fail"
@@ -70,7 +70,7 @@ class ToolExecutor:
 
         # Ensure summary is concise (max 500 chars)
         summary = result.summary[:500] if len(result.summary) > 500 else result.summary
-        
+
         # Ensure notes are concise (max 300 chars)
         notes = result.notes[:300] if len(result.notes) > 300 else result.notes
 
@@ -93,7 +93,7 @@ class ToolExecutor:
 
         This tool runs the AI code CLI in quick mode for fast code writing.
         The CLI has full responsibility for reading/writing files.
-        
+
         Returns ONLY a concise summary - NO source code is returned.
 
         Args:
@@ -131,7 +131,7 @@ class ToolExecutor:
             duration = time.time() - start_time
             self._record_metrics(
                 task_id=task_id,
-                tool_name="ninja_quick_task",
+                tool_name="coder_quick_task",
                 task_description=request.task[:200],  # Truncate for safety
                 output="",
                 duration_sec=duration,
@@ -176,7 +176,7 @@ class ToolExecutor:
         file_scope = ",".join(request.allowed_globs) if request.allowed_globs else None
         self._record_metrics(
             task_id=task_id,
-            tool_name="ninja_quick_task",
+            tool_name="coder_quick_task",
             task_description=request.task,
             output=result.stdout,
             duration_sec=duration,
@@ -227,8 +227,6 @@ class ToolExecutor:
                 file_scope=file_scope,
                 error_message=error_message,
             )
-            # Add client_id to metrics
-            metrics.client_id = client_id
             tracker.record_task(metrics)
         except Exception as e:
             logger.warning(f"Failed to record metrics for client {client_id}: {e}")
@@ -241,7 +239,7 @@ class ToolExecutor:
 
         Each step is executed in order, with each step completing before
         the next begins. The AI code CLI handles all file operations.
-        
+
         Returns ONLY concise summaries per step - NO source code.
 
         Args:
@@ -309,7 +307,7 @@ class ToolExecutor:
             file_scope = ",".join(step.allowed_globs) if step.allowed_globs else None
             self._record_metrics(
                 task_id=step_task_id,
-                tool_name="ninja_plan_step_sequential",
+                tool_name="coder_plan_step_sequential",
                 task_description=f"{step.title}: {step.task}",
                 output=result.stdout,
                 duration_sec=step_duration,
@@ -350,7 +348,7 @@ class ToolExecutor:
         plan_duration = time.time() - plan_start_time
         self._record_metrics(
             task_id=plan_task_id,
-            tool_name="ninja_execute_plan_sequential",
+            tool_name="coder_execute_plan_sequential",
             task_description=f"Sequential plan with {len(request.steps)} steps",
             output=overall_summary,
             duration_sec=plan_duration,
@@ -375,7 +373,7 @@ class ToolExecutor:
 
         Steps are executed concurrently up to the fanout limit. Each step
         runs in its own subprocess calling the AI code CLI.
-        
+
         Returns ONLY concise summaries per step - NO source code.
 
         Note: For stronger isolation, consider using git worktrees for each
@@ -488,7 +486,7 @@ class ToolExecutor:
                 file_scope = ",".join(step.allowed_globs) if step.allowed_globs else None
                 self._record_metrics(
                     task_id=step_task_id,
-                    tool_name="ninja_plan_step_parallel",
+                    tool_name="coder_plan_step_parallel",
                     task_description=f"{step.title}: {step.task}",
                     output=result.stdout,
                     duration_sec=step_duration,
@@ -537,7 +535,7 @@ class ToolExecutor:
         plan_duration = time.time() - plan_start_time
         self._record_metrics(
             task_id=plan_task_id,
-            tool_name="ninja_execute_plan_parallel",
+            tool_name="coder_execute_plan_parallel",
             task_description=f"Parallel plan with {len(request.steps)} steps (fanout={request.fanout})",
             output=overall_summary,
             duration_sec=plan_duration,
@@ -555,7 +553,7 @@ class ToolExecutor:
             merge_report=merge_report,
         )
 
-    async def run_tests(self, request: RunTestsRequest, client_id: str = "default") -> TestResult:
+    async def run_tests(self, request: RunTestsRequest, client_id: str = "default") -> TestResult:  # noqa: ARG002
         """
         ⚠️ DEPRECATED - Run test commands via the AI code CLI.
 
@@ -569,9 +567,7 @@ class ToolExecutor:
         Returns:
             Test result indicating this tool is deprecated.
         """
-        logger.warning(
-            f"run_tests called for client {client_id} - this tool is deprecated"
-        )
+        logger.warning(f"run_tests called for client {client_id} - this tool is deprecated")
 
         return TestResult(
             status="error",
@@ -582,7 +578,9 @@ class ToolExecutor:
         )
 
     async def apply_patch(
-        self, request: ApplyPatchRequest, client_id: str = "default"  # noqa: ARG002
+        self,
+        request: ApplyPatchRequest,  # noqa: ARG002
+        client_id: str = "default",
     ) -> ApplyPatchResult:
         """
         Apply a patch (not supported - delegated to AI code CLI).
@@ -591,7 +589,7 @@ class ToolExecutor:
         not by this server. This tool returns a not_supported status.
 
         If you need to apply patches, include them in the task description for
-        ninja_quick_task or execute_plan_sequential/parallel.
+        coder_quick_task or execute_plan_sequential/parallel.
 
         Args:
             request: Apply patch request parameters.
@@ -606,7 +604,7 @@ class ToolExecutor:
             status="not_supported",
             message=(
                 "⚠️ NOT SUPPORTED: Ninja writes code based on specifications, not patches. "
-                "To apply changes, describe what code to write in ninja_quick_task."
+                "To apply changes, describe what code to write in coder_quick_task."
             ),
         )
 
@@ -627,70 +625,3 @@ def reset_executor() -> None:
     """Reset the global tool executor (for testing)."""
     global _executor  # noqa: PLW0603
     _executor = None
-
-
-def get_tool_definitions() -> list[dict]:
-    """Return MCP tool definitions for HTTP/SSE transport."""
-    return [
-        {
-            "name": "ninja_quick_task",
-            "description": "Execute a single-pass CODE WRITING task via AI agent (Aider)",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "task": {"type": "string", "description": "Detailed code writing specification"},
-                    "repo_root": {"type": "string"},
-                },
-                "required": ["task", "repo_root"],
-            },
-        },
-        {
-            "name": "execute_plan_sequential",
-            "description": "Execute multi-step CODE WRITING plan sequentially",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "plan_description": {"type": "string"},
-                    "repo_root": {"type": "string"},
-                    "steps": {"type": "array"},
-                },
-                "required": ["plan_description", "repo_root", "steps"],
-            },
-        },
-        {
-            "name": "execute_plan_parallel",
-            "description": "Execute independent CODE WRITING steps in parallel",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "plan_description": {"type": "string"},
-                    "repo_root": {"type": "string"},
-                    "steps": {"type": "array"},
-                },
-                "required": ["plan_description", "repo_root", "steps"],
-            },
-        },
-        {
-            "name": "run_tests",
-            "description": "⚠️ DEPRECATED - Use bash tool instead",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "repo_root": {"type": "string"},
-                },
-                "required": ["repo_root"],
-            },
-        },
-        {
-            "name": "apply_patch",
-            "description": "⚠️ NOT SUPPORTED - Use ninja_quick_task with specification instead",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "repo_root": {"type": "string"},
-                    "patch_content": {"type": "string"},
-                },
-                "required": ["repo_root", "patch_content"],
-            },
-        },
-    ]

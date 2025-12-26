@@ -1,7 +1,7 @@
 """
-Pydantic models for MCP tool inputs and outputs.
+Pydantic models for Ninja Coder MCP tools.
 
-These models define the API surface for the ninja-cli-mcp server.
+These models define the API surface for the coder module.
 All models use strict validation and comprehensive type hints.
 """
 
