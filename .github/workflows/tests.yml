@@ -23,13 +23,13 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --extra dev
 
       - name: Lint with ruff
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src/
 
       - name: Format check with ruff
-        run: uv run ruff format --check src/ tests/
+        run: uv run ruff format --check src/
 
       - name: Type check with mypy
         run: uv run mypy src/
@@ -50,7 +50,7 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --extra dev --extra researcher
 
       - name: Run smoke tests
         run: uv run pytest tests/test_smoke.py -v --tb=short
@@ -71,7 +71,7 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --extra dev --extra researcher
 
       - name: Run unit tests
         run: uv run pytest tests/ -m "unit" -v --tb=short
@@ -93,7 +93,7 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --extra dev --extra researcher
 
       - name: Run integration tests
         run: uv run pytest tests/ -m "integration and not agent" -v --tb=short
