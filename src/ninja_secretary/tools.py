@@ -46,7 +46,9 @@ class SecretaryToolExecutor:
         """Initialize the secretary tool executor."""
         self.sessions: dict[str, SessionReport] = {}
 
-    @rate_balanced(max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0)
+    @rate_balanced(
+        max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
+    )
     @monitored
     async def read_file(
         self, request: ReadFileRequest, client_id: str = "default"
@@ -81,7 +83,7 @@ class SecretaryToolExecutor:
                 )
 
             # Read file content
-            with file_path.open(encoding='utf-8', errors='replace') as f:
+            with file_path.open(encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
 
             total_lines = len(lines)
@@ -92,7 +94,7 @@ class SecretaryToolExecutor:
                 end = request.end_line if request.end_line else total_lines
                 lines = lines[start:end]
 
-            content = ''.join(lines)
+            content = "".join(lines)
 
             # Track file access
             await self._track_file_access(client_id, request.file_path)
@@ -118,7 +120,9 @@ class SecretaryToolExecutor:
                 error_message=str(e),
             )
 
-    @rate_balanced(max_calls=30, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0)
+    @rate_balanced(
+        max_calls=30, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0
+    )
     @monitored
     async def file_search(
         self, request: FileSearchRequest, client_id: str = "default"
@@ -186,11 +190,11 @@ class SecretaryToolExecutor:
                 error_message=str(e),
             )
 
-    @rate_balanced(max_calls=30, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0)
+    @rate_balanced(
+        max_calls=30, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0
+    )
     @monitored
-    async def grep(
-        self, request: GrepRequest, client_id: str = "default"
-    ) -> GrepResult:
+    async def grep(self, request: GrepRequest, client_id: str = "default") -> GrepResult:
         """
         Grep for content in files.
 
@@ -222,7 +226,7 @@ class SecretaryToolExecutor:
                     break
 
                 try:
-                    with file_path.open(encoding='utf-8', errors='replace') as f:
+                    with file_path.open(encoding="utf-8", errors="replace") as f:
                         lines = f.readlines()
 
                     for line_num, line in enumerate(lines, 1):
@@ -279,7 +283,9 @@ class SecretaryToolExecutor:
                 error_message=str(e),
             )
 
-    @rate_balanced(max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0)
+    @rate_balanced(
+        max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0
+    )
     @monitored
     async def file_tree(
         self, request: FileTreeRequest, client_id: str = "default"
@@ -317,7 +323,12 @@ class SecretaryToolExecutor:
                     return None
 
                 # Skip hidden files and common ignored directories
-                if path.name.startswith('.') or path.name in ['node_modules', '__pycache__', 'venv', '.git']:
+                if path.name.startswith(".") or path.name in [
+                    "node_modules",
+                    "__pycache__",
+                    "venv",
+                    ".git",
+                ]:
                     return None
 
                 rel_path = str(path.relative_to(repo_root))
@@ -370,7 +381,9 @@ class SecretaryToolExecutor:
                 error_message=str(e),
             )
 
-    @rate_balanced(max_calls=5, time_window=60, max_retries=3, initial_backoff=2.0, max_backoff=60.0)
+    @rate_balanced(
+        max_calls=5, time_window=60, max_retries=3, initial_backoff=2.0, max_backoff=60.0
+    )
     @monitored
     async def codebase_report(  # noqa: PLR0912, PLR0915
         self, request: CodebaseReportRequest, client_id: str = "default"
@@ -422,15 +435,15 @@ class SecretaryToolExecutor:
 
                 for path in repo_root.rglob("*"):
                     if path.is_file() and not any(
-                        p in path.parts for p in ['.git', 'node_modules', '__pycache__', 'venv']
+                        p in path.parts for p in [".git", "node_modules", "__pycache__", "venv"]
                     ):
                         ext = path.suffix or "no_extension"
                         extensions[ext] = extensions.get(ext, 0) + 1
 
                         # Count lines for text files
-                        if ext in ['.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.go', '.rs']:
+                        if ext in [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs"]:
                             try:
-                                with path.open(encoding='utf-8', errors='replace') as f:
+                                with path.open(encoding="utf-8", errors="replace") as f:
                                     total_lines += sum(1 for _ in f)
                             except Exception:
                                 pass
@@ -471,7 +484,7 @@ class SecretaryToolExecutor:
 
                 metrics["dependencies"] = found_deps
 
-            report = ''.join(report_parts)
+            report = "".join(report_parts)
 
             return CodebaseReportResult(
                 status="ok",
@@ -489,7 +502,9 @@ class SecretaryToolExecutor:
                 file_count=0,
             )
 
-    @rate_balanced(max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0)
+    @rate_balanced(
+        max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0
+    )
     @monitored
     async def document_summary(
         self, request: DocumentSummaryRequest, client_id: str = "default"
@@ -514,21 +529,21 @@ class SecretaryToolExecutor:
                 for doc_path in repo_root.glob(pattern):
                     if doc_path.is_file():
                         try:
-                            with doc_path.open(encoding='utf-8', errors='replace') as f:
+                            with doc_path.open(encoding="utf-8", errors="replace") as f:
                                 content = f.read()
 
                             # Extract first paragraph or first 500 chars as summary
-                            lines = content.split('\n')
+                            lines = content.split("\n")
                             summary_lines = []
                             for line in lines:
                                 if line.strip():
                                     summary_lines.append(line.strip())
-                                    if len(' '.join(summary_lines)) > 500:
+                                    if len(" ".join(summary_lines)) > 500:
                                         break
                                 elif summary_lines:  # Stop at first empty line after content
                                     break
 
-                            summary = ' '.join(summary_lines)[:500]
+                            summary = " ".join(summary_lines)[:500]
 
                             rel_path = str(doc_path.relative_to(repo_root))
                             summaries.append(
@@ -549,7 +564,7 @@ class SecretaryToolExecutor:
             for s in summaries:
                 combined_parts.append(f"**{s['path']}**: {s['summary'][:200]}")
 
-            combined_summary = '\n\n'.join(combined_parts)
+            combined_summary = "\n\n".join(combined_parts)
 
             return DocumentSummaryResult(
                 status="ok",
@@ -568,7 +583,9 @@ class SecretaryToolExecutor:
             )
 
     async def session_report(
-        self, request: SessionReportRequest, client_id: str = "default"  # noqa: ARG002
+        self,
+        request: SessionReportRequest,
+        client_id: str = "default",  # noqa: ARG002
     ) -> SessionReport:
         """
         Get or update session report.
@@ -681,7 +698,7 @@ class SecretaryToolExecutor:
             # Read existing content
             existing_content = ""
             if full_path.exists():
-                with full_path.open(encoding='utf-8') as f:
+                with full_path.open(encoding="utf-8") as f:
                     existing_content = f.read()
 
             # Apply updates based on mode
@@ -696,7 +713,7 @@ class SecretaryToolExecutor:
                 changes = "Prepended content to document"
 
             # Write updated content
-            with full_path.open('w', encoding='utf-8') as f:
+            with full_path.open("w", encoding="utf-8") as f:
                 f.write(new_content)
 
             return UpdateDocResult(
