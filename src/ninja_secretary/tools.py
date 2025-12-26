@@ -6,13 +6,9 @@ This module contains the business logic for all secretary-related MCP tools.
 
 from __future__ import annotations
 
-import asyncio
 import datetime
-import json
-import os
 import re
 from pathlib import Path
-from typing import Any
 
 from ninja_common.logging_utils import get_logger
 from ninja_common.rate_balancer import rate_balanced
@@ -38,6 +34,7 @@ from ninja_secretary.models import (
     UpdateDocRequest,
     UpdateDocResult,
 )
+
 
 logger = get_logger(__name__)
 
@@ -84,7 +81,7 @@ class SecretaryToolExecutor:
                 )
 
             # Read file content
-            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            with file_path.open(encoding='utf-8', errors='replace') as f:
                 lines = f.readlines()
 
             total_lines = len(lines)
@@ -225,7 +222,7 @@ class SecretaryToolExecutor:
                     break
 
                 try:
-                    with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                    with file_path.open(encoding='utf-8', errors='replace') as f:
                         lines = f.readlines()
 
                     for line_num, line in enumerate(lines, 1):
@@ -239,9 +236,9 @@ class SecretaryToolExecutor:
                                 end_idx = min(len(lines), line_num + request.context_lines)
 
                                 context_before = [
-                                    l.rstrip() for l in lines[start_idx : line_num - 1]
+                                    line.rstrip() for line in lines[start_idx : line_num - 1]
                                 ]
-                                context_after = [l.rstrip() for l in lines[line_num:end_idx]]
+                                context_after = [line.rstrip() for line in lines[line_num:end_idx]]
 
                             rel_path = str(file_path.relative_to(repo_root))
 
@@ -324,7 +321,6 @@ class SecretaryToolExecutor:
                     return None
 
                 rel_path = str(path.relative_to(repo_root))
-                node_type: Literal["file", "directory"] = "directory" if path.is_dir() else "file"
 
                 if path.is_file():
                     total_files += 1
@@ -376,7 +372,7 @@ class SecretaryToolExecutor:
 
     @rate_balanced(max_calls=5, time_window=60, max_retries=3, initial_backoff=2.0, max_backoff=60.0)
     @monitored
-    async def codebase_report(
+    async def codebase_report(  # noqa: PLR0912, PLR0915
         self, request: CodebaseReportRequest, client_id: str = "default"
     ) -> CodebaseReportResult:
         """
@@ -434,7 +430,7 @@ class SecretaryToolExecutor:
                         # Count lines for text files
                         if ext in ['.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.go', '.rs']:
                             try:
-                                with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                                with path.open(encoding='utf-8', errors='replace') as f:
                                     total_lines += sum(1 for _ in f)
                             except Exception:
                                 pass
@@ -518,7 +514,7 @@ class SecretaryToolExecutor:
                 for doc_path in repo_root.glob(pattern):
                     if doc_path.is_file():
                         try:
-                            with open(doc_path, 'r', encoding='utf-8', errors='replace') as f:
+                            with doc_path.open(encoding='utf-8', errors='replace') as f:
                                 content = f.read()
 
                             # Extract first paragraph or first 500 chars as summary
@@ -572,7 +568,7 @@ class SecretaryToolExecutor:
             )
 
     async def session_report(
-        self, request: SessionReportRequest, client_id: str = "default"
+        self, request: SessionReportRequest, client_id: str = "default"  # noqa: ARG002
     ) -> SessionReport:
         """
         Get or update session report.
@@ -685,7 +681,7 @@ class SecretaryToolExecutor:
             # Read existing content
             existing_content = ""
             if full_path.exists():
-                with open(full_path, 'r', encoding='utf-8') as f:
+                with full_path.open(encoding='utf-8') as f:
                     existing_content = f.read()
 
             # Apply updates based on mode
@@ -700,7 +696,7 @@ class SecretaryToolExecutor:
                 changes = "Prepended content to document"
 
             # Write updated content
-            with open(full_path, 'w', encoding='utf-8') as f:
+            with full_path.open('w', encoding='utf-8') as f:
                 f.write(new_content)
 
             return UpdateDocResult(

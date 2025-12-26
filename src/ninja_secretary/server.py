@@ -10,15 +10,20 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
 import sys
 from typing import TYPE_CHECKING, Any
 
+import uvicorn
 from mcp.server import Server
+from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
+from starlette.requests import Request
+from starlette.responses import Response
 
 from ninja_common.logging_utils import get_logger, setup_logging
 from ninja_secretary.models import (
@@ -32,6 +37,7 @@ from ninja_secretary.models import (
     UpdateDocRequest,
 )
 from ninja_secretary.tools import get_executor
+
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -519,11 +525,6 @@ async def main_stdio() -> None:
 
 async def main_http(host: str, port: int) -> None:
     """Run the MCP server over HTTP with SSE."""
-    from mcp.server.sse import SseServerTransport
-    from starlette.requests import Request
-    from starlette.responses import Response
-    import uvicorn
-
     logger.info(f"Starting ninja-secretary server (HTTP/SSE mode) on {host}:{port}")
 
     server = create_server()
@@ -558,8 +559,6 @@ async def main_http(host: str, port: int) -> None:
 
 def run() -> None:
     """Entry point for running the server."""
-    import argparse
-
     parser = argparse.ArgumentParser(description="Ninja Secretary MCP Server")
     parser.add_argument(
         "--http",
