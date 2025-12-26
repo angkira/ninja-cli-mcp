@@ -322,16 +322,31 @@ def main() -> int:  # noqa: PLR0911
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # Start command
-    start_parser = subparsers.add_parser("start", help="Start daemon")
-    start_parser.add_argument("module", choices=["coder", "researcher", "secretary"])
+    start_parser = subparsers.add_parser("start", help="Start daemon(s)")
+    start_parser.add_argument(
+        "module",
+        nargs="?",
+        choices=["coder", "researcher", "secretary"],
+        help="Module name (omit to start all)",
+    )
 
     # Stop command
-    stop_parser = subparsers.add_parser("stop", help="Stop daemon")
-    stop_parser.add_argument("module", choices=["coder", "researcher", "secretary"])
+    stop_parser = subparsers.add_parser("stop", help="Stop daemon(s)")
+    stop_parser.add_argument(
+        "module",
+        nargs="?",
+        choices=["coder", "researcher", "secretary"],
+        help="Module name (omit to stop all)",
+    )
 
     # Restart command
-    restart_parser = subparsers.add_parser("restart", help="Restart daemon")
-    restart_parser.add_argument("module", choices=["coder", "researcher", "secretary"])
+    restart_parser = subparsers.add_parser("restart", help="Restart daemon(s)")
+    restart_parser.add_argument(
+        "module",
+        nargs="?",
+        choices=["coder", "researcher", "secretary"],
+        help="Module name (omit to restart all)",
+    )
 
     # Status command
     status_parser = subparsers.add_parser("status", help="Get daemon status")
@@ -355,16 +370,58 @@ def main() -> int:  # noqa: PLR0911
     manager = DaemonManager()
 
     if args.command == "start":
-        success = manager.start(args.module)
-        return 0 if success else 1
+        if args.module:
+            # Start single module
+            success = manager.start(args.module)
+            return 0 if success else 1
+        else:
+            # Start all modules
+            print("Starting all daemons...")
+            all_success = True
+            for module in manager.list_modules():
+                print(f"  Starting {module}...", end=" ", flush=True)
+                if manager.start(module):
+                    print("✓")
+                else:
+                    print("✗")
+                    all_success = False
+            return 0 if all_success else 1
 
     elif args.command == "stop":
-        success = manager.stop(args.module)
-        return 0 if success else 1
+        if args.module:
+            # Stop single module
+            success = manager.stop(args.module)
+            return 0 if success else 1
+        else:
+            # Stop all modules
+            print("Stopping all daemons...")
+            all_success = True
+            for module in manager.list_modules():
+                print(f"  Stopping {module}...", end=" ", flush=True)
+                if manager.stop(module):
+                    print("✓")
+                else:
+                    print("✗")
+                    all_success = False
+            return 0 if all_success else 1
 
     elif args.command == "restart":
-        success = manager.restart(args.module)
-        return 0 if success else 1
+        if args.module:
+            # Restart single module
+            success = manager.restart(args.module)
+            return 0 if success else 1
+        else:
+            # Restart all modules
+            print("Restarting all daemons...")
+            all_success = True
+            for module in manager.list_modules():
+                print(f"  Restarting {module}...", end=" ", flush=True)
+                if manager.restart(module):
+                    print("✓")
+                else:
+                    print("✗")
+                    all_success = False
+            return 0 if all_success else 1
 
     elif args.command == "status":
         if args.module:
