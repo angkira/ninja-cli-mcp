@@ -50,7 +50,9 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra researcher --extra secretary
+        run: |
+          uv sync --extra dev --extra researcher --extra secretary
+          uv pip install -e ".[dev,researcher,secretary]"
 
       - name: Run smoke tests
         run: uv run pytest tests/test_smoke.py -v --tb=short
@@ -71,7 +73,9 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra researcher --extra secretary
+        run: |
+          uv sync --extra dev --extra researcher --extra secretary
+          uv pip install -e ".[dev,researcher,secretary]"
 
       - name: Run unit tests
         run: uv run pytest tests/ -m "unit" -v --tb=short
@@ -93,7 +97,9 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra researcher --extra secretary
+        run: |
+          uv sync --extra dev --extra researcher --extra secretary
+          uv pip install -e ".[dev,researcher,secretary]"
 
       - name: Run integration tests
         run: uv run pytest tests/ -m "integration and not agent" -v --tb=short
