@@ -70,57 +70,9 @@ prompt_secret() {
 }
 
 confirm() {
-    local prompt="$1"
-    local default="${2:-N}"  # Default to N if not specified
-
-    if [[ "$default" == "Y" ]]; then
-        echo -ne "${CYAN}?${NC} ${BOLD}${prompt}${NC} ${DIM}[Y/n]${NC} " >&2
-    else
-        echo -ne "${CYAN}?${NC} ${BOLD}${prompt}${NC} ${DIM}[y/N]${NC} " >&2
-    fi
-
+    echo -ne "${CYAN}?${NC} ${BOLD}$1${NC} ${DIM}[y/N]${NC} " >&2
     read -r response
-
-    # If empty, use default
-    if [[ -z "$response" ]]; then
-        [[ "$default" == "Y" ]]
-    else
-        [[ "$response" =~ ^[Yy]$ ]]
-    fi
-}
-
-# Validate model exists in OpenRouter
-validate_openrouter_model() {
-    local model_name="$1"
-    local api_key="$2"
-
-    if [[ -z "$api_key" ]]; then
-        warn "Cannot validate model (no API key yet)"
-        return 0  # Accept without validation
-    fi
-
-    # Query OpenRouter models API
-    local response
-    response=$(curl -s https://openrouter.ai/api/v1/models \
-        -H "Authorization: Bearer $api_key" \
-        -H "Content-Type: application/json" 2>/dev/null)
-
-    if echo "$response" | grep -q "\"id\".*\"$model_name\""; then
-        return 0  # Model found
-    else
-        return 1  # Model not found
-    fi
-}
-
-# Portable alternative to mapfile (bash 3.2+ compatible)
-# Usage: read_array ARRAY_NAME < <(command)
-read_array() {
-    local array_name=$1
-    local -a lines
-    while IFS= read -r line; do
-        lines+=("$line")
-    done
-    eval "$array_name=(\"\${lines[@]}\")"
+    [[ "$response" =~ ^[Yy]$ ]]
 }
 
 # Get script directory and project root
@@ -149,11 +101,11 @@ echo -e "${DIM}Select which modules you want to install:${NC}"
 echo ""
 
 INSTALL_CODER=true
-INSTALL_RESEARCHER=true
-INSTALL_SECRETARY=true
+INSTALL_RESEARCHER=false
+INSTALL_SECRETARY=false
 
 echo -e "  ${BOLD}1.${NC} Coder ${DIM}(AI code execution - recommended)${NC}"
-if confirm "Install Coder module?" "Y"; then
+if confirm "Install Coder module?"; then
     INSTALL_CODER=true
     success "Coder module selected"
 else
@@ -163,7 +115,7 @@ fi
 
 echo ""
 echo -e "  ${BOLD}2.${NC} Researcher ${DIM}(Web search & reports)${NC}"
-if confirm "Install Researcher module?" "Y"; then
+if confirm "Install Researcher module?"; then
     INSTALL_RESEARCHER=true
     success "Researcher module selected"
 else
@@ -173,7 +125,7 @@ fi
 
 echo ""
 echo -e "  ${BOLD}3.${NC} Secretary ${DIM}(Documentation & codebase exploration)${NC}"
-if confirm "Install Secretary module?" "Y"; then
+if confirm "Install Secretary module?"; then
     INSTALL_SECRETARY=true
     success "Secretary module selected"
 else
@@ -245,21 +197,19 @@ step "Step 3: Installing dependencies"
 export UV_PYTHON="$PYTHON_CMD"
 
 # Build extras list based on selected modules
-# Build uv sync command with separate --extra flags (uv doesn't accept comma-separated extras)
-SYNC_CMD="uv sync --python \"$PYTHON_CMD\""
-EXTRAS_LIST=()
-[[ "$INSTALL_CODER" == "true" ]] && EXTRAS_LIST+=("coder") && SYNC_CMD="$SYNC_CMD --extra coder"
-[[ "$INSTALL_RESEARCHER" == "true" ]] && EXTRAS_LIST+=("researcher") && SYNC_CMD="$SYNC_CMD --extra researcher"
-[[ "$INSTALL_SECRETARY" == "true" ]] && EXTRAS_LIST+=("secretary") && SYNC_CMD="$SYNC_CMD --extra secretary"
+EXTRAS=""
+[[ "$INSTALL_CODER" == "true" ]] && EXTRAS="${EXTRAS}coder,"
+[[ "$INSTALL_RESEARCHER" == "true" ]] && EXTRAS="${EXTRAS}researcher,"
+[[ "$INSTALL_SECRETARY" == "true" ]] && EXTRAS="${EXTRAS}secretary,"
+EXTRAS="${EXTRAS%,}"  # Remove trailing comma
 
-if [[ ${#EXTRAS_LIST[@]} -gt 0 ]]; then
-    EXTRAS_DISPLAY=$(IFS=,; echo "${EXTRAS_LIST[*]}")
-    info "Installing modules: $EXTRAS_DISPLAY"
-    eval "$SYNC_CMD" 2>&1 | grep -v "already satisfied" || true
+if [[ -n "$EXTRAS" ]]; then
+    info "Installing modules: $EXTRAS"
+    uv sync --extra "$EXTRAS" --python "$PYTHON_CMD" 2>&1 | grep -v "already satisfied" || true
     success "Modules installed"
 else
     info "Installing base dependencies only"
-    eval "$SYNC_CMD" 2>&1 | grep -v "already satisfied" || true
+    uv sync --python "$PYTHON_CMD" 2>&1 | grep -v "already satisfied" || true
     success "Base dependencies installed"
 fi
 
@@ -292,81 +242,38 @@ if [[ "$INSTALL_CODER" == "true" ]]; then
     fi
 fi
 
-# Search engine selection (for Researcher)
-SEARCH_PROVIDER="duckduckgo"
+# Serper API key (for Researcher)
 SERPER_KEY=""
-PERPLEXITY_KEY=""
 if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
     echo ""
-    echo -e "${BOLD}Search Engine Selection${NC} ${DIM}(for Researcher module)${NC}"
-    echo -e "${DIM}Choose your preferred search provider:${NC}"
+    echo -e "${BOLD}Serper.dev API Key${NC} ${DIM}(optional for Researcher - DuckDuckGo is free fallback)${NC}"
+    echo -e "${DIM}Get your key from: ${CYAN}https://serper.dev${NC}"
+    echo -e "${DIM}Free tier: 2,500 searches/month${NC}"
     echo ""
-    echo -e "  ${BOLD}1.${NC} DuckDuckGo ${DIM}(free, no API key required)${NC}"
-    echo -e "  ${BOLD}2.${NC} Serper.dev ${DIM}(Google Search, requires API key)${NC}"
-    echo -e "  ${BOLD}3.${NC} Perplexity AI ${DIM}(AI-powered search, requires API key)${NC}"
-    echo ""
-
-    prompt "Search provider [1-3] (default: 1):"
-    read -r search_choice
-    search_choice="${search_choice:-1}"
-
-    case "$search_choice" in
-        1)
-            SEARCH_PROVIDER="duckduckgo"
-            success "Selected: DuckDuckGo (free)"
-            ;;
-        2)
-            SEARCH_PROVIDER="serper"
-            echo ""
-            echo -e "${BOLD}Serper.dev API Key${NC}"
-            echo -e "${DIM}Get your key from: ${CYAN}https://serper.dev${NC}"
-            echo -e "${DIM}Free tier: 2,500 searches/month${NC}"
-            echo ""
-
-            EXISTING_SERPER="${SERPER_API_KEY:-}"
-            if [[ -n "$EXISTING_SERPER" ]]; then
-                MASKED_SERPER="${EXISTING_SERPER:0:8}...${EXISTING_SERPER: -4}"
-                info "Found existing Serper key: $MASKED_SERPER"
-                if confirm "Use existing key?"; then
-                    SERPER_KEY="$EXISTING_SERPER"
-                    success "Using existing Serper key"
-                else
-                    SERPER_KEY=$(prompt_secret "Enter Serper API key:")
-                    success "Serper key configured"
-                fi
-            else
+    
+    EXISTING_SERPER="${SERPER_API_KEY:-}"
+    if [[ -n "$EXISTING_SERPER" ]]; then
+        MASKED_SERPER="${EXISTING_SERPER:0:8}...${EXISTING_SERPER: -4}"
+        info "Found existing Serper key: $MASKED_SERPER"
+        if confirm "Use existing key?"; then
+            SERPER_KEY="$EXISTING_SERPER"
+            success "Using existing Serper key"
+        else
+            if confirm "Configure Serper API key?"; then
                 SERPER_KEY=$(prompt_secret "Enter Serper API key:")
                 success "Serper key configured"
-            fi
-            ;;
-        3)
-            SEARCH_PROVIDER="perplexity"
-            echo ""
-            echo -e "${BOLD}Perplexity AI API Key${NC}"
-            echo -e "${DIM}Get your key from: ${CYAN}https://www.perplexity.ai/settings/api${NC}"
-            echo ""
-
-            EXISTING_PERPLEXITY="${PERPLEXITY_API_KEY:-}"
-            if [[ -n "$EXISTING_PERPLEXITY" ]]; then
-                MASKED_PERPLEXITY="${EXISTING_PERPLEXITY:0:8}...${EXISTING_PERPLEXITY: -4}"
-                info "Found existing Perplexity key: $MASKED_PERPLEXITY"
-                if confirm "Use existing key?"; then
-                    PERPLEXITY_KEY="$EXISTING_PERPLEXITY"
-                    success "Using existing Perplexity key"
-                else
-                    PERPLEXITY_KEY=$(prompt_secret "Enter Perplexity API key:")
-                    success "Perplexity key configured"
-                fi
             else
-                PERPLEXITY_KEY=$(prompt_secret "Enter Perplexity API key:")
-                success "Perplexity key configured"
+                info "Skipping Serper (will use DuckDuckGo)"
             fi
-            ;;
-        *)
-            warn "Invalid choice, defaulting to DuckDuckGo"
-            SEARCH_PROVIDER="duckduckgo"
-            ;;
-    esac
+        fi
+    else
+        if confirm "Configure Serper API key?"; then
+            SERPER_KEY=$(prompt_secret "Enter Serper API key:")
+            success "Serper key configured"
+        else
+            info "Skipping Serper (will use DuckDuckGo)"
+        fi
+    fi
 fi
 
 # Step 5: Model selection
@@ -386,11 +293,11 @@ if [[ "$INSTALL_CODER" == "true" ]]; then
     CODER_MODELS_JSON=$($PYTHON_CMD "$SCRIPT_DIR/get_recommended_models.py" coder 2>/dev/null)
 
     if [[ -n "$CODER_MODELS_JSON" ]] && echo "$CODER_MODELS_JSON" | grep -q "name"; then
-        # Parse JSON and display options (using portable read_array instead of mapfile)
-        read_array MODEL_NAMES < <(echo "$CODER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m['name']) for m in data[:7]]")
-        read_array MODEL_TIERS < <(echo "$CODER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m.get('tier', '')) for m in data[:7]]")
-        read_array MODEL_PRICES < <(echo "$CODER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(f\"\${m['price']:.2f}/1M\") for m in data[:7]]")
-        read_array MODEL_SPEEDS < <(echo "$CODER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m['speed']) for m in data[:7]]")
+        # Parse JSON and display options
+        mapfile -t MODEL_NAMES < <(echo "$CODER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m['name']) for m in data[:7]]")
+        mapfile -t MODEL_TIERS < <(echo "$CODER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m.get('tier', '')) for m in data[:7]]")
+        mapfile -t MODEL_PRICES < <(echo "$CODER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(f\"\${m['price']:.2f}/1M\") for m in data[:7]]")
+        mapfile -t MODEL_SPEEDS < <(echo "$CODER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m['speed']) for m in data[:7]]")
 
         echo ""
         for i in "${!MODEL_NAMES[@]}"; do
@@ -415,37 +322,15 @@ if [[ "$INSTALL_CODER" == "true" ]]; then
     fi
 
     echo ""
-    echo -e "${DIM}Enter a number (1-${#MODEL_NAMES[@]}) or paste a model name (e.g., anthropic/claude-opus-4)${NC}"
+    prompt "Enter choice [1-7] (default: 1):"
+    read -r model_choice
 
-    # Loop until valid model is selected
-    while true; do
-        prompt "Model choice (default: 1):"
-        read -r model_choice
-        model_choice=${model_choice:-1}  # Default to 1 if empty
-
-        # Check if input is a number
-        if [[ "$model_choice" =~ ^[0-9]+$ ]]; then
-            # It's a number - validate range
-            idx=$((model_choice-1))
-            if [[ "$idx" -ge 0 ]] && [[ "$idx" -lt "${#MODEL_NAMES[@]}" ]]; then
-                CODER_MODEL="${MODEL_NAMES[$idx]}"
-                break
-            else
-                error "Invalid choice. Please enter 1-${#MODEL_NAMES[@]} or a model name."
-            fi
-        else
-            # It's a model name - validate with OpenRouter
-            info "Validating model: $model_choice"
-            if validate_openrouter_model "$model_choice" "$OPENROUTER_KEY"; then
-                CODER_MODEL="$model_choice"
-                success "Model validated"
-                break
-            else
-                error "Model '$model_choice' not found in OpenRouter"
-                echo -e "${DIM}Check available models at: ${CYAN}https://openrouter.ai/models${NC}"
-            fi
-        fi
-    done
+    idx=$((model_choice-1))
+    if [[ "$idx" -ge 0 ]] && [[ "$idx" -lt "${#MODEL_NAMES[@]}" ]]; then
+        CODER_MODEL="${MODEL_NAMES[$idx]}"
+    else
+        CODER_MODEL="${MODEL_NAMES[0]}"  # Default to first
+    fi
 
     success "Coder model: $CODER_MODEL"
 fi
@@ -461,9 +346,9 @@ if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
     RESEARCHER_MODELS_JSON=$($PYTHON_CMD "$SCRIPT_DIR/get_recommended_models.py" researcher 2>/dev/null)
 
     if [[ -n "$RESEARCHER_MODELS_JSON" ]] && echo "$RESEARCHER_MODELS_JSON" | grep -q "name"; then
-        read_array MODEL_NAMES < <(echo "$RESEARCHER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m['name']) for m in data[:5]]")
-        read_array MODEL_TIERS < <(echo "$RESEARCHER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m.get('tier', '')) for m in data[:5]]")
-        read_array MODEL_PRICES < <(echo "$RESEARCHER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(f\"\${m['price']:.2f}/1M\") for m in data[:5]]")
+        mapfile -t MODEL_NAMES < <(echo "$RESEARCHER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m['name']) for m in data[:5]]")
+        mapfile -t MODEL_TIERS < <(echo "$RESEARCHER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m.get('tier', '')) for m in data[:5]]")
+        mapfile -t MODEL_PRICES < <(echo "$RESEARCHER_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(f\"\${m['price']:.2f}/1M\") for m in data[:5]]")
 
         echo ""
         for i in "${!MODEL_NAMES[@]}"; do
@@ -481,37 +366,15 @@ if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
     fi
 
     echo ""
-    echo -e "${DIM}Enter a number (1-${#MODEL_NAMES[@]}) or paste a model name (e.g., anthropic/claude-opus-4)${NC}"
+    prompt "Enter choice [1-5] (default: 1):"
+    read -r model_choice
 
-    # Loop until valid model is selected
-    while true; do
-        prompt "Model choice (default: 1):"
-        read -r model_choice
-        model_choice=${model_choice:-1}  # Default to 1 if empty
-
-        # Check if input is a number
-        if [[ "$model_choice" =~ ^[0-9]+$ ]]; then
-            # It's a number - validate range
-            idx=$((model_choice-1))
-            if [[ "$idx" -ge 0 ]] && [[ "$idx" -lt "${#MODEL_NAMES[@]}" ]]; then
-                RESEARCHER_MODEL="${MODEL_NAMES[$idx]}"
-                break
-            else
-                error "Invalid choice. Please enter 1-${#MODEL_NAMES[@]} or a model name."
-            fi
-        else
-            # It's a model name - validate with OpenRouter
-            info "Validating model: $model_choice"
-            if validate_openrouter_model "$model_choice" "$OPENROUTER_KEY"; then
-                RESEARCHER_MODEL="$model_choice"
-                success "Model validated"
-                break
-            else
-                error "Model '$model_choice' not found in OpenRouter"
-                echo -e "${DIM}Check available models at: ${CYAN}https://openrouter.ai/models${NC}"
-            fi
-        fi
-    done
+    idx=$((model_choice-1))
+    if [[ "$idx" -ge 0 ]] && [[ "$idx" -lt "${#MODEL_NAMES[@]}" ]]; then
+        RESEARCHER_MODEL="${MODEL_NAMES[$idx]}"
+    else
+        RESEARCHER_MODEL="${MODEL_NAMES[0]}"
+    fi
 
     success "Researcher model: $RESEARCHER_MODEL"
 fi
@@ -527,9 +390,9 @@ if [[ "$INSTALL_SECRETARY" == "true" ]]; then
     SECRETARY_MODELS_JSON=$($PYTHON_CMD "$SCRIPT_DIR/get_recommended_models.py" secretary 2>/dev/null)
 
     if [[ -n "$SECRETARY_MODELS_JSON" ]] && echo "$SECRETARY_MODELS_JSON" | grep -q "name"; then
-        read_array MODEL_NAMES < <(echo "$SECRETARY_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m['name']) for m in data[:5]]")
-        read_array MODEL_TIERS < <(echo "$SECRETARY_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m.get('tier', '')) for m in data[:5]]")
-        read_array MODEL_PRICES < <(echo "$SECRETARY_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(f\"\${m['price']:.2f}/1M\") for m in data[:5]]")
+        mapfile -t MODEL_NAMES < <(echo "$SECRETARY_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m['name']) for m in data[:5]]")
+        mapfile -t MODEL_TIERS < <(echo "$SECRETARY_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(m.get('tier', '')) for m in data[:5]]")
+        mapfile -t MODEL_PRICES < <(echo "$SECRETARY_MODELS_JSON" | $PYTHON_CMD -c "import sys, json; data=json.load(sys.stdin); [print(f\"\${m['price']:.2f}/1M\") for m in data[:5]]")
 
         echo ""
         for i in "${!MODEL_NAMES[@]}"; do
@@ -547,37 +410,15 @@ if [[ "$INSTALL_SECRETARY" == "true" ]]; then
     fi
 
     echo ""
-    echo -e "${DIM}Enter a number (1-${#MODEL_NAMES[@]}) or paste a model name (e.g., google/gemini-exp-1206)${NC}"
+    prompt "Enter choice [1-5] (default: 1):"
+    read -r model_choice
 
-    # Loop until valid model is selected
-    while true; do
-        prompt "Model choice (default: 1):"
-        read -r model_choice
-        model_choice=${model_choice:-1}  # Default to 1 if empty
-
-        # Check if input is a number
-        if [[ "$model_choice" =~ ^[0-9]+$ ]]; then
-            # It's a number - validate range
-            idx=$((model_choice-1))
-            if [[ "$idx" -ge 0 ]] && [[ "$idx" -lt "${#MODEL_NAMES[@]}" ]]; then
-                SECRETARY_MODEL="${MODEL_NAMES[$idx]}"
-                break
-            else
-                error "Invalid choice. Please enter 1-${#MODEL_NAMES[@]} or a model name."
-            fi
-        else
-            # It's a model name - validate with OpenRouter
-            info "Validating model: $model_choice"
-            if validate_openrouter_model "$model_choice" "$OPENROUTER_KEY"; then
-                SECRETARY_MODEL="$model_choice"
-                success "Model validated"
-                break
-            else
-                error "Model '$model_choice' not found in OpenRouter"
-                echo -e "${DIM}Check available models at: ${CYAN}https://openrouter.ai/models${NC}"
-            fi
-        fi
-    done
+    idx=$((model_choice-1))
+    if [[ "$idx" -ge 0 ]] && [[ "$idx" -lt "${#MODEL_NAMES[@]}" ]]; then
+        SECRETARY_MODEL="${MODEL_NAMES[$idx]}"
+    else
+        SECRETARY_MODEL="${MODEL_NAMES[0]}"
+    fi
 
     success "Secretary model: $SECRETARY_MODEL"
 fi
@@ -736,14 +577,8 @@ if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
 # Researcher model
 export NINJA_RESEARCHER_MODEL='$RESEARCHER_MODEL'
 
-# Search provider (duckduckgo, serper, perplexity)
-export NINJA_SEARCH_PROVIDER='$SEARCH_PROVIDER'
-
-# Serper.dev API key (for Google Search)
+# Serper.dev API key (optional - DuckDuckGo is free fallback)
 export SERPER_API_KEY='$SERPER_KEY'
-
-# Perplexity AI API key (for AI-powered search)
-export PERPLEXITY_API_KEY='$PERPLEXITY_KEY'
 
 # Max sources per research
 export NINJA_RESEARCHER_MAX_SOURCES=20
@@ -955,6 +790,97 @@ EOF
     fi
 fi
 
+# NOTE: The old Cline section has been removed - if you need Cline support,
+# manually configure: ~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json
+
+# VS Code (old Cline code removed)
+if false; then  # Disabled - keeping for reference only
+    if [[ "$vscode_choice" == "2" ]] || [[ "$vscode_choice" == "3" ]]; then
+        info "Registering with VS Code Cline..."
+
+        # Detect OS and set appropriate path
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            VSCODE_CLINE_DIR="$HOME/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings"
+        else
+            VSCODE_CLINE_DIR="$HOME/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings"
+        fi
+
+        VSCODE_CLINE_CONFIG="$VSCODE_CLINE_DIR/cline_mcp_settings.json"
+
+        if [[ ! -d "$VSCODE_CLINE_DIR" ]]; then
+            warn "Cline extension not found. Install from:"
+            echo -e "${DIM}https://marketplace.visualstudio.com/items?itemName=rooveterinaryinc.roo-cline${NC}"
+        else
+            mkdir -p "$VSCODE_CLINE_DIR"
+
+            if [[ -f "$VSCODE_CLINE_CONFIG" ]]; then
+                info "Backing up existing Cline MCP config..."
+                cp "$VSCODE_CLINE_CONFIG" "$VSCODE_CLINE_CONFIG.backup"
+            fi
+
+            # Build MCP config for Cline
+            echo "{" > "$VSCODE_CLINE_CONFIG"
+            echo '  "mcpServers": {' >> "$VSCODE_CLINE_CONFIG"
+
+            FIRST_ENTRY=true
+
+            if [[ "$INSTALL_CODER" == "true" ]]; then
+                [[ "$FIRST_ENTRY" == "false" ]] && echo "," >> "$VSCODE_CLINE_CONFIG"
+                cat >> "$VSCODE_CLINE_CONFIG" << EOF
+    "ninja-coder": {
+      "command": "uv",
+      "args": ["--directory", "$PROJECT_ROOT", "run", "python", "-m", "ninja_coder.server"],
+      "env": {
+        "OPENROUTER_API_KEY": "$OPENROUTER_KEY",
+        "NINJA_CODER_MODEL": "$CODER_MODEL",
+        "NINJA_CODE_BIN": "$NINJA_CODE_BIN"
+      }
+    }
+EOF
+                FIRST_ENTRY=false
+            fi
+
+            if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
+                [[ "$FIRST_ENTRY" == "false" ]] && echo "," >> "$VSCODE_CLINE_CONFIG"
+                cat >> "$VSCODE_CLINE_CONFIG" << EOF
+    "ninja-researcher": {
+      "command": "uv",
+      "args": ["--directory", "$PROJECT_ROOT", "run", "python", "-m", "ninja_researcher.server"],
+      "env": {
+        "OPENROUTER_API_KEY": "$OPENROUTER_KEY",
+        "NINJA_RESEARCHER_MODEL": "$RESEARCHER_MODEL"$([ -n "$SERPER_KEY" ] && echo ",
+        \"SERPER_API_KEY\": \"$SERPER_KEY\"" || echo "")
+      }
+    }
+EOF
+                FIRST_ENTRY=false
+            fi
+
+            if [[ "$INSTALL_SECRETARY" == "true" ]]; then
+                [[ "$FIRST_ENTRY" == "false" ]] && echo "," >> "$VSCODE_MCP_CONFIG"
+                cat >> "$VSCODE_MCP_CONFIG" << EOF
+    "ninja-secretary": {
+      "command": "uv",
+      "args": ["--directory", "$PROJECT_ROOT", "run", "python", "-m", "ninja_secretary.server"],
+      "env": {
+        "OPENROUTER_API_KEY": "$OPENROUTER_KEY",
+        "NINJA_SECRETARY_MODEL": "$SECRETARY_MODEL"
+      }
+    }
+EOF
+                FIRST_ENTRY=false
+            fi
+
+            echo "" >> "$VSCODE_MCP_CONFIG"
+            echo "  }" >> "$VSCODE_MCP_CONFIG"
+            echo "}" >> "$VSCODE_MCP_CONFIG"
+
+            success "Registered with VS Code Cline"
+            info "Restart VS Code to apply changes"
+        fi
+    fi
+fi
+
 # Zed
 if [[ "$ZED_INSTALLED" == "true" ]]; then
     if confirm "Register modules with Zed editor?"; then
@@ -1069,9 +995,8 @@ echo -e "  ${BULLET} Config file: ${DIM}$CONFIG_FILE${NC}"
 [[ -n "$CODER_MODEL" ]] && echo -e "  ${BULLET} Coder model: ${CYAN}$CODER_MODEL${NC}"
 [[ -n "$RESEARCHER_MODEL" ]] && echo -e "  ${BULLET} Researcher model: ${CYAN}$RESEARCHER_MODEL${NC}"
 [[ -n "$SECRETARY_MODEL" ]] && echo -e "  ${BULLET} Secretary model: ${CYAN}$SECRETARY_MODEL${NC}"
-[[ "$INSTALL_RESEARCHER" == "true" ]] && echo -e "  ${BULLET} Search provider: ${CYAN}$SEARCH_PROVIDER${NC}"
 [[ -n "$SERPER_KEY" ]] && echo -e "  ${BULLET} Serper.dev: ${GREEN}Configured${NC}"
-[[ -n "$PERPLEXITY_KEY" ]] && echo -e "  ${BULLET} Perplexity AI: ${GREEN}Configured${NC}"
+[[ -z "$SERPER_KEY" ]] && [[ "$INSTALL_RESEARCHER" == "true" ]] && echo -e "  ${BULLET} Serper.dev: ${DIM}Not configured (using DuckDuckGo)${NC}"
 echo ""
 
 # Show which editors were configured

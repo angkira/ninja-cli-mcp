@@ -1,5 +1,5 @@
 """
-MCP stdio server for ninja-cli-mcp.
+MCP stdio server for ninja-coder module.
 
 This module implements the Model Context Protocol (MCP) server that
 exposes tools for delegating code execution to AI coding assistants.
@@ -11,7 +11,7 @@ never directly reads or writes user project files.
 Supports any OpenRouter-compatible model (Claude, GPT, Qwen, DeepSeek, etc.)
 
 Usage:
-    python -m ninja_cli_mcp.server
+    python -m ninja_coder.server
 """
 
 from __future__ import annotations
@@ -29,15 +29,15 @@ from mcp.types import (
     Tool,
 )
 
-from ninja_cli_mcp.logging_utils import get_logger, setup_logging
-from ninja_cli_mcp.models import (
+from ninja_coder.models import (
     ApplyPatchRequest,
     ParallelPlanRequest,
     QuickTaskRequest,
     RunTestsRequest,
     SequentialPlanRequest,
 )
-from ninja_cli_mcp.tools import get_executor
+from ninja_coder.tools import get_executor
+from ninja_common.logging_utils import get_logger, setup_logging
 
 
 if TYPE_CHECKING:
@@ -52,7 +52,7 @@ logger = get_logger(__name__)
 # Tool definitions with JSON Schema
 TOOLS: list[Tool] = [
     Tool(
-        name="ninja_quick_task",
+        name="coder_quick_task",
         description=(
             "Delegate CODE WRITING ONLY to Ninja AI agent (via Aider). "
             "Ninja ONLY writes/edits code files based on your specification. "
@@ -111,7 +111,7 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="execute_plan_sequential",
+        name="coder_execute_plan_sequential",
         description=(
             "Execute a multi-step CODE WRITING plan sequentially. "
             "Each step delegates code writing to Ninja AI agent. "
@@ -208,7 +208,7 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="execute_plan_parallel",
+        name="coder_execute_plan_parallel",
         description=(
             "Execute CODE WRITING steps in parallel with configurable concurrency. "
             "Each step delegates code writing to Ninja AI agent. "
@@ -281,7 +281,7 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="run_tests",
+        name="coder_run_tests",
         description=(
             "⚠️ DEPRECATED - DO NOT USE. "
             "\n\n"
@@ -314,13 +314,13 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="apply_patch",
+        name="coder_apply_patch",
         description=(
             "⚠️ NOT SUPPORTED. "
             "\n\n"
             "Ninja writes code based on specifications, not patches. "
             "\n\n"
-            "To apply changes: Describe what code to write in ninja_quick_task. "
+            "To apply changes: Describe what code to write in coder_quick_task. "
             "Ninja will implement it directly."
         ),
         inputSchema={
@@ -355,9 +355,9 @@ def create_server() -> Server:
         Configured MCP Server instance.
     """
     server = Server(
-        "ninja-cli-mcp",
-        version="1.0.0",
-        instructions="""🥷 Ninja MCP: Delegate CODE WRITING to AI Agent (Aider)
+        "ninja-coder",
+        version="0.2.0",
+        instructions="""🥷 Ninja Coder: Delegate CODE WRITING to AI Agent (Aider)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -386,7 +386,7 @@ def create_server() -> Server:
 1. 📖 READ files yourself (if needed for planning)
 2. 🧠 PLAN what code needs to be written
 3. 📝 WRITE detailed specification for Ninja
-4. 🥷 CALL ninja_quick_task with specification
+4. 🥷 CALL coder_quick_task with specification
 5. ✅ REVIEW Ninja's summary (files changed)
 6. 🧪 RUN tests yourself (using bash tool)
 7. 🔄 REPEAT if needed
@@ -417,15 +417,15 @@ def create_server() -> Server:
 
 🔧 AVAILABLE TOOLS:
 
-• ninja_quick_task
+• coder_quick_task
   Single code writing task. Use for most implementations.
   Returns: Summary only (files changed, brief description)
 
-• execute_plan_sequential
+• coder_execute_plan_sequential
   Multi-step code writing where order matters.
   Returns: Summary per step
 
-• execute_plan_parallel
+• coder_execute_plan_parallel
   Independent code writing tasks (non-overlapping files).
   Returns: Summary per step + merge report
 
@@ -438,7 +438,7 @@ User: "Add user authentication"
 You:
 1. Read existing code structure (if needed)
 2. Plan: Need User model, auth routes, password hashing
-3. Call ninja_quick_task with detailed spec:
+3. Call coder_quick_task with detailed spec:
    "Create authentication system:
     - src/models/user.py: User class with email, password_hash
     - src/auth/password.py: hash_password and verify_password using bcrypt
@@ -446,7 +446,7 @@ You:
     Include type hints, docstrings, error handling"
 4. Review Ninja's summary
 5. Run tests yourself: bash "pytest tests/test_auth.py"
-6. If tests fail, call ninja_quick_task again with fix specification
+6. If tests fail, call coder_quick_task again with fix specification
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -478,23 +478,23 @@ You:
         executor = get_executor()
 
         try:
-            if name == "ninja_quick_task":
+            if name == "coder_quick_task":
                 request = QuickTaskRequest(**arguments)
                 result = await executor.quick_task(request, client_id=client_id)
 
-            elif name == "execute_plan_sequential":
+            elif name == "coder_execute_plan_sequential":
                 request = SequentialPlanRequest(**arguments)
                 result = await executor.execute_plan_sequential(request, client_id=client_id)
 
-            elif name == "execute_plan_parallel":
+            elif name == "coder_execute_plan_parallel":
                 request = ParallelPlanRequest(**arguments)
                 result = await executor.execute_plan_parallel(request, client_id=client_id)
 
-            elif name == "run_tests":
+            elif name == "coder_run_tests":
                 request = RunTestsRequest(**arguments)
                 result = await executor.run_tests(request, client_id=client_id)
 
-            elif name == "apply_patch":
+            elif name == "coder_apply_patch":
                 request = ApplyPatchRequest(**arguments)
                 result = await executor.apply_patch(request, client_id=client_id)
 
@@ -537,9 +537,9 @@ You:
     return server
 
 
-async def main() -> None:
-    """Run the MCP server."""
-    logger.info("Starting ninja-cli-mcp server")
+async def main_stdio() -> None:
+    """Run the MCP server over stdio."""
+    logger.info("Starting ninja-coder server (stdio mode)")
 
     server = create_server()
 
@@ -552,10 +552,71 @@ async def main() -> None:
         )
 
 
+async def main_http(host: str, port: int) -> None:
+    """Run the MCP server over HTTP with SSE."""
+    import uvicorn  # noqa: PLC0415
+    from mcp.server.sse import SseServerTransport  # noqa: PLC0415
+    from starlette.requests import Request  # noqa: PLC0415
+    from starlette.responses import Response  # noqa: PLC0415
+
+    logger.info(f"Starting ninja-coder server (HTTP/SSE mode) on {host}:{port}")
+
+    server = create_server()
+    sse = SseServerTransport("/messages")
+
+    async def handle_sse(request):
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            await server.run(streams[0], streams[1], server.create_initialization_options())
+        return Response()
+
+    async def handle_messages(scope, receive, send):
+        await sse.handle_post_message(scope, receive, send)
+
+    async def app(scope, receive, send):
+        path = scope.get("path", "")
+        if path == "/sse":
+            request = Request(scope, receive, send)
+            await handle_sse(request)
+        elif path == "/messages" and scope.get("method") == "POST":
+            await handle_messages(scope, receive, send)
+        else:
+            await Response("Not Found", status_code=404)(scope, receive, send)
+
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    server_instance = uvicorn.Server(config)
+    await server_instance.serve()
+
+
 def run() -> None:
     """Entry point for running the server."""
+    import argparse  # noqa: PLC0415
+
+    parser = argparse.ArgumentParser(description="Ninja Coder MCP Server")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Run server in HTTP/SSE mode (default: stdio)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8100,
+        help="Port for HTTP server (default: 8100)",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1)",
+    )
+
+    args = parser.parse_args()
+
     try:
-        asyncio.run(main())
+        if args.http:
+            asyncio.run(main_http(args.host, args.port))
+        else:
+            asyncio.run(main_stdio())
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
     except Exception as e:

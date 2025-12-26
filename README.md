@@ -1,12 +1,16 @@
-# ninja-cli-mcp
+# ninja-mcp
 
-[![Tests](https://github.com/angkira/ninja-cli-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/angkira/ninja-cli-mcp/actions/workflows/tests.yml)
+[![Tests](https://github.com/angkira/ninja-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/angkira/ninja-mcp/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](#requirements)
 
-An MCP (Model Context Protocol) stdio server that delegates all code-level work to AI coding assistants via **OpenRouter**. This enables a clean separation between planning agents (like Claude Code or GitHub Copilot CLI) and the code executor.
+A multi-module MCP (Model Context Protocol) server system for AI-powered development workflows. Ninja MCP consists of three specialized modules:
 
-**Supports any OpenRouter model** including Claude, GPT-4, Qwen, DeepSeek, Gemini, Llama, and many more. The default model is `anthropic/claude-haiku-4.5-20250929` for a fast yet capable baseline.
+- **🥷 Coder** - AI code execution and modification
+- **🔍 Researcher** - Web search and report generation
+- **📋 Secretary** - Codebase exploration and documentation *(coming soon)*
+
+Each module runs as an independent MCP server and can be used standalone or together.
 
 ## Table of Contents
 
@@ -14,956 +18,437 @@ An MCP (Model Context Protocol) stdio server that delegates all code-level work 
 - [Features](#features)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
+- [Modules](#modules)
 - [Usage](#usage)
-  - [Register with Claude Code](#register-with-claude-code)
-  - [IDE Integrations](#ide-integrations)
-- [MCP Tools](#mcp-tools)
-- [Notebooks](#notebooks)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Migration from v0.1](#migration-from-v01)
 - [Contributing](#contributing)
-- [Security](#security)
-- [Community](#community)
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Planning Agent                            │
-│              (Claude Code / Copilot CLI / etc.)                  │
-│                                                                  │
-│  Sees: Plans, metadata, status, summaries                       │
-│  Never sees: Raw file contents (unless inspecting separately)   │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ MCP Protocol (stdio)
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    ninja-cli-mcp Server                          │
-│                   (This Project - Python)                        │
-│                                                                  │
-│  Role: Thin orchestrator                                         │
-│  - Accepts plan steps from planner                              │
-│  - Translates to structured tasks for AI code CLI               │
-│  - Tracks status, logs, metadata                                │
-│  - Returns only summaries and status                            │
-│                                                                  │
-│  DOES NOT: Read/write user project files directly               │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ Subprocess (with instructions)
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       AI Code CLI                                │
-│               (Configurable via OpenRouter)                      │
-│                                                                  │
-│  Role: Full executor with filesystem access                      │
-│  - Reads and writes source files                                │
-│  - Creates new files                                            │
-│  - Runs tests and linters                                       │
-│  - Performs self-review                                         │
-│  - Iterates until tests pass (in full mode)                     │
-│                                                                  │
-│  Backend: Any OpenRouter model                                  │
-│  - anthropic/claude-haiku-4.5-20250929 (default)                │
-│  - openai/gpt-4o                                                │
-│  - qwen/qwen3-coder                                             │
-│  - deepseek/deepseek-coder                                      │
-│  - And 200+ more models                                         │
+│                        IDE / AI Assistant                        │
+│              (Claude Code, VS Code, Zed, etc.)                   │
+└────────────┬──────────────┬──────────────┬─────────────────────┘
+             │              │              │
+             │ MCP          │ MCP          │ MCP
+             │              │              │
+┌────────────▼─────┐ ┌──────▼──────┐ ┌────▼──────────────┐
+│  Ninja Coder     │ │  Ninja      │ │  Ninja Secretary  │
+│  MCP Server      │ │  Researcher │ │  MCP Server       │
+│                  │ │  MCP Server │ │                   │
+│  Tools:          │ │             │ │  Tools:           │
+│  - quick_task    │ │  Tools:     │ │  - explore_code   │
+│  - execute_plan  │ │  - search   │ │  - session_log    │
+│  - run_tests     │ │  - research │ │  - manage_docs    │
+└────────┬─────────┘ │  - report   │ └────┬──────────────┘
+         │           └──────┬──────┘      │
+         │                  │             │
+┌────────▼──────────────────▼─────────────▼──────────────────────┐
+│                    Ninja Common Library                         │
+│  - Security  - Metrics  - Logging  - Daemon Management          │
 └─────────────────────────────────────────────────────────────────┘
+```
 
 ## Features
 
-- 🧠 **Planner/Executor Separation** – MCP planner never touches your repo; AI Code CLI does the heavy lifting.
-- 🔒 **Scoped Execution** – `allowed_globs`/`deny_globs` enforce per-task file access.
-- 🔐 **Security** – Rate limiting (50 calls/min), input validation, path traversal prevention, resource monitoring.
-- 🧩 **Multiple Execution Modes** – Quick tasks, sequential plan steps, and parallel fan-out execution.
-- 🤖 **Multi-CLI Support** – Adapter pattern for Claude, Aider, Cursor, and generic AI assistants.
-- 🐧 **Cross-Platform** – Works on Linux and macOS with platform-specific fixes.
-- 📊 **LiveBench Insights** – Real benchmark ingestion with deduping, model comparisons, and cost analysis notebooks.
-- 🧪 **Full Test Suite** – 149+ tests including security, integration, and smoke tests.
-- 🧰 **IDE Integrations** – One-line installers for VS Code, Zed, Claude Code, and GitHub Copilot CLI.
-- 📝 **MCP Best Practices** – Follows MCP specification 2025-11-25 with proper logging, error handling, and validation.
+### Coder Module (Available Now)
+
+- 🧠 **Planner/Executor Separation** – MCP planner delegates to AI code CLI
+- 🔒 **Scoped Execution** – File access control with glob patterns
+- 🔐 **Security** – Rate limiting, input validation, resource monitoring
+- 🧩 **Multiple Execution Modes** – Quick tasks, sequential plans, parallel execution
+- 🤖 **Multi-CLI Support** – Works with Aider, Claude, Cursor, and more
+- 📊 **Metrics Tracking** – Token usage and cost analysis
+- 🧪 **Full Test Suite** – 149+ tests
+
+### Researcher Module (Available Now)
+
+- 🔍 **Web Search** – Multiple providers (DuckDuckGo, Serper.dev)
+- 📊 **Deep Research** – Multi-query research with parallel agents
+- 📝 **Report Generation** – Synthesize sources into comprehensive reports *(coming soon)*
+- ✅ **Fact Checking** – Verify claims against sources *(coming soon)*
+
+### Secretary Module (Coming Soon)
+
+- 📂 **Codebase Explorer** – Analyze and summarize large codebases
+- 🔎 **Code Search** – Fast grep-like search with tree-sitter
+- 📋 **Session Tracking** – Keep protocol of work sessions
+- 📚 **Documentation** – Read, update, and generate documentation
 
 ## Requirements
 
 - **Python 3.11+**
 - **uv** (package manager)
 - **Git**
-- **OpenRouter API key**
-- (Optional) AI Code CLI binary
+- **OpenRouter API key** (for Coder and Researcher)
+- (Optional) **Serper API key** (for Researcher - DuckDuckGo is free fallback)
+- (Optional) AI Code CLI binary (for Coder - e.g., Aider)
 
 ## Quick Start
 
-```bash
-git clone https://github.com/angkira/ninja-cli-mcp.git
-cd ninja-cli-mcp
-uv sync --all-extras
-```
-
-Run the MCP server locally:
+### Interactive Installation (Recommended)
 
 ```bash
-uv run python -m ninja_cli_mcp.server
-```
-
-### Interactive Installer
-
-Prefer a guided setup?
-
-```bash
+git clone https://github.com/angkira/ninja-mcp.git
+cd ninja-mcp
 ./scripts/install_interactive.sh
 ```
 
 The installer will:
-
-- Verify Python 3.11+ and install `uv` when missing
-- Install dependencies and prompt for your OpenRouter API key (hidden input)
-- Let you pick a model (default: Claude Haiku 4.5)
-- Detect local AI assistants (Claude Code, Copilot CLI, etc.)
-- Auto-register ninja-cli-mcp with Claude Code when available
-- Save configuration to `~/.ninja-cli-mcp.env`
-- Offer to add helper aliases to your shell profile
-
-Once complete, you're ready to delegate tasks from your favorite planner.
-
-## Usage
-
-### Register with Claude Code
-
-```bash
-./scripts/install_claude_code_mcp.sh
-```
-
-This script:
-
-1. Verifies the `claude` CLI is installed
-2. Ensures `OPENROUTER_API_KEY` (or `OPENAI_API_KEY`) is available
-3. Registers `ninja-cli-mcp` via `claude mcp add --transport stdio`
-
-### IDE Integrations
-
-ninja-cli-mcp can be integrated with multiple IDEs and AI coding assistants:
-
-#### Quick Install (All IDEs)
-
-Automatically detect and configure all installed IDEs:
-
-```bash
-./scripts/install_ide_integrations.sh
-```
-
-This will detect and configure:
-- **VS Code** with GitHub Copilot (requires VS Code 1.99+)
-- **Zed** editor with AI Assistant
-- **GitHub Copilot CLI** (if installed)
-
-#### Individual IDE Setup
-
-Configure specific IDEs individually:
-
-**VS Code:**
-```bash
-./scripts/install_vscode_mcp.sh          # User-level (all workspaces)
-./scripts/install_vscode_mcp.sh --workspace  # Current workspace only
-```
-
-**Zed:**
-```bash
-./scripts/install_zed_mcp.sh
-```
-
-**Copilot CLI:**
-```bash
-./scripts/install_copilot_cli_mcp.sh
-```
-
-#### IDE Configuration Details
-
-| IDE | Config Location | MCP Support |
-|-----|----------------|-------------|
-| **VS Code** | `~/.config/Code/User/mcp.json` or `.vscode/mcp.json` | Native MCP support (1.99+) |
-| **Zed** | `~/.config/zed/settings.json` | Context servers (MCP compatible) |
-| **Copilot CLI** | `~/.copilot/mcp-config.json` | Native MCP support (v0.0.365+) |
-
-After configuration, restart your IDE and the MCP tools will be available in the AI assistant interface.
-
-### Key Design Principle
-
-> **"The planner never sees code; the executor (AI code CLI) sees and edits everything within an allowed scope."**
-
-This separation provides:
-- **Security**: Main planning agents don't have direct filesystem access
-- **Modularity**: Easy to swap out the executor backend or model
-- **Auditability**: Clear logs of what was delegated and what changed
-- **Flexibility**: Use any OpenRouter model for code generation
-
-## Supported Models
-
-ninja-cli-mcp supports **any model available on OpenRouter**. Recommended models for code tasks:
-
-| Model | ID | Description |
-|-------|-----|-------------|
-| Claude Haiku 4.5 | `anthropic/claude-haiku-4.5-20250929` | Default - fast + high quality |
-| Claude Sonnet 4 | `anthropic/claude-sonnet-4` | Excellent for complex code |
-| Claude 3.5 Sonnet | `anthropic/claude-3.5-sonnet` | Fast and capable |
-| GPT-4o | `openai/gpt-4o` | OpenAI's flagship model |
-| GPT-4 Turbo | `openai/gpt-4-turbo` | Fast GPT-4 variant |
-| Qwen3 Coder | `qwen/qwen3-coder` | Optimized for code generation |
-| Qwen 2.5 Coder 32B | `qwen/qwen-2.5-coder-32b-instruct` | Large coding model |
-| DeepSeek Coder | `deepseek/deepseek-coder` | Specialized for code |
-| Gemini Pro 1.5 | `google/gemini-pro-1.5` | Google's advanced model |
-| Llama 3.1 70B | `meta-llama/llama-3.1-70b-instruct` | Meta's open model |
-
-See [OpenRouter Models](https://openrouter.ai/models) for the full list.
-
-## Notebooks
-
-| Notebook | Description |
-|----------|-------------|
-| `notebooks/01_model_comparison.ipynb` | Fetches real LiveBench CSV data, deduplicates models, ranks top performers, and runs 5 realistic coding tasks with cost analysis. |
-| `notebooks/02_cost_analysis.ipynb` | Deep dive into pricing, token usage, and scaling scenarios using real execution data. |
-
-To run the notebooks:
-
-```bash
-uv sync --extra notebooks
-uv run python -m ipykernel install --user --name ninja-cli-mcp
-```
-
-Then open the notebooks in VS Code or Jupyter and select the `ninja-cli-mcp` kernel.
-
+- Let you select which modules to install (Coder, Researcher, Secretary)
+- Configure API keys (hidden input)
+- Choose models per module
+- Set up daemon mode (optional)
+- Detect and configure IDE integrations
 
 ### Manual Installation
 
-If you prefer manual setup:
-
-#### 1. Clone the repository
-
 ```bash
-git clone https://github.com/angkira/ninja-cli-mcp.git
-cd ninja-cli-mcp
+# Clone repository
+git clone https://github.com/angkira/ninja-mcp.git
+cd ninja-mcp
+
+# Install specific modules
+uv sync --extra coder
+uv sync --extra researcher
+uv sync --extra secretary
+
+# Or install all modules
+uv sync --all-extras
+
+# Configure environment
+export OPENROUTER_API_KEY='your-key'
+export NINJA_CODER_MODEL='anthropic/claude-haiku-4.5-20250929'
+export NINJA_CODE_BIN='aider'
+
+# Run servers
+ninja-coder
+ninja-researcher
+ninja-secretary
+
+# Or as daemons
+ninja-daemon start coder
+ninja-daemon start researcher
+ninja-daemon start secretary
 ```
 
-#### 2. Run the basic installer
+## Modules
 
+### Coder Module
+
+Delegates code writing tasks to AI code assistants via OpenRouter.
+
+**Tools:**
+- `coder_quick_task` - Single-pass code changes
+- `coder_execute_plan_sequential` - Multi-step sequential execution
+- `coder_execute_plan_parallel` - Parallel execution with fanout
+- `coder_run_tests` - Test execution (deprecated)
+- `coder_apply_patch` - Patch application (not supported)
+
+**Configuration:**
 ```bash
-./scripts/install.sh
+export NINJA_CODER_MODEL='anthropic/claude-haiku-4.5-20250929'
+export NINJA_CODE_BIN='aider'
+export NINJA_CODER_TIMEOUT=600
 ```
 
-This will:
-- Verify Python 3.11+ is installed
-- Install uv if not present
-- Install all dependencies
-- Make scripts executable
+**Usage:**
+```bash
+# Run directly
+ninja-coder
 
-#### 3. Set environment variables
+# Or as daemon
+ninja-daemon start coder
+ninja-daemon status coder
+ninja-daemon stop coder
+```
+
+See [docs/CODER.md](docs/CODER.md) for detailed documentation.
+
+### Researcher Module
+
+Web search and research report generation.
+
+**Tools:**
+- `researcher_web_search` - Search the web (DuckDuckGo or Serper.dev)
+- `researcher_deep_research` - Multi-query research with parallel agents
+- `researcher_generate_report` - Generate reports *(coming soon)*
+- `researcher_fact_check` - Verify claims *(coming soon)*
+- `researcher_summarize_sources` - Summarize sources *(coming soon)*
+
+**Configuration:**
+```bash
+export NINJA_RESEARCHER_MODEL='anthropic/claude-sonnet-4'
+export SERPER_API_KEY='your-key'  # Optional
+export NINJA_RESEARCHER_MAX_SOURCES=20
+export NINJA_RESEARCHER_PARALLEL_AGENTS=4
+```
+
+See [docs/RESEARCHER.md](docs/RESEARCHER.md) for detailed documentation.
+
+### Secretary Module *(Coming Soon)*
+
+Codebase exploration and documentation management.
+
+**Tools:**
+- `secretary_explore_codebase` - Analyze codebase
+- `secretary_find_files` - Find files by pattern
+- `secretary_search_code` - Grep-like search
+- `secretary_start_session` - Start session tracking
+- `secretary_log_event` - Log session events
+- `secretary_read_docs` - Read documentation
+- `secretary_update_docs` - Update documentation
+
+**Configuration:**
+```bash
+export NINJA_SECRETARY_MODEL='anthropic/claude-haiku-4.5-20250929'
+export NINJA_SECRETARY_MAX_FILE_SIZE=1048576
+export NINJA_SECRETARY_CACHE_DIR=~/.cache/ninja-secretary
+```
+
+See [docs/SECRETARY.md](docs/SECRETARY.md) for detailed documentation.
+
+## Usage
+
+### Running Modules
+
+#### Direct Execution
 
 ```bash
-# Required: OpenRouter API key
-export OPENROUTER_API_KEY='your-api-key-here'
+# Run coder module
+ninja-coder
 
-# Optional: Choose a model (default: anthropic/claude-haiku-4.5-20250929)
-export NINJA_MODEL='anthropic/claude-sonnet-4'
+# Run researcher module
+ninja-researcher
 
-# Or use any OpenRouter model:
-export NINJA_MODEL='openai/gpt-4o'
-export NINJA_MODEL='qwen/qwen3-coder'
-export NINJA_MODEL='deepseek/deepseek-coder'
+# Run secretary module
+ninja-secretary
+```
 
-# Optional: Custom AI Code CLI path (default: ninja-code)
-export NINJA_CODE_BIN='/path/to/ninja-code'
+#### Daemon Mode
+
+```bash
+# Start daemons
+ninja-daemon start coder
+ninja-daemon start researcher
+ninja-daemon start secretary
+
+# Check status
+ninja-daemon status
+ninja-daemon status coder
+
+# Stop daemons
+ninja-daemon stop coder
+ninja-daemon stop researcher
+ninja-daemon stop secretary
+
+# Restart
+ninja-daemon restart coder
+```
+
+### IDE Integration
+
+#### Claude Code
+
+```bash
+# Register all modules
+claude mcp add --scope user --transport stdio ninja-coder -- ninja-daemon connect coder
+claude mcp add --scope user --transport stdio ninja-researcher -- ninja-daemon connect researcher
+claude mcp add --scope user --transport stdio ninja-secretary -- ninja-daemon connect secretary
+
+# Verify
+claude mcp list
+```
+
+#### VS Code
+
+Create or update `~/.config/Code/User/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "ninja-coder": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "ninja_coder.server"]
+    },
+    "ninja-researcher": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "ninja_researcher.server"]
+    },
+    "ninja-secretary": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "ninja_secretary.server"]
+    }
+  }
+}
+```
+
+#### Zed
+
+Update `~/.config/zed/settings.json`:
+
+```json
+{
+  "context_servers": {
+    "ninja-coder": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "ninja_coder.server"]
+    }
+  }
+}
 ```
 
 ## Configuration
 
 ### Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `OPENROUTER_API_KEY` | Yes* | - | OpenRouter API key |
-| `OPENAI_API_KEY` | Yes* | - | Alternative to OPENROUTER_API_KEY |
-| `NINJA_MODEL` | No | `anthropic/claude-sonnet-4` | Model to use (highest priority) |
-| `OPENROUTER_MODEL` | No | - | Alternative model setting |
-| `OPENAI_MODEL` | No | - | Alternative model setting (lowest priority) |
-| `OPENAI_BASE_URL` | No | `https://openrouter.ai/api/v1` | API endpoint |
-| `NINJA_CODE_BIN` | No | `ninja-code` | Path to AI Code CLI |
-| `NINJA_TIMEOUT_SEC` | No | `600` | Default timeout in seconds |
+| Variable | Module | Required | Default | Description |
+|----------|--------|----------|---------|-------------|
+| `OPENROUTER_API_KEY` | All | Yes* | - | OpenRouter API key |
+| `NINJA_CODER_MODEL` | Coder | No | `anthropic/claude-haiku-4.5-20250929` | Coder model |
+| `NINJA_CODE_BIN` | Coder | No | `aider` | AI Code CLI path |
+| `NINJA_CODER_TIMEOUT` | Coder | No | `600` | Timeout in seconds |
+| `NINJA_RESEARCHER_MODEL` | Researcher | No | `anthropic/claude-sonnet-4` | Researcher model |
+| `SERPER_API_KEY` | Researcher | No | - | Serper.dev API key |
+| `NINJA_SECRETARY_MODEL` | Secretary | No | `anthropic/claude-haiku-4.5-20250929` | Secretary model |
 
 *At least one of `OPENROUTER_API_KEY` or `OPENAI_API_KEY` must be set.
 
-### Model Selection Priority
+### Configuration File
 
-The model is selected in this order:
-1. `NINJA_MODEL` (highest priority)
-2. `OPENROUTER_MODEL`
-3. `OPENAI_MODEL`
-4. Default: `anthropic/claude-sonnet-4`
+All configuration is stored in `~/.ninja-mcp.env`:
+
+```bash
+# Load configuration
+source ~/.ninja-mcp.env
+
+# View configuration
+cat ~/.ninja-mcp.env
+```
 
 ### Directory Layout
 
-Logs and metadata are stored in a centralized cache directory to avoid polluting your projects:
-
 ```
-~/.cache/ninja-cli-mcp/<repo_hash>-<repo_name>/
-├── logs/           # Execution logs
-├── tasks/          # Task instruction files
-├── metadata/       # Additional metadata
-└── metrics/        # Task metrics (CSV)
-```
-
-This is a **centralized cache** - the MCP server does NOT create files in your project directory.
-All logs and metadata are stored in `~/.cache/ninja-cli-mcp/` (or `%LOCALAPPDATA%\ninja-cli-mcp` on Windows).
-
-The code changes are made by the AI code CLI (Aider) directly in your repository.
-
-## Running the Server
-
-### Direct execution
-
-```bash
-./scripts/run_server.sh
-```
-
-Or using Python directly:
-
-```bash
-python -m ninja_cli_mcp.server
-```
-
-The server communicates via stdin/stdout using the MCP protocol.
-
-## Connecting to Claude Code
-
-### Automatic Registration (Recommended)
-
-If you used the interactive installer (`./scripts/install_interactive.sh`), ninja-cli-mcp is **already registered** with Claude Code automatically! Just start using it:
-
-```bash
-claude
-```
-
-Then check available MCP tools with `/mcp` and look for ninja-cli-mcp tools.
-
-### Manual Registration
-
-If you need to register manually (or re-register):
-
-```bash
-./scripts/install_claude_code_mcp.sh
-```
-
-Or use the Claude Code CLI directly:
-
-```bash
-claude mcp add --transport stdio ninja-cli-mcp -- /path/to/ninja-cli-mcp/scripts/run_server.sh
-```
-
-### Verify the Connection
-
-1. Start Claude Code: `claude`
-2. Check MCP tools: `/mcp`
-3. Look for ninja-cli-mcp tools in the list (ninja_quick_task, execute_plan_sequential, etc.)
-
-## Connecting to Copilot CLI
-
-### Setup script
-
-```bash
-./scripts/install_copilot_cli_mcp.sh
-```
-
-This creates a configuration file at `~/.config/copilot-cli/mcp-servers.json`.
-
-### Prerequisites
-
-Install GitHub Copilot CLI:
-
-```bash
-# Option 1: GitHub CLI extension
-gh extension install github/gh-copilot
-
-# Option 2: npm package
-npm install -g @githubnext/github-copilot-cli
-```
-
-Note: MCP integration with Copilot CLI is evolving. Check the current documentation for the latest configuration method.
-
-## MCP Tools
-
-### ninja_quick_task
-
-Execute a quick single-pass task using any OpenRouter model.
-
-**Input:**
-```json
-{
-  "task": "Add a hello() function that prints 'Hello World'",
-  "repo_root": "/path/to/repo",
-  "context_paths": ["src/"],
-  "allowed_globs": ["src/**/*.py"],
-  "deny_globs": ["**/__pycache__/**"]
-}
-```
-
-**Output:**
-```json
-{
-  "status": "ok",
-  "summary": "Added hello() function to src/main.py",
-  "notes": "Also added docstring",
-  "logs_ref": ".ninja-cli-mcp/logs/20240101_120000_quick_task.log",
-  "suspected_touched_paths": ["src/main.py"]
-}
-```
-
-### execute_plan_sequential
-
-Execute multiple plan steps in order.
-
-**Input:**
-```json
-{
-  "repo_root": "/path/to/repo",
-  "mode": "full",
-  "global_allowed_globs": ["**/*.py"],
-  "global_deny_globs": ["**/venv/**"],
-  "steps": [
-    {
-      "id": "step-001",
-      "title": "Add hello function",
-      "task": "Create a hello() function",
-      "context_paths": ["src/"],
-      "allowed_globs": ["src/**/*.py"],
-      "max_iterations": 3,
-      "test_plan": {
-        "unit": ["pytest tests/test_hello.py"],
-        "e2e": []
-      }
-    }
-  ]
-}
-```
-
-**Modes:**
-- `quick`: Single pass execution
-- `full`: Includes coder → reviewer → tester → fix loop → final review
-
-### execute_plan_parallel
-
-Execute plan steps concurrently with a configurable fanout limit.
-
-**Input:**
-```json
-{
-  "repo_root": "/path/to/repo",
-  "mode": "quick",
-  "fanout": 4,
-  "global_allowed_globs": ["**/*.py"],
-  "steps": [
-    {"id": "1", "title": "Feature A", "task": "Implement A", "allowed_globs": ["src/a/**"]},
-    {"id": "2", "title": "Feature B", "task": "Implement B", "allowed_globs": ["src/b/**"]}
-  ]
-}
-```
-
-**Output includes merge report:**
-```json
-{
-  "status": "ok",
-  "results": [...],
-  "merge_report": {
-    "strategy": "scope_isolation",
-    "notes": "Steps executed with isolated scopes. Manual review recommended if scopes overlapped."
-  }
-}
-```
-
-### run_tests
-
-Run test commands via the AI code CLI.
-
-**Input:**
-```json
-{
-  "repo_root": "/path/to/repo",
-  "commands": ["pytest tests/", "npm test"],
-  "timeout_sec": 600
-}
-```
-
-### apply_patch
-
-**Note:** This tool returns `not_supported` status. In this architecture, patches are created and applied by the AI code CLI, not by this server. Include patch instructions in task descriptions for other tools.
-
-## Usage Scenarios
-
-### Simple Quick Task
-
-Ask the planner to implement a feature:
-
-```
-"Use ninja_quick_task to add a validate_email() function to src/utils.py that uses regex to validate email addresses."
-```
-
-The planner calls the tool, the AI code CLI implements it, and the planner receives only the status and summary.
-
-### Sequential Plan Execution
-
-For larger features requiring multiple steps:
-
-```
-"Use execute_plan_sequential with these steps:
-1. Create the UserService class in src/services/
-2. Add unit tests in tests/test_user_service.py
-3. Update the API routes to use UserService"
-```
-
-### Parallel Plan Execution
-
-For independent tasks that can run concurrently:
-
-```
-"Use execute_plan_parallel to implement these independent components:
-- Authentication module (src/auth/)
-- Logging module (src/logging/)
-- Configuration module (src/config/)
-Use fanout=3 to run all in parallel."
-```
-
-### Switching Models
-
-Use different models for different tasks:
-
-```bash
-# Use Claude for complex architecture
-export NINJA_MODEL='anthropic/claude-sonnet-4'
-
-# Use GPT-4 for quick fixes
-export NINJA_MODEL='openai/gpt-4o'
-
-# Use Qwen for Python-specific tasks
-export NINJA_MODEL='qwen/qwen3-coder'
-```
-
-## Security Notes
-
-### Filesystem Access
-
-- **AI Code CLI** has direct read/write access within the declared `repo_root`
-- **MCP Server** only reads/writes to `.ninja-cli-mcp/` for logs and metadata
-- **Planning Agents** never receive raw file contents from this server
-
-### Path Traversal Protection
-
-The server validates all paths to prevent escaping the repo root:
-- Absolute paths must be within repo_root
-- Relative paths are resolved against repo_root
-- `..` components are rejected
-
-### Scope Constraints
-
-Use `allowed_globs` and `deny_globs` to restrict AI code CLI's access:
-
-```json
-{
-  "allowed_globs": ["src/**/*.py", "tests/**/*.py"],
-  "deny_globs": ["**/secrets/**", "**/.env*", "**/node_modules/**"]
-}
+~/.cache/ninja-mcp/
+├── <repo-hash>-<repo-name>/    # Per-repository cache
+│   ├── logs/                   # Execution logs
+│   ├── tasks/                  # Task instruction files
+│   ├── metadata/               # Additional metadata
+│   ├── metrics/                # Task metrics (CSV)
+│   └── work/                   # Isolated work directories
+├── daemons/                    # Daemon PID and socket files
+│   ├── coder.pid
+│   ├── coder.sock
+│   ├── researcher.pid
+│   └── researcher.sock
+└── logs/                       # Daemon logs
+    ├── coder.log
+    ├── researcher.log
+    └── secretary.log
 ```
 
 ## Development
 
-### Run linter and tests
+### Running Tests
 
 ```bash
-./scripts/dev.sh
-```
+# All tests
+./scripts/dev.sh test
 
-### Individual commands
+# Module-specific tests
+pytest tests/coder/
+pytest tests/researcher/
+pytest tests/secretary/
 
-```bash
-./scripts/dev.sh lint      # Run ruff linter
-./scripts/dev.sh format    # Format code
-./scripts/dev.sh typecheck # Run mypy
-./scripts/dev.sh test      # Run pytest
-```
-
-### Smoke test
-
-```bash
-./scripts/smoke_test.sh
-```
-
-### Integration tests
-
-Run integration tests with real API calls (uses minimal tokens):
-
-```bash
+# Integration tests
 ./scripts/run_integration_tests.sh
 ```
 
-**Note**: These tests make real API calls to verify end-to-end functionality. They're designed to use minimal tokens (estimated cost: $0.01-$0.05 per run). You'll need your OpenRouter API key configured.
-
-The integration tests verify:
-- ✅ Quick task execution with real AI models
-- ✅ Metrics tracking and CSV generation
-- ✅ Token usage and cost calculation
-- ✅ CLI commands (list-models, show-config, etc.)
-- ✅ OpenRouter API pricing fetch
-
-## CLI Interface
-
-For testing without MCP protocol:
+### Code Quality
 
 ```bash
-# Quick task
-python -m ninja_cli_mcp.cli quick-task \
-  --repo-root /path/to/repo \
-  --task "Add a hello function"
+# Lint
+./scripts/dev.sh lint
 
-# Run tests
-python -m ninja_cli_mcp.cli run-tests \
-  --repo-root /path/to/repo \
-  --commands "pytest tests/"
+# Format
+./scripts/dev.sh format
 
-# Execute plan from file
-python -m ninja_cli_mcp.cli execute-plan \
-  --repo-root /path/to/repo \
-  --plan-file plan.json \
-  --full
-
-# List available models
-python -m ninja_cli_mcp.cli list-models
-
-# Show current configuration
-python -m ninja_cli_mcp.cli show-config
-
-# View metrics summary
-python -m ninja_cli_mcp.cli metrics-summary \
-  --repo-root /path/to/repo
-
-# View recent tasks
-python -m ninja_cli_mcp.cli metrics-recent \
-  --repo-root /path/to/repo \
-  --limit 20
-
-# Export metrics to CSV
-python -m ninja_cli_mcp.cli metrics-export \
-  --repo-root /path/to/repo \
-  --output my_metrics.csv
+# Type check
+./scripts/dev.sh typecheck
 ```
 
-## Metrics and Cost Tracking
+### Adding a New Module
 
-ninja-cli-mcp automatically tracks token usage and estimated costs for every task execution. Metrics are stored in CSV format within your repository at `.ninja-cli-mcp/metrics/tasks.csv`.
+See [docs/ADDING_MODULES.md](docs/ADDING_MODULES.md) for instructions on adding new modules.
 
-### 📊 Experiment Notebooks
+## Migration from v0.1
 
-Want to compare models and analyze costs? Check out the **interactive Jupyter notebooks** in `notebooks/`:
+If you're upgrading from `ninja-cli-mcp` v0.1, see [MIGRATION.md](MIGRATION.md) for detailed migration instructions.
 
-- **[Model Comparison](notebooks/01_model_comparison.ipynb)** - Compare Qwen, Claude, Gemini on real tasks
-  - 💰 Cost per task
-  - ⚡ Speed benchmarks  
-  - ✅ Success rates
-  - 💎 Value scores
-  
-- **[Cost Analysis](notebooks/02_cost_analysis.ipynb)** - Deep dive into pricing
-  - 🔄 Real-time OpenRouter pricing
-  - 📅 Monthly cost projections
-  - 💡 Cache savings analysis (~90% off!)
-  - 🎯 Workload scenarios
-
-Install notebook dependencies:
-```bash
-uv sync --extra notebooks
-# or
-uv pip install jupyter matplotlib seaborn pandas
-```
-
-See [notebooks/README.md](notebooks/README.md) for details.
-
-### What's Tracked
-
-For each task execution, the following metrics are recorded:
-
-- **Task Information**: Task ID, timestamp, tool name, description
-- **Model**: Which OpenRouter model was used
-- **Token Usage**: Input tokens, output tokens, cache read tokens, cache write tokens, total tokens
-- **Costs**: Real-time costs from OpenRouter API (input cost, output cost, cache costs, total cost in USD)
-- **Performance**: Execution duration in seconds
-- **Status**: Success/failure status
-- **Context**: Repository root, file scope patterns, error messages (if any)
-
-### Cost Tracking with Real-Time Pricing
-
-ninja-cli-mcp automatically fetches **real-time pricing from the OpenRouter API** for accurate cost tracking. Pricing is cached for 24 hours to minimize API calls.
-
-#### Pricing Features
-
-- **Automatic API Fetching**: Pricing is retrieved from OpenRouter's `/api/v1/models` endpoint
-- **Cache Support**: Tracks cache read/write tokens for models that support prompt caching (Claude, GPT-4, DeepSeek)
-- **Fallback Pricing**: If API fetch fails, falls back to static pricing table
-- **24-Hour Cache**: Pricing data is cached locally to reduce API calls
-
-#### Cache Token Savings
-
-Models that support [prompt caching](https://openrouter.ai/docs/prompt-caching) (Anthropic Claude, OpenAI, DeepSeek) can significantly reduce costs:
-
-- **Cache Read**: ~90% cheaper than regular input tokens
-- **Cache Write**: Slightly more expensive than input tokens (one-time cost)
-- **Example**: Claude Sonnet 4 cache read tokens cost ~$0.03/M vs $3/M for regular input
-
-The metrics system automatically tracks cache tokens when they appear in CLI output.
-
-### Viewing Metrics
-
-#### Summary View
-
-Get an overview of all tasks:
+**Quick migration:**
 
 ```bash
-python -m ninja_cli_mcp.cli metrics-summary --repo-root /path/to/repo
+# Backup old config
+cp ~/.ninja-cli-mcp.env ~/.ninja-cli-mcp.env.backup
+
+# Run new installer
+./scripts/install_interactive.sh
+
+# Update IDE configs (see MIGRATION.md)
 ```
 
-Output:
-```
-Metrics Summary
-============================================================
-  Total tasks:        42
-  Successful tasks:   38
-  Failed tasks:       4
-  Total tokens:       156,234
-  Total cost:         $1.8750
+**Breaking changes:**
+- Tool names now prefixed: `ninja_quick_task` → `coder_quick_task`
+- Separate servers for each module
+- New configuration structure
 
-Model Usage:
-------------------------------------------------------------
-  anthropic/claude-sonnet-4: 30 tasks
-  openai/gpt-4o: 8 tasks
-  qwen/qwen3-coder: 4 tasks
-```
-
-#### Recent Tasks
-
-View detailed information about recent task executions:
-
-```bash
-python -m ninja_cli_mcp.cli metrics-recent --repo-root /path/to/repo --limit 5
-```
-
-Output:
-```
-Recent Tasks (last 5)
-================================================================================
-
-✓ 2024-01-15T14:23:45
-  Tool:     ninja_quick_task
-  Model:    anthropic/claude-sonnet-4
-  Tokens:   2,345 (1,500 in, 845 out)
-  Cost:     $0.017175
-  Duration: 12.34s
-  Task:     Add user authentication middleware to API routes
-
-✗ 2024-01-15T14:20:12
-  Tool:     ninja_run_tests
-  Model:    openai/gpt-4o
-  Tokens:   1,234 (800 in, 434 out)
-  Cost:     $0.006340
-  Duration: 8.76s
-  Task:     Run test suite
-  Error:    Test failed: 3 assertions failed in test_auth.py
-```
-
-#### Export Metrics
-
-Export all metrics to a CSV file for analysis:
-
-```bash
-python -m ninja_cli_mcp.cli metrics-export --repo-root /path/to/repo --output analysis.csv
-```
-
-You can then analyze the CSV with tools like Excel, Python pandas, or R.
-
-### Metrics CSV Format
-
-The metrics CSV file contains the following columns:
-
-| Column | Description |
-|--------|-------------|
-| `task_id` | Unique identifier for the task |
-| `timestamp` | ISO 8601 timestamp |
-| `model` | OpenRouter model ID |
-| `tool_name` | MCP tool that was called |
-| `task_description` | Brief description of the task |
-| `input_tokens` | Number of input tokens |
-| `output_tokens` | Number of output tokens |
-| `total_tokens` | Total tokens (input + output + cache) |
-| `cache_read_tokens` | Number of cache read tokens |
-| `cache_write_tokens` | Number of cache write tokens |
-| `input_cost` | Input cost from OpenRouter pricing (USD) |
-| `output_cost` | Output cost from OpenRouter pricing (USD) |
-| `cache_read_cost` | Cache read cost (USD) |
-| `cache_write_cost` | Cache write cost (USD) |
-| `total_cost` | Total cost (USD) |
-| `duration_sec` | Execution duration in seconds |
-| `success` | Whether the task succeeded (True/False) |
-| `execution_mode` | Mode: quick, full, test, etc. |
-| `repo_root` | Repository root path |
-| `file_scope` | File glob patterns |
-| `error_message` | Error message (if failed) |
-
-### Privacy and Data Storage
-
-- Metrics are stored locally in your repository under `.ninja-cli-mcp/metrics/`
-- Token counts and costs are tracked, but **actual code and prompts are NOT stored in metrics**
-- Only task descriptions, status, and metadata are saved
-- Add `.ninja-cli-mcp/` to your `.gitignore` if you don't want to commit metrics
-
-### Cost Optimization Tips
-
-1. **Choose the right model**: Use lighter models like Qwen Coder or DeepSeek for simpler tasks
-2. **Use quick mode**: Avoid full mode (with review/test loops) when unnecessary
-3. **Limit scope**: Use `allowed_globs` to restrict the AI's context to relevant files only
-4. **Monitor metrics**: Regularly check `metrics-summary` to identify expensive operations
-5. **Batch tasks**: Combine related changes into a single task when possible
-
-Example of switching to a cost-effective model:
-
-```bash
-# Use free Qwen model for simple refactoring
-export NINJA_MODEL='qwen/qwen3-coder'
-python -m ninja_cli_mcp.cli quick-task --repo-root . --task "Add docstrings to utils.py"
-
-# Use Claude for complex architecture changes
-export NINJA_MODEL='anthropic/claude-sonnet-4'
-python -m ninja_cli_mcp.cli quick-task --repo-root . --task "Refactor authentication system"
-```
+**Backward compatibility:**
+- Old `ninja-cli-mcp` module still available with `--extra legacy`
+- Will be removed in v0.3.0
 
 ## Contributing
 
-We welcome issues, feature requests, and pull requests! Please read:
+We welcome contributions! Please read:
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) – development workflow, testing, commit style
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) – be excellent to each other
-- [CHANGELOG.md](CHANGELOG.md) – keep it updated when submitting PRs
-
-Use the provided issue and PR templates to streamline collaboration.
+- [CONTRIBUTING.md](CONTRIBUTING.md) – Development workflow
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) – Community guidelines
+- [ARCHITECTURE.md](ARCHITECTURE.md) – System architecture
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for supported versions and how to report vulnerabilities. Please **do not** open public issues for security reports—email [security@angkira.com](mailto:security@angkira.com) instead.
-
-## Community
-
-- 💬 Start or join discussions: [GitHub Discussions](https://github.com/angkira/ninja-cli-mcp/discussions)
-- 🐞 Report bugs / request features: use the issue templates
-- 🧠 Share experiments: screenshots, metrics, notebooks welcome in discussions
-
-## Limitations & Assumptions
-
-### AI Code CLI Interface
-
-This implementation assumes the AI code CLI supports:
-- `--prompt "..."` for passing task instructions
-- `--cwd /path` for setting working directory
-- `--yes` for non-interactive mode
-
-If the actual interface differs, adjust `ninja_driver.py`:
-- `_build_command()` method constructs the CLI invocation
-- `_write_task_file()` creates instruction documents
-
-### Parallel Execution
-
-Parallel steps run against the same repository. For stronger isolation:
-- Use non-overlapping `allowed_globs` for each step
-- Consider implementing git worktrees for full isolation (noted in merge_report)
-
-### Windows Support
-
-Currently optimized for Linux and macOS. For Windows:
-- Use WSL (Windows Subsystem for Linux)
-- Run the server within WSL
-- Adjust paths accordingly
-
-## Troubleshooting
-
-### "AI Code CLI not found"
-
-```bash
-# Check if it's installed
-which ninja-code
-
-# Or set the path explicitly
-export NINJA_CODE_BIN=/path/to/ninja-code
-```
-
-### "API key not set"
-
-```bash
-export OPENROUTER_API_KEY='your-key-here'
-```
-
-### View execution logs
-
-Logs are stored in the centralized cache directory:
-
-```bash
-ls -la ~/.cache/ninja-cli-mcp/
-# Find your repo's logs directory
-ls -la ~/.cache/ninja-cli-mcp/*/logs/
-# View latest log
-cat ~/.cache/ninja-cli-mcp/*/logs/$(ls -t ~/.cache/ninja-cli-mcp/*/logs/ | head -1)
-```
-```
-
-### MCP connection issues
-
-1. Verify the server starts correctly:
-   ```bash
-   ./scripts/run_server.sh
-   ```
-   
-2. Check Claude Code MCP registration:
-   ```bash
-   claude mcp list
-   ```
-
-### Check current model
-
-```bash
-python -m ninja_cli_mcp.cli show-config
-```
-
-### Linux-Specific Issues
-
-#### MCP server not visible in Claude Code
-
-The installer now registers globally by default. If you installed an earlier version, re-register:
-
-```bash
-claude mcp add --scope user --transport stdio ninja-cli-mcp -- \
-  /absolute/path/to/ninja-cli-mcp/scripts/run_server.sh
-```
-
-#### Config file fix (if API key was corrupted during installation)
-
-```bash
-./scripts/fix_config.sh
-source ~/.ninja-cli-mcp.env
-```
-
-#### Test with MCP Inspector
-
-```bash
-npx @modelcontextprotocol/inspector uv run python -m ninja_cli_mcp.server
-```
-
-See `docs/MCP_INSPECTOR_GUIDE.md` for detailed testing instructions.
+See [SECURITY.md](SECURITY.md) for security policy and vulnerability reporting.
 
 ## Documentation
 
-- **[MCP Best Practices](docs/MCP_BEST_PRACTICES.md)** - Security, testing, deployment checklist
-- **[MCP Inspector Guide](docs/MCP_INSPECTOR_GUIDE.md)** - Local testing with MCP Inspector
-- **[Python Setup](PYTHON_SETUP.md)** - Python environment setup
+- **[Architecture](ARCHITECTURE.md)** - System architecture and design
+- **[Migration Guide](MIGRATION.md)** - Migrating from v0.1 to v0.2
+- **[Coder Module](docs/CODER.md)** - Coder module documentation
+- **[Researcher Module](docs/RESEARCHER.md)** - Researcher module documentation
+- **[Secretary Module](docs/SECRETARY.md)** - Secretary module documentation
+- **[MCP Best Practices](docs/MCP_BEST_PRACTICES.md)** - Security and testing
 - **[Contributing](CONTRIBUTING.md)** - How to contribute
-- **[Security](SECURITY.md)** - Security policy
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+## Legacy Support (v0.1)
+
+The old `ninja-cli-mcp` module is still available for backward compatibility:
+
+```bash
+# Install legacy support
+uv sync --extra legacy
+
+# Run old server
+python -m ninja_cli_mcp.server
+```
+
+**Note:** Legacy support will be removed in v0.3.0. Please migrate to the new multi-module architecture.
+
+See [MIGRATION.md](MIGRATION.md) for migration instructions.

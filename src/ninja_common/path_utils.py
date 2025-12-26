@@ -80,16 +80,16 @@ def validate_repo_root(repo_root: str) -> Path:
 
 def get_internal_dir(repo_root: str | Path) -> Path:
     """
-    Get the internal directory for ninja-cli-mcp data.
+    Get the internal directory for ninja-mcp data.
 
     Uses a centralized cache directory instead of polluting project directories.
-    Logs and metadata are stored in ~/.cache/ninja-cli-mcp/<repo_hash>/
+    Logs and metadata are stored in ~/.cache/ninja-mcp/<repo_hash>/
 
     Args:
         repo_root: The repository root path.
 
     Returns:
-        Path to the ninja-cli-mcp cache directory for this repo.
+        Path to the ninja-mcp cache directory for this repo.
     """
     # Get cache directory (XDG Base Directory compliant)
     if os.name == "nt":  # Windows
@@ -101,9 +101,9 @@ def get_internal_dir(repo_root: str | Path) -> Path:
     root = Path(repo_root).resolve()
     repo_hash = hashlib.sha256(str(root).encode()).hexdigest()[:16]
 
-    # Use format: ~/.cache/ninja-cli-mcp/<hash>-<repo_name>/
+    # Use format: ~/.cache/ninja-mcp/<hash>-<repo_name>/
     repo_name = root.name
-    internal = cache_base / "ninja-cli-mcp" / f"{repo_hash}-{repo_name}"
+    internal = cache_base / "ninja-mcp" / f"{repo_hash}-{repo_name}"
 
     return internal
 
@@ -112,7 +112,7 @@ def ensure_internal_dirs(repo_root: str | Path) -> dict[str, Path]:
     """
     Ensure internal directories exist and return their paths.
 
-    Creates directories in the centralized cache location (~/.cache/ninja-cli-mcp/)
+    Creates directories in the centralized cache location (~/.cache/ninja-mcp/)
     instead of polluting the project directory.
 
     Args:
@@ -173,7 +173,9 @@ def safe_join(base: str | Path, *parts: str) -> Path:
     try:
         result.resolve().relative_to(base_path)
     except ValueError as err:
-        raise PathTraversalError(f"Path components {parts} would escape base directory {base_path}") from err
+        raise PathTraversalError(
+            f"Path components {parts} would escape base directory {base_path}"
+        ) from err
 
     return result
 

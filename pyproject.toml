@@ -1,79 +1,183 @@
 [project]
-name = "ninja-cli-mcp"
-version = "0.1.0"
-description = "MCP stdio server that delegates code execution to AI coding assistants via OpenRouter"
+name = "ninja-mcp"
+version = "0.2.0"
+description = "Multi-module MCP server: Coder, Researcher, Secretary"
+authors = [{ name = "ninja-mcp contributors" }]
 readme = "README.md"
-license = { text = "MIT" }
 requires-python = ">=3.11"
-authors = [
-    { name = "ninja-cli-mcp contributors" }
-]
-keywords = ["mcp", "ninja", "cli", "code-assistant", "ai", "openrouter", "claude", "gpt", "qwen"]
+license = { text = "MIT" }
+keywords = ["mcp", "ai", "coding", "research", "documentation"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: POSIX :: Linux",
-    "Operating System :: MacOS",
-    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.1.2",
     "pydantic>=2.0.0",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.0",
+    "pathspec>=0.12.0",
     "anyio>=4.0.0",
+    "ddgs>=9.10.0",
     "starlette>=0.27.0",
     "uvicorn[standard]>=0.23.0",
     "sse-starlette>=1.6.0",
+    "aiohttp>=3.9.0",
 ]
 
 [project.optional-dependencies]
-aider = [
-    "aider-chat>=0.60.0",
+coder = [
+    "gitpython>=3.1.0",
 ]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "ruff>=0.4.0",
-    "mypy>=1.10.0",
+researcher = [
+    "ddgs>=9.0.0",
+    "beautifulsoup4>=4.12.0",
+    "markdownify>=0.13.0",
+]
+secretary = [
+    "tree-sitter>=0.21.0",
+    "tree-sitter-python>=0.21.0",
+    "tree-sitter-javascript>=0.21.0",
+    "pygments>=2.17.0",
 ]
 notebooks = [
     "jupyter>=1.0.0",
     "matplotlib>=3.8.0",
     "seaborn>=0.13.0",
-    "pandas>=2.0.0",
+    "pandas>=2.1.0",
     "ipykernel>=6.0.0",
 ]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.2.0",
+    "ruff>=0.8.0",
+    "mypy>=1.8.0",
+    "types-requests>=2.31.0",
+]
 all = [
-    "aider-chat>=0.60.0",
+    "ninja-mcp[coder,researcher,secretary,notebooks,dev]",
 ]
 
 [project.scripts]
-ninja-cli-mcp = "ninja_cli_mcp.cli:main"
+ninja-coder = "ninja_coder.server:run"
+ninja-researcher = "ninja_researcher.server:run"
+ninja-secretary = "ninja_secretary.server:run"
+ninja-daemon = "ninja_common.daemon:main"
+ninja-config = "ninja_common.config_cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ninja_cli_mcp"]
+packages = ["src/ninja_common", "src/ninja_coder", "src/ninja_researcher", "src/ninja_secretary"]
 
-[tool.hatch.build.targets.sdist]
-include = [
-    "/src",
-    "/tests",
-    "/scripts",
-    "/configs",
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src"]
+exclude = ["tests/**/*.py", "notebooks/**/*.py", "scripts/**/*.py"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG", # flake8-unused-arguments
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+    "PTH", # flake8-use-pathlib
+    "ERA", # eradicate
+    "PL",  # pylint
+    "RUF", # ruff-specific rules
 ]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "PLR0913", # too many arguments
+    "PLR2004", # magic value comparison
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "ARG001", # unused function argument
+    "S101",   # use of assert
+    "PLR2004", # magic value comparison
+]
+"notebooks/**/*.py" = ["ALL"]
+"notebooks/**/*.ipynb" = ["ALL"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "ninja_common.metrics",
+    "ninja_common.security",
+    "ninja_common.rate_balancer",
+    "ninja_common.daemon",
+    "ninja_common.config_cli",
+    "ninja_secretary.*",
+    "ninja_researcher.server",
+    "ninja_researcher.tools",
+    "ninja_researcher.search_providers",
+    "ninja_coder.server",
+    "ninja_coder.driver",
+    "ninja_coder.tools",
+]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "mcp.*",
+    "tree_sitter.*",
+    "tavily.*",
+    "duckduckgo_search.*",
+    "starlette.*",
+    "uvicorn.*",
+    "psutil.*",
+    "bs4.*",
+    "markdownify.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
 markers = [
     "unit: Unit tests (fast, no external dependencies)",
     "integration: Integration tests (may require API keys)",
@@ -81,57 +185,23 @@ markers = [
     "slow: Slow tests (may take minutes)",
     "agent: Tests requiring AI agent CLI (aider, claude, etc)",
 ]
-# Default: run only unit tests unless specified
-addopts = "-v --tb=short"
+asyncio_mode = "auto"
+timeout = 300
 
-[tool.mypy]
-python_version = "3.11"
-strict = true
-warn_return_any = true
-warn_unused_ignores = true
-
-[tool.ruff]
-target-version = "py311"
-line-length = 100
-src = ["src", "tests"]
-exclude = [
-    ".venv",
-    ".git",
-    "__pycache__",
-    "*.egg-info",
-    "notebooks",
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
 ]
 
-[tool.ruff.lint]
-select = [
-    "E",      # pycodestyle errors
-    "W",      # pycodestyle warnings
-    "F",      # pyflakes
-    "I",      # isort
-    "B",      # flake8-bugbear
-    "C4",     # flake8-comprehensions
-    "UP",     # pyupgrade
-    "ARG",    # flake8-unused-arguments
-    "SIM",    # flake8-simplify
-]
-ignore = [
-    "E501",   # line too long (handled by formatter)
-    "B008",   # do not perform function calls in argument defaults
-]
-
-[tool.ruff.lint.isort]
-known-first-party = ["ninja_cli_mcp"]
-
-[tool.ruff.lint.per-file-ignores]
-"notebooks/**/*.ipynb" = ["ALL"]
-"notebooks/*.ipynb" = ["ALL"]
-"notebooks/**/*.py" = ["ALL"]
-"notebooks/*.py" = ["ALL"]
-
-[tool.uv]
-dev-dependencies = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "ruff>=0.4.0",
-    "mypy>=1.10.0",
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
 ]

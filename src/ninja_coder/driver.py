@@ -1,5 +1,5 @@
 """
-Ninja Code CLI driver.
+Ninja Code CLI driver for the Coder module.
 
 This module handles all interactions with the AI code CLI binary.
 It constructs instruction documents and manages subprocess execution.
@@ -30,9 +30,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ninja_cli_mcp.logging_utils import create_task_logger, get_logger
-from ninja_cli_mcp.models import ExecutionMode, PlanStep
-from ninja_cli_mcp.path_utils import ensure_internal_dirs, safe_join
+from ninja_coder.models import ExecutionMode, PlanStep
+from ninja_common.logging_utils import create_task_logger, get_logger
+from ninja_common.path_utils import ensure_internal_dirs, safe_join
 
 
 logger = get_logger(__name__)
@@ -716,7 +716,7 @@ class NinjaDriver:
         else:
             return self._build_command_generic(prompt, repo_root)
 
-    def _parse_output(self, stdout: str, stderr: str, exit_code: int) -> NinjaResult:
+    def _parse_output(self, stdout: str, stderr: str, exit_code: int) -> NinjaResult:  # noqa: PLR0912
         """
         Parse Ninja Code CLI output to extract CONCISE results.
 
@@ -772,10 +772,13 @@ class NinjaDriver:
             # Look for common error indicators
             for line in error_lines[-10:]:  # Last 10 lines only
                 lower = line.lower()
-                if any(indicator in lower for indicator in ["error:", "failed:", "exception:", "traceback"]):
+                if any(
+                    indicator in lower
+                    for indicator in ["error:", "failed:", "exception:", "traceback"]
+                ):
                     notes = line[:200]  # Max 200 chars
                     break
-            
+
             if not notes and error_lines:
                 notes = error_lines[-1][:200]  # Last line, max 200 chars
 
@@ -913,7 +916,8 @@ class NinjaDriver:
             timeout = timeout_sec or self.config.timeout_sec
             process = subprocess.run(
                 cmd,
-                check=False, cwd=str(workdir_path),  # Execute in isolated work directory
+                check=False,
+                cwd=str(workdir_path),  # Execute in isolated work directory
                 env=env,
                 capture_output=True,
                 text=True,

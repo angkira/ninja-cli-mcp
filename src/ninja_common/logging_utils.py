@@ -1,5 +1,5 @@
 """
-Logging utilities for ninja-cli-mcp.
+Logging utilities for ninja-mcp.
 
 Provides structured logging with file output for debugging and audit trails.
 """
@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ninja_cli_mcp.path_utils import ensure_internal_dirs
+from ninja_common.path_utils import ensure_internal_dirs
 
 
 # Configure root logger
@@ -32,7 +32,7 @@ def setup_logging(
     Returns:
         Configured logger instance.
     """
-    logger = logging.getLogger("ninja_cli_mcp")
+    logger = logging.getLogger("ninja_mcp")
     logger.setLevel(level)
 
     # Clear existing handlers
@@ -54,7 +54,7 @@ def setup_logging(
     return logger
 
 
-def get_logger(name: str = "ninja_cli_mcp") -> logging.Logger:
+def get_logger(name: str = "ninja_mcp") -> logging.Logger:
     """Get a logger instance."""
     return logging.getLogger(name)
 
@@ -64,7 +64,7 @@ class TaskLogger:
     Logger for individual task executions.
 
     Writes detailed logs to centralized cache directory:
-    ~/.cache/ninja-cli-mcp/<repo_hash>-<repo_name>/logs/
+    ~/.cache/ninja-mcp/<repo_hash>-<repo_name>/logs/
 
     This prevents polluting project directories with log files.
     """

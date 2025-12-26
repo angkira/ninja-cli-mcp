@@ -1,0 +1,66 @@
+{
+  "assistant": {
+    "version": "2",
+    "default_model": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4"
+    }
+  },
+  "context_servers": {
+    "ninja-coder": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/ninja-cli-mcp",
+        "run",
+        "python",
+        "-m",
+        "ninja_coder.server"
+      ],
+      "env": {
+        "OPENROUTER_API_KEY": "sk-or-v1-...",
+        "NINJA_CODER_MODEL": "anthropic/claude-haiku-4.5-20250929",
+        "NINJA_CODE_BIN": "aider",
+        "NINJA_CODER_TIMEOUT": "600"
+      }
+    },
+    "ninja-researcher": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/ninja-cli-mcp",
+        "run",
+        "python",
+        "-m",
+        "ninja_researcher.server"
+      ],
+      "env": {
+        "OPENROUTER_API_KEY": "sk-or-v1-...",
+        "NINJA_RESEARCHER_MODEL": "anthropic/claude-sonnet-4",
+        "SERPER_API_KEY": "your-serper-key-optional",
+        "NINJA_RESEARCHER_MAX_SOURCES": "20",
+        "NINJA_RESEARCHER_PARALLEL_AGENTS": "4"
+      }
+    },
+    "ninja-secretary": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/ninja-cli-mcp",
+        "run",
+        "python",
+        "-m",
+        "ninja_secretary.server"
+      ],
+      "env": {
+        "OPENROUTER_API_KEY": "sk-or-v1-...",
+        "NINJA_SECRETARY_MODEL": "anthropic/claude-haiku-4.5-20250929",
+        "NINJA_SECRETARY_MAX_FILE_SIZE": "1048576"
+      }
+    }
+  },
+  "theme": "One Dark",
+  "buffer_font_size": 14,
+  "ui_font_size": 16,
+  "vim_mode": false
+}
