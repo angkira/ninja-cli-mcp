@@ -82,7 +82,8 @@ packages = ["src/ninja_common", "src/ninja_coder", "src/ninja_researcher", "src/
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests"]
+src = ["src"]
+exclude = ["tests/**/*.py", "notebooks/**/*.py", "scripts/**/*.py"]
 
 [tool.ruff.lint]
 select = [

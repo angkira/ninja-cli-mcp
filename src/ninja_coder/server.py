@@ -29,7 +29,6 @@ from mcp.types import (
     Tool,
 )
 
-from ninja_common.logging_utils import get_logger, setup_logging
 from ninja_coder.models import (
     ApplyPatchRequest,
     ParallelPlanRequest,
@@ -38,6 +37,7 @@ from ninja_coder.models import (
     SequentialPlanRequest,
 )
 from ninja_coder.tools import get_executor
+from ninja_common.logging_utils import get_logger, setup_logging
 
 
 if TYPE_CHECKING:
@@ -554,10 +554,10 @@ async def main_stdio() -> None:
 
 async def main_http(host: str, port: int) -> None:
     """Run the MCP server over HTTP with SSE."""
-    from mcp.server.sse import SseServerTransport
-    from starlette.requests import Request
-    from starlette.responses import Response
-    import uvicorn
+    import uvicorn  # noqa: PLC0415
+    from mcp.server.sse import SseServerTransport  # noqa: PLC0415
+    from starlette.requests import Request  # noqa: PLC0415
+    from starlette.responses import Response  # noqa: PLC0415
 
     logger.info(f"Starting ninja-coder server (HTTP/SSE mode) on {host}:{port}")
 
@@ -593,7 +593,7 @@ async def main_http(host: str, port: int) -> None:
 
 def run() -> None:
     """Entry point for running the server."""
-    import argparse
+    import argparse  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(description="Ninja Coder MCP Server")
     parser.add_argument(

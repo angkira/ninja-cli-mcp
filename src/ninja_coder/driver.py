@@ -30,9 +30,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ninja_coder.models import ExecutionMode, PlanStep
 from ninja_common.logging_utils import create_task_logger, get_logger
 from ninja_common.path_utils import ensure_internal_dirs, safe_join
-from ninja_coder.models import ExecutionMode, PlanStep
 
 
 logger = get_logger(__name__)
@@ -716,7 +716,7 @@ class NinjaDriver:
         else:
             return self._build_command_generic(prompt, repo_root)
 
-    def _parse_output(self, stdout: str, stderr: str, exit_code: int) -> NinjaResult:
+    def _parse_output(self, stdout: str, stderr: str, exit_code: int) -> NinjaResult:  # noqa: PLR0912
         """
         Parse Ninja Code CLI output to extract CONCISE results.
 
@@ -775,7 +775,7 @@ class NinjaDriver:
                 if any(indicator in lower for indicator in ["error:", "failed:", "exception:", "traceback"]):
                     notes = line[:200]  # Max 200 chars
                     break
-            
+
             if not notes and error_lines:
                 notes = error_lines[-1][:200]  # Last line, max 200 chars
 

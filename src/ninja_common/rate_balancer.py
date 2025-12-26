@@ -8,11 +8,13 @@ with configurable retry policies and exponential backoff.
 import asyncio
 import time
 from collections import defaultdict, deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, TypeVar
 
 from ninja_common.logging_utils import get_logger
+
 
 logger = get_logger(__name__)
 

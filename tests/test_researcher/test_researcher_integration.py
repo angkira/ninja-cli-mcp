@@ -18,7 +18,7 @@ from ninja_researcher.models import (
     SummarizeSourcesRequest,
     WebSearchRequest,
 )
-from ninja_researcher.tools import ResearchToolExecutor, reset_executor
+from ninja_researcher.tools import reset_executor
 
 
 @pytest.fixture

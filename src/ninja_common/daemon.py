@@ -9,11 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import httpx
-from mcp.client.session import ClientSession
-from mcp.client.sse import sse_client
-
 from ninja_common.logging_utils import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -27,14 +24,15 @@ async def stdio_to_http_proxy(url: str) -> None:
     Args:
         url: HTTP/SSE endpoint URL (e.g., http://127.0.0.1:8100/sse)
     """
-    import aiohttp
-    import sys
+    import sys  # noqa: PLC0415
+
+    import aiohttp  # noqa: PLC0415
 
     # Extract base URL
     base_url = url.rsplit("/sse", 1)[0]
     messages_url = None
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession() as session:  # noqa: SIM117
         # Connect to SSE stream for server messages
         async with session.get(url) as sse_response:
             # Task to read from SSE and write to stdout
@@ -239,7 +237,7 @@ class DaemonManager:
 
         # Send SIGTERM
         try:
-            import time
+            import time  # noqa: PLC0415
             os.kill(pid, signal.SIGTERM)
             # Wait for process to exit
             for _ in range(50):  # 5 seconds
@@ -317,7 +315,7 @@ class DaemonManager:
         return {module: self.status(module) for module in self.list_modules()}
 
 
-def main() -> int:
+def main() -> int:  # noqa: PLR0911
     """CLI entry point for daemon management."""
     parser = argparse.ArgumentParser(description="Ninja MCP Daemon Manager")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")

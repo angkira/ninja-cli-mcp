@@ -13,6 +13,7 @@ import urllib.request
 from collections import defaultdict
 from typing import Any
 
+
 # LiveBench CSV date - update as needed
 LIVEBENCH_DATE = "2025_11_25"
 
@@ -138,9 +139,7 @@ def get_model_pricing(model_name: str) -> float:
 
     if "opus-4" in name or "o1" in name:
         return 15.0
-    elif "sonnet-4" in name or "gpt-4o" in name:
-        return 3.0
-    elif "sonnet-3.5" in name:
+    elif "sonnet-4" in name or "gpt-4o" in name or "sonnet-3.5" in name:
         return 3.0
     elif "gemini-2.0-flash" in name or "gemini-flash" in name:
         return 0.075

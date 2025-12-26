@@ -16,6 +16,7 @@ from ninja_researcher.models import (
     WebSearchResult,
 )
 
+
 __all__ = [
     "DeepResearchRequest",
     "FactCheckRequest",

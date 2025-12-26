@@ -14,9 +14,6 @@ import time
 import uuid
 from pathlib import Path
 
-from ninja_common.logging_utils import get_logger
-from ninja_common.metrics import MetricsTracker, create_task_metrics
-from ninja_common.security import InputValidator, monitored, rate_limited
 from ninja_coder.driver import InstructionBuilder, NinjaDriver, NinjaResult
 from ninja_coder.models import (
     ApplyPatchRequest,
@@ -33,7 +30,10 @@ from ninja_coder.models import (
     StepResult,
     TestResult,
 )
+from ninja_common.logging_utils import get_logger
+from ninja_common.metrics import MetricsTracker, create_task_metrics
 from ninja_common.path_utils import validate_repo_root
+from ninja_common.security import InputValidator, monitored, rate_limited
 
 
 logger = get_logger(__name__)
@@ -45,7 +45,7 @@ class ToolExecutor:
 
     This class provides the implementation for all tools exposed by the MCP server.
     All code execution is delegated to the AI code CLI.
-    
+
     IMPORTANT: All responses are kept concise - only summaries, never source code.
     """
 
@@ -61,7 +61,7 @@ class ToolExecutor:
     def _result_to_step_result(self, step_id: str, result: NinjaResult) -> StepResult:
         """
         Convert NinjaResult to StepResult.
-        
+
         Returns ONLY concise summary information, no source code.
         """
         status: str = "ok" if result.success else "fail"
@@ -70,7 +70,7 @@ class ToolExecutor:
 
         # Ensure summary is concise (max 500 chars)
         summary = result.summary[:500] if len(result.summary) > 500 else result.summary
-        
+
         # Ensure notes are concise (max 300 chars)
         notes = result.notes[:300] if len(result.notes) > 300 else result.notes
 
@@ -93,7 +93,7 @@ class ToolExecutor:
 
         This tool runs the AI code CLI in quick mode for fast code writing.
         The CLI has full responsibility for reading/writing files.
-        
+
         Returns ONLY a concise summary - NO source code is returned.
 
         Args:
@@ -239,7 +239,7 @@ class ToolExecutor:
 
         Each step is executed in order, with each step completing before
         the next begins. The AI code CLI handles all file operations.
-        
+
         Returns ONLY concise summaries per step - NO source code.
 
         Args:
@@ -373,7 +373,7 @@ class ToolExecutor:
 
         Steps are executed concurrently up to the fanout limit. Each step
         runs in its own subprocess calling the AI code CLI.
-        
+
         Returns ONLY concise summaries per step - NO source code.
 
         Note: For stronger isolation, consider using git worktrees for each
@@ -553,7 +553,7 @@ class ToolExecutor:
             merge_report=merge_report,
         )
 
-    async def run_tests(self, request: RunTestsRequest, client_id: str = "default") -> TestResult:
+    async def run_tests(self, request: RunTestsRequest, client_id: str = "default") -> TestResult:  # noqa: ARG002
         """
         ⚠️ DEPRECATED - Run test commands via the AI code CLI.
 

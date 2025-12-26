@@ -98,10 +98,7 @@ def cmd_list(args: argparse.Namespace) -> None:
 
         # Mask sensitive values
         if "API_KEY" in key or "KEY" in key:
-            if len(value) > 12:
-                display_value = f"{value[:8]}...{value[-4:]}"
-            else:
-                display_value = "***"
+            display_value = f"{value[:8]}...{value[-4:]}" if len(value) > 12 else "***"
         else:
             display_value = value
 
@@ -297,7 +294,7 @@ def cmd_set_api_key(args: argparse.Namespace) -> None:
         api_key = args.key
     else:
         # Prompt for API key (hidden input)
-        import getpass
+        import getpass  # noqa: PLC0415
 
         api_key = getpass.getpass(f"Enter {args.service} API key: ")
 
@@ -336,11 +333,7 @@ def validate_openrouter_model(model_name: str, api_key: str) -> bool:
         data = response.json()
 
         # Check if model exists in data
-        for model in data.get("data", []):
-            if model.get("id") == model_name:
-                return True
-
-        return False
+        return any(model.get("id") == model_name for model in data.get("data", []))
 
     except Exception:
         # If validation fails, return True to avoid blocking user

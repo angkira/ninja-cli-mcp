@@ -16,6 +16,7 @@ from ninja_coder.models import (
     TestResult,
 )
 
+
 __all__ = [
     "ApplyPatchRequest",
     "ApplyPatchResult",

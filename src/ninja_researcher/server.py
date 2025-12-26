@@ -26,9 +26,9 @@ from ninja_researcher.models import (
     FactCheckRequest,
     GenerateReportRequest,
     SummarizeSourcesRequest,
-    WebSearchRequest,
 )
 from ninja_researcher.tools import get_executor
+
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -97,7 +97,7 @@ TOOLS: list[Tool] = [
             "by topic, creating analysis documents, producing executive summaries, or synthesizing "
             "multiple sources into coherent narratives. "
             "\n\n"
-            "⚠️ NOTE: This tool is under development."
+            "Report types: comprehensive (default), summary, technical, executive."
         ),
         inputSchema={
             "type": "object",
@@ -138,7 +138,7 @@ TOOLS: list[Tool] = [
             "assertions, identifying misinformation, verifying facts before publishing, or "
             "investigating controversial statements. "
             "\n\n"
-            "⚠️ NOTE: This tool is under development."
+            "Returns verdict (verified/disputed/uncertain) with confidence score."
         ),
         inputSchema={
             "type": "object",
@@ -166,7 +166,7 @@ TOOLS: list[Tool] = [
             "Use when: condensing lengthy sources, extracting key insights, creating quick "
             "overviews, getting the gist of multiple articles, or preparing briefing materials. "
             "\n\n"
-            "⚠️ NOTE: This tool is under development."
+            "Returns per-source summaries plus a combined summary respecting max_length."
         ),
         inputSchema={
             "type": "object",
@@ -341,10 +341,10 @@ async def main_stdio() -> None:
 
 async def main_http(host: str, port: int) -> None:
     """Run the MCP server over HTTP with SSE."""
-    from mcp.server.sse import SseServerTransport
-    from starlette.requests import Request
-    from starlette.responses import Response
-    import uvicorn
+    import uvicorn  # noqa: PLC0415
+    from mcp.server.sse import SseServerTransport  # noqa: PLC0415
+    from starlette.requests import Request  # noqa: PLC0415
+    from starlette.responses import Response  # noqa: PLC0415
 
     logger.info(f"Starting ninja-researcher server (HTTP/SSE mode) on {host}:{port}")
 
@@ -380,7 +380,7 @@ async def main_http(host: str, port: int) -> None:
 
 def run() -> None:
     """Entry point for running the server."""
-    import argparse
+    import argparse  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(description="Ninja Researcher MCP Server")
     parser.add_argument(

@@ -27,6 +27,7 @@ from ninja_researcher.models import (
 )
 from ninja_researcher.search_providers import SearchProviderFactory
 
+
 logger = get_logger(__name__)
 
 
@@ -343,19 +344,28 @@ class ResearchToolExecutor:
 
             # If no sources provided, search for them
             if not sources:
-                search_request = WebSearchRequest(
-                    query=request.claim,
-                    max_results=5,
-                    search_provider="duckduckgo"
-                )
-                search_result = await self.web_search(search_request, client_id=client_id)
-                if search_result.status == "ok":
-                    sources = [r.url for r in search_result.results]
-                else:
+                # Use default search provider
+                provider_name = self.provider_factory.get_default_provider()
+                provider = self.provider_factory.get_provider(provider_name)
+
+                try:
+                    search_results = await provider.search(request.claim, max_results=5)
+                    sources = [r["url"] for r in search_results if r.get("url")]
+
+                    if not sources:
+                        return FactCheckResult(
+                            status="error",
+                            claim=request.claim,
+                            verdict="Could not find sources to verify claim",
+                            sources=[],
+                            confidence=0.0,
+                        )
+                except Exception as e:
+                    logger.error(f"Search failed during fact checking: {e}")
                     return FactCheckResult(
                         status="error",
                         claim=request.claim,
-                        verdict="Could not find sources to verify claim",
+                        verdict=f"Search failed: {e}",
                         sources=[],
                         confidence=0.0,
                     )
@@ -367,7 +377,6 @@ class ResearchToolExecutor:
 
             # Analyze sources for supporting/contradicting evidence
             supporting_count = 0
-            contradicting_count = 0
 
             for url in sources[:10]:  # Limit to first 10 sources
                 # This is a simplified implementation
@@ -431,8 +440,8 @@ class ResearchToolExecutor:
         logger.info(f"Summarizing {len(request.urls)} sources (client: {client_id})")
 
         try:
-            import httpx
-            from bs4 import BeautifulSoup
+            import httpx  # noqa: PLC0415
+            from bs4 import BeautifulSoup  # noqa: PLC0415
 
             async def fetch_and_summarize(url: str) -> dict[str, str]:
                 """Fetch URL and create a summary."""

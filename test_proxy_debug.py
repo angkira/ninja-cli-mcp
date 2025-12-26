@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Debug test for proxy"""
 import asyncio
-import sys
 import os
+import sys
+
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from ninja_common.daemon import stdio_to_http_proxy
 from ninja_common.logging_utils import get_logger, setup_logging
+
 
 # Enable debug logging
 setup_logging("DEBUG")
@@ -21,7 +23,7 @@ async def test_proxy():
 
     try:
         await asyncio.wait_for(stdio_to_http_proxy(url), timeout=5.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.info("Proxy test timeout (expected)")
     except Exception as e:
         logger.error(f"Proxy test error: {e}", exc_info=True)

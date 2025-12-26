@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any
 
 
 class ConfigManager:
@@ -40,9 +39,9 @@ class ConfigManager:
         if not self.config_file.exists():
             return config
 
-        with open(self.config_file) as f:
-            for line in f:
-                line = line.strip()
+        with self.config_file.open() as f:
+            for raw_line in f:
+                line = raw_line.strip()
 
                 # Skip comments and empty lines
                 if not line or line.startswith("#"):
@@ -65,24 +64,23 @@ class ConfigManager:
         """
         # Read existing file to preserve structure
         lines = []
-        current_section = None
 
         if self.config_file.exists():
-            with open(self.config_file) as f:
+            with self.config_file.open() as f:
                 for line in f:
                     stripped = line.strip()
 
                     # Track sections
                     if stripped.startswith("# ===="):
                         # Extract section name
-                        next_line_idx = lines.index(line) + 1 if line in lines else len(lines)
+                        lines.index(line) + 1 if line in lines else len(lines)
                         lines.append(line)
                         continue
 
                     if stripped.startswith("#") and not stripped.startswith("# ===="):
                         # Check if this is a section header
                         if "Module" in stripped or "Configuration" in stripped:
-                            current_section = stripped
+                            pass
                         lines.append(line)
                         continue
 
@@ -95,9 +93,7 @@ class ConfigManager:
                             lines.append(f"export {key}='{config[key]}'\n")
                             # Remove from config dict (already processed)
                             del config[key]
-                        else:
-                            # Keep original line
-                            lines.append(line)
+                        # else: skip this line (key was deleted or not in config)
                     else:
                         lines.append(line)
         else:
@@ -118,11 +114,11 @@ class ConfigManager:
 
         # Write to file
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.config_file, "w") as f:
+        with self.config_file.open("w") as f:
             f.writelines(lines)
 
         # Set permissions to 600 (read/write for owner only)
-        os.chmod(self.config_file, 0o600)
+        self.config_file.chmod(0o600)
 
     def get(self, key: str, default: str | None = None) -> str | None:
         """
@@ -205,8 +201,7 @@ class ConfigManager:
             return None
 
         # Mask API keys (show first 8 and last 4 chars)
-        if "API_KEY" in key or "KEY" in key:
-            if len(value) > 12:
-                return f"{value[:8]}...{value[-4:]}"
+        if ("API_KEY" in key or "KEY" in key) and len(value) > 12:
+            return f"{value[:8]}...{value[-4:]}"
 
         return value

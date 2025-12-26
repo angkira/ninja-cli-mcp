@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 from ddgs import DDGS
 
 from ninja_common.logging_utils import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -70,7 +71,7 @@ class DuckDuckGoProvider(SearchProvider):
             logger.info(f"Searching DuckDuckGo for: {query}")
 
             # DuckDuckGo search is synchronous, but we run it in executor to not block
-            import asyncio
+            import asyncio  # noqa: PLC0415
 
             loop = asyncio.get_event_loop()
             results = await loop.run_in_executor(
@@ -293,7 +294,7 @@ class PerplexityProvider(SearchProvider):
 class SearchProviderFactory:
     """Factory for creating search providers."""
 
-    _providers: dict[str, SearchProvider] = {}
+    _providers: ClassVar[dict[str, SearchProvider]] = {}
 
     @classmethod
     def get_provider(cls, provider_name: str) -> SearchProvider:
