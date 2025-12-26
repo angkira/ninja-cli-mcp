@@ -56,6 +56,8 @@ jobs:
 
       - name: Run smoke tests
         run: uv run pytest tests/test_smoke.py -v --tb=short
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
 
   unit-tests:
     name: Unit Tests
@@ -79,6 +81,8 @@ jobs:
 
       - name: Run unit tests
         run: uv run pytest tests/ -m "unit" -v --tb=short
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
 
   integration-tests:
     name: Integration Tests
@@ -104,6 +108,7 @@ jobs:
       - name: Run integration tests
         run: uv run pytest tests/ -m "integration and not agent" -v --tb=short
         env:
+          PYTHONPATH: ${{ github.workspace }}/src
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
   build:
