@@ -81,59 +81,113 @@ Each module runs as an independent MCP server and can be used standalone or toge
 ## Requirements
 
 - **Python 3.11+**
-- **uv** (package manager)
-- **Git**
+- **uv** (package manager - auto-installed by quick installer)
 - **OpenRouter API key** (for Coder and Researcher)
 - (Optional) **Serper API key** (for Researcher - DuckDuckGo is free fallback)
 - (Optional) AI Code CLI binary (for Coder - e.g., Aider)
 
 ## Quick Start
 
-### Interactive Installation (Recommended)
+### One-Line Install (Recommended)
 
 ```bash
-git clone https://github.com/angkira/ninja-mcp.git
-cd ninja-mcp
-./scripts/install_interactive.sh
+curl -fsSL https://raw.githubusercontent.com/angkira/ninja-mcp/main/install.sh | bash
 ```
 
-The installer will:
-- Let you select which modules to install (Coder, Researcher, Secretary)
-- Configure API keys (hidden input)
-- Choose models per module
-- Set up daemon mode (optional)
-- Detect and configure IDE integrations
+Or with wget:
+```bash
+wget -qO- https://raw.githubusercontent.com/angkira/ninja-mcp/main/install.sh | bash
+```
 
-### Manual Installation
+This interactive installer will:
+- ✅ Auto-detect your OS and install dependencies
+- ✅ Let you choose installation method (interactive/quick/development)
+- ✅ Configure API keys securely
+- ✅ Set up IDE integrations (Claude Code, VS Code, Zed)
+- ✅ No hardcoded paths - works for everyone!
+
+### Platform-Specific Installation
+
+#### macOS (Homebrew)
+
+```bash
+# Once published to Homebrew
+brew install angkira/tap/ninja-mcp
+
+# Or install from source
+brew install --build-from-source packaging/homebrew/ninja-mcp.rb
+```
+
+#### Ubuntu/Debian
+
+```bash
+# Once published to PPA
+sudo add-apt-repository ppa:angkira/ninja-mcp
+sudo apt update
+sudo apt install ninja-mcp
+
+# Or install .deb directly
+wget https://github.com/angkira/ninja-mcp/releases/latest/download/ninja-mcp_0.2.0_all.deb
+sudo dpkg -i ninja-mcp_0.2.0_all.deb
+```
+
+#### Arch Linux (AUR)
+
+```bash
+# Coming soon
+yay -S ninja-mcp
+```
+
+### Quick Install (Global Tool)
+
+```bash
+# Install from PyPI (once published)
+uv tool install ninja-mcp[all]
+
+# Configure
+export OPENROUTER_API_KEY='your-key'
+ninja-config  # Interactive configuration wizard
+```
+
+### Development Installation
 
 ```bash
 # Clone repository
 git clone https://github.com/angkira/ninja-mcp.git
 cd ninja-mcp
 
-# Install specific modules
-uv sync --extra coder
-uv sync --extra researcher
-uv sync --extra secretary
+# Install just (modern task runner)
+curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
 
-# Or install all modules
+# Run interactive installer
+just install
+
+# Or install manually
 uv sync --all-extras
 
-# Configure environment
-export OPENROUTER_API_KEY='your-key'
-export NINJA_CODER_MODEL='anthropic/claude-haiku-4.5-20250929'
-export NINJA_CODE_BIN='aider'
-
-# Run servers
-ninja-coder
-ninja-researcher
-ninja-secretary
-
-# Or as daemons
-ninja-daemon start coder
-ninja-daemon start researcher
-ninja-daemon start secretary
+# Available commands
+just --list              # Show all commands
+just setup-ide           # Configure IDE integration
+just test                # Run tests
+just daemon-start        # Start all daemons
 ```
+
+### Using `just` (Modern Task Automation)
+
+Once installed for development, use `just` for common tasks:
+
+```bash
+just install             # Interactive installation
+just install-dev         # Development setup
+just setup-claude-code   # Configure Claude Code
+just test                # Run tests
+just daemon-start        # Start daemons
+just build               # Build package
+just build-homebrew      # Build Homebrew formula
+just build-deb           # Build Debian package
+```
+
+See [`justfile`](justfile) for all available commands.
 
 ## Modules
 

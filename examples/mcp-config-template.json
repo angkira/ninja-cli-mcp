@@ -1,11 +1,10 @@
 {
   "mcpServers": {
     "ninja-coder": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "/home/angkira/Project/software/ninja-cli-mcp",
-        "run",
+        "--from",
+        "ninja-mcp[coder]",
         "ninja-coder"
       ],
       "env": {
@@ -16,11 +15,10 @@
       }
     },
     "ninja-researcher": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "/home/angkira/Project/software/ninja-cli-mcp",
-        "run",
+        "--from",
+        "ninja-mcp[researcher]",
         "ninja-researcher"
       ],
       "env": {
@@ -31,11 +29,10 @@
       }
     },
     "ninja-secretary": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "/home/angkira/Project/software/ninja-cli-mcp",
-        "run",
+        "--from",
+        "ninja-mcp[secretary]",
         "ninja-secretary"
       ],
       "env": {

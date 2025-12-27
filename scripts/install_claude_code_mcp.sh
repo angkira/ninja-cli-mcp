@@ -129,6 +129,9 @@ update_mcp_config() {
     shift 2
     local args=("$@")
 
+    # Convert args array to JSON
+    local args_json=$(printf '%s\n' "${args[@]}" | python3 -c "import sys, json; print(json.dumps([line.strip() for line in sys.stdin if line.strip()]))")
+
     python3 <<PYTHON_EOF
 import json
 import sys
@@ -151,32 +154,75 @@ else:
 if "mcpServers" not in config:
     config["mcpServers"] = {}
 
-# Parse args array
-args = $(printf '%s\n' "${args[@]}" | python3 -c "import sys, json; print(json.dumps([line.strip() for line in sys.stdin if line.strip()]))")
+# Parse args from JSON
+args_json = '''$args_json'''
+args = json.loads(args_json) if args_json.strip() else []
 
-# Add or update server
-config["mcpServers"]["$server_name"] = {
-    "command": "$command",
-    "args": args
-}
+# Add or update server config
+server_config = {"command": "$command"}
+if args:
+    server_config["args"] = args
+
+# Add default environment variables
+env_vars = {}
+if "$server_name" == "ninja-coder":
+    env_vars = {
+        "OPENROUTER_API_KEY": "\${OPENROUTER_API_KEY}",
+        "NINJA_CODER_MODEL": "anthropic/claude-haiku-4.5-20250929",
+        "NINJA_CODE_BIN": "aider",
+        "NINJA_CODER_TIMEOUT": "600"
+    }
+elif "$server_name" == "ninja-researcher":
+    env_vars = {
+        "OPENROUTER_API_KEY": "\${OPENROUTER_API_KEY}",
+        "NINJA_RESEARCHER_MODEL": "anthropic/claude-sonnet-4",
+        "NINJA_RESEARCHER_MAX_SOURCES": "20",
+        "NINJA_RESEARCHER_PARALLEL_AGENTS": "4"
+    }
+elif "$server_name" == "ninja-secretary":
+    env_vars = {
+        "OPENROUTER_API_KEY": "\${OPENROUTER_API_KEY}",
+        "NINJA_SECRETARY_MODEL": "anthropic/claude-haiku-4.5-20250929",
+        "NINJA_SECRETARY_MAX_FILE_SIZE": "1048576"
+    }
+
+if env_vars:
+    server_config["env"] = env_vars
+
+config["mcpServers"]["$server_name"] = server_config
 
 # Write back with proper formatting
 with open(config_file, 'w') as f:
     json.dump(config, f, indent=2)
     f.write('\n')  # Add trailing newline
 
-print(f"✓ Updated {config_file} with {server_name}")
+print(f"✓ Updated {config_file} with $server_name")
 PYTHON_EOF
 }
 
-# Check if daemon mode is available
-USE_DAEMON=0
-if command -v ninja-daemon &> /dev/null && uv run ninja-daemon status >/dev/null 2>&1; then
-    info "Daemon mode detected and available"
-    USE_DAEMON=1
+# Detect installation mode
+INSTALL_MODE="local"  # default to local development mode
+info "Detecting installation mode..."
+
+# Check if ninja servers are globally available (installed via uv tool install)
+if command -v ninja-coder &> /dev/null && ! [[ "$(which ninja-coder 2>/dev/null)" =~ "$PROJECT_ROOT" ]]; then
+    INSTALL_MODE="global"
+    success "Global installation detected (uv tool install)"
+else
+    success "Local development mode detected"
+    info "Project directory: $PROJECT_ROOT"
 fi
 
-info "Installing MCP servers..."
+# Check if daemon mode is available (only for local mode)
+USE_DAEMON=0
+if [[ $INSTALL_MODE == "local" ]]; then
+    if command -v ninja-daemon &> /dev/null && uv run --directory "$PROJECT_ROOT" ninja-daemon status >/dev/null 2>&1; then
+        info "Daemon mode detected and available"
+        USE_DAEMON=1
+    fi
+fi
+
+info "Installing MCP servers in $INSTALL_MODE mode..."
 echo ""
 
 # Install each selected module
@@ -184,12 +230,14 @@ INSTALL_COUNT=0
 
 if [[ $INSTALL_CODER -eq 1 ]]; then
     info "Configuring ninja-coder..."
-    if [[ $USE_DAEMON -eq 1 ]]; then
+    if [[ $INSTALL_MODE == "global" ]]; then
+        update_mcp_config "ninja-coder" "ninja-coder"
+    elif [[ $USE_DAEMON -eq 1 ]]; then
         # Ensure daemon is started
-        uv run ninja-daemon start coder 2>/dev/null || true
+        uv run --directory "$PROJECT_ROOT" ninja-daemon start coder 2>/dev/null || true
         update_mcp_config "ninja-coder" "uv" "--directory" "$PROJECT_ROOT" "run" "ninja-daemon" "connect" "coder"
     else
-        update_mcp_config "ninja-coder" "uv" "--directory" "$PROJECT_ROOT" "run" "python" "-m" "ninja_coder.server"
+        update_mcp_config "ninja-coder" "uv" "--directory" "$PROJECT_ROOT" "run" "ninja-coder"
     fi
     success "ninja-coder configured"
     INSTALL_COUNT=$((INSTALL_COUNT + 1))
@@ -197,12 +245,14 @@ fi
 
 if [[ $INSTALL_RESEARCHER -eq 1 ]]; then
     info "Configuring ninja-researcher..."
-    if [[ $USE_DAEMON -eq 1 ]]; then
+    if [[ $INSTALL_MODE == "global" ]]; then
+        update_mcp_config "ninja-researcher" "ninja-researcher"
+    elif [[ $USE_DAEMON -eq 1 ]]; then
         # Ensure daemon is started
-        uv run ninja-daemon start researcher 2>/dev/null || true
+        uv run --directory "$PROJECT_ROOT" ninja-daemon start researcher 2>/dev/null || true
         update_mcp_config "ninja-researcher" "uv" "--directory" "$PROJECT_ROOT" "run" "ninja-daemon" "connect" "researcher"
     else
-        update_mcp_config "ninja-researcher" "uv" "--directory" "$PROJECT_ROOT" "run" "python" "-m" "ninja_researcher.server"
+        update_mcp_config "ninja-researcher" "uv" "--directory" "$PROJECT_ROOT" "run" "ninja-researcher"
     fi
     success "ninja-researcher configured"
     INSTALL_COUNT=$((INSTALL_COUNT + 1))
@@ -210,12 +260,14 @@ fi
 
 if [[ $INSTALL_SECRETARY -eq 1 ]]; then
     info "Configuring ninja-secretary..."
-    if [[ $USE_DAEMON -eq 1 ]]; then
+    if [[ $INSTALL_MODE == "global" ]]; then
+        update_mcp_config "ninja-secretary" "ninja-secretary"
+    elif [[ $USE_DAEMON -eq 1 ]]; then
         # Ensure daemon is started
-        uv run ninja-daemon start secretary 2>/dev/null || true
+        uv run --directory "$PROJECT_ROOT" ninja-daemon start secretary 2>/dev/null || true
         update_mcp_config "ninja-secretary" "uv" "--directory" "$PROJECT_ROOT" "run" "ninja-daemon" "connect" "secretary"
     else
-        update_mcp_config "ninja-secretary" "uv" "--directory" "$PROJECT_ROOT" "run" "python" "-m" "ninja_secretary.server"
+        update_mcp_config "ninja-secretary" "uv" "--directory" "$PROJECT_ROOT" "run" "ninja-secretary"
     fi
     success "ninja-secretary configured"
     INSTALL_COUNT=$((INSTALL_COUNT + 1))
