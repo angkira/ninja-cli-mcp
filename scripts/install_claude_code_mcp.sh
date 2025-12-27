@@ -46,6 +46,9 @@ error() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Source shared Claude config utilities
+source "$SCRIPT_DIR/lib/claude_config.sh"
+
 # Parse arguments
 INSTALL_ALL=1
 INSTALL_CODER=0
@@ -106,11 +109,15 @@ else
     error "Neither OPENROUTER_API_KEY nor OPENAI_API_KEY is set. Please set one of these environment variables."
 fi
 
-# Detect Claude Code config location
-CLAUDE_CONFIG_DIR="$HOME/.config/claude"
-CLAUDE_MCP_CONFIG="$CLAUDE_CONFIG_DIR/mcp.json"
+# Detect Claude Code config location and initialize
+CLAUDE_MCP_CONFIG=$(detect_claude_mcp_config)
+CLAUDE_CONFIG_DIR=$(dirname "$CLAUDE_MCP_CONFIG")
 
-mkdir -p "$CLAUDE_CONFIG_DIR"
+info "Using Claude Code config: $CLAUDE_MCP_CONFIG"
+init_claude_mcp_config "$CLAUDE_MCP_CONFIG"
+
+# Check if we should migrate from old location
+check_config_migration
 
 # Function to validate JSON
 validate_json() {
@@ -138,6 +145,7 @@ import sys
 from pathlib import Path
 
 config_file = Path("$CLAUDE_MCP_CONFIG")
+is_user_config = str(config_file).endswith('.claude.json')
 
 # Load existing config or create new one
 if config_file.exists():
@@ -148,7 +156,7 @@ if config_file.exists():
         print(f"Error: Invalid JSON in {config_file}: {e}", file=sys.stderr)
         sys.exit(1)
 else:
-    config = {"mcpServers": {}}
+    config = {}
 
 # Ensure mcpServers exists
 if "mcpServers" not in config:
