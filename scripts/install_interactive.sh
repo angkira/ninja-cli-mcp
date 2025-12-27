@@ -128,6 +128,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Source shared Claude config utilities
+source "$SCRIPT_DIR/lib/claude_config.sh"
+
 # Configuration file
 CONFIG_FILE="$HOME/.ninja-mcp.env"
 
@@ -808,17 +811,18 @@ echo ""
 if [[ "$CLAUDE_INSTALLED" == "true" ]]; then
     if confirm "Register modules with Claude Code?"; then
         info "Registering with Claude Code..."
-        
-        # Create Claude MCP config directory
-        CLAUDE_CONFIG_DIR="$HOME/.config/claude"
-        mkdir -p "$CLAUDE_CONFIG_DIR"
-        
-        # Create or update mcp.json
-        CLAUDE_MCP_CONFIG="$CLAUDE_CONFIG_DIR/mcp.json"
-        
+
+        # Detect and initialize Claude Code config location
+        CLAUDE_MCP_CONFIG=$(detect_claude_mcp_config)
+        info "Using config: $CLAUDE_MCP_CONFIG"
+        init_claude_mcp_config "$CLAUDE_MCP_CONFIG"
+
+        # Check if migration is needed
+        check_config_migration
+
         if [[ -f "$CLAUDE_MCP_CONFIG" ]]; then
             info "Backing up existing Claude config..."
-            cp "$CLAUDE_MCP_CONFIG" "$CLAUDE_MCP_CONFIG.backup"
+            cp "$CLAUDE_MCP_CONFIG" "$CLAUDE_MCP_CONFIG.backup.$(date +%s)"
         fi
         
         # Build MCP config
@@ -1076,7 +1080,9 @@ echo ""
 
 # Show which editors were configured
 EDITORS_CONFIGURED=()
-[[ -f "$HOME/.config/claude/mcp.json" ]] && EDITORS_CONFIGURED+=("Claude Code")
+# Check both possible Claude config locations
+DETECTED_CLAUDE_CONFIG=$(detect_claude_mcp_config)
+[[ -f "$DETECTED_CLAUDE_CONFIG" ]] && grep -q '"mcpServers"' "$DETECTED_CLAUDE_CONFIG" 2>/dev/null && EDITORS_CONFIGURED+=("Claude Code")
 [[ -f "$HOME/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json" ]] || [[ -f "$HOME/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json" ]] && EDITORS_CONFIGURED+=("VS Code (Cline)")
 [[ -f "$HOME/.config/zed/settings.json.backup" ]] && EDITORS_CONFIGURED+=("Zed")
 

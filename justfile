@@ -291,7 +291,7 @@ config-show:
 # Validate MCP configuration
 validate-mcp:
     @echo "✓ Validating MCP configuration..."
-    @python3 -m json.tool ~/.config/claude/mcp.json > /dev/null && echo "✓ Valid JSON" || echo "✗ Invalid JSON"
+    @bash -c 'source scripts/lib/claude_config.sh && CONFIG=$$(detect_claude_mcp_config) && echo "Using config: $$CONFIG" && python3 -m json.tool "$$CONFIG" > /dev/null && echo "✓ Valid JSON" || echo "✗ Invalid JSON"'
 
 # ============================================================================
 # Utilities
