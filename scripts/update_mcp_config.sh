@@ -56,6 +56,9 @@ error() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Source shared Claude config utilities
+source "$SCRIPT_DIR/lib/claude_config.sh"
+
 # Parse arguments
 UPDATE_ALL=1
 UPDATE_CLAUDE=0
@@ -367,9 +370,11 @@ PYTHON_EOF
 
 # Function to update Claude Code config
 update_claude_config() {
-    local claude_config="$HOME/.config/claude/mcp.json"
+    # Detect Claude Code config location
+    local claude_config=$(detect_claude_mcp_config)
 
     info "Updating Claude Code configuration..."
+    info "Using config: $claude_config"
 
     if [[ ! -f "$claude_config" ]]; then
         warn "Claude Code configuration not found at $claude_config"
@@ -645,8 +650,10 @@ if [[ $VALIDATE_ONLY -eq 1 ]]; then
     VALID_COUNT=0
     INVALID_COUNT=0
 
-    if [[ -f "$HOME/.config/claude/mcp.json" ]]; then
-        validate_json "$HOME/.config/claude/mcp.json" "Claude Code" && VALID_COUNT=$((VALID_COUNT + 1)) || INVALID_COUNT=$((INVALID_COUNT + 1))
+    # Detect Claude config location
+    CLAUDE_CONFIG=$(detect_claude_mcp_config)
+    if [[ -f "$CLAUDE_CONFIG" ]]; then
+        validate_json "$CLAUDE_CONFIG" "Claude Code" && VALID_COUNT=$((VALID_COUNT + 1)) || INVALID_COUNT=$((INVALID_COUNT + 1))
     fi
 
     if [[ -f "$HOME/.config/Code/User/mcp.json" ]]; then
@@ -705,7 +712,8 @@ fi
 
 # Determine what to update
 if [[ $UPDATE_ALL -eq 1 ]]; then
-    [[ -f "$HOME/.config/claude/mcp.json" ]] && UPDATE_CLAUDE=1
+    CLAUDE_CONFIG=$(detect_claude_mcp_config)
+    [[ -f "$CLAUDE_CONFIG" ]] && UPDATE_CLAUDE=1
     [[ -f "$HOME/.config/Code/User/mcp.json" ]] && UPDATE_VSCODE=1
     [[ -f "$HOME/.config/zed/settings.json" ]] && UPDATE_ZED=1
     [[ -f "$HOME/.copilot/mcp-config.json" ]] && UPDATE_COPILOT=1
