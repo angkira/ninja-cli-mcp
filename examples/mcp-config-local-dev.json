@@ -4,7 +4,7 @@
       "command": "uv",
       "args": [
         "--directory",
-        "/home/angkira/Project/software/ninja-cli-mcp",
+        "${NINJA_MCP_PROJECT_DIR}",
         "run",
         "ninja-coder"
       ],
@@ -19,7 +19,7 @@
       "command": "uv",
       "args": [
         "--directory",
-        "/home/angkira/Project/software/ninja-cli-mcp",
+        "${NINJA_MCP_PROJECT_DIR}",
         "run",
         "ninja-researcher"
       ],
@@ -34,7 +34,7 @@
       "command": "uv",
       "args": [
         "--directory",
-        "/home/angkira/Project/software/ninja-cli-mcp",
+        "${NINJA_MCP_PROJECT_DIR}",
         "run",
         "ninja-secretary"
       ],

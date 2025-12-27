@@ -1,0 +1,46 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  update-tap:
+    name: Update Homebrew Tap
+    runs-on: ubuntu-latest
+    if: github.repository == 'angkira/ninja-mcp'
+
+    steps:
+      - name: Checkout ninja-mcp repo
+        uses: actions/checkout@v4
+        with:
+          path: ninja-mcp
+
+      - name: Get release info
+        id: release
+        run: |
+          cd ninja-mcp
+          VERSION=$(grep '^version' pyproject.toml | head -1 | cut -d'"' -f2)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: angkira/homebrew-ninja-mcp
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Download Homebrew formula
+        run: |
+          wget https://github.com/angkira/ninja-mcp/releases/download/v${{ steps.release.outputs.version }}/ninja-mcp.rb \
+            -O homebrew-tap/Formula/ninja-mcp.rb
+
+      - name: Commit and push
+        run: |
+          cd homebrew-tap
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add Formula/ninja-mcp.rb
+          git commit -m "Update ninja-mcp to v${{ steps.release.outputs.version }}" || exit 0
+          git push
