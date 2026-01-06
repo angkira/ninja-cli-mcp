@@ -808,70 +808,6 @@ class NinjaDriver:
             model_used=self.config.model,
         )
 
-    def _create_isolated_workdir(self, repo_root: str, step_id: str) -> Path:
-        """
-        Create an isolated working directory for the task.
-
-        Args:
-            repo_root: Repository root path.
-            step_id: Step identifier.
-
-        Returns:
-            Path to the isolated working directory.
-        """
-        dirs = ensure_internal_dirs(repo_root)
-        workdir_path = safe_join(dirs["work"], f"task_{step_id}")
-
-        # Create the isolated work directory
-        workdir_path.mkdir(parents=True, exist_ok=True)
-
-        logger.debug(f"Created isolated work directory: {workdir_path}")
-        return workdir_path
-
-    def _sync_workdir_to_repo(self, workdir_path: Path, repo_root: Path, task_logger) -> None:
-        """
-        Sync modified files from isolated work directory back to target repo.
-
-        Args:
-            workdir_path: Path to isolated work directory
-            repo_root: Path to target repository
-            task_logger: Logger instance
-        """
-
-        if not workdir_path.exists():
-            return
-
-        try:
-            # Copy all files from work dir to repo (excluding .git, .ninja-cli-mcp, etc)
-            for item in workdir_path.rglob("*"):
-                if item.is_file():
-                    # Skip hidden dirs and internal files
-                    relative_parts = item.relative_to(workdir_path).parts
-                    if any(part.startswith(".") for part in relative_parts):
-                        continue
-
-                    target_path = repo_root / item.relative_to(workdir_path)
-                    target_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(item, target_path)
-                    task_logger.debug(f"Synced: {item.relative_to(workdir_path)} -> {target_path}")
-
-        except Exception as e:
-            task_logger.warning(f"Failed to sync work directory to repo: {e}")
-
-    def _cleanup_isolated_workdir(self, workdir_path: Path) -> None:
-        """
-        Clean up the isolated working directory after execution.
-
-        Args:
-            workdir_path: Path to the isolated working directory.
-        """
-        try:
-            if workdir_path.exists():
-                shutil.rmtree(workdir_path)
-                logger.debug(f"Cleaned up isolated work directory: {workdir_path}")
-        except Exception as e:
-            logger.warning(f"Failed to clean up isolated work directory {workdir_path}: {e}")
-
     def execute_sync(
         self,
         repo_root: str,
@@ -896,17 +832,13 @@ class NinjaDriver:
         task_logger.set_metadata("instruction", instruction)
         task_logger.set_metadata("model", self.config.model)
 
-        # Create isolated working directory
-        workdir_path = self._create_isolated_workdir(repo_root, step_id)
-        task_logger.info(f"Using isolated work directory: {workdir_path}")
-
         try:
             # Write task file
             task_file = self._write_task_file(repo_root, step_id, instruction)
             task_logger.info(f"Wrote task file: {task_file}")
 
             # Build command
-            cmd = self._build_command(task_file, str(workdir_path))
+            cmd = self._build_command(task_file, repo_root)
             task_logger.info(f"Running command: {' '.join(cmd)}")
 
             # Get environment
@@ -917,7 +849,7 @@ class NinjaDriver:
             process = subprocess.run(
                 cmd,
                 check=False,
-                cwd=str(workdir_path),  # Execute in isolated work directory
+                cwd=str(repo_root),  # Execute in actual repository
                 env=env,
                 capture_output=True,
                 text=True,
@@ -933,10 +865,6 @@ class NinjaDriver:
             task_logger.info(
                 f"Task {'succeeded' if result.success else 'failed'}: {result.summary}"
             )
-
-            # Copy modified files back to target repo before cleanup
-            if result.success:
-                self._sync_workdir_to_repo(workdir_path, Path(repo_root), task_logger)
 
             return result
 
@@ -974,9 +902,6 @@ class NinjaDriver:
                 exit_code=-1,
                 model_used=self.config.model,
             )
-        finally:
-            # Clean up isolated work directory
-            self._cleanup_isolated_workdir(workdir_path)
 
     async def execute_async(
         self,
@@ -1002,17 +927,13 @@ class NinjaDriver:
         task_logger.set_metadata("instruction", instruction)
         task_logger.set_metadata("model", self.config.model)
 
-        # Create isolated working directory
-        workdir_path = self._create_isolated_workdir(repo_root, step_id)
-        task_logger.info(f"Using isolated work directory: {workdir_path}")
-
         try:
             # Write task file
             task_file = self._write_task_file(repo_root, step_id, instruction)
             task_logger.info(f"Wrote task file: {task_file}")
 
             # Build command
-            cmd = self._build_command(task_file, str(workdir_path))
+            cmd = self._build_command(task_file, repo_root)
             task_logger.info(f"Running command: {' '.join(cmd)}")
 
             # Get environment
@@ -1023,7 +944,7 @@ class NinjaDriver:
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
-                cwd=str(workdir_path),  # Execute in isolated work directory
+                cwd=str(repo_root),  # Execute in actual repository
                 env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -1062,10 +983,6 @@ class NinjaDriver:
                 f"Task {'succeeded' if result.success else 'failed'}: {result.summary}"
             )
 
-            # Copy modified files back to target repo before cleanup
-            if result.success:
-                self._sync_workdir_to_repo(workdir_path, Path(repo_root), task_logger)
-
             return result
 
         except FileNotFoundError:
@@ -1091,9 +1008,6 @@ class NinjaDriver:
                 exit_code=-1,
                 model_used=self.config.model,
             )
-        finally:
-            # Clean up isolated work directory
-            self._cleanup_isolated_workdir(workdir_path)
 
 
 # Backwards compatibility aliases
