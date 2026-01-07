@@ -9,6 +9,7 @@ after installation.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 import httpx
@@ -309,6 +310,167 @@ def cmd_set_api_key(args: argparse.Namespace) -> None:
     print_colored("  ninja-daemon restart all", "dim")
 
 
+def cmd_doctor(args: argparse.Namespace) -> None:
+    """
+    Diagnose and fix common configuration issues.
+
+    Args:
+        args: Command arguments.
+    """
+    import json
+    import shutil
+    from pathlib import Path
+
+    issues_found = 0
+    issues_fixed = 0
+
+    print_colored("Ninja MCP Doctor", "bold")
+    print_colored("─" * 60, "dim")
+    print()
+
+    # Check 1: API key in environment
+    print_colored("Checking API keys...", "cyan")
+    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
+
+    if api_key:
+        if api_key.startswith("sk-or-"):
+            print_colored("  ✓ OPENROUTER_API_KEY is set and valid", "green")
+        elif api_key.startswith("sk-"):
+            print_colored("  ✓ OPENAI_API_KEY is set", "green")
+        else:
+            print_colored("  ⚠ API key format looks unusual", "yellow")
+    else:
+        print_colored("  ✗ No API key found in environment", "red")
+        issues_found += 1
+        print_colored("    Set OPENROUTER_API_KEY or OPENAI_API_KEY", "dim")
+    print()
+
+    # Check 2: MCP config file
+    print_colored("Checking MCP configuration...", "cyan")
+    mcp_config_paths = [
+        Path.home() / ".config" / "claude" / "mcp.json",
+        Path.home() / ".claude.json",
+    ]
+
+    mcp_config = None
+    mcp_config_path = None
+    for path in mcp_config_paths:
+        if path.exists():
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                if "mcpServers" in data:
+                    mcp_config = data
+                    mcp_config_path = path
+                    break
+            except json.JSONDecodeError:
+                continue
+
+    if mcp_config_path:
+        print_colored(f"  ✓ MCP config found: {mcp_config_path}", "green")
+
+        # Check ninja servers
+        servers = mcp_config.get("mcpServers", {})
+        ninja_servers = ["ninja-coder", "ninja-researcher", "ninja-secretary"]
+
+        for server in ninja_servers:
+            if server in servers:
+                server_config = servers[server]
+                env = server_config.get("env", {})
+                server_api_key = env.get("OPENROUTER_API_KEY", "")
+
+                # Check for shell expansion syntax (indicates config issue)
+                if server_api_key.startswith("${"):
+                    print_colored(f"  ✗ {server}: API key uses shell syntax (won't work)", "red")
+                    issues_found += 1
+
+                    if args.fix and api_key:
+                        # Fix by replacing with actual value
+                        env["OPENROUTER_API_KEY"] = api_key
+                        server_config["env"] = env
+                        issues_fixed += 1
+                        print_colored(f"    → Fixed: Updated with actual API key", "green")
+                elif not server_api_key:
+                    print_colored(f"  ⚠ {server}: No API key configured", "yellow")
+                else:
+                    print_colored(f"  ✓ {server}: API key configured", "green")
+            else:
+                print_colored(f"  ⚠ {server}: Not registered", "yellow")
+
+        # Write fixes if any
+        if issues_fixed > 0 and mcp_config_path:
+            with open(mcp_config_path, "w") as f:
+                json.dump(mcp_config, f, indent=2)
+                f.write("\n")
+            print()
+            print_colored(f"  → Updated {mcp_config_path}", "green")
+
+    else:
+        print_colored("  ✗ No MCP config found", "red")
+        issues_found += 1
+        print_colored("    Run: ./scripts/install_claude_code_mcp.sh", "dim")
+    print()
+
+    # Check 3: Dependencies
+    print_colored("Checking dependencies...", "cyan")
+
+    # Check aider
+    if shutil.which("aider"):
+        print_colored("  ✓ aider is installed", "green")
+    else:
+        print_colored("  ⚠ aider not found (needed for ninja-coder)", "yellow")
+        print_colored("    Install: uv tool install aider-chat", "dim")
+        issues_found += 1
+
+    # Check uv
+    if shutil.which("uv"):
+        print_colored("  ✓ uv is installed", "green")
+    else:
+        print_colored("  ✗ uv not found", "red")
+        issues_found += 1
+    print()
+
+    # Check 4: Daemon status
+    print_colored("Checking daemon status...", "cyan")
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["ninja-daemon", "status"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            print_colored("  ✓ Daemon is running", "green")
+            for line in result.stdout.strip().split("\n")[:5]:
+                print_colored(f"    {line}", "dim")
+        else:
+            print_colored("  ⚠ Daemon not running", "yellow")
+            print_colored("    Start with: ninja-daemon start all", "dim")
+    except FileNotFoundError:
+        print_colored("  ⚠ ninja-daemon not found", "yellow")
+    except subprocess.TimeoutExpired:
+        print_colored("  ⚠ Daemon check timed out", "yellow")
+    except Exception as e:
+        print_colored(f"  ⚠ Could not check daemon: {e}", "yellow")
+    print()
+
+    # Summary
+    print_colored("─" * 60, "dim")
+    if issues_found == 0:
+        print_colored("✓ All checks passed!", "green")
+    else:
+        print_colored(f"Found {issues_found} issue(s)", "yellow")
+        if issues_fixed > 0:
+            print_colored(f"Fixed {issues_fixed} issue(s)", "green")
+        if issues_found > issues_fixed and not args.fix:
+            print()
+            print_colored("Run with --fix to auto-fix issues:", "dim")
+            print_colored("  ninja-config doctor --fix", "dim")
+    print()
+
+
 def validate_openrouter_model(model_name: str, api_key: str) -> bool:
     """
     Validate that a model exists in OpenRouter.
@@ -364,6 +526,10 @@ Examples:
 
   # Set API key
   ninja-config api-key openrouter
+
+  # Diagnose issues
+  ninja-config doctor
+  ninja-config doctor --fix
         """,
     )
 
@@ -437,6 +603,17 @@ Examples:
         help="API key (will prompt if not provided)",
     )
 
+    # Doctor command
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Diagnose and fix configuration issues",
+    )
+    doctor_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Auto-fix issues where possible",
+    )
+
     args = parser.parse_args()
 
     # Print header for all commands except get
@@ -457,6 +634,8 @@ Examples:
         cmd_set_search_provider(args)
     elif args.command == "api-key":
         cmd_set_api_key(args)
+    elif args.command == "doctor":
+        cmd_doctor(args)
     else:
         parser.print_help()
 
