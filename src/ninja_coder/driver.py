@@ -22,7 +22,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -716,7 +715,7 @@ class NinjaDriver:
         else:
             return self._build_command_generic(prompt, repo_root)
 
-    def _parse_output(self, stdout: str, stderr: str, exit_code: int) -> NinjaResult:  # noqa: PLR0912
+    def _parse_output(self, stdout: str, stderr: str, exit_code: int) -> NinjaResult:
         """
         Parse Ninja Code CLI output to extract CONCISE results.
 

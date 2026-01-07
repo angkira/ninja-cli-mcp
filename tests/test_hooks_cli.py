@@ -27,10 +27,10 @@ def test_validate_path_command_valid():
         repo_root = Path(temp_dir)
         test_file = repo_root / "test.txt"
         test_file.write_text("test content")
-        
+
         command = ValidatePathCommand("test.txt", str(repo_root))
         result = command.execute()
-        
+
         assert result.success is True
         assert result.data is not None
         assert result.data["status"] == "valid"
@@ -42,10 +42,10 @@ def test_validate_path_command_path_traversal():
     with tempfile.TemporaryDirectory() as temp_dir:
         repo_root = Path(temp_dir)
         (repo_root / "test.txt").write_text("test")
-        
+
         command = ValidatePathCommand("../etc/passwd", str(repo_root))
         result = command.execute()
-        
+
         assert result.success is False
         assert result.data is not None
         assert result.data["status"] == "invalid"
@@ -59,10 +59,10 @@ def test_validate_path_command_denied_pattern():
         git_dir = repo_root / ".git"
         git_dir.mkdir()
         (git_dir / "config").write_text("test")
-        
+
         command = ValidatePathCommand(".git/config", str(repo_root))
         result = command.execute()
-        
+
         assert result.success is False
         assert result.data is not None
         assert result.data["status"] == "invalid"
@@ -73,10 +73,10 @@ def test_validate_path_command_not_found():
     """Test ValidatePathCommand handles non-existent paths."""
     with tempfile.TemporaryDirectory() as temp_dir:
         repo_root = Path(temp_dir)
-        
+
         command = ValidatePathCommand("nonexistent.txt", str(repo_root))
         result = command.execute()
-        
+
         assert result.success is False
         assert result.data is not None
         assert result.data["status"] == "invalid"
@@ -90,10 +90,10 @@ def test_session_report_command():
         (repo_root / "test.txt").write_text("test")
         (repo_root / "subdir").mkdir()
         (repo_root / "subdir" / "test2.txt").write_text("test2")
-        
+
         command = SessionReportCommand(str(repo_root))
         result = command.execute()
-        
+
         assert result.success is True
         assert result.data is not None
         assert "files" in result.data
@@ -107,10 +107,10 @@ def test_session_report_command_save():
     with tempfile.TemporaryDirectory() as temp_dir:
         repo_root = Path(temp_dir)
         (repo_root / "test.txt").write_text("test")
-        
+
         command = SessionReportCommand(str(repo_root), save=True)
         result = command.execute()
-        
+
         assert result.success is True
         assert result.data is not None
         # Check that report was saved (path will be in data)
@@ -126,10 +126,10 @@ def test_analyze_changes_command(mock_run):
     mock_result.stderr = ""
     mock_result.returncode = 0
     mock_run.return_value = mock_result
-    
+
     command = AnalyzeChangesCommand("/fake/repo")
     result = command.execute()
-    
+
     assert result.success is True
     assert result.data is not None
     assert result.data["files_changed"] == 2
@@ -146,16 +146,16 @@ def test_analyze_changes_command_since(mock_run):
     mock_result.stderr = ""
     mock_result.returncode = 0
     mock_run.return_value = mock_result
-    
+
     command = AnalyzeChangesCommand("/fake/repo", since="HEAD~1")
     result = command.execute()
-    
+
     # Check that the command was called with the right arguments
     mock_run.assert_called_once()
-    args, kwargs = mock_run.call_args
+    args, _kwargs = mock_run.call_args
     assert "HEAD~1" in args[0]
     assert "HEAD" in args[0]
-    
+
     assert result.success is True
     assert result.data is not None
     assert result.data["files_changed"] == 1
@@ -165,10 +165,10 @@ def test_analyze_changes_command_since(mock_run):
 def test_analyze_changes_command_git_error(mock_run):
     """Test AnalyzeChangesCommand handles git errors."""
     mock_run.side_effect = subprocess.CalledProcessError(1, "git diff")
-    
+
     command = AnalyzeChangesCommand("/fake/repo")
     result = command.execute()
-    
+
     assert result.success is False
     assert result.error is not None
     assert "Git command failed" in result.error
@@ -178,10 +178,10 @@ def test_analyze_changes_command_git_error(mock_run):
 def test_analyze_changes_command_no_git(mock_run):
     """Test AnalyzeChangesCommand handles missing git."""
     mock_run.side_effect = FileNotFoundError()
-    
+
     command = AnalyzeChangesCommand("/fake/repo")
     result = command.execute()
-    
+
     assert result.success is False
     assert result.error is not None
     assert "Git is not installed" in result.error
@@ -196,11 +196,11 @@ def test_main_validate_path(mock_command_class):
     mock_command_class.return_value = mock_command_instance
 
     captured = io.StringIO()
-    with patch.object(sys, "argv", ["hooks_cli.py", "validate-path", "test.txt", "--repo-root", "/tmp"]):
-        with patch.object(sys, "stdout", captured):
-            with pytest.raises(SystemExit) as exc_info:
-                main()
-            assert exc_info.value.code == 0
+    with patch.object(sys, "argv", ["hooks_cli.py", "validate-path", "test.txt", "--repo-root", "/tmp"]), \
+         patch.object(sys, "stdout", captured), \
+         pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
 
     output = captured.getvalue()
     assert "valid" in output
@@ -215,11 +215,11 @@ def test_main_json_output(mock_command_class):
     mock_command_class.return_value = mock_command_instance
 
     captured = io.StringIO()
-    with patch.object(sys, "argv", ["hooks_cli.py", "--json", "validate-path", "test.txt", "--repo-root", "/tmp"]):
-        with patch.object(sys, "stdout", captured):
-            with pytest.raises(SystemExit) as exc_info:
-                main()
-            assert exc_info.value.code == 0
+    with patch.object(sys, "argv", ["hooks_cli.py", "--json", "validate-path", "test.txt", "--repo-root", "/tmp"]), \
+         patch.object(sys, "stdout", captured), \
+         pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
 
     output = captured.getvalue()
     parsed = json.loads(output)
@@ -236,11 +236,11 @@ def test_main_session_report(mock_command_class):
     mock_command_class.return_value = mock_command_instance
 
     captured = io.StringIO()
-    with patch.object(sys, "argv", ["hooks_cli.py", "session-report", "--repo-root", "/tmp"]):
-        with patch.object(sys, "stdout", captured):
-            with pytest.raises(SystemExit) as exc_info:
-                main()
-            assert exc_info.value.code == 0
+    with patch.object(sys, "argv", ["hooks_cli.py", "session-report", "--repo-root", "/tmp"]), \
+         patch.object(sys, "stdout", captured), \
+         pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
 
     output = captured.getvalue()
     assert "10" in output
@@ -255,11 +255,11 @@ def test_main_analyze_changes(mock_command_class):
     mock_command_class.return_value = mock_command_instance
 
     captured = io.StringIO()
-    with patch.object(sys, "argv", ["hooks_cli.py", "analyze-changes", "--repo-root", "/tmp"]):
-        with patch.object(sys, "stdout", captured):
-            with pytest.raises(SystemExit) as exc_info:
-                main()
-            assert exc_info.value.code == 0
+    with patch.object(sys, "argv", ["hooks_cli.py", "analyze-changes", "--repo-root", "/tmp"]), \
+         patch.object(sys, "stdout", captured), \
+         pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
 
     output = captured.getvalue()
     assert "5" in output

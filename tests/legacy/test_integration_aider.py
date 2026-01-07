@@ -22,7 +22,8 @@ def test_aider_detection():
     """Test that aider can be detected in PATH."""
     result = subprocess.run(
         ["which", "aider"],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
     )
 
@@ -40,7 +41,8 @@ def test_aider_version():
     """Test that aider --version works."""
     result = subprocess.run(
         ["aider", "--version"],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
         timeout=10,
     )
@@ -57,7 +59,8 @@ def test_aider_help():
     """Test that aider --help works."""
     result = subprocess.run(
         ["aider", "--help"],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
         timeout=10,
     )
@@ -96,7 +99,8 @@ def test_aider_with_openrouter():
                 "Add a comment",
                 str(test_file),
             ],
-            check=False, capture_output=True,
+            check=False,
+            capture_output=True,
             text=True,
             cwd=tmpdir,
             env=env,

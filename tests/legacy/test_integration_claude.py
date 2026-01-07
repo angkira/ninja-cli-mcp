@@ -64,7 +64,8 @@ def test_quick_task_minimal(temp_project):
             "--allowed-globs",
             "*.py",
         ],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
         timeout=30,
     )
@@ -102,7 +103,8 @@ def test_metrics_tracking(temp_project):
             "--allowed-globs",
             "*.py",
         ],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         timeout=30,
     )
 
@@ -126,7 +128,8 @@ def test_list_models_command():
     """
     result = subprocess.run(
         ["uv", "run", "python", "-m", "ninja_cli_mcp.cli", "list-models"],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
         timeout=10,
     )
@@ -143,7 +146,8 @@ def test_show_config_command():
     """
     result = subprocess.run(
         ["uv", "run", "python", "-m", "ninja_cli_mcp.cli", "show-config"],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
         timeout=10,
     )
@@ -169,7 +173,8 @@ def test_metrics_summary_empty(temp_project):
             "--repo-root",
             str(temp_project),
         ],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
         timeout=10,
     )
@@ -235,7 +240,8 @@ def test_small_chat_interaction(temp_project):
             "--allowed-globs",
             "math.py",
         ],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
         timeout=30,
     )

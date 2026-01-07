@@ -24,10 +24,19 @@ select = [
 ]
 
 ignore = [
-    "E501",   # line too long (handled by formatter)
-    "B008",   # do not perform function calls in argument defaults
+    "E501",    # line too long (handled by formatter)
+    "B008",    # do not perform function calls in argument defaults
     "PLR0913", # too many arguments
     "PLR2004", # magic value comparison
+    "PLR0912", # too many branches
+    "PLR0915", # too many statements
+    "SIM102",  # nested if statements
+    "SIM105",  # contextlib.suppress
+    "SIM108",  # ternary operator
+    "SIM117",  # nested with statements
+    "RUF015",  # prefer next(iter())
+    "RUF059",  # unpacked variable never used
+    "PLC0415", # import at top level
 ]
 
 [lint.isort]
