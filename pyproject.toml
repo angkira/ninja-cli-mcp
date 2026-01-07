@@ -66,11 +66,21 @@ all = [
 ]
 
 [project.scripts]
+# MCP Servers
 ninja-coder = "ninja_coder.server:run"
 ninja-researcher = "ninja_researcher.server:run"
 ninja-secretary = "ninja_secretary.server:run"
+
+# Daemon and Config
 ninja-daemon = "ninja_common.daemon:main"
 ninja-config = "ninja_common.config_cli:main"
+
+# Claude Code Hooks CLIs
+ninja-coder-hooks = "ninja_coder.hooks_cli:main"
+ninja-secretary-hooks = "ninja_secretary.hooks_cli:main"
+
+# Skill Packaging
+ninja-skill = "ninja_common.skill_cli:main"
 
 [build-system]
 requires = ["hatchling"]

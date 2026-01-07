@@ -1,0 +1,35 @@
+{
+  "name": "ninja-code",
+  "version": "1.0.0",
+  "description": "Delegate code writing to Ninja Coder (Aider)",
+  "author": "ninja-mcp contributors",
+  "homepage": "https://github.com/angkira/ninja-mcp",
+  "license": "MIT",
+  "requires": {
+    "ninja-mcp": ">=0.2.0",
+    "aider": ">=0.50.0"
+  },
+  "mcp_servers": ["ninja-coder"],
+  "permissions": [
+    "code_execution",
+    "file_write",
+    "file_read"
+  ],
+  "environment": {
+    "OPENROUTER_API_KEY": {
+      "required": true,
+      "description": "OpenRouter API key for model access"
+    }
+  },
+  "tools": [
+    "coder_quick_task",
+    "coder_execute_plan_sequential",
+    "coder_execute_plan_parallel"
+  ],
+  "keywords": [
+    "coding",
+    "aider",
+    "code-generation",
+    "refactoring"
+  ]
+}
