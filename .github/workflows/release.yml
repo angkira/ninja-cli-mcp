@@ -177,7 +177,7 @@ jobs:
 
             **Quick Install (Recommended):**
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/anthropics/ninja-mcp/main/install.sh | bash
+            curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash
             ```
 
             **PyPI:**
@@ -189,12 +189,12 @@ jobs:
 
             **Homebrew (macOS):**
             ```bash
-            brew install anthropics/ninja-mcp/ninja-mcp
+            brew install angkira/ninja-mcp/ninja-mcp
             ```
 
             **Debian/Ubuntu:**
             ```bash
-            wget https://github.com/anthropics/ninja-mcp/releases/download/v${{ steps.get_version.outputs.version }}/ninja-mcp_${{ steps.get_version.outputs.version }}_all.deb
+            wget https://github.com/angkira/ninja-cli-mcp/releases/download/v${{ steps.get_version.outputs.version }}/ninja-mcp_${{ steps.get_version.outputs.version }}_all.deb
             sudo dpkg -i ninja-mcp_${{ steps.get_version.outputs.version }}_all.deb
             ```
 
@@ -212,8 +212,8 @@ jobs:
             - `ninja-mcp.rb` - Homebrew formula
 
             ### Documentation
-            - [Installation Guide](https://github.com/anthropics/ninja-mcp/blob/main/INSTALL_GUIDE.md)
-            - [Claude Code Integration](https://github.com/anthropics/ninja-mcp/blob/main/docs/CLAUDE_CODE_2026_INTEGRATION.md)
+            - [Installation Guide](https://github.com/angkira/ninja-cli-mcp/blob/main/INSTALL_GUIDE.md)
+            - [Claude Code Integration](https://github.com/angkira/ninja-cli-mcp/blob/main/docs/CLAUDE_CODE_2026_INTEGRATION.md)
           files: |
             python-packages/*
             debian-packages/*.deb
