@@ -247,6 +247,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    cmd: HookCommand
     if args.command == "format-file":
         cmd = FormatFileCommand(args.file_path, args.check, args.json)
     elif args.command == "lint-check":
