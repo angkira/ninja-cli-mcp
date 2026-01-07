@@ -387,13 +387,18 @@ class TestSkillPackagerPackage:
         assert output.exists()
         assert zipfile.is_zipfile(output)
 
-    def test_package_default_output_name(self, packager, valid_skill_dir, tmp_path, monkeypatch):
+    def test_package_default_output_name(self, packager, valid_skill_dir, tmp_path):
         """Test that package uses skill name for default output."""
-        monkeypatch.chdir(tmp_path)
+        import os
+
+        # First cd to tmp_path to establish a valid cwd, then save and restore
+        os.chdir(tmp_path)
         result = packager.package(valid_skill_dir)
 
         assert result.name == "test-skill.zip"
         assert result.exists()
+        # Clean up by going back to project root
+        os.chdir(Path(__file__).parent.parent.parent)
 
     def test_package_contains_all_files(self, packager, valid_skill_dir, tmp_path):
         """Test that ZIP contains all skill files."""
