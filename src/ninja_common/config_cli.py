@@ -9,8 +9,13 @@ after installation.
 from __future__ import annotations
 
 import argparse
+import getpass
+import json
 import os
+import shutil
+import subprocess
 import sys
+from pathlib import Path
 
 import httpx
 
@@ -295,8 +300,6 @@ def cmd_set_api_key(args: argparse.Namespace) -> None:
         api_key = args.key
     else:
         # Prompt for API key (hidden input)
-        import getpass  # noqa: PLC0415
-
         api_key = getpass.getpass(f"Enter {args.service} API key: ")
 
     if not api_key:
@@ -317,10 +320,6 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     Args:
         args: Command arguments.
     """
-    import json
-    import shutil
-    from pathlib import Path
-
     issues_found = 0
     issues_fixed = 0
 
@@ -357,7 +356,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     for path in mcp_config_paths:
         if path.exists():
             try:
-                with open(path) as f:
+                with path.open() as f:
                     data = json.load(f)
                 if "mcpServers" in data:
                     mcp_config = data
@@ -389,7 +388,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
                         env["OPENROUTER_API_KEY"] = api_key
                         server_config["env"] = env
                         issues_fixed += 1
-                        print_colored(f"    → Fixed: Updated with actual API key", "green")
+                        print_colored("    → Fixed: Updated with actual API key", "green")
                 elif not server_api_key:
                     print_colored(f"  ⚠ {server}: No API key configured", "yellow")
                 else:
@@ -399,7 +398,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 
         # Write fixes if any
         if issues_fixed > 0 and mcp_config_path:
-            with open(mcp_config_path, "w") as f:
+            with mcp_config_path.open("w") as f:
                 json.dump(mcp_config, f, indent=2)
                 f.write("\n")
             print()
@@ -433,10 +432,9 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     # Check 4: Daemon status
     print_colored("Checking daemon status...", "cyan")
     try:
-        import subprocess
-
         result = subprocess.run(
             ["ninja-daemon", "status"],
+            check=False,
             capture_output=True,
             text=True,
             timeout=5,

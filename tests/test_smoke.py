@@ -19,6 +19,7 @@ def test_import_ninja_coder():
         import ninja_coder
         import ninja_coder.server
         import ninja_coder.tools
+
         assert True
     except ImportError as e:
         pytest.fail(f"Failed to import ninja_coder: {e}")
@@ -28,9 +29,10 @@ def test_import_ninja_researcher():
     """Test that ninja_researcher module can be imported."""
     try:
         import ninja_researcher
+        import ninja_researcher.search_providers
         import ninja_researcher.server
         import ninja_researcher.tools
-        import ninja_researcher.search_providers
+
         assert True
     except ImportError as e:
         pytest.fail(f"Failed to import ninja_researcher: {e}")
@@ -41,6 +43,7 @@ def test_import_ninja_secretary():
     try:
         import ninja_secretary
         import ninja_secretary.server
+
         assert True
     except ImportError as e:
         pytest.fail(f"Failed to import ninja_secretary: {e}")
@@ -52,6 +55,7 @@ def test_import_ninja_common():
         import ninja_common
         import ninja_common.config_manager
         import ninja_common.daemon
+
         assert True
     except ImportError as e:
         pytest.fail(f"Failed to import ninja_common: {e}")
@@ -61,6 +65,7 @@ def test_ninja_config_cli_help():
     """Test that ninja-config CLI help works."""
     result = subprocess.run(
         [sys.executable, "-m", "ninja_common.config_cli", "--help"],
+        check=False,
         capture_output=True,
         text=True,
         timeout=10,
@@ -74,6 +79,7 @@ def test_ninja_daemon_help():
     """Test that ninja-daemon CLI help works."""
     result = subprocess.run(
         [sys.executable, "-m", "ninja_common.daemon", "--help"],
+        check=False,
         capture_output=True,
         text=True,
         timeout=10,
@@ -85,9 +91,10 @@ def test_ninja_daemon_help():
 
 def test_config_manager_basic():
     """Test that ConfigManager can be instantiated."""
-    from ninja_common.config_manager import ConfigManager
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
+
+    from ninja_common.config_manager import ConfigManager
 
     with tempfile.TemporaryDirectory() as tmpdir:
         config_file = Path(tmpdir) / "test.env"

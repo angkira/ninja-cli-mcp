@@ -468,8 +468,8 @@ class ResearchToolExecutor:
         logger.info(f"Summarizing {len(request.urls)} sources (client: {client_id})")
 
         try:
-            import httpx  # noqa: PLC0415
-            from bs4 import BeautifulSoup  # noqa: PLC0415
+            import httpx
+            from bs4 import BeautifulSoup
 
             async def fetch_and_summarize(url: str) -> dict[str, str]:
                 """Fetch URL and create a summary."""

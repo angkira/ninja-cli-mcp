@@ -1,6 +1,7 @@
 """Tests for skill_packager module."""
 
 import json
+import os
 import zipfile
 from pathlib import Path
 
@@ -121,11 +122,15 @@ class TestSkillPackagerValidation:
 
         # Create required files
         (skill_dir / "skill.md").write_text("# Test Skill\n\nTest content")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test-skill",
-            "version": "1.0.0",
-            "description": "A test skill",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test-skill",
+                    "version": "1.0.0",
+                    "description": "A test skill",
+                }
+            )
+        )
 
         # Create optional files
         (skill_dir / "README.md").write_text("# README")
@@ -145,11 +150,15 @@ class TestSkillPackagerValidation:
         """Test validation fails when skill.md is missing."""
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                }
+            )
+        )
 
         result = packager.validate(skill_dir)
         assert result.valid is False
@@ -181,10 +190,14 @@ class TestSkillPackagerValidation:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            # missing version and description
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    # missing version and description
+                }
+            )
+        )
 
         result = packager.validate(skill_dir)
         assert result.valid is False
@@ -196,11 +209,15 @@ class TestSkillPackagerValidation:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "not-a-version",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "not-a-version",
+                    "description": "Test",
+                }
+            )
+        )
 
         result = packager.validate(skill_dir)
         assert result.valid is False
@@ -214,11 +231,15 @@ class TestSkillPackagerValidation:
             skill_dir = tmp_path / f"skill-{version.replace('.', '_')}"
             skill_dir.mkdir()
             (skill_dir / "skill.md").write_text("# Skill")
-            (skill_dir / "config.json").write_text(json.dumps({
-                "name": "test",
-                "version": version,
-                "description": "Test",
-            }))
+            (skill_dir / "config.json").write_text(
+                json.dumps(
+                    {
+                        "name": "test",
+                        "version": version,
+                        "description": "Test",
+                    }
+                )
+            )
 
             result = packager.validate(skill_dir)
             assert result.valid is True, f"Version {version} should be valid"
@@ -228,11 +249,15 @@ class TestSkillPackagerValidation:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                }
+            )
+        )
 
         result = packager.validate(skill_dir)
         assert result.valid is True
@@ -243,11 +268,15 @@ class TestSkillPackagerValidation:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                }
+            )
+        )
 
         result = packager.validate(skill_dir)
         assert result.valid is True
@@ -258,12 +287,16 @@ class TestSkillPackagerValidation:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-            "permissions": ["unknown_permission"],
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                    "permissions": ["unknown_permission"],
+                }
+            )
+        )
 
         result = packager.validate(skill_dir)
         assert result.valid is True
@@ -274,11 +307,15 @@ class TestSkillPackagerValidation:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                }
+            )
+        )
         # Create a large file (>1MB)
         (skill_dir / "large_file.bin").write_bytes(b"x" * (1024 * 1024 + 1))
 
@@ -307,11 +344,15 @@ class TestSkillPackagerZipValidation:
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Test Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test-skill",
-            "version": "1.0.0",
-            "description": "A test skill",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test-skill",
+                    "version": "1.0.0",
+                    "description": "A test skill",
+                }
+            )
+        )
         (skill_dir / "README.md").write_text("# README")
         examples_dir = skill_dir / "examples"
         examples_dir.mkdir()
@@ -336,11 +377,16 @@ class TestSkillPackagerZipValidation:
         """Test validation fails when skill.md is missing in ZIP."""
         zip_path = tmp_path / "test.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr("test/config.json", json.dumps({
-                "name": "test",
-                "version": "1.0.0",
-                "description": "Test",
-            }))
+            zf.writestr(
+                "test/config.json",
+                json.dumps(
+                    {
+                        "name": "test",
+                        "version": "1.0.0",
+                        "description": "Test",
+                    }
+                ),
+            )
 
         result = packager.validate(zip_path)
         assert result.valid is False
@@ -370,11 +416,15 @@ class TestSkillPackagerPackage:
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Test Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test-skill",
-            "version": "1.0.0",
-            "description": "A test skill",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test-skill",
+                    "version": "1.0.0",
+                    "description": "A test skill",
+                }
+            )
+        )
         (skill_dir / "README.md").write_text("# README")
         return skill_dir
 
@@ -389,8 +439,6 @@ class TestSkillPackagerPackage:
 
     def test_package_default_output_name(self, packager, valid_skill_dir, tmp_path):
         """Test that package uses skill name for default output."""
-        import os
-
         # First cd to tmp_path to establish a valid cwd, then save and restore
         os.chdir(tmp_path)
         result = packager.package(valid_skill_dir)
@@ -452,15 +500,19 @@ class TestSkillPackagerExtractInfo:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test-skill",
-            "version": "2.0.0",
-            "description": "Test description",
-            "author": "Test Author",
-            "mcp_servers": ["server1", "server2"],
-            "tools": ["tool1"],
-            "permissions": ["code_execution"],
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test-skill",
+                    "version": "2.0.0",
+                    "description": "Test description",
+                    "author": "Test Author",
+                    "mcp_servers": ["server1", "server2"],
+                    "tools": ["tool1"],
+                    "permissions": ["code_execution"],
+                }
+            )
+        )
 
         info = packager.extract_info(skill_dir)
 
@@ -477,11 +529,16 @@ class TestSkillPackagerExtractInfo:
         zip_path = tmp_path / "skill.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("skill/skill.md", "# Skill")
-            zf.writestr("skill/config.json", json.dumps({
-                "name": "zip-skill",
-                "version": "1.0.0",
-                "description": "From ZIP",
-            }))
+            zf.writestr(
+                "skill/config.json",
+                json.dumps(
+                    {
+                        "name": "zip-skill",
+                        "version": "1.0.0",
+                        "description": "From ZIP",
+                    }
+                ),
+            )
 
         info = packager.extract_info(zip_path)
 
@@ -495,7 +552,7 @@ class TestSkillPackagerExtractInfo:
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
 
-        with pytest.raises(ValueError, match="config.json not found"):
+        with pytest.raises(ValueError, match=r"config\.json not found"):
             packager.extract_info(skill_dir)
 
     def test_extract_info_nonexistent(self, packager, tmp_path):
@@ -518,11 +575,16 @@ class TestSkillPackagerUnpack:
         zip_path = tmp_path / "skill.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("test-skill/skill.md", "# Skill")
-            zf.writestr("test-skill/config.json", json.dumps({
-                "name": "test",
-                "version": "1.0.0",
-                "description": "Test",
-            }))
+            zf.writestr(
+                "test-skill/config.json",
+                json.dumps(
+                    {
+                        "name": "test",
+                        "version": "1.0.0",
+                        "description": "Test",
+                    }
+                ),
+            )
 
         dest = tmp_path / "extracted"
         result = packager.unpack(zip_path, dest)
@@ -535,11 +597,16 @@ class TestSkillPackagerUnpack:
         zip_path = tmp_path / "skill.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("skill/skill.md", "# Skill")
-            zf.writestr("skill/config.json", json.dumps({
-                "name": "test",
-                "version": "1.0.0",
-                "description": "Test",
-            }))
+            zf.writestr(
+                "skill/config.json",
+                json.dumps(
+                    {
+                        "name": "test",
+                        "version": "1.0.0",
+                        "description": "Test",
+                    }
+                ),
+            )
 
         result = packager.unpack(zip_path)
 
@@ -566,11 +633,15 @@ class TestSkillPackagerListInstalled:
             skill_dir = tmp_path / f"skill-{i}"
             skill_dir.mkdir()
             (skill_dir / "skill.md").write_text("# Skill")
-            (skill_dir / "config.json").write_text(json.dumps({
-                "name": f"skill-{i}",
-                "version": "1.0.0",
-                "description": f"Skill {i}",
-            }))
+            (skill_dir / "config.json").write_text(
+                json.dumps(
+                    {
+                        "name": f"skill-{i}",
+                        "version": "1.0.0",
+                        "description": f"Skill {i}",
+                    }
+                )
+            )
 
         skills = packager.list_installed(tmp_path)
 
@@ -586,11 +657,15 @@ class TestSkillPackagerListInstalled:
         valid = tmp_path / "valid-skill"
         valid.mkdir()
         (valid / "skill.md").write_text("# Skill")
-        (valid / "config.json").write_text(json.dumps({
-            "name": "valid",
-            "version": "1.0.0",
-            "description": "Valid",
-        }))
+        (valid / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "valid",
+                    "version": "1.0.0",
+                    "description": "Valid",
+                }
+            )
+        )
 
         # Create an invalid directory (no config.json)
         invalid = tmp_path / "invalid"

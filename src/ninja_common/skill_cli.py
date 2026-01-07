@@ -1,7 +1,7 @@
 """CLI for skill packaging operations.
 
 Usage:
-    ninja-skill package <skill_dir> [-o <output>]
+    ninja-skill package <skill_dir> [-o <output>
     ninja-skill validate <path>
     ninja-skill info <path>
     ninja-skill list [--installed] [--available]
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
-from ninja_common.skill_packager import SkillPackager, SkillInfo, SkillValidationResult
+from ninja_common.skill_packager import SkillInfo, SkillPackager, SkillValidationResult
 
 
 def format_validation_result(result: SkillValidationResult, json_output: bool) -> str:
@@ -203,7 +203,8 @@ def create_parser() -> argparse.ArgumentParser:
         help="Path to skill directory",
     )
     package_parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         help="Output path for ZIP file",
     )
 

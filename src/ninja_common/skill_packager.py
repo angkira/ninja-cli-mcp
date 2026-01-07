@@ -12,7 +12,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 
 @dataclass
@@ -66,23 +66,23 @@ class SkillInfo:
 class SkillPackager:
     """Package, validate, and inspect Claude Code skills."""
 
-    REQUIRED_FILES = ["skill.md", "config.json"]
-    OPTIONAL_FILES = ["README.md", "examples/"]
-    REQUIRED_CONFIG_FIELDS = ["name", "version", "description"]
-    KNOWN_PERMISSIONS = [
+    REQUIRED_FILES: ClassVar[list[str]] = ["skill.md", "config.json"]
+    OPTIONAL_FILES: ClassVar[list[str]] = ["README.md", "examples/"]
+    REQUIRED_CONFIG_FIELDS: ClassVar[list[str]] = ["name", "version", "description"]
+    KNOWN_PERMISSIONS: ClassVar[list[str]] = [
         "code_execution",
         "file_write",
         "file_read",
         "network",
         "shell",
     ]
-    SEMVER_PATTERN = re.compile(
+    SEMVER_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
         r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
         r"(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"
         r"(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
         r"(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
     )
-    MAX_FILE_SIZE = 1024 * 1024  # 1MB
+    MAX_FILE_SIZE: ClassVar[int] = 1024 * 1024  # 1MB
 
     def validate(self, path: Path | str) -> SkillValidationResult:
         """Validate a skill directory or ZIP file.
@@ -161,15 +161,11 @@ class SkillPackager:
                         errors.append(f"Missing required file: {required_file}")
 
                 # Check optional files
-                readme_found = any(
-                    name.endswith("README.md") for name in names
-                )
+                readme_found = any(name.endswith("README.md") for name in names)
                 if not readme_found:
                     warnings.append("README.md is missing")
 
-                examples_found = any(
-                    "examples/" in name for name in names
-                )
+                examples_found = any("examples/" in name for name in names)
                 if not examples_found:
                     warnings.append("examples/ directory is missing")
 
@@ -226,11 +222,9 @@ class SkillPackager:
                 errors.append(f"Empty required field in config.json: {field_name}")
 
         # Validate version format (semver)
-        if "version" in config and config["version"]:
+        if config.get("version"):
             if not self.SEMVER_PATTERN.match(config["version"]):
-                errors.append(
-                    f"Invalid version format (must be semver): {config['version']}"
-                )
+                errors.append(f"Invalid version format (must be semver): {config['version']}")
 
         # Check for unknown permissions
         if "permissions" in config:
@@ -262,9 +256,7 @@ class SkillPackager:
         # Validate first
         validation = self.validate(skill_dir)
         if not validation.valid:
-            raise ValueError(
-                f"Skill validation failed: {'; '.join(validation.errors)}"
-            )
+            raise ValueError(f"Skill validation failed: {'; '.join(validation.errors)}")
 
         # Determine output path
         if output is None:
@@ -391,13 +383,7 @@ class SkillPackager:
 
         skills = []
         for item in skills_dir.iterdir():
-            if item.is_dir():
-                try:
-                    info = self.extract_info(item)
-                    skills.append(info)
-                except (ValueError, FileNotFoundError):
-                    continue
-            elif item.suffix == ".zip":
+            if item.is_dir() or item.suffix == ".zip":
                 try:
                     info = self.extract_info(item)
                     skills.append(info)

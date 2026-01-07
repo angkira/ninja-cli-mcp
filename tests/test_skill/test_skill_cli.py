@@ -1,8 +1,7 @@
 """Tests for skill_cli module."""
 
 import json
-from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
@@ -181,11 +180,15 @@ class TestCmdPackage:
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Test Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test-skill",
-            "version": "1.0.0",
-            "description": "A test skill",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test-skill",
+                    "version": "1.0.0",
+                    "description": "A test skill",
+                }
+            )
+        )
         (skill_dir / "README.md").write_text("# README")
         return skill_dir
 
@@ -253,11 +256,15 @@ class TestCmdValidate:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                }
+            )
+        )
         (skill_dir / "README.md").write_text("# README")
         (skill_dir / "examples").mkdir()
 
@@ -291,17 +298,21 @@ class TestCmdValidate:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                }
+            )
+        )
 
         args = Mock()
         args.path = str(skill_dir)
         args.json = True
 
-        result = cmd_validate(args)
+        cmd_validate(args)
 
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
@@ -316,11 +327,15 @@ class TestCmdInfo:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test-skill",
-            "version": "2.0.0",
-            "description": "Test skill description",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test-skill",
+                    "version": "2.0.0",
+                    "description": "Test skill description",
+                }
+            )
+        )
 
         args = Mock()
         args.path = str(skill_dir)
@@ -348,11 +363,15 @@ class TestCmdInfo:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                }
+            )
+        )
 
         args = Mock()
         args.path = str(skill_dir)
@@ -387,11 +406,15 @@ class TestCmdList:
         skill_dir = tmp_path / "skill1"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "skill1",
-            "version": "1.0.0",
-            "description": "First skill",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "skill1",
+                    "version": "1.0.0",
+                    "description": "First skill",
+                }
+            )
+        )
 
         args = Mock()
         args.skills_dir = str(tmp_path)
@@ -482,11 +505,15 @@ class TestMain:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                }
+            )
+        )
 
         output = tmp_path / "output.zip"
 
@@ -501,11 +528,15 @@ class TestMain:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                }
+            )
+        )
 
         with pytest.raises(SystemExit) as exc_info:
             main(["validate", str(skill_dir)])
@@ -517,11 +548,15 @@ class TestMain:
         skill_dir = tmp_path / "skill"
         skill_dir.mkdir()
         (skill_dir / "skill.md").write_text("# Skill")
-        (skill_dir / "config.json").write_text(json.dumps({
-            "name": "test",
-            "version": "1.0.0",
-            "description": "Test",
-        }))
+        (skill_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "name": "test",
+                    "version": "1.0.0",
+                    "description": "Test",
+                }
+            )
+        )
 
         with pytest.raises(SystemExit) as exc_info:
             main(["info", str(skill_dir)])

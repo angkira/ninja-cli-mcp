@@ -4,8 +4,6 @@ import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import pytest
-
 from src.ninja_common.hooks_base import (
     HookCommand,
     HookResult,
@@ -92,12 +90,13 @@ class TestRunSubprocess:
         mock_run.return_value = mock_result
 
         exit_code, stdout, stderr = run_subprocess(["echo", "test"])
-        
+
         assert exit_code == 0
         assert stdout == "output"
         assert stderr == "error"
         mock_run.assert_called_once_with(
             ["echo", "test"],
+            check=False,
             cwd=None,
             timeout=30.0,
             capture_output=True,
@@ -108,9 +107,9 @@ class TestRunSubprocess:
     def test_run_subprocess_timeout(self, mock_run):
         """Test subprocess timeout handling."""
         mock_run.side_effect = subprocess.TimeoutExpired("cmd", 30.0)
-        
+
         exit_code, stdout, stderr = run_subprocess(["sleep", "100"])
-        
+
         assert exit_code == -1
         assert stdout == ""
         assert stderr == "Command timed out after 30.0s"
@@ -119,9 +118,9 @@ class TestRunSubprocess:
     def test_run_subprocess_not_found(self, mock_run):
         """Test FileNotFoundError handling."""
         mock_run.side_effect = FileNotFoundError()
-        
+
         exit_code, stdout, stderr = run_subprocess(["nonexistent-command"])
-        
+
         assert exit_code == -1
         assert stdout == ""
         assert stderr == "Command not found: nonexistent-command"
@@ -139,10 +138,11 @@ class TestGetRepoRoot:
         mock_run.return_value = mock_result
 
         repo_root = get_repo_root("/some/path")
-        
+
         assert repo_root == Path("/path/to/repo")
         mock_run.assert_called_once_with(
             ["git", "rev-parse", "--show-toplevel"],
+            check=False,
             cwd=Path("/some/path"),
             capture_output=True,
             text=True,
@@ -158,25 +158,25 @@ class TestGetRepoRoot:
         mock_run.return_value = mock_result
 
         repo_root = get_repo_root("/some/path")
-        
+
         assert repo_root is None
 
     @patch("src.ninja_common.hooks_base.subprocess.run")
     def test_get_repo_root_timeout(self, mock_run):
         """Test get_repo_root timeout handling."""
         mock_run.side_effect = subprocess.TimeoutExpired("cmd", 5.0)
-        
+
         repo_root = get_repo_root("/some/path")
-        
+
         assert repo_root is None
 
     @patch("src.ninja_common.hooks_base.subprocess.run")
     def test_get_repo_root_file_not_found(self, mock_run):
         """Test get_repo_root FileNotFoundError handling."""
         mock_run.side_effect = FileNotFoundError()
-        
+
         repo_root = get_repo_root("/some/path")
-        
+
         assert repo_root is None
 
 
@@ -192,10 +192,11 @@ class TestGetStagedFiles:
         mock_run.return_value = mock_result
 
         staged_files = get_staged_files("/repo/root")
-        
+
         assert staged_files == ["file1.py", "file2.js", "file3.ts"]
         mock_run.assert_called_once_with(
             ["git", "diff", "--cached", "--name-only"],
+            check=False,
             cwd="/repo/root",
             capture_output=True,
             text=True,
@@ -211,31 +212,31 @@ class TestGetStagedFiles:
         mock_run.return_value = mock_result
 
         staged_files = get_staged_files("/repo/root")
-        
+
         assert staged_files == []
 
     @patch("src.ninja_common.hooks_base.subprocess.run")
     def test_get_staged_files_timeout(self, mock_run):
         """Test get_staged_files timeout handling."""
         mock_run.side_effect = subprocess.TimeoutExpired("cmd", 5.0)
-        
+
         staged_files = get_staged_files("/repo/root")
-        
+
         assert staged_files == []
 
     @patch("src.ninja_common.hooks_base.subprocess.run")
     def test_get_staged_files_file_not_found(self, mock_run):
         """Test get_staged_files FileNotFoundError handling."""
         mock_run.side_effect = FileNotFoundError()
-        
+
         staged_files = get_staged_files("/repo/root")
-        
+
         assert staged_files == []
 
 
 class ConcreteHookCommand(HookCommand):
     """Concrete implementation of HookCommand for testing."""
-    
+
     def execute(self) -> HookResult:
         """Execute the hook command."""
         return HookResult(status="ok", message="Test command executed")
@@ -248,7 +249,7 @@ class TestHookCommand:
         """Test HookCommand initialization."""
         cmd = ConcreteHookCommand()
         assert cmd.json_output is False
-        
+
         cmd_json = ConcreteHookCommand(json_output=True)
         assert cmd_json.json_output is True
 
@@ -257,7 +258,7 @@ class TestHookCommand:
         """Test run method with human readable output."""
         cmd = ConcreteHookCommand()
         result = cmd.run()
-        
+
         assert result == 0
         mock_print.assert_called_once_with("Test command executed")
 
@@ -266,10 +267,10 @@ class TestHookCommand:
     def test_run_success_json_output(self, mock_print, mock_dumps):
         """Test run method with JSON output."""
         mock_dumps.return_value = '{"status": "ok", "message": "Test command executed"}'
-        
+
         cmd = ConcreteHookCommand(json_output=True)
         result = cmd.run()
-        
+
         assert result == 0
         mock_dumps.assert_called_once()
         mock_print.assert_called_once_with('{"status": "ok", "message": "Test command executed"}')
@@ -277,13 +278,14 @@ class TestHookCommand:
     @patch("builtins.print")
     def test_run_failure_human_readable(self, mock_print):
         """Test run method with failure status in human readable output."""
+
         class FailingHookCommand(HookCommand):
             def execute(self) -> HookResult:
                 return HookResult(status="error", message="Test error")
-        
+
         cmd = FailingHookCommand()
         result = cmd.run()
-        
+
         assert result == 1
         mock_print.assert_called_once_with("Test error")
 
@@ -292,14 +294,14 @@ class TestHookCommand:
     def test_run_failure_json_output(self, mock_print, mock_dumps):
         """Test run method with failure status in JSON output."""
         mock_dumps.return_value = '{"status": "error", "message": "Test error"}'
-        
+
         class FailingHookCommand(HookCommand):
             def execute(self) -> HookResult:
                 return HookResult(status="error", message="Test error")
-        
+
         cmd = FailingHookCommand(json_output=True)
         result = cmd.run()
-        
+
         assert result == 1
         mock_dumps.assert_called_once()
         mock_print.assert_called_once_with('{"status": "error", "message": "Test error"}')
@@ -307,13 +309,14 @@ class TestHookCommand:
     @patch("builtins.print")
     def test_run_exception_handling_human_readable(self, mock_print):
         """Test run method exception handling with human readable output."""
+
         class ExceptionHookCommand(HookCommand):
             def execute(self) -> HookResult:
                 raise ValueError("Test exception")
-        
+
         cmd = ExceptionHookCommand()
         result = cmd.run()
-        
+
         assert result == 1
         mock_print.assert_called_once()
 
@@ -322,14 +325,14 @@ class TestHookCommand:
     def test_run_exception_handling_json_output(self, mock_print, mock_dumps):
         """Test run method exception handling with JSON output."""
         mock_dumps.return_value = '{"status": "error", "message": "Test exception"}'
-        
+
         class ExceptionHookCommand(HookCommand):
             def execute(self) -> HookResult:
                 raise ValueError("Test exception")
-        
+
         cmd = ExceptionHookCommand(json_output=True)
         result = cmd.run()
-        
+
         assert result == 1
         mock_dumps.assert_called_once()
         mock_print.assert_called_once_with('{"status": "error", "message": "Test exception"}')

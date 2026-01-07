@@ -21,7 +21,7 @@ from ninja_secretary.models import (
     SessionReportRequest,
     UpdateDocRequest,
 )
-from ninja_secretary.tools import SecretaryToolExecutor, reset_executor
+from ninja_secretary.tools import reset_executor
 
 
 @pytest.fixture
@@ -203,9 +203,7 @@ class TestFileSearch:
     @pytest.mark.asyncio
     async def test_search_python_files(self, executor, client_id, temp_repo):
         """Test searching for Python files."""
-        request = FileSearchRequest(
-            pattern="**/*.py", repo_root=str(temp_repo), max_results=100
-        )
+        request = FileSearchRequest(pattern="**/*.py", repo_root=str(temp_repo), max_results=100)
 
         result = await executor.file_search(request, client_id=client_id)
 
@@ -221,9 +219,7 @@ class TestFileSearch:
     @pytest.mark.asyncio
     async def test_search_markdown_files(self, executor, client_id, temp_repo):
         """Test searching for markdown files."""
-        request = FileSearchRequest(
-            pattern="**/*.md", repo_root=str(temp_repo), max_results=10
-        )
+        request = FileSearchRequest(pattern="**/*.md", repo_root=str(temp_repo), max_results=10)
 
         result = await executor.file_search(request, client_id=client_id)
 
@@ -233,9 +229,7 @@ class TestFileSearch:
     @pytest.mark.asyncio
     async def test_search_with_max_results(self, executor, client_id, temp_repo):
         """Test that max_results is respected."""
-        request = FileSearchRequest(
-            pattern="**/*", repo_root=str(temp_repo), max_results=2
-        )
+        request = FileSearchRequest(pattern="**/*", repo_root=str(temp_repo), max_results=2)
 
         result = await executor.file_search(request, client_id=client_id)
 
@@ -310,9 +304,7 @@ class TestFileTree:
     @pytest.mark.asyncio
     async def test_generate_file_tree(self, executor, client_id, temp_repo):
         """Test generating a file tree."""
-        request = FileTreeRequest(
-            repo_root=str(temp_repo), max_depth=3, include_sizes=True
-        )
+        request = FileTreeRequest(repo_root=str(temp_repo), max_depth=3, include_sizes=True)
 
         result = await executor.file_tree(request, client_id=client_id)
 
@@ -384,9 +376,7 @@ class TestDocumentSummary:
     @pytest.mark.asyncio
     async def test_summarize_docs(self, executor, client_id, temp_repo):
         """Test summarizing documentation files."""
-        request = DocumentSummaryRequest(
-            repo_root=str(temp_repo), doc_patterns=["**/*.md"]
-        )
+        request = DocumentSummaryRequest(repo_root=str(temp_repo), doc_patterns=["**/*.md"])
 
         result = await executor.document_summary(request, client_id=client_id)
 
@@ -396,9 +386,7 @@ class TestDocumentSummary:
         assert result.combined_summary
 
         # Check summary structure
-        readme_summary = next(
-            (s for s in result.summaries if "README" in s["path"]), None
-        )
+        readme_summary = next((s for s in result.summaries if "README" in s["path"]), None)
         assert readme_summary is not None
         assert "summary" in readme_summary
 
@@ -425,9 +413,7 @@ class TestSessionTracking:
     async def test_update_session(self, executor, client_id):
         """Test updating a session."""
         # Create session first
-        create_request = SessionReportRequest(
-            session_id="test-session-2", action="create"
-        )
+        create_request = SessionReportRequest(session_id="test-session-2", action="create")
         await executor.session_report(create_request, client_id=client_id)
 
         # Update session
@@ -453,9 +439,7 @@ class TestSessionTracking:
     async def test_get_session(self, executor, client_id):
         """Test getting an existing session."""
         # Create and update session
-        create_request = SessionReportRequest(
-            session_id="test-session-3", action="create"
-        )
+        create_request = SessionReportRequest(session_id="test-session-3", action="create")
         await executor.session_report(create_request, client_id=client_id)
 
         # Get session
@@ -591,9 +575,7 @@ class TestEndToEndWorkflows:
             action="update",
             updates={"tools_used": ["file_tree"], "summary": "Generated file tree"},
         )
-        session_result = await executor.session_report(
-            update_request, client_id=client_id
-        )
+        session_result = await executor.session_report(update_request, client_id=client_id)
 
         assert "file_tree" in session_result.tools_used
 
@@ -611,9 +593,7 @@ class TestEndToEndWorkflows:
                 "summary": "Analyzed README",
             },
         )
-        final_session = await executor.session_report(
-            final_update, client_id=client_id
-        )
+        final_session = await executor.session_report(final_update, client_id=client_id)
 
         assert "file_tree" in final_session.tools_used
         assert "read_file" in final_session.tools_used
