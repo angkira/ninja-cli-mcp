@@ -3,9 +3,9 @@
 # Quick installer for Ninja MCP
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/angkira/ninja-mcp/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash
 #   or
-#   wget -qO- https://raw.githubusercontent.com/angkira/ninja-mcp/main/install.sh | bash
+#   wget -qO- https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash
 #
 
 set -euo pipefail
@@ -105,11 +105,11 @@ case $choice in
         # Clone or download repo
         if command -v git &> /dev/null; then
             info "Cloning repository..."
-            git clone https://github.com/angkira/ninja-mcp.git /tmp/ninja-mcp
+            git clone https://github.com/angkira/ninja-cli-mcp.git /tmp/ninja-mcp
         else
             info "Downloading repository..."
-            curl -L https://github.com/angkira/ninja-mcp/archive/refs/heads/main.tar.gz | tar xz -C /tmp
-            mv /tmp/ninja-mcp-main /tmp/ninja-mcp
+            curl -L https://github.com/angkira/ninja-cli-mcp/archive/refs/heads/main.tar.gz | tar xz -C /tmp
+            mv /tmp/ninja-cli-mcp-main /tmp/ninja-mcp
         fi
 
         cd /tmp/ninja-mcp
@@ -123,30 +123,58 @@ case $choice in
     2)
         info "Installing as global tool..."
 
-        # Check for package managers
-        if [[ "$OS" == "macos" ]] && command -v brew &> /dev/null; then
-            info "Homebrew detected. Use: brew install angkira/tap/ninja-mcp"
-            info "Falling back to uv tool install..."
-        elif [[ "$OS" == "linux" ]] && [[ "${DISTRO:-}" == "debian" ]]; then
-            info "Debian/Ubuntu detected. Use: sudo apt install ninja-mcp"
-            info "Falling back to uv tool install..."
+        INSTALL_SUCCESS=false
+
+        # Try PyPI first
+        info "Attempting to install from PyPI..."
+        if uv tool install ninja-mcp[all] 2>/dev/null; then
+            INSTALL_SUCCESS=true
+            success "Installed from PyPI"
+        else
+            warn "Package not found on PyPI, installing from GitHub..."
+
+            # Install directly from GitHub
+            if uv tool install "ninja-mcp[all] @ git+https://github.com/angkira/ninja-cli-mcp.git"; then
+                INSTALL_SUCCESS=true
+                success "Installed from GitHub"
+            else
+                # Final fallback: clone and install locally
+                warn "Direct GitHub install failed, trying local installation..."
+
+                TEMP_DIR=$(mktemp -d)
+                trap "rm -rf $TEMP_DIR" EXIT
+
+                if command -v git &> /dev/null; then
+                    git clone --depth 1 https://github.com/angkira/ninja-cli-mcp.git "$TEMP_DIR/ninja-mcp"
+                else
+                    curl -L https://github.com/angkira/ninja-cli-mcp/archive/refs/heads/main.tar.gz | tar xz -C "$TEMP_DIR"
+                    mv "$TEMP_DIR/ninja-cli-mcp-main" "$TEMP_DIR/ninja-mcp"
+                fi
+
+                if uv tool install "$TEMP_DIR/ninja-mcp[all]"; then
+                    INSTALL_SUCCESS=true
+                    success "Installed from local clone"
+                fi
+            fi
         fi
 
-        # Install from PyPI (or local if in dev)
-        uv tool install ninja-mcp[all]
+        if [[ "$INSTALL_SUCCESS" != "true" ]]; then
+            error "Installation failed. Please try the development install option (3) or report an issue."
+        fi
 
-        success "✓ Installation complete!"
+        success "Installation complete!"
         echo ""
         echo "Available commands:"
         echo "  ninja-coder       - Code assistant MCP server"
         echo "  ninja-researcher  - Research MCP server"
         echo "  ninja-secretary   - Secretary MCP server"
-        echo "  ninja-config      - Interactive configuration"
+        echo "  ninja-config      - Configuration and diagnostics"
+        echo "  ninja-daemon      - Daemon management"
         echo ""
         echo "Next steps:"
         echo "  1. Set API key: export OPENROUTER_API_KEY='your-key'"
-        echo "  2. Run setup: ninja-config"
-        echo "  3. Configure your IDE (Claude Code, VS Code, etc.)"
+        echo "  2. Run diagnostics: ninja-config doctor"
+        echo "  3. Configure Claude Code: ninja-config setup-claude"
         ;;
 
     3)
@@ -160,7 +188,7 @@ case $choice in
         # Clone repo
         if command -v git &> /dev/null; then
             info "Cloning repository to $INSTALL_DIR..."
-            git clone https://github.com/angkira/ninja-mcp.git "$INSTALL_DIR"
+            git clone https://github.com/angkira/ninja-cli-mcp.git "$INSTALL_DIR"
         else
             error "Git is required for development installation"
         fi
