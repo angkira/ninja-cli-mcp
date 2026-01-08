@@ -407,7 +407,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     else:
         print_colored("  ✗ No MCP config found", "red")
         issues_found += 1
-        print_colored("    Run: ./scripts/install_claude_code_mcp.sh", "dim")
+        print_colored("    Run: ninja-config setup-claude", "dim")
     print()
 
     # Check 3: Dependencies
@@ -467,6 +467,106 @@ def cmd_doctor(args: argparse.Namespace) -> None:
             print_colored("Run with --fix to auto-fix issues:", "dim")
             print_colored("  ninja-config doctor --fix", "dim")
     print()
+
+
+def cmd_setup_claude(args: argparse.Namespace) -> None:
+    """
+    Setup Claude Code MCP configuration.
+
+    Args:
+        args: Command arguments.
+    """
+    print_colored("Setting up Claude Code MCP configuration...", "cyan")
+    print()
+
+    # Determine config path
+    claude_config_dir = Path.home() / ".config" / "claude"
+    mcp_config_path = claude_config_dir / "mcp.json"
+
+    # Create directory if needed
+    claude_config_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load existing config or create new
+    if mcp_config_path.exists():
+        try:
+            with mcp_config_path.open() as f:
+                config = json.load(f)
+            print_colored(f"  Found existing config: {mcp_config_path}", "dim")
+        except json.JSONDecodeError:
+            config = {}
+            print_colored("  Existing config was invalid, creating new", "yellow")
+    else:
+        config = {}
+        print_colored(f"  Creating new config: {mcp_config_path}", "dim")
+
+    # Ensure mcpServers exists
+    if "mcpServers" not in config:
+        config["mcpServers"] = {}
+
+    # Get API key
+    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+
+    if not api_key:
+        print_colored("  ⚠ No API key found in environment", "yellow")
+        print_colored("  Set OPENROUTER_API_KEY environment variable first", "dim")
+        api_key = getpass.getpass("  Enter API key (or press Enter to skip): ")
+
+    # Define servers to register
+    servers = {
+        "ninja-coder": {
+            "command": "ninja-coder",
+            "args": ["--mode", "stdio"],
+            "env": {},
+        },
+        "ninja-researcher": {
+            "command": "ninja-researcher",
+            "args": ["--mode", "stdio"],
+            "env": {},
+        },
+        "ninja-secretary": {
+            "command": "ninja-secretary",
+            "args": ["--mode", "stdio"],
+            "env": {},
+        },
+    }
+
+    # Add API key to env if available
+    if api_key:
+        for server_config in servers.values():
+            server_config["env"]["OPENROUTER_API_KEY"] = api_key
+
+    # Determine which servers to install
+    if args.all or (not args.coder and not args.researcher and not args.secretary):
+        servers_to_install = list(servers.keys())
+    else:
+        servers_to_install = []
+        if args.coder:
+            servers_to_install.append("ninja-coder")
+        if args.researcher:
+            servers_to_install.append("ninja-researcher")
+        if args.secretary:
+            servers_to_install.append("ninja-secretary")
+
+    # Register servers
+    print()
+    for server_name in servers_to_install:
+        if server_name in config["mcpServers"] and not args.force:
+            print_colored(f"  ⚠ {server_name} already registered (use --force to overwrite)", "yellow")
+        else:
+            config["mcpServers"][server_name] = servers[server_name]
+            print_colored(f"  ✓ Registered {server_name}", "green")
+
+    # Write config
+    with mcp_config_path.open("w") as f:
+        json.dump(config, f, indent=2)
+        f.write("\n")
+
+    print()
+    print_colored(f"✓ Configuration saved to {mcp_config_path}", "green")
+    print()
+    print_colored("Next steps:", "bold")
+    print_colored("  1. Restart Claude Code to load the new configuration", "dim")
+    print_colored("  2. Run 'ninja-config doctor' to verify setup", "dim")
 
 
 def validate_openrouter_model(model_name: str, api_key: str) -> bool:
@@ -612,6 +712,37 @@ Examples:
         help="Auto-fix issues where possible",
     )
 
+    # Setup Claude command
+    setup_claude_parser = subparsers.add_parser(
+        "setup-claude",
+        help="Setup Claude Code MCP configuration",
+    )
+    setup_claude_parser.add_argument(
+        "--coder",
+        action="store_true",
+        help="Register ninja-coder server",
+    )
+    setup_claude_parser.add_argument(
+        "--researcher",
+        action="store_true",
+        help="Register ninja-researcher server",
+    )
+    setup_claude_parser.add_argument(
+        "--secretary",
+        action="store_true",
+        help="Register ninja-secretary server",
+    )
+    setup_claude_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Register all servers (default)",
+    )
+    setup_claude_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing server configurations",
+    )
+
     args = parser.parse_args()
 
     # Print header for all commands except get
@@ -634,6 +765,8 @@ Examples:
         cmd_set_api_key(args)
     elif args.command == "doctor":
         cmd_doctor(args)
+    elif args.command == "setup-claude":
+        cmd_setup_claude(args)
     else:
         parser.print_help()
 
