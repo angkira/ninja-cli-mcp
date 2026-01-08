@@ -292,65 +292,36 @@ elif [[ -d "$HOME/.claude" ]]; then
 fi
 
 if [[ "$CLAUDE_INSTALLED" == "true" ]]; then
-    info "Detected Claude Code, configuring..."
+    info "Detected Claude Code, configuring via 'claude mcp add'..."
 
-    mkdir -p "$CLAUDE_CONFIG_DIR"
+    # Use claude mcp add command (the correct way to register MCP servers)
+    # Remove existing entries first (ignore errors if they don't exist)
+    claude mcp remove ninja-coder -s user 2>/dev/null || true
+    claude mcp remove ninja-researcher -s user 2>/dev/null || true
+    claude mcp remove ninja-secretary -s user 2>/dev/null || true
 
-    # Get API key from environment
-    API_KEY="${OPENROUTER_API_KEY:-${OPENAI_API_KEY:-}}"
-
-    # Build server configs (stdio is default, no args needed)
-    SERVERS_JSON=$(cat << EOJSON
-{
-  "ninja-coder": {
-    "command": "ninja-coder",
-    "env": {${API_KEY:+"\"OPENROUTER_API_KEY\": \"$API_KEY\""}}
-  },
-  "ninja-researcher": {
-    "command": "ninja-researcher",
-    "env": {${API_KEY:+"\"OPENROUTER_API_KEY\": \"$API_KEY\""}}
-  },
-  "ninja-secretary": {
-    "command": "ninja-secretary",
-    "env": {${API_KEY:+"\"OPENROUTER_API_KEY\": \"$API_KEY\""}}
-  }
-}
-EOJSON
-)
-
-    # Merge with existing config or create new
-    if [[ -f "$CLAUDE_MCP_CONFIG" ]]; then
-        # Backup existing
-        cp "$CLAUDE_MCP_CONFIG" "$CLAUDE_MCP_CONFIG.backup"
-
-        # Merge using Python
-        python3 << EOPY
-import json
-from pathlib import Path
-
-config_path = Path("$CLAUDE_MCP_CONFIG")
-with config_path.open() as f:
-    config = json.load(f)
-
-servers = json.loads('''$SERVERS_JSON''')
-config.setdefault("mcpServers", {}).update(servers)
-
-with config_path.open("w") as f:
-    json.dump(config, f, indent=2)
-    f.write("\n")
-EOPY
-        success "Claude Code configured (merged with existing)"
+    # Add servers to user scope
+    if claude mcp add --scope user --transport stdio ninja-coder -- ninja-coder 2>/dev/null; then
+        success "ninja-coder registered"
     else
-        # Create new config
-        echo "{\"mcpServers\": $SERVERS_JSON}" | python3 -m json.tool > "$CLAUDE_MCP_CONFIG"
-        success "Claude Code configured (new)"
+        warn "Failed to register ninja-coder"
+    fi
+
+    if claude mcp add --scope user --transport stdio ninja-researcher -- ninja-researcher 2>/dev/null; then
+        success "ninja-researcher registered"
+    else
+        warn "Failed to register ninja-researcher"
+    fi
+
+    if claude mcp add --scope user --transport stdio ninja-secretary -- ninja-secretary 2>/dev/null; then
+        success "ninja-secretary registered"
+    else
+        warn "Failed to register ninja-secretary"
     fi
 
     CONFIGURED_IDES+=("Claude Code")
 
-    if [[ -z "$API_KEY" ]]; then
-        warn "No API key found - set OPENROUTER_API_KEY and run: ninja-config setup-claude --force"
-    fi
+    info "Run 'claude mcp list' to verify"
 else
     info "Claude Code not detected (install from: https://claude.ai/download)"
 fi

@@ -1,47 +1,21 @@
 {
   "mcpServers": {
     "ninja-coder": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/home/angkira/Project/software/ninja-cli-mcp",
-        "run",
-        "ninja-coder"
-      ],
+      "command": "ninja-coder",
       "env": {
-        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}",
-        "NINJA_CODER_MODEL": "anthropic/claude-haiku-4.5-20250929",
-        "NINJA_CODE_BIN": "aider",
-        "NINJA_CODER_TIMEOUT": "600"
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}"
       }
     },
     "ninja-researcher": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/home/angkira/Project/software/ninja-cli-mcp",
-        "run",
-        "ninja-researcher"
-      ],
+      "command": "ninja-researcher",
       "env": {
-        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}",
-        "NINJA_RESEARCHER_MODEL": "anthropic/claude-sonnet-4",
-        "NINJA_RESEARCHER_MAX_SOURCES": "20",
-        "NINJA_RESEARCHER_PARALLEL_AGENTS": "4"
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}"
       }
     },
     "ninja-secretary": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/home/angkira/Project/software/ninja-cli-mcp",
-        "run",
-        "ninja-secretary"
-      ],
+      "command": "ninja-secretary",
       "env": {
-        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}",
-        "NINJA_SECRETARY_MODEL": "anthropic/claude-haiku-4.5-20250929",
-        "NINJA_SECRETARY_MAX_FILE_SIZE": "1048576"
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}"
       }
     }
   }
