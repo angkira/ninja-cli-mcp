@@ -511,21 +511,18 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
         print_colored("  Set OPENROUTER_API_KEY environment variable first", "dim")
         api_key = getpass.getpass("  Enter API key (or press Enter to skip): ")
 
-    # Define servers to register
+    # Define servers to register (stdio is default, no args needed)
     servers = {
         "ninja-coder": {
             "command": "ninja-coder",
-            "args": ["--mode", "stdio"],
             "env": {},
         },
         "ninja-researcher": {
             "command": "ninja-researcher",
-            "args": ["--mode", "stdio"],
             "env": {},
         },
         "ninja-secretary": {
             "command": "ninja-secretary",
-            "args": ["--mode", "stdio"],
             "env": {},
         },
     }

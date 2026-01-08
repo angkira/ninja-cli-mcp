@@ -299,22 +299,19 @@ if [[ "$CLAUDE_INSTALLED" == "true" ]]; then
     # Get API key from environment
     API_KEY="${OPENROUTER_API_KEY:-${OPENAI_API_KEY:-}}"
 
-    # Build server configs
+    # Build server configs (stdio is default, no args needed)
     SERVERS_JSON=$(cat << EOJSON
 {
   "ninja-coder": {
     "command": "ninja-coder",
-    "args": ["--mode", "stdio"],
     "env": {${API_KEY:+"\"OPENROUTER_API_KEY\": \"$API_KEY\""}}
   },
   "ninja-researcher": {
     "command": "ninja-researcher",
-    "args": ["--mode", "stdio"],
     "env": {${API_KEY:+"\"OPENROUTER_API_KEY\": \"$API_KEY\""}}
   },
   "ninja-secretary": {
     "command": "ninja-secretary",
-    "args": ["--mode", "stdio"],
     "env": {${API_KEY:+"\"OPENROUTER_API_KEY\": \"$API_KEY\""}}
   }
 }
