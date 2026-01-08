@@ -14,6 +14,16 @@
 
 set -euo pipefail
 
+# Parse flags
+AUTO_MODE=false
+for arg in "$@"; do
+    case "$arg" in
+        --auto|--non-interactive|-y)
+            AUTO_MODE=true
+            ;;
+    esac
+done
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -158,9 +168,112 @@ else
 fi
 
 # ============================================================================
-# STEP 5: Auto-detect and configure IDEs
+# STEP 5: Interactive Configuration
 # ============================================================================
-step "5/6" "Configuring IDE integrations..."
+step "5/7" "Configuring API keys and preferences..."
+
+# Config file
+NINJA_CONFIG="$HOME/.ninja-mcp.env"
+touch "$NINJA_CONFIG"
+
+# --- OpenRouter API Key ---
+API_KEY="${OPENROUTER_API_KEY:-${OPENAI_API_KEY:-}}"
+
+if [[ -z "$API_KEY" ]]; then
+    if [[ "$AUTO_MODE" == "true" ]]; then
+        warn "No API key found (set OPENROUTER_API_KEY before running with --auto)"
+    else
+        echo ""
+        echo -e "${BOLD}OpenRouter API Key${NC} ${DIM}(required for AI features)${NC}"
+        echo -e "${DIM}Get your key from: https://openrouter.ai/keys${NC}"
+        echo ""
+        read -s -p "Enter OpenRouter API key (hidden, or press Enter to skip): " -r API_KEY
+        echo ""
+
+        if [[ -n "$API_KEY" ]]; then
+            # Remove old key if exists, add new one
+            grep -v "OPENROUTER_API_KEY" "$NINJA_CONFIG" > "$NINJA_CONFIG.tmp" 2>/dev/null || true
+            mv "$NINJA_CONFIG.tmp" "$NINJA_CONFIG"
+            echo "OPENROUTER_API_KEY=$API_KEY" >> "$NINJA_CONFIG"
+            export OPENROUTER_API_KEY="$API_KEY"
+            success "API key saved to $NINJA_CONFIG"
+        else
+            warn "No API key set - AI features will not work"
+        fi
+    fi
+else
+    success "OpenRouter API key found in environment"
+    # Save to config if not already there
+    if ! grep -q "OPENROUTER_API_KEY" "$NINJA_CONFIG" 2>/dev/null; then
+        echo "OPENROUTER_API_KEY=$API_KEY" >> "$NINJA_CONFIG"
+    fi
+fi
+
+# --- Search Provider ---
+SEARCH_PROVIDER="duckduckgo"
+
+if [[ "$AUTO_MODE" == "true" ]]; then
+    success "Using DuckDuckGo (default in auto mode)"
+else
+    echo ""
+    echo -e "${BOLD}Search Provider${NC} ${DIM}(for ninja-researcher)${NC}"
+    echo "  1) DuckDuckGo (free, no API key needed) - recommended"
+    echo "  2) Serper/Google (better results, needs API key)"
+    echo "  3) Perplexity AI (best for research, needs API key)"
+    echo ""
+    read -p "Choose search provider [1]: " -r SEARCH_CHOICE
+    SEARCH_CHOICE="${SEARCH_CHOICE:-1}"
+
+    case "$SEARCH_CHOICE" in
+        2)
+            SEARCH_PROVIDER="serper"
+            echo -e "${DIM}Get Serper API key from: https://serper.dev${NC}"
+            read -s -p "Enter Serper API key (hidden): " -r SERPER_KEY
+            echo ""
+            if [[ -n "$SERPER_KEY" ]]; then
+                grep -v "SERPER_API_KEY\|NINJA_SEARCH_PROVIDER" "$NINJA_CONFIG" > "$NINJA_CONFIG.tmp" 2>/dev/null || true
+                mv "$NINJA_CONFIG.tmp" "$NINJA_CONFIG"
+                echo "SERPER_API_KEY=$SERPER_KEY" >> "$NINJA_CONFIG"
+                echo "NINJA_SEARCH_PROVIDER=serper" >> "$NINJA_CONFIG"
+                success "Using Serper (Google)"
+            else
+                warn "No Serper key, falling back to DuckDuckGo"
+                SEARCH_PROVIDER="duckduckgo"
+            fi
+            ;;
+        3)
+            SEARCH_PROVIDER="perplexity"
+            echo -e "${DIM}Get Perplexity API key from: https://www.perplexity.ai/settings/api${NC}"
+            read -s -p "Enter Perplexity API key (hidden): " -r PERPLEXITY_KEY
+            echo ""
+            if [[ -n "$PERPLEXITY_KEY" ]]; then
+                grep -v "PERPLEXITY_API_KEY\|NINJA_SEARCH_PROVIDER" "$NINJA_CONFIG" > "$NINJA_CONFIG.tmp" 2>/dev/null || true
+                mv "$NINJA_CONFIG.tmp" "$NINJA_CONFIG"
+                echo "PERPLEXITY_API_KEY=$PERPLEXITY_KEY" >> "$NINJA_CONFIG"
+                echo "NINJA_SEARCH_PROVIDER=perplexity" >> "$NINJA_CONFIG"
+                success "Using Perplexity AI"
+            else
+                warn "No Perplexity key, falling back to DuckDuckGo"
+                SEARCH_PROVIDER="duckduckgo"
+            fi
+            ;;
+        *)
+            success "Using DuckDuckGo (free)"
+            ;;
+    esac
+fi
+
+# Save search provider default
+if [[ "$SEARCH_PROVIDER" == "duckduckgo" ]]; then
+    if ! grep -q "NINJA_SEARCH_PROVIDER" "$NINJA_CONFIG" 2>/dev/null; then
+        echo "NINJA_SEARCH_PROVIDER=duckduckgo" >> "$NINJA_CONFIG"
+    fi
+fi
+
+# ============================================================================
+# STEP 6: Auto-detect and configure IDEs
+# ============================================================================
+step "6/7" "Configuring IDE integrations..."
 
 CONFIGURED_IDES=()
 
@@ -278,9 +391,9 @@ else
 fi
 
 # ============================================================================
-# STEP 6: Final verification
+# STEP 7: Final verification
 # ============================================================================
-step "6/6" "Verifying installation..."
+step "7/7" "Verifying installation..."
 
 VERIFY_PASSED=true
 
@@ -309,6 +422,9 @@ echo "  ninja-researcher  - Web research (MCP server)"
 echo "  ninja-secretary   - File operations (MCP server)"
 echo "  ninja-config      - Configuration & diagnostics"
 echo "  ninja-daemon      - Server management"
+echo ""
+
+echo -e "${BOLD}Configuration:${NC} ~/.ninja-mcp.env"
 echo ""
 
 if [[ ${#CONFIGURED_IDES[@]} -gt 0 ]]; then
