@@ -1,0 +1,34 @@
+{
+  "name": "ninja-research",
+  "version": "1.0.0",
+  "description": "Deep web research with Perplexity AI",
+  "author": "ninja-mcp contributors",
+  "homepage": "https://github.com/angkira/ninja-mcp",
+  "license": "MIT",
+  "requires": {
+    "ninja-mcp": ">=0.2.0"
+  },
+  "mcp_servers": ["ninja-researcher"],
+  "permissions": [
+    "web_search",
+    "web_fetch"
+  ],
+  "environment": {
+    "PERPLEXITY_API_KEY": {
+      "required": true,
+      "description": "Perplexity AI API key"
+    }
+  },
+  "tools": [
+    "researcher_deep_research",
+    "researcher_fact_check",
+    "researcher_summarize_sources",
+    "researcher_generate_report"
+  ],
+  "keywords": [
+    "research",
+    "web-search",
+    "perplexity",
+    "fact-checking"
+  ]
+}

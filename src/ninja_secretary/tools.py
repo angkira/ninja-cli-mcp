@@ -385,7 +385,7 @@ class SecretaryToolExecutor:
         max_calls=5, time_window=60, max_retries=3, initial_backoff=2.0, max_backoff=60.0
     )
     @monitored
-    async def codebase_report(  # noqa: PLR0912, PLR0915
+    async def codebase_report(
         self, request: CodebaseReportRequest, client_id: str = "default"
     ) -> CodebaseReportResult:
         """

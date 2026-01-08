@@ -171,28 +171,33 @@ server_config = {"command": "$command"}
 if args:
     server_config["args"] = args
 
-# Add default environment variables
+# Get actual API key from environment (expanded, not shell syntax)
+import os
+api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+
+# Add default environment variables with actual API key value
 env_vars = {}
 if "$server_name" == "ninja-coder":
     env_vars = {
-        "OPENROUTER_API_KEY": "\${OPENROUTER_API_KEY}",
         "NINJA_CODER_MODEL": "anthropic/claude-haiku-4.5-20250929",
         "NINJA_CODE_BIN": "aider",
         "NINJA_CODER_TIMEOUT": "600"
     }
 elif "$server_name" == "ninja-researcher":
     env_vars = {
-        "OPENROUTER_API_KEY": "\${OPENROUTER_API_KEY}",
         "NINJA_RESEARCHER_MODEL": "anthropic/claude-sonnet-4",
         "NINJA_RESEARCHER_MAX_SOURCES": "20",
         "NINJA_RESEARCHER_PARALLEL_AGENTS": "4"
     }
 elif "$server_name" == "ninja-secretary":
     env_vars = {
-        "OPENROUTER_API_KEY": "\${OPENROUTER_API_KEY}",
         "NINJA_SECRETARY_MODEL": "anthropic/claude-haiku-4.5-20250929",
         "NINJA_SECRETARY_MAX_FILE_SIZE": "1048576"
     }
+
+# Add API key if available (use actual value, not shell expansion syntax)
+if api_key:
+    env_vars["OPENROUTER_API_KEY"] = api_key
 
 if env_vars:
     server_config["env"] = env_vars

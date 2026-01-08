@@ -28,9 +28,9 @@ async def stdio_to_http_proxy(url: str) -> None:
     Args:
         url: HTTP/SSE endpoint URL (e.g., http://127.0.0.1:8100/sse)
     """
-    import sys  # noqa: PLC0415
+    import sys
 
-    import aiohttp  # noqa: PLC0415
+    import aiohttp
 
     # Extract base URL
     base_url = url.rsplit("/sse", 1)[0]
@@ -76,7 +76,9 @@ async def stdio_to_http_proxy(url: str) -> None:
                                         sys.stdout.flush()
                                     except (BrokenPipeError, OSError):
                                         # stdout closed, but keep listening for daemon
-                                        logger.debug("stdout closed, but keeping SSE connection alive")
+                                        logger.debug(
+                                            "stdout closed, but keeping SSE connection alive"
+                                        )
                 except Exception as e:
                     logger.error(f"SSE connection error: {e}")
                     raise
@@ -141,10 +143,7 @@ async def stdio_to_http_proxy(url: str) -> None:
             ]
 
             # Wait for both tasks, but don't let stdin closure kill SSE
-            done, pending = await asyncio.wait(
-                tasks,
-                return_when=asyncio.FIRST_COMPLETED
-            )
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
             # If stdin task finished but SSE is still running, let SSE finish gracefully
             if stdin_closed and pending:
@@ -225,7 +224,7 @@ class DaemonManager:
 
     def _is_port_in_use(self, port: int) -> bool:
         """Check if port is already in use."""
-        import socket  # noqa: PLC0415
+        import socket
 
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -237,12 +236,13 @@ class DaemonManager:
 
     def _find_process_using_port(self, port: int) -> int | None:
         """Find PID of process using the given port."""
-        import subprocess  # noqa: PLC0415
+        import subprocess
 
         try:
             # Try lsof first
             result = subprocess.run(
                 ["lsof", "-ti", f":{port}"],
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=2,
@@ -256,12 +256,13 @@ class DaemonManager:
             # Fallback to ss
             result = subprocess.run(
                 ["ss", "-tlnp", f"sport = :{port}"],
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=2,
             )
             if result.returncode == 0:
-                import re  # noqa: PLC0415
+                import re
 
                 match = re.search(r"pid=(\d+)", result.stdout)
                 if match:
@@ -285,7 +286,8 @@ class DaemonManager:
             logger.info(f"Found process {pid} using port {port}, attempting cleanup")
             try:
                 os.kill(pid, signal.SIGTERM)
-                import time  # noqa: PLC0415
+                import time
+
                 time.sleep(0.5)
                 if self._is_running(pid):
                     os.kill(pid, signal.SIGKILL)
@@ -323,10 +325,13 @@ class DaemonManager:
         if self._is_port_in_use(port):
             port_pid = self._find_process_using_port(port)
             if port_pid and port_pid != pid:
-                logger.warning(f"Port {port} in use by PID {port_pid} (not our daemon), cleaning up")
+                logger.warning(
+                    f"Port {port} in use by PID {port_pid} (not our daemon), cleaning up"
+                )
                 self._cleanup_zombies(module)
                 # Wait a moment for cleanup
-                import time  # noqa: PLC0415
+                import time
+
                 time.sleep(1)
 
                 # Verify port is now free
@@ -380,7 +385,8 @@ class DaemonManager:
                 self._write_pid(module, new_pid)
 
                 # Wait a moment and verify it started
-                import time  # noqa: PLC0415
+                import time
+
                 time.sleep(1)
 
                 if self._is_running(new_pid) and self._is_port_in_use(port):
@@ -415,7 +421,7 @@ class DaemonManager:
 
         # Send SIGTERM
         try:
-            import time  # noqa: PLC0415
+            import time
 
             os.kill(pid, signal.SIGTERM)
             # Wait for process to exit

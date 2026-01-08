@@ -32,11 +32,12 @@ class TestDeepResearch:
             parallel_agents=2,
         )
 
-        with patch.object(
-            executor.provider_factory, "get_default_provider", return_value="duckduckgo"
-        ), patch.object(
-            executor.provider_factory, "get_provider"
-        ) as mock_get_provider:
+        with (
+            patch.object(
+                executor.provider_factory, "get_default_provider", return_value="duckduckgo"
+            ),
+            patch.object(executor.provider_factory, "get_provider") as mock_get_provider,
+        ):
             mock_provider = MagicMock()
             mock_provider.search = AsyncMock(
                 return_value=[
@@ -73,11 +74,12 @@ class TestDeepResearch:
             max_sources=5,
         )
 
-        with patch.object(
-            executor.provider_factory, "get_default_provider", return_value="duckduckgo"
-        ), patch.object(
-            executor.provider_factory, "get_provider"
-        ) as mock_get_provider:
+        with (
+            patch.object(
+                executor.provider_factory, "get_default_provider", return_value="duckduckgo"
+            ),
+            patch.object(executor.provider_factory, "get_provider") as mock_get_provider,
+        ):
             mock_provider = MagicMock()
             mock_provider.search = AsyncMock(
                 return_value=[
@@ -106,11 +108,12 @@ class TestDeepResearch:
             max_sources=10,
         )
 
-        with patch.object(
-            executor.provider_factory, "get_default_provider", return_value="duckduckgo"
-        ), patch.object(
-            executor.provider_factory, "get_provider"
-        ) as mock_get_provider:
+        with (
+            patch.object(
+                executor.provider_factory, "get_default_provider", return_value="duckduckgo"
+            ),
+            patch.object(executor.provider_factory, "get_provider") as mock_get_provider,
+        ):
             mock_provider = MagicMock()
             # Return duplicate URLs
             mock_provider.search = AsyncMock(
@@ -175,9 +178,7 @@ class TestGenerateReport:
         executor = ResearchToolExecutor()
         request = GenerateReportRequest(
             topic="Test Topic",
-            sources=[
-                {"title": "Source", "url": "https://example.com", "snippet": "Content"}
-            ],
+            sources=[{"title": "Source", "url": "https://example.com", "snippet": "Content"}],
             report_type="executive",
         )
 
@@ -193,9 +194,7 @@ class TestGenerateReport:
         executor = ResearchToolExecutor()
         request = GenerateReportRequest(
             topic="Test Topic",
-            sources=[
-                {"title": "Source", "url": "https://example.com", "snippet": "Content"}
-            ],
+            sources=[{"title": "Source", "url": "https://example.com", "snippet": "Content"}],
             report_type="technical",
         )
 
@@ -211,9 +210,7 @@ class TestGenerateReport:
         executor = ResearchToolExecutor()
         request = GenerateReportRequest(
             topic="Test Topic",
-            sources=[
-                {"title": "Source", "url": "https://example.com", "snippet": "Content"}
-            ],
+            sources=[{"title": "Source", "url": "https://example.com", "snippet": "Content"}],
             report_type="summary",
         )
 
@@ -266,11 +263,12 @@ class TestFactCheck:
             sources=[],  # Empty - should trigger auto-search
         )
 
-        with patch.object(
-            executor.provider_factory, "get_default_provider", return_value="duckduckgo"
-        ), patch.object(
-            executor.provider_factory, "get_provider"
-        ) as mock_get_provider:
+        with (
+            patch.object(
+                executor.provider_factory, "get_default_provider", return_value="duckduckgo"
+            ),
+            patch.object(executor.provider_factory, "get_provider") as mock_get_provider,
+        ):
             mock_provider = MagicMock()
             mock_provider.search = AsyncMock(
                 return_value=[
@@ -300,11 +298,12 @@ class TestFactCheck:
             sources=[],
         )
 
-        with patch.object(
-            executor.provider_factory, "get_default_provider", return_value="duckduckgo"
-        ), patch.object(
-            executor.provider_factory, "get_provider"
-        ) as mock_get_provider:
+        with (
+            patch.object(
+                executor.provider_factory, "get_default_provider", return_value="duckduckgo"
+            ),
+            patch.object(executor.provider_factory, "get_provider") as mock_get_provider,
+        ):
             mock_provider = MagicMock()
             mock_provider.search = AsyncMock(side_effect=Exception("Search failed"))
             mock_get_provider.return_value = mock_provider
@@ -330,7 +329,9 @@ class TestSummarizeSources:
         with patch("httpx.AsyncClient") as mock_client:
             # Mock HTTP responses
             mock_response = MagicMock()
-            mock_response.text = "<html><body><p>This is test content from the webpage.</p></body></html>"
+            mock_response.text = (
+                "<html><body><p>This is test content from the webpage.</p></body></html>"
+            )
             mock_response.raise_for_status = MagicMock()
 
             mock_client.return_value.__aenter__.return_value.get = AsyncMock(
@@ -386,9 +387,9 @@ class TestSummarizeSources:
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             # Long content
-            mock_response.text = "<html><body><p>" + " ".join(
-                ["word"] * 1000
-            ) + "</p></body></html>"
+            mock_response.text = (
+                "<html><body><p>" + " ".join(["word"] * 1000) + "</p></body></html>"
+            )
             mock_response.raise_for_status = MagicMock()
 
             mock_client.return_value.__aenter__.return_value.get = AsyncMock(
