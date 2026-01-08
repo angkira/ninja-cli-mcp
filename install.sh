@@ -162,6 +162,42 @@ case $choice in
             error "Installation failed. Please try the development install option (3) or report an issue."
         fi
 
+        # Ensure ~/.local/bin is in PATH
+        LOCAL_BIN="$HOME/.local/bin"
+        if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
+            warn "Adding $LOCAL_BIN to PATH..."
+
+            # Detect shell and update appropriate config
+            SHELL_NAME=$(basename "$SHELL")
+            case "$SHELL_NAME" in
+                zsh)
+                    SHELL_RC="$HOME/.zshrc"
+                    ;;
+                bash)
+                    if [[ -f "$HOME/.bash_profile" ]]; then
+                        SHELL_RC="$HOME/.bash_profile"
+                    else
+                        SHELL_RC="$HOME/.bashrc"
+                    fi
+                    ;;
+                *)
+                    SHELL_RC="$HOME/.profile"
+                    ;;
+            esac
+
+            # Add to shell config if not already present
+            if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_RC" 2>/dev/null; then
+                echo '' >> "$SHELL_RC"
+                echo '# Added by ninja-mcp installer' >> "$SHELL_RC"
+                echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
+                success "Added PATH to $SHELL_RC"
+            fi
+
+            # Export for current session
+            export PATH="$LOCAL_BIN:$PATH"
+            info "PATH updated for current session"
+        fi
+
         success "Installation complete!"
         echo ""
         echo "Available commands:"
@@ -172,9 +208,10 @@ case $choice in
         echo "  ninja-daemon      - Daemon management"
         echo ""
         echo "Next steps:"
-        echo "  1. Set API key: export OPENROUTER_API_KEY='your-key'"
-        echo "  2. Run diagnostics: ninja-config doctor"
-        echo "  3. Configure Claude Code: ninja-config setup-claude"
+        echo "  1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
+        echo "  2. Set API key: export OPENROUTER_API_KEY='your-key'"
+        echo "  3. Run diagnostics: ninja-config doctor"
+        echo "  4. Configure Claude Code: ninja-config setup-claude"
         ;;
 
     3)
