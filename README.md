@@ -112,6 +112,14 @@ This **fully autonomous** installer will:
 OPENROUTER_API_KEY='your-key' curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash -s -- --auto
 ```
 
+### Update (Preserves Config)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/update.sh | bash
+```
+
+This will update ninja-mcp while preserving your API keys and configuration.
+
 ### Platform-Specific Installation
 
 #### macOS (Homebrew)
