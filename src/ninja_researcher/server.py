@@ -341,10 +341,10 @@ async def main_stdio() -> None:
 
 async def main_http(host: str, port: int) -> None:
     """Run the MCP server over HTTP with SSE."""
-    import uvicorn  # noqa: PLC0415
-    from mcp.server.sse import SseServerTransport  # noqa: PLC0415
-    from starlette.requests import Request  # noqa: PLC0415
-    from starlette.responses import Response  # noqa: PLC0415
+    import uvicorn
+    from mcp.server.sse import SseServerTransport
+    from starlette.requests import Request
+    from starlette.responses import Response
 
     logger.info(f"Starting ninja-researcher server (HTTP/SSE mode) on {host}:{port}")
 
@@ -376,7 +376,7 @@ async def main_http(host: str, port: int) -> None:
 
 def run() -> None:
     """Entry point for running the server."""
-    import argparse  # noqa: PLC0415
+    import argparse
 
     parser = argparse.ArgumentParser(description="Ninja Researcher MCP Server")
     parser.add_argument(

@@ -71,7 +71,7 @@ class DuckDuckGoProvider(SearchProvider):
             logger.info(f"Searching DuckDuckGo for: {query}")
 
             # DuckDuckGo search is synchronous, but we run it in executor to not block
-            import asyncio  # noqa: PLC0415
+            import asyncio
 
             loop = asyncio.get_event_loop()
             results = await loop.run_in_executor(

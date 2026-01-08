@@ -365,7 +365,7 @@ class ToolExecutor:
             overall_summary=overall_summary,
         )
 
-    async def execute_plan_parallel(  # noqa: PLR0915
+    async def execute_plan_parallel(
         self, request: ParallelPlanRequest, client_id: str = "default"
     ) -> PlanExecutionResult:
         """

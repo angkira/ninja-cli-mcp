@@ -1,0 +1,43 @@
+{
+  "$schema": "https://code.claude.com/schemas/hooks.json",
+  "description": "Ninja MCP hooks for Claude Code integration",
+  "hooks": {
+    "SessionStart": [
+      {
+        "name": "ninja-daemon-check",
+        "command": "ninja-daemon status --json 2>/dev/null || echo '{\"status\": \"not-running\"}'",
+        "description": "Check if Ninja daemons are running"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "name": "ninja-path-validation",
+        "matcher": "Edit|Write",
+        "command": "ninja-secretary validate-path \"${file_path}\" 2>/dev/null || true",
+        "description": "Validate file paths before modifications",
+        "blocking": false
+      }
+    ],
+    "PostToolUse": [
+      {
+        "name": "ninja-format-on-save",
+        "matcher": "Edit|Write",
+        "command": "ninja-coder format-file \"${file_path}\" 2>/dev/null || true",
+        "description": "Auto-format files after edits",
+        "blocking": false
+      }
+    ],
+    "SessionEnd": [
+      {
+        "name": "ninja-session-report",
+        "command": "ninja-secretary session-report --save 2>/dev/null || true",
+        "description": "Save session activity report"
+      }
+    ]
+  },
+  "notes": {
+    "installation": "Copy relevant hooks to your Claude Code settings",
+    "customization": "Modify matcher patterns to fit your workflow",
+    "blocking": "Set blocking: true if you want hooks to fail on error"
+  }
+}
