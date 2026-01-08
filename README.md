@@ -1,6 +1,6 @@
-# ninja-mcp
+# 🥷 Ninja MCP
 
-[![Tests](https://github.com/angkira/ninja-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/angkira/ninja-mcp/actions/workflows/tests.yml)
+[![CI](https://github.com/angkira/ninja-cli-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/angkira/ninja-cli-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](#requirements)
 
@@ -91,20 +91,26 @@ Each module runs as an independent MCP server and can be used standalone or toge
 ### One-Line Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/angkira/ninja-mcp/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash
 ```
 
 Or with wget:
 ```bash
-wget -qO- https://raw.githubusercontent.com/angkira/ninja-mcp/main/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash
 ```
 
-This interactive installer will:
-- ✅ Auto-detect your OS and install dependencies
-- ✅ Let you choose installation method (interactive/quick/development)
-- ✅ Configure API keys securely
-- ✅ Set up IDE integrations (Claude Code, VS Code, Zed)
-- ✅ No hardcoded paths - works for everyone!
+This **fully autonomous** installer will:
+- ✅ Auto-detect your OS and install all dependencies (uv, aider)
+- ✅ Install ninja-mcp globally (with fallback: PyPI → GitHub → local clone)
+- ✅ Prompt for OpenRouter API key (hidden input)
+- ✅ Let you choose search provider (DuckDuckGo/Serper/Perplexity)
+- ✅ Auto-detect and configure IDEs (Claude Code, VS Code, Zed)
+- ✅ Configure PATH automatically
+
+**Non-interactive mode** (for CI/scripts):
+```bash
+OPENROUTER_API_KEY='your-key' curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash -s -- --auto
+```
 
 ### Platform-Specific Installation
 
@@ -127,7 +133,7 @@ sudo apt update
 sudo apt install ninja-mcp
 
 # Or install .deb directly
-wget https://github.com/angkira/ninja-mcp/releases/latest/download/ninja-mcp_0.2.0_all.deb
+wget https://github.com/angkira/ninja-cli-mcp/releases/latest/download/ninja-mcp_0.2.0_all.deb
 sudo dpkg -i ninja-mcp_0.2.0_all.deb
 ```
 
@@ -153,8 +159,8 @@ ninja-config  # Interactive configuration wizard
 
 ```bash
 # Clone repository
-git clone https://github.com/angkira/ninja-mcp.git
-cd ninja-mcp
+git clone https://github.com/angkira/ninja-cli-mcp.git
+cd ninja-cli-mcp
 
 # Install just (modern task runner)
 curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
@@ -307,11 +313,21 @@ ninja-daemon restart coder
 
 #### Claude Code
 
+**Automatic** (recommended - installer does this automatically):
+```bash
+# Re-configure if needed
+ninja-config setup-claude
+
+# Or with force flag to overwrite existing
+ninja-config setup-claude --force
+```
+
+**Manual** (using `claude mcp add`):
 ```bash
 # Register all modules
-claude mcp add --scope user --transport stdio ninja-coder -- ninja-daemon connect coder
-claude mcp add --scope user --transport stdio ninja-researcher -- ninja-daemon connect researcher
-claude mcp add --scope user --transport stdio ninja-secretary -- ninja-daemon connect secretary
+claude mcp add --scope user --transport stdio ninja-coder -- ninja-coder
+claude mcp add --scope user --transport stdio ninja-researcher -- ninja-researcher
+claude mcp add --scope user --transport stdio ninja-secretary -- ninja-secretary
 
 # Verify
 claude mcp list
@@ -325,16 +341,13 @@ Create or update `~/.config/Code/User/mcp.json`:
 {
   "mcpServers": {
     "ninja-coder": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "ninja_coder.server"]
+      "command": "ninja-coder"
     },
     "ninja-researcher": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "ninja_researcher.server"]
+      "command": "ninja-researcher"
     },
     "ninja-secretary": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "ninja_secretary.server"]
+      "command": "ninja-secretary"
     }
   }
 }
@@ -348,8 +361,7 @@ Update `~/.config/zed/settings.json`:
 {
   "context_servers": {
     "ninja-coder": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "ninja_coder.server"]
+      "command": "ninja-coder"
     }
   }
 }
@@ -448,10 +460,11 @@ If you're upgrading from `ninja-cli-mcp` v0.1, see [MIGRATION.md](MIGRATION.md) 
 # Backup old config
 cp ~/.ninja-cli-mcp.env ~/.ninja-cli-mcp.env.backup
 
-# Run new installer
-./scripts/install_interactive.sh
+# Run new installer (will auto-configure everything)
+curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash
 
-# Update IDE configs (see MIGRATION.md)
+# Or reconfigure Claude Code manually
+ninja-config setup-claude --force
 ```
 
 **Breaking changes:**

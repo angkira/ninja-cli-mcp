@@ -5,30 +5,27 @@ Get up and running with Researcher and Secretary modules in 5 minutes.
 ## Installation (2 minutes)
 
 ```bash
-# 1. Run interactive installer
-./scripts/install_interactive.sh
-
-# 2. Select modules (check all you want):
-#    ✓ Researcher - Web search & reports
-#    ✓ Secretary - Codebase exploration
-
-# 3. Configure API keys:
-#    • OpenRouter: https://openrouter.ai/keys
-#    • Serper.dev (optional): https://serper.dev
-
-# 4. Done! Configuration saved to ~/.ninja-mcp.env
+# One-line install (fully autonomous)
+curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash
 ```
+
+The installer will:
+1. Install dependencies (uv, aider)
+2. Install ninja-mcp globally
+3. Prompt for your OpenRouter API key
+4. Let you choose search provider (DuckDuckGo/Serper/Perplexity)
+5. Auto-configure Claude Code (if detected)
+
+**Get your API key**: https://openrouter.ai/keys
 
 ## Test Installation (30 seconds)
 
 ```bash
-# Load configuration
-source ~/.ninja-mcp.env
+# Verify commands are available
+ninja-config doctor
 
-# Run tests
-./scripts/run_tests.sh --fast
-
-# ✓ All tests should pass
+# Check Claude Code integration
+claude mcp list
 ```
 
 ## Use with Claude Code (1 minute)
@@ -112,17 +109,20 @@ ninja-daemon status
 
 ## Troubleshooting
 
-### Tests fail?
+### Commands not found?
 ```bash
-# Install dependencies
-uv sync --extra dev --extra researcher --extra secretary
+# Reload your shell config
+source ~/.bashrc  # or ~/.zshrc
 
-# Try again
-./scripts/run_tests.sh --fast
+# Verify PATH
+echo $PATH | grep ".local/bin"
 ```
 
 ### Claude Code doesn't see tools?
 ```bash
+# Re-configure Claude Code
+ninja-config setup-claude --force
+
 # Check MCP config
 cat ~/.config/claude/mcp.json
 
@@ -150,8 +150,8 @@ cat ~/.config/claude/mcp.json
   - `tests/test_secretary/test_secretary_integration.py`
 
 - **Get Help**:
-  - Installation: `./scripts/install_interactive.sh --help`
-  - Testing: `./scripts/run_tests.sh --help`
+  - Configuration: `ninja-config --help`
+  - Claude Code setup: `ninja-config setup-claude --help`
   - Daemon: `ninja-daemon --help`
 
 ---

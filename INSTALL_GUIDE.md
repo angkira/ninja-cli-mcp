@@ -1,6 +1,6 @@
 # 🥷 Ninja MCP - Complete Installation Guide
 
-> **TL;DR**: Run `curl -fsSL https://raw.githubusercontent.com/angkira/ninja-mcp/main/install.sh | bash`
+> **TL;DR**: Run `curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash`
 
 ## Table of Contents
 
@@ -14,23 +14,25 @@
 
 ## Quick Install
 
-### One-Line Interactive Installer (Recommended)
+### One-Line Autonomous Installer (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/angkira/ninja-mcp/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash
 ```
 
-**What it does**:
-- ✅ Detects your OS and installs dependencies
-- ✅ Offers 3 installation modes (interactive/quick/dev)
-- ✅ Configures API keys securely
-- ✅ Sets up IDE integrations automatically
-- ✅ **No hardcoded paths** - works for everyone!
+**What it does** (7 steps, fully autonomous):
+1. ✅ Detects your OS and architecture
+2. ✅ Installs `uv` package manager (if needed)
+3. ✅ Installs ninja-mcp (with fallback: PyPI → GitHub → local clone)
+4. ✅ Installs `aider` code assistant (if needed)
+5. ✅ Prompts for OpenRouter API key and search provider
+6. ✅ Auto-detects and configures IDEs (Claude Code, VS Code, Zed)
+7. ✅ Verifies installation and adds to PATH
 
-**Choose your mode**:
-1. **Interactive** (recommended) - Full setup with wizard
-2. **Quick** - Global tool installation only
-3. **Development** - Clone repo for contributing
+**Non-interactive mode** (for CI/scripts):
+```bash
+OPENROUTER_API_KEY='your-key' curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash -s -- --auto
+```
 
 ## Platform-Specific Installation
 
@@ -67,7 +69,7 @@ sudo apt install ninja-mcp
 #### Download .deb
 
 ```bash
-wget https://github.com/angkira/ninja-mcp/releases/latest/download/ninja-mcp_0.2.0_all.deb
+wget https://github.com/angkira/ninja-cli-mcp/releases/latest/download/ninja-mcp_0.2.0_all.deb
 sudo dpkg -i ninja-mcp_0.2.0_all.deb
 sudo apt-get install -f  # Install dependencies
 ```
@@ -102,8 +104,8 @@ For contributors or if you want to modify the code:
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/angkira/ninja-mcp.git
-cd ninja-mcp
+git clone https://github.com/angkira/ninja-cli-mcp.git
+cd ninja-cli-mcp
 ```
 
 ### 2. Install Dependencies
@@ -235,9 +237,13 @@ echo $OPENROUTER_API_KEY  # Should be set
 
 ### Claude Code
 
-**Automatic** (recommended):
+**Automatic** (recommended - installer does this automatically):
 ```bash
-./scripts/install_claude_code_mcp.sh --all
+# Re-configure if needed
+ninja-config setup-claude
+
+# Or with force flag to overwrite existing
+ninja-config setup-claude --force
 ```
 
 **Manual**:
@@ -249,8 +255,36 @@ Edit `~/.config/claude/mcp.json`:
     "ninja-coder": {
       "command": "ninja-coder",
       "env": {
-        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}"
+        "OPENROUTER_API_KEY": "your-api-key"
       }
+    },
+    "ninja-researcher": {
+      "command": "ninja-researcher",
+      "env": {
+        "OPENROUTER_API_KEY": "your-api-key"
+      }
+    },
+    "ninja-secretary": {
+      "command": "ninja-secretary",
+      "env": {
+        "OPENROUTER_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Code and check: `claude mcp list`
+
+### VS Code (Cline Extension)
+
+Edit `~/.config/Code/User/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "ninja-coder": {
+      "command": "ninja-coder"
     },
     "ninja-researcher": {
       "command": "ninja-researcher"
@@ -262,27 +296,19 @@ Edit `~/.config/claude/mcp.json`:
 }
 ```
 
-Restart Claude Code and check: `claude mcp list`
-
-### VS Code (Cline Extension)
-
-**Automatic**:
-```bash
-./scripts/install_vscode_mcp.sh --all
-```
-
-**Manual**:
-See `examples/vscode-cline-mcp.json`
-
 ### Zed Editor
 
-**Automatic**:
-```bash
-./scripts/install_zed_mcp.sh --all
-```
+Update `~/.config/zed/settings.json`:
 
-**Manual**:
-See Zed's MCP documentation.
+```json
+{
+  "context_servers": {
+    "ninja-coder": {
+      "command": "ninja-coder"
+    }
+  }
+}
+```
 
 ## Troubleshooting
 
@@ -341,8 +367,8 @@ python3 -m json.tool ~/.config/claude/mcp.json
 # Backup old config
 cp ~/.config/claude/mcp.json ~/.config/claude/mcp.json.bak
 
-# Regenerate
-./scripts/install_claude_code_mcp.sh --all
+# Regenerate using ninja-config
+ninja-config setup-claude --force
 ```
 
 ### "Hardcoded paths in config"
@@ -354,9 +380,9 @@ cp ~/.config/claude/mcp.json ~/.config/claude/mcp.json.bak
    rm ~/.config/claude/mcp.json
    ```
 
-2. **Reinstall**:
+2. **Regenerate**:
    ```bash
-   ./scripts/install_claude_code_mcp.sh --all
+   ninja-config setup-claude --force
    ```
 
 3. **Verify** - should use commands directly:
@@ -379,7 +405,7 @@ cp ~/.config/claude/mcp.json ~/.config/claude/mcp.json.bak
    ```
 
 3. **Ask for help**:
-   - GitHub Issues: https://github.com/angkira/ninja-mcp/issues
+   - GitHub Issues: https://github.com/angkira/ninja-cli-mcp/issues
    - Include: OS, Python version, error messages, logs
 
 ## Next Steps
