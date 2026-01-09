@@ -187,13 +187,72 @@ class DaemonManager:
         return self.daemon_dir / f"{module}.sock"
 
     def _get_port(self, module: str) -> int:
-        """Get HTTP port for module."""
-        ports = {
+        """Get HTTP port for module from config or use default."""
+        default_ports = {
             "coder": 8100,
             "researcher": 8101,
             "secretary": 8102,
         }
-        return ports.get(module, 8100)
+
+        # Try to read from config file
+        config_file = Path.home() / ".ninja-mcp.env"
+        env_key = f"NINJA_{module.upper()}_PORT"
+
+        # Check environment variable first
+        if env_key in os.environ:
+            try:
+                return int(os.environ[env_key])
+            except ValueError:
+                pass
+
+        # Check config file
+        if config_file.exists():
+            try:
+                content = config_file.read_text()
+                for line in content.splitlines():
+                    if line.startswith(f"{env_key}="):
+                        return int(line.split("=", 1)[1].strip().strip("'\""))
+            except (ValueError, OSError):
+                pass
+
+        return default_ports.get(module, 8100)
+
+    def _find_free_port(self, start_port: int = 8100, max_attempts: int = 100) -> int:
+        """Find a free port starting from start_port."""
+        import socket
+
+        for port in range(start_port, start_port + max_attempts):
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(("127.0.0.1", port))
+                    return port
+            except OSError:
+                continue
+
+        raise RuntimeError(f"Could not find free port in range {start_port}-{start_port + max_attempts}")
+
+    def _save_port_to_config(self, module: str, port: int) -> None:
+        """Save port to config file."""
+        config_file = Path.home() / ".ninja-mcp.env"
+        env_key = f"NINJA_{module.upper()}_PORT"
+
+        # Read existing config
+        lines = []
+        if config_file.exists():
+            lines = config_file.read_text().splitlines()
+
+        # Update or add the port
+        found = False
+        for i, line in enumerate(lines):
+            if line.startswith(f"{env_key}="):
+                lines[i] = f"{env_key}={port}"
+                found = True
+                break
+
+        if not found:
+            lines.append(f"{env_key}={port}")
+
+        config_file.write_text("\n".join(lines) + "\n")
 
     def _get_log_file(self, module: str) -> Path:
         """Get log file path for module."""
@@ -321,22 +380,18 @@ class DaemonManager:
                 logger.warning(f"{module} daemon PID {pid} exists but not listening, cleaning up")
                 self._get_pid_file(module).unlink(missing_ok=True)
 
-        # Check if port is in use by another process (zombie)
+        # Check if port is in use by another process
         if self._is_port_in_use(port):
             port_pid = self._find_process_using_port(port)
             if port_pid and port_pid != pid:
-                logger.warning(
-                    f"Port {port} in use by PID {port_pid} (not our daemon), cleaning up"
-                )
-                self._cleanup_zombies(module)
-                # Wait a moment for cleanup
-                import time
-
-                time.sleep(1)
-
-                # Verify port is now free
-                if self._is_port_in_use(port):
-                    logger.error(f"Port {port} still in use after cleanup, cannot start {module}")
+                # Port is used by something else - find a free port instead
+                logger.warning(f"Port {port} in use by another process (PID {port_pid})")
+                try:
+                    port = self._find_free_port(start_port=port + 1)
+                    self._save_port_to_config(module, port)
+                    logger.info(f"Found free port {port} for {module}, saved to config")
+                except RuntimeError as e:
+                    logger.error(f"Could not find free port for {module}: {e}")
                     return False
             elif port_pid == pid:
                 logger.info(f"{module} daemon already running (PID {pid}) on port {port}")
@@ -384,18 +439,23 @@ class DaemonManager:
                 # Parent process
                 self._write_pid(module, new_pid)
 
-                # Wait a moment and verify it started
+                # Wait for daemon to start (retry up to 5 seconds)
                 import time
 
-                time.sleep(1)
+                for attempt in range(10):
+                    time.sleep(0.5)
+                    if self._is_running(new_pid) and self._is_port_in_use(port):
+                        logger.info(f"Started {module} daemon (PID {new_pid}) on port {port}")
+                        return True
 
-                if self._is_running(new_pid) and self._is_port_in_use(port):
-                    logger.info(f"Started {module} daemon (PID {new_pid}) on port {port}")
+                # Final check - process might be running but port binding is slow
+                if self._is_running(new_pid):
+                    logger.warning(f"{module} daemon running (PID {new_pid}) but port {port} not ready yet, assuming success")
                     return True
-                else:
-                    logger.error(f"{module} daemon failed to start properly")
-                    self._get_pid_file(module).unlink(missing_ok=True)
-                    return False
+
+                logger.error(f"{module} daemon failed to start properly")
+                self._get_pid_file(module).unlink(missing_ok=True)
+                return False
         except OSError as e:
             logger.error(f"Failed to start {module} daemon: {e}")
             return False

@@ -120,6 +120,36 @@ if ! grep -q "NINJA_CODE_BIN" "$NINJA_CONFIG" 2>/dev/null; then
     success "Added NINJA_CODE_BIN=aider to config"
 fi
 
+# Ensure daemon ports are configured (fix for upgrades from older versions)
+is_port_free() {
+    ! nc -z 127.0.0.1 "$1" 2>/dev/null
+}
+
+find_free_port() {
+    local start_port=$1
+    local port=$start_port
+    while ! is_port_free "$port" && [ "$port" -lt $((start_port + 100)) ]; do
+        port=$((port + 1))
+    done
+    echo "$port"
+}
+
+for module_port in "CODER:8100" "RESEARCHER:8101" "SECRETARY:8102"; do
+    module="${module_port%%:*}"
+    default_port="${module_port##*:}"
+    env_key="NINJA_${module}_PORT"
+
+    if ! grep -q "$env_key" "$NINJA_CONFIG" 2>/dev/null; then
+        free_port=$(find_free_port "$default_port")
+        echo "$env_key=$free_port" >> "$NINJA_CONFIG"
+        if [ "$free_port" != "$default_port" ]; then
+            warn "$module: port $default_port busy, using $free_port"
+        else
+            success "Added $env_key=$free_port"
+        fi
+    fi
+done
+
 # Export keys for current session
 [[ -n "$SAVED_OPENROUTER_KEY" ]] && export OPENROUTER_API_KEY="$SAVED_OPENROUTER_KEY"
 [[ -n "$SAVED_SERPER_KEY" ]] && export SERPER_API_KEY="$SAVED_SERPER_KEY"
