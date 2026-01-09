@@ -277,6 +277,46 @@ if [[ "$SEARCH_PROVIDER" == "duckduckgo" ]]; then
     fi
 fi
 
+# --- Configure daemon ports (find free ports) ---
+info "Configuring daemon ports..."
+
+# Function to check if port is available
+is_port_free() {
+    ! nc -z 127.0.0.1 "$1" 2>/dev/null
+}
+
+# Function to find a free port starting from a given port
+find_free_port() {
+    local start_port=$1
+    local port=$start_port
+    while ! is_port_free "$port" && [ "$port" -lt $((start_port + 100)) ]; do
+        port=$((port + 1))
+    done
+    echo "$port"
+}
+
+# Set ports for each daemon (find free ones if defaults are busy)
+for module_port in "CODER:8100" "RESEARCHER:8101" "SECRETARY:8102"; do
+    module="${module_port%%:*}"
+    default_port="${module_port##*:}"
+    env_key="NINJA_${module}_PORT"
+
+    # Check if already configured
+    if grep -q "$env_key" "$NINJA_CONFIG" 2>/dev/null; then
+        existing_port=$(grep "$env_key" "$NINJA_CONFIG" | cut -d= -f2)
+        success "$module port already configured: $existing_port"
+    else
+        # Find a free port
+        free_port=$(find_free_port "$default_port")
+        echo "$env_key=$free_port" >> "$NINJA_CONFIG"
+        if [ "$free_port" != "$default_port" ]; then
+            warn "$module: port $default_port busy, using $free_port"
+        else
+            success "$module port: $free_port"
+        fi
+    fi
+done
+
 # ============================================================================
 # STEP 6: Auto-detect and configure IDEs
 # ============================================================================
