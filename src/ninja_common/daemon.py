@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ninja_common.logging_utils import get_logger
+from ninja_common.defaults import DEFAULT_PORTS
 
 
 logger = get_logger(__name__)
@@ -188,12 +189,6 @@ class DaemonManager:
 
     def _get_port(self, module: str) -> int:
         """Get HTTP port for module from config or use default."""
-        default_ports = {
-            "coder": 8100,
-            "researcher": 8101,
-            "secretary": 8102,
-        }
-
         # Try to read from config file
         config_file = Path.home() / ".ninja-mcp.env"
         env_key = f"NINJA_{module.upper()}_PORT"
@@ -215,7 +210,7 @@ class DaemonManager:
             except (ValueError, OSError):
                 pass
 
-        return default_ports.get(module, 8100)
+        return DEFAULT_PORTS.get(module, 8100)
 
     def _find_free_port(self, start_port: int = 8100, max_attempts: int = 100) -> int:
         """Find a free port starting from start_port."""

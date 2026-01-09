@@ -31,43 +31,28 @@ from typing import Any
 from ninja_coder.models import ExecutionMode, PlanStep
 from ninja_common.logging_utils import create_task_logger, get_logger
 from ninja_common.path_utils import ensure_internal_dirs, safe_join
+from ninja_common.defaults import (
+    DEFAULT_CODER_MODEL,
+    FALLBACK_CODER_MODELS,
+    RECOMMENDED_MODELS,
+    DEFAULT_OPENAI_BASE_URL,
+    DEFAULT_TIMEOUT_SEC,
+    DEFAULT_CODE_BIN,
+)
 
 
 logger = get_logger(__name__)
-
-
-# Popular OpenRouter models for code tasks
-RECOMMENDED_MODELS = {
-    # Claude models
-    "anthropic/claude-haiku-4.5": "Claude Haiku 4.5 - fast and capable",
-    "anthropic/claude-sonnet-4": "Claude Sonnet 4 - excellent for complex code",
-    "anthropic/claude-3.5-sonnet": "Claude 3.5 Sonnet - previous generation",
-    # Qwen models
-    "qwen/qwen3-coder": "Qwen3 Coder - optimized for code generation",
-    "qwen/qwen-2.5-coder-32b-instruct": "Qwen 2.5 Coder 32B - large coding model",
-    # GPT models
-    "openai/gpt-4o": "GPT-4o - OpenAI's flagship model",
-    "openai/gpt-4-turbo": "GPT-4 Turbo - fast GPT-4 variant",
-    # DeepSeek models
-    "deepseek/deepseek-coder": "DeepSeek Coder - specialized for code",
-    "deepseek/deepseek-chat": "DeepSeek Chat - general purpose",
-    # Other popular models
-    "google/gemini-pro-1.5": "Gemini Pro 1.5 - Google's advanced model",
-    "meta-llama/llama-3.1-70b-instruct": "Llama 3.1 70B - Meta's open model",
-}
-
-DEFAULT_MODEL = "anthropic/claude-haiku-4.5"
 
 
 @dataclass
 class NinjaConfig:
     """Configuration for Ninja Code CLI."""
 
-    bin_path: str = "ninja-code"
-    openai_base_url: str = "https://openrouter.ai/api/v1"
+    bin_path: str = DEFAULT_CODE_BIN
+    openai_base_url: str = DEFAULT_OPENAI_BASE_URL
     openai_api_key: str = ""
-    model: str = DEFAULT_MODEL
-    timeout_sec: int = 600
+    model: str = DEFAULT_CODER_MODEL
+    timeout_sec: int = DEFAULT_TIMEOUT_SEC
 
     @classmethod
     def from_env(cls) -> NinjaConfig:
@@ -79,15 +64,15 @@ class NinjaConfig:
             os.environ.get("NINJA_MODEL")
             or os.environ.get("OPENROUTER_MODEL")
             or os.environ.get("OPENAI_MODEL")
-            or DEFAULT_MODEL
+            or DEFAULT_CODER_MODEL
         )
 
         return cls(
-            bin_path=os.environ.get("NINJA_CODE_BIN", "aider"),
-            openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
+            bin_path=os.environ.get("NINJA_CODE_BIN", DEFAULT_CODE_BIN),
+            openai_base_url=os.environ.get("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL),
             openai_api_key=api_key,
             model=model,
-            timeout_sec=int(os.environ.get("NINJA_TIMEOUT_SEC", "600")),
+            timeout_sec=int(os.environ.get("NINJA_TIMEOUT_SEC", str(DEFAULT_TIMEOUT_SEC))),
         )
 
     def with_model(self, model: str) -> NinjaConfig:
@@ -856,6 +841,19 @@ class NinjaDriver:
             # Detect specific OpenRouter/API errors
             if "finish_reason" in stderr.lower():
                 notes = "⚠️ Incomplete API response (token limit or timeout). Try smaller context or different model."
+
+            # Detect invalid model ID errors
+            if "is not a valid model" in combined_output.lower() or "model not found" in combined_output.lower():
+                model_match = re.search(r"['\"]?([a-z]+/[a-z0-9._-]+)['\"]?\s+is not a valid", combined_output, re.IGNORECASE)
+                bad_model = model_match.group(1) if model_match else self.config.model
+                fallbacks = ", ".join(FALLBACK_CODER_MODELS[:3])
+                notes = f"❌ Invalid model ID: {bad_model}. Try: {fallbacks}"
+                summary = f"❌ Model '{bad_model}' not found on OpenRouter"
+
+            # Detect API key errors
+            if "api key" in combined_output.lower() and ("not found" in combined_output.lower() or "invalid" in combined_output.lower()):
+                notes = "❌ OpenRouter API key missing or invalid. Set OPENROUTER_API_KEY in ~/.ninja-mcp.env"
+                summary = "❌ API key error"
 
         # Try to extract structured summary if present (but keep it concise)
         try:
