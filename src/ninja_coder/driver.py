@@ -21,7 +21,6 @@ import asyncio
 import json
 import os
 import re
-import shlex
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -619,17 +618,47 @@ class NinjaDriver:
 
         return "\n".join(prompt_parts)
 
-    def _build_command_claude(self, prompt: str, repo_root: str) -> list[str]:  # noqa: ARG002
-        """Build command for Claude CLI with secure argument handling."""
-        return [
+    def _build_command_claude(
+        self,
+        prompt: str,
+        repo_root: str,
+        file_paths: list[str] | None = None,
+    ) -> list[str]:
+        """Build command for Claude CLI with secure argument handling.
+
+        Args:
+            prompt: The instruction prompt.
+            repo_root: Repository root path (used for working directory context).
+            file_paths: List of file paths to include in the prompt context.
+        """
+        cmd = [
             self.config.bin_path,
             "--print",  # Non-interactive mode
             "--dangerously-skip-permissions",  # Skip permission prompts for automation
-            shlex.quote(prompt),  # Properly escape the prompt
         ]
 
-    def _build_command_aider(self, prompt: str, repo_root: str) -> list[str]:  # noqa: ARG002
-        """Build command for Aider CLI with secure argument handling."""
+        # Claude CLI doesn't have --file flag, but we can enhance the prompt
+        # with explicit file context information
+        if file_paths:
+            files_context = f"\n\nFiles to focus on: {', '.join(file_paths)}"
+            prompt = prompt + files_context
+
+        cmd.append(prompt)
+        return cmd
+
+    def _build_command_aider(
+        self,
+        prompt: str,
+        repo_root: str,
+        file_paths: list[str] | None = None,
+    ) -> list[str]:
+        """Build command for Aider CLI with secure argument handling.
+
+        Args:
+            prompt: The instruction prompt.
+            repo_root: Repository root path.
+            file_paths: List of file paths to add to aider's context for editing.
+        """
         cmd = [
             self.config.bin_path,
             "--yes",  # Auto-accept changes
@@ -660,25 +689,63 @@ class NinjaDriver:
             ]
         )
 
-        cmd.extend(["--message", shlex.quote(prompt)])  # Properly escape the prompt
+        # Add file paths for aider to edit (critical for aider to know what to modify)
+        if file_paths:
+            for file_path in file_paths:
+                # Use --file to add files to aider's context
+                cmd.extend(["--file", file_path])
+
+        # Note: No shlex.quote needed - subprocess with list args doesn't use shell
+        cmd.extend(["--message", prompt])
 
         return cmd
 
-    def _build_command_qwen(self, prompt: str, repo_root: str) -> list[str]:  # noqa: ARG002
-        """Build command for Qwen Code CLI with secure argument handling."""
+    def _build_command_qwen(
+        self,
+        prompt: str,
+        repo_root: str,
+        file_paths: list[str] | None = None,
+    ) -> list[str]:
+        """Build command for Qwen Code CLI with secure argument handling.
+
+        Args:
+            prompt: The instruction prompt.
+            repo_root: Repository root path (used for working directory context).
+            file_paths: List of file paths to include in the prompt context.
+        """
+        # Qwen CLI doesn't have --file flag, enhance prompt with file context
+        if file_paths:
+            files_context = f"\n\nFiles to focus on: {', '.join(file_paths)}"
+            prompt = prompt + files_context
+
         return [
             self.config.bin_path,
             "--non-interactive",
             "--message",
-            shlex.quote(prompt),  # Properly escape the prompt
+            prompt,
         ]
 
-    def _build_command_generic(self, prompt: str, repo_root: str) -> list[str]:  # noqa: ARG002
-        """Build command for generic/unknown CLI with secure argument handling."""
-        # Try a common pattern with proper escaping
+    def _build_command_generic(
+        self,
+        prompt: str,
+        repo_root: str,
+        file_paths: list[str] | None = None,
+    ) -> list[str]:
+        """Build command for generic/unknown CLI with secure argument handling.
+
+        Args:
+            prompt: The instruction prompt.
+            repo_root: Repository root path (used for working directory context).
+            file_paths: List of file paths to include in the prompt context.
+        """
+        # Generic CLI - enhance prompt with file context
+        if file_paths:
+            files_context = f"\n\nFiles to focus on: {', '.join(file_paths)}"
+            prompt = prompt + files_context
+
         return [
             self.config.bin_path,
-            shlex.quote(prompt),  # Properly escape the prompt
+            prompt,
         ]
 
     def _build_command(self, task_file: Path, repo_root: str) -> list[str]:
@@ -700,20 +767,25 @@ class NinjaDriver:
 
         prompt = self._build_prompt_text(instruction, repo_root)
 
+        # Extract file paths from instruction for CLI tools that need explicit file args
+        file_scope = instruction.get("file_scope", {})
+        context_paths = file_scope.get("context_paths", [])
+
         # Detect CLI type and build appropriate command
         cli_type = self._detect_cli_type()
         logger.debug(f"Detected CLI type: {cli_type}")
+        logger.debug(f"Context paths for editing: {context_paths}")
 
         if cli_type == "aider":
-            return self._build_command_aider(prompt, repo_root)
+            return self._build_command_aider(prompt, repo_root, file_paths=context_paths)
         elif cli_type == "qwen":
-            return self._build_command_qwen(prompt, repo_root)
+            return self._build_command_qwen(prompt, repo_root, file_paths=context_paths)
         elif cli_type == "claude":
-            return self._build_command_claude(prompt, repo_root)
+            return self._build_command_claude(prompt, repo_root, file_paths=context_paths)
         elif cli_type == "gemini":
-            return self._build_command_qwen(prompt, repo_root)  # Similar to Qwen
+            return self._build_command_qwen(prompt, repo_root, file_paths=context_paths)
         else:
-            return self._build_command_generic(prompt, repo_root)
+            return self._build_command_generic(prompt, repo_root, file_paths=context_paths)
 
     def _parse_output(self, stdout: str, stderr: str, exit_code: int) -> NinjaResult:
         """
@@ -838,7 +910,11 @@ class NinjaDriver:
 
             # Build command
             cmd = self._build_command(task_file, repo_root)
-            task_logger.info(f"Running command: {' '.join(cmd)}")
+            # Log command without sensitive data (redact API key)
+            # Note: use "api-key" not "--api-key" to match "--openai-api-key"
+            safe_cmd = [arg if "api-key" not in prev.lower() else "***REDACTED***"
+                        for prev, arg in zip([""] + cmd[:-1], cmd)]
+            task_logger.info(f"Running command: {' '.join(safe_cmd)}")
 
             # Get environment
             env = self._get_env()
@@ -933,7 +1009,11 @@ class NinjaDriver:
 
             # Build command
             cmd = self._build_command(task_file, repo_root)
-            task_logger.info(f"Running command: {' '.join(cmd)}")
+            # Log command without sensitive data (redact API key)
+            # Note: use "api-key" not "--api-key" to match "--openai-api-key"
+            safe_cmd = [arg if "api-key" not in prev.lower() else "***REDACTED***"
+                        for prev, arg in zip([""] + cmd[:-1], cmd)]
+            task_logger.info(f"Running command: {' '.join(safe_cmd)}")
 
             # Get environment
             env = self._get_env()

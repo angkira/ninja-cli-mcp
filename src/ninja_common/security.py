@@ -89,11 +89,12 @@ class RateLimiter:
             self._save_persistent_data()
             return True
 
-    def reset(self, client_id: str = "default") -> None:
+    async def reset(self, client_id: str = "default") -> None:
         """Reset rate limit for a client."""
-        if client_id in self.calls:
-            del self.calls[client_id]
-        self._save_persistent_data()
+        async with self._lock:
+            if client_id in self.calls:
+                del self.calls[client_id]
+            self._save_persistent_data()
 
     def _get_persistence_file(self) -> Path:
         """Get the file path for persistent rate limit data."""
@@ -126,7 +127,7 @@ class RateLimiter:
             logger.debug(f"Could not load persistent rate limit data: {e}")
 
     def _save_persistent_data(self) -> None:
-        """Save rate limit data to persistent storage."""
+        """Save rate limit data to persistent storage with file locking."""
         try:
             # Only save recent data to prevent file from growing indefinitely
             cutoff_time = time.time() - (2 * self.time_window)
@@ -137,8 +138,23 @@ class RateLimiter:
                     data_to_save[client_id] = recent_calls
 
             persistence_file = self._get_persistence_file()
-            with persistence_file.open("w") as f:
-                json.dump(data_to_save, f)
+            lock_file = persistence_file.with_suffix(".lock")
+
+            # Use file-based locking for cross-process safety
+            with lock_file.open("w") as lock_f:
+                try:
+                    # Try to acquire exclusive lock (non-blocking)
+                    import fcntl
+                    fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    try:
+                        with persistence_file.open("w") as f:
+                            json.dump(data_to_save, f)
+                    finally:
+                        fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
+                except (ImportError, BlockingIOError):
+                    # fcntl not available (Windows) or lock not acquired - write anyway
+                    with persistence_file.open("w") as f:
+                        json.dump(data_to_save, f)
         except Exception as e:
             logger.debug(f"Could not save persistent rate limit data: {e}")
 
