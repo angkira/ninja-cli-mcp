@@ -115,7 +115,8 @@ class TaskLogger:
         # Patterns to redact
         patterns = [
             # API keys (common formats)
-            (r"(sk-[a-zA-Z0-9]{20,})", "[REDACTED_API_KEY]"),
+            # Note: OpenRouter keys have format sk-or-v1-... with hyphens
+            (r"(sk-[a-zA-Z0-9_-]{20,})", "[REDACTED_API_KEY]"),
             (r"(api[_-]key[a-zA-Z0-9]{10,})", "[REDACTED_API_KEY]"),
             (r"(token[a-zA-Z0-9]{10,})", "[REDACTED_TOKEN]"),
             # Passwords in various formats
