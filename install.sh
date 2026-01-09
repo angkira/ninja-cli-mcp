@@ -167,6 +167,13 @@ else
     fi
 fi
 
+# Set default code CLI to aider (ensures NINJA_CODE_BIN is configured)
+if ! grep -q "NINJA_CODE_BIN" "$HOME/.ninja-mcp.env" 2>/dev/null; then
+    mkdir -p "$(dirname "$HOME/.ninja-mcp.env")"
+    echo "NINJA_CODE_BIN=aider" >> "$HOME/.ninja-mcp.env"
+    info "Set NINJA_CODE_BIN=aider"
+fi
+
 # ============================================================================
 # STEP 5: Interactive Configuration
 # ============================================================================

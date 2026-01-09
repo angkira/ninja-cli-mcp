@@ -84,7 +84,7 @@ class NinjaConfig:
         )
 
         return cls(
-            bin_path=os.environ.get("NINJA_CODE_BIN", "ninja-code"),
+            bin_path=os.environ.get("NINJA_CODE_BIN", "aider"),
             openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
             openai_api_key=api_key,
             model=model,

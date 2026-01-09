@@ -576,6 +576,14 @@ def run() -> None:
 
     args = parser.parse_args()
 
+    # Load config from ~/.ninja-mcp.env into environment variables
+    try:
+        from ninja_common.config_manager import ConfigManager
+
+        ConfigManager().export_env()
+    except Exception:
+        pass  # Config file may not exist, continue with env vars
+
     try:
         if args.http:
             asyncio.run(main_http(args.host, args.port))
