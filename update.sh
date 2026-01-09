@@ -114,6 +114,12 @@ if [[ -f "$BACKUP_CONFIG" ]]; then
     success "Restored $NINJA_CONFIG"
 fi
 
+# Ensure NINJA_CODE_BIN is set (fix for upgrades from older versions)
+if ! grep -q "NINJA_CODE_BIN" "$NINJA_CONFIG" 2>/dev/null; then
+    echo "NINJA_CODE_BIN=aider" >> "$NINJA_CONFIG"
+    success "Added NINJA_CODE_BIN=aider to config"
+fi
+
 # Export keys for current session
 [[ -n "$SAVED_OPENROUTER_KEY" ]] && export OPENROUTER_API_KEY="$SAVED_OPENROUTER_KEY"
 [[ -n "$SAVED_SERPER_KEY" ]] && export SERPER_API_KEY="$SAVED_SERPER_KEY"
