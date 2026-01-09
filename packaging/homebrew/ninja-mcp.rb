@@ -4,7 +4,7 @@ class NinjaMcp < Formula
   desc "Multi-module MCP server system for AI-powered development"
   homepage "https://github.com/angkira/ninja-mcp"
   url "https://github.com/angkira/ninja-mcp/archive/refs/tags/v0.2.0.tar.gz"
-  sha256 "7e98205388b1e2332e1624e05b5bd99d89d31fa8893546e0f75b2438cf5db762"
+  sha256 "82d2117ef4398b2b0eb594362290cce6b553d1c8cc490e3d105ee46a95233798"
   license "MIT"
 
   depends_on "python@3.12"
