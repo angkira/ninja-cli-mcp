@@ -93,6 +93,47 @@ class UpdateDocRequest(BaseModel):
     )
 
 
+class GitStatusRequest(BaseModel):
+    """Request to get git repository status."""
+
+    repo_root: str = Field(..., description="Repository root path")
+    include_untracked: bool = Field(default=True, description="Include untracked files")
+
+
+class GitDiffRequest(BaseModel):
+    """Request to get git diff."""
+
+    repo_root: str = Field(..., description="Repository root path")
+    staged: bool = Field(default=False, description="Show staged changes vs unstaged")
+    file_path: str | None = Field(default=None, description="Specific file to diff")
+
+
+class GitCommitRequest(BaseModel):
+    """Request to create a git commit."""
+
+    repo_root: str = Field(..., description="Repository root path")
+    message: str = Field(..., description="Commit message")
+    files: list[str] = Field(default_factory=list, description="Specific files to commit (empty = all staged)")
+    author: str | None = Field(default=None, description="Override author")
+
+
+class GitLogRequest(BaseModel):
+    """Request to get git commit history."""
+
+    repo_root: str = Field(..., description="Repository root path")
+    max_count: int = Field(default=10, ge=1, le=1000, description="Number of commits to show")
+    file_path: str | None = Field(default=None, description="Filter by file")
+
+
+class SmartCommitRequest(BaseModel):
+    """Request to intelligently group and commit changes."""
+
+    repo_root: str = Field(..., description="Repository root path")
+    include_untracked: bool = Field(default=False, description="Include untracked files in analysis")
+    dry_run: bool = Field(default=False, description="If True, only analyze and suggest, don't actually commit")
+    author: str | None = Field(default=None, description="Override commit author")
+
+
 # ============================================================================
 # Response Models
 # ============================================================================
@@ -202,3 +243,71 @@ class UpdateDocResult(BaseModel):
     status: Literal["ok", "error"] = Field(..., description="Update status")
     doc_path: str = Field(..., description="Path to updated documentation")
     changes_made: str = Field(default="", description="Description of changes")
+
+
+class GitStatusResult(BaseModel):
+    """Result of git status query."""
+
+    status: Literal["ok", "error"] = Field(..., description="Operation status")
+    branch: str = Field(..., description="Current branch name")
+    staged: list[str] = Field(default_factory=list, description="Staged files")
+    unstaged: list[str] = Field(default_factory=list, description="Modified but unstaged files")
+    untracked: list[str] = Field(default_factory=list, description="Untracked files")
+    ahead: int = Field(default=0, description="Commits ahead of remote")
+    behind: int = Field(default=0, description="Commits behind remote")
+    error_message: str = Field(default="", description="Error message if failed")
+
+
+class GitDiffResult(BaseModel):
+    """Result of git diff."""
+
+    status: Literal["ok", "error"] = Field(..., description="Operation status")
+    diff: str = Field(..., description="The diff output")
+    files_changed: int = Field(default=0, description="Number of files changed")
+    insertions: int = Field(default=0, description="Number of insertions")
+    deletions: int = Field(default=0, description="Number of deletions")
+    error_message: str = Field(default="", description="Error message if failed")
+
+
+class GitCommitResult(BaseModel):
+    """Result of git commit."""
+
+    status: Literal["ok", "error"] = Field(..., description="Operation status")
+    commit_hash: str = Field(default="", description="The new commit hash")
+    message: str = Field(default="", description="Commit message used")
+    files_committed: list[str] = Field(default_factory=list, description="Files committed")
+    error_message: str = Field(default="", description="Error message if failed")
+
+
+class GitLogEntry(BaseModel):
+    """A single entry in git commit history."""
+
+    hash: str = Field(..., description="Commit hash (short)")
+    author: str = Field(..., description="Author name")
+    date: str = Field(..., description="Commit date")
+    message: str = Field(..., description="Commit message (first line)")
+
+
+class GitLogResult(BaseModel):
+    """Result of git log query."""
+
+    status: Literal["ok", "error"] = Field(..., description="Operation status")
+    commits: list[GitLogEntry] = Field(default_factory=list, description="Commit history")
+    error_message: str = Field(default="", description="Error message if failed")
+
+
+class CommitSuggestion(BaseModel):
+    """A suggested commit grouping."""
+
+    files: list[str] = Field(..., description="Files to include in this commit")
+    message: str = Field(..., description="Suggested commit message")
+    reasoning: str = Field(..., description="Why these files are grouped together")
+
+
+class SmartCommitResult(BaseModel):
+    """Result of smart commit operation."""
+
+    status: Literal["ok", "error"] = Field(..., description="Operation status")
+    suggestions: list[CommitSuggestion] = Field(default_factory=list, description="Suggested/created commits")
+    commits_created: int = Field(default=0, description="Number of commits actually created (0 if dry_run)")
+    error_message: str = Field(default="", description="Error message if failed")

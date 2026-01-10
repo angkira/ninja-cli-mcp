@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime
 import re
+import subprocess
 from pathlib import Path
 
 from ninja_common.logging_utils import get_logger
@@ -16,6 +17,7 @@ from ninja_common.security import monitored
 from ninja_secretary.models import (
     CodebaseReportRequest,
     CodebaseReportResult,
+    CommitSuggestion,
     DocumentSummaryRequest,
     DocumentSummaryResult,
     FileMatch,
@@ -24,6 +26,15 @@ from ninja_secretary.models import (
     FileTreeNode,
     FileTreeRequest,
     FileTreeResult,
+    GitCommitRequest,
+    GitCommitResult,
+    GitDiffRequest,
+    GitDiffResult,
+    GitLogEntry,
+    GitLogRequest,
+    GitLogResult,
+    GitStatusRequest,
+    GitStatusResult,
     GrepMatch,
     GrepRequest,
     GrepResult,
@@ -31,6 +42,8 @@ from ninja_secretary.models import (
     ReadFileResult,
     SessionReport,
     SessionReportRequest,
+    SmartCommitRequest,
+    SmartCommitResult,
     UpdateDocRequest,
     UpdateDocResult,
 )
@@ -729,6 +742,798 @@ class SecretaryToolExecutor:
                 doc_path="",
                 changes_made=f"Update failed: {e}",
             )
+
+    @rate_balanced(
+        max_calls=30, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0
+    )
+    @monitored
+    async def git_status(
+        self, request: GitStatusRequest, client_id: str = "default"
+    ) -> GitStatusResult:
+        """
+        Get git repository status.
+
+        Args:
+            request: Git status request.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Git status result with branch and file status information.
+        """
+        logger.info(f"Getting git status for '{request.repo_root}' (client: {client_id})")
+
+        try:
+            repo_root = Path(request.repo_root)
+
+            if not repo_root.exists():
+                return GitStatusResult(
+                    status="error",
+                    branch="",
+                    error_message=f"Repository root not found: {request.repo_root}",
+                )
+
+            # Get current branch
+            branch_result = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if branch_result.returncode != 0:
+                return GitStatusResult(
+                    status="error",
+                    branch="",
+                    error_message="Failed to get git branch",
+                )
+
+            branch = branch_result.stdout.strip()
+
+            # Get porcelain status
+            status_result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if status_result.returncode != 0:
+                return GitStatusResult(
+                    status="error",
+                    branch=branch,
+                    error_message="Failed to get git status",
+                )
+
+            staged = []
+            unstaged = []
+            untracked = []
+
+            for line in status_result.stdout.strip().split("\n"):
+                if not line or len(line) < 4:
+                    continue
+
+                # Git porcelain format: "XY PATH" where XY is 2 chars, then space, then path
+                # But git sometimes outputs "X PATH" for single-status files
+                # So we need to handle both cases
+                if line[1] == " " and line[2] != " ":
+                    # Single status char: "X PATH"
+                    status_code = line[0] + " "
+                    file_path = line[2:]
+                else:
+                    # Double status char: "XY PATH"
+                    status_code = line[:2]
+                    file_path = line[3:]
+
+                if status_code == "??":
+                    untracked.append(file_path)
+                elif status_code[0] in ["M", "A", "D", "R", "C"]:
+                    staged.append(file_path)
+                if status_code[1] in ["M", "D"]:
+                    unstaged.append(file_path)
+
+            # Get ahead/behind counts
+            ahead = 0
+            behind = 0
+
+            try:
+                ahead_result = subprocess.run(
+                    ["git", "rev-list", "--count", "HEAD...@{upstream}"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                if ahead_result.returncode == 0:
+                    # Parse ahead/behind from output
+                    output = ahead_result.stdout.strip()
+                    if output:
+                        parts = output.split()
+                        if len(parts) >= 1:
+                            ahead = int(parts[0]) if parts[0].isdigit() else 0
+                            behind = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+            except (subprocess.TimeoutExpired, ValueError, IndexError):
+                # Gracefully handle errors getting ahead/behind
+                pass
+
+            return GitStatusResult(
+                status="ok",
+                branch=branch,
+                staged=staged,
+                unstaged=unstaged,
+                untracked=untracked if request.include_untracked else [],
+                ahead=ahead,
+                behind=behind,
+            )
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Git status command timed out for {request.repo_root}")
+            return GitStatusResult(
+                status="error",
+                branch="",
+                error_message="Git command timed out",
+            )
+        except Exception as e:
+            logger.error(f"Git status failed for client {client_id}: {e}")
+            return GitStatusResult(
+                status="error",
+                branch="",
+                error_message=str(e),
+            )
+
+    @rate_balanced(
+        max_calls=30, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0
+    )
+    @monitored
+    async def git_diff(
+        self, request: GitDiffRequest, client_id: str = "default"
+    ) -> GitDiffResult:
+        """
+        Get git diff output.
+
+        Args:
+            request: Git diff request.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Git diff result with diff output and statistics.
+        """
+        logger.info(f"Getting git diff for '{request.repo_root}' (client: {client_id})")
+
+        try:
+            repo_root = Path(request.repo_root)
+
+            if not repo_root.exists():
+                return GitDiffResult(
+                    status="error",
+                    diff="",
+                    error_message=f"Repository root not found: {request.repo_root}",
+                )
+
+            # Build diff command
+            cmd = ["git", "diff"]
+            if request.staged:
+                cmd.append("--staged")
+
+            cmd.append("--stat")
+
+            if request.file_path:
+                cmd.append(request.file_path)
+
+            # Get stat output
+            stat_result = subprocess.run(
+                cmd,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if stat_result.returncode != 0:
+                return GitDiffResult(
+                    status="error",
+                    diff="",
+                    error_message="Failed to get git diff",
+                )
+
+            stat_output = stat_result.stdout
+
+            # Get full diff
+            cmd_full = ["git", "diff"]
+            if request.staged:
+                cmd_full.append("--staged")
+
+            if request.file_path:
+                cmd_full.append(request.file_path)
+
+            diff_result = subprocess.run(
+                cmd_full,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            diff_output = diff_result.stdout if diff_result.returncode == 0 else ""
+
+            # Parse statistics from stat output
+            files_changed = 0
+            insertions = 0
+            deletions = 0
+
+            for line in stat_output.strip().split("\n"):
+                if not line or "|" not in line:
+                    continue
+
+                # Parse lines like: "file.py | 10 +++++++---"
+                parts = line.split("|")
+                if len(parts) >= 2:
+                    stats = parts[1].strip()
+                    # Count + and - characters
+                    insertions += stats.count("+")
+                    deletions += stats.count("-")
+                    files_changed += 1
+
+            return GitDiffResult(
+                status="ok",
+                diff=diff_output,
+                files_changed=files_changed,
+                insertions=insertions,
+                deletions=deletions,
+            )
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Git diff command timed out for {request.repo_root}")
+            return GitDiffResult(
+                status="error",
+                diff="",
+                error_message="Git command timed out",
+            )
+        except Exception as e:
+            logger.error(f"Git diff failed for client {client_id}: {e}")
+            return GitDiffResult(
+                status="error",
+                diff="",
+                error_message=str(e),
+            )
+
+    @rate_balanced(
+        max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0
+    )
+    @monitored
+    async def git_commit(
+        self, request: GitCommitRequest, client_id: str = "default"
+    ) -> GitCommitResult:
+        """
+        Create a git commit.
+
+        Args:
+            request: Git commit request.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Git commit result with commit hash and files committed.
+        """
+        logger.info(f"Creating git commit in '{request.repo_root}' (client: {client_id})")
+
+        try:
+            repo_root = Path(request.repo_root)
+
+            if not repo_root.exists():
+                return GitCommitResult(
+                    status="error",
+                    error_message=f"Repository root not found: {request.repo_root}",
+                )
+
+            # Stage files if specified
+            if request.files:
+                for file_path in request.files:
+                    add_result = subprocess.run(
+                        ["git", "add", file_path],
+                        cwd=repo_root,
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+
+                    if add_result.returncode != 0:
+                        return GitCommitResult(
+                            status="error",
+                            error_message=f"Failed to stage file {file_path}",
+                        )
+
+            # Build commit command
+            cmd = ["git", "commit", "-m", request.message]
+
+            if request.author:
+                cmd.append(f"--author={request.author}")
+
+            # Create commit
+            commit_result = subprocess.run(
+                cmd,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if commit_result.returncode != 0:
+                return GitCommitResult(
+                    status="error",
+                    error_message=f"Commit failed: {commit_result.stderr}",
+                )
+
+            # Get commit hash
+            hash_result = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            commit_hash = hash_result.stdout.strip() if hash_result.returncode == 0 else ""
+
+            # Get list of committed files
+            files_result = subprocess.run(
+                ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            files_committed = (
+                files_result.stdout.strip().split("\n")
+                if files_result.returncode == 0
+                else []
+            )
+            files_committed = [f for f in files_committed if f]
+
+            return GitCommitResult(
+                status="ok",
+                commit_hash=commit_hash,
+                message=request.message,
+                files_committed=files_committed,
+            )
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Git commit command timed out for {request.repo_root}")
+            return GitCommitResult(
+                status="error",
+                error_message="Git command timed out",
+            )
+        except Exception as e:
+            logger.error(f"Git commit failed for client {client_id}: {e}")
+            return GitCommitResult(
+                status="error",
+                error_message=str(e),
+            )
+
+    @rate_balanced(
+        max_calls=30, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0
+    )
+    @monitored
+    async def git_log(
+        self, request: GitLogRequest, client_id: str = "default"
+    ) -> GitLogResult:
+        """
+        Get git commit history.
+
+        Args:
+            request: Git log request.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Git log result with commit history.
+        """
+        logger.info(f"Getting git log for '{request.repo_root}' (client: {client_id})")
+
+        try:
+            repo_root = Path(request.repo_root)
+
+            if not repo_root.exists():
+                return GitLogResult(
+                    status="error",
+                    commits=[],
+                    error_message=f"Repository root not found: {request.repo_root}",
+                )
+
+            # Build log command
+            cmd = [
+                "git",
+                "log",
+                "--oneline",
+                f"-n {request.max_count}",
+                "--format=%h|%an|%ai|%s",
+            ]
+
+            if request.file_path:
+                cmd.append("--")
+                cmd.append(request.file_path)
+
+            # Get log output
+            log_result = subprocess.run(
+                cmd,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if log_result.returncode != 0:
+                return GitLogResult(
+                    status="error",
+                    commits=[],
+                    error_message="Failed to get git log",
+                )
+
+            commits = []
+
+            for line in log_result.stdout.strip().split("\n"):
+                if not line:
+                    continue
+
+                parts = line.split("|")
+                if len(parts) >= 4:
+                    try:
+                        commit = GitLogEntry(
+                            hash=parts[0].strip(),
+                            author=parts[1].strip(),
+                            date=parts[2].strip(),
+                            message=parts[3].strip(),
+                        )
+                        commits.append(commit)
+                    except Exception as e:
+                        logger.warning(f"Failed to parse log entry: {e}")
+                        continue
+
+            return GitLogResult(
+                status="ok",
+                commits=commits,
+            )
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Git log command timed out for {request.repo_root}")
+            return GitLogResult(
+                status="error",
+                commits=[],
+                error_message="Git command timed out",
+            )
+        except Exception as e:
+            logger.error(f"Git log failed for client {client_id}: {e}")
+            return GitLogResult(
+                status="error",
+                commits=[],
+                error_message=str(e),
+            )
+
+    @rate_balanced(
+        max_calls=5, time_window=60, max_retries=3, initial_backoff=2.0, max_backoff=60.0
+    )
+    @monitored
+    async def smart_commit(
+        self, request: SmartCommitRequest, client_id: str = "default"
+    ) -> SmartCommitResult:
+        """
+        Analyze changes and create atomic commits with meaningful messages.
+
+        Groups related changes together and generates commit messages based on:
+        - File paths (same directory = related)
+        - File types (models, tests, configs)
+        - Change patterns (new files, modifications, deletions)
+
+        Args:
+            request: Smart commit request.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Smart commit result with suggestions and commits created.
+        """
+        logger.info(f"Smart commit analysis for '{request.repo_root}' (client: {client_id})")
+
+        try:
+            repo_root = Path(request.repo_root)
+
+            if not repo_root.exists():
+                return SmartCommitResult(
+                    status="error",
+                    suggestions=[],
+                    commits_created=0,
+                    error_message=f"Repository root not found: {request.repo_root}",
+                )
+
+            # Get git status
+            status_result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if status_result.returncode != 0:
+                return SmartCommitResult(
+                    status="error",
+                    suggestions=[],
+                    commits_created=0,
+                    error_message="Failed to get git status",
+                )
+
+            # Parse changed files
+            changed_files: dict[str, str] = {}  # path -> change_type
+
+            for line in status_result.stdout.strip().split("\n"):
+                if not line or len(line) < 4:
+                    continue
+
+                # Parse porcelain format
+                if line[1] == " " and line[2] != " ":
+                    status_code = line[0]
+                    file_path = line[2:]
+                else:
+                    status_code = line[0]
+                    file_path = line[3:]
+
+                # Determine change type
+                if status_code == "?":
+                    if request.include_untracked:
+                        changed_files[file_path] = "new"
+                elif status_code == "A":
+                    changed_files[file_path] = "new"
+                elif status_code == "D":
+                    changed_files[file_path] = "deleted"
+                elif status_code in ["M", "R", "C"]:
+                    changed_files[file_path] = "modified"
+
+            if not changed_files:
+                return SmartCommitResult(
+                    status="ok",
+                    suggestions=[],
+                    commits_created=0,
+                )
+
+            # Group files by module/directory
+            groups = self._group_files_by_module(list(changed_files.keys()))
+
+            # Generate suggestions
+            suggestions: list[CommitSuggestion] = []
+
+            for group_files in groups:
+                # Get change types for this group
+                change_types = [changed_files[f] for f in group_files]
+
+                # Generate commit message
+                message = self._generate_commit_message(group_files, change_types)
+
+                reasoning = self._generate_reasoning(group_files, change_types)
+
+                suggestion = CommitSuggestion(
+                    files=group_files,
+                    message=message,
+                    reasoning=reasoning,
+                )
+                suggestions.append(suggestion)
+
+            # Execute commits if not dry_run
+            commits_created = 0
+
+            if not request.dry_run:
+                for suggestion in suggestions:
+                    try:
+                        # Stage files
+                        for file_path in suggestion.files:
+                            add_result = subprocess.run(
+                                ["git", "add", file_path],
+                                cwd=repo_root,
+                                capture_output=True,
+                                text=True,
+                                timeout=10,
+                            )
+
+                            if add_result.returncode != 0:
+                                logger.warning(f"Failed to stage {file_path}")
+                                continue
+
+                        # Create commit
+                        cmd = ["git", "commit", "-m", suggestion.message]
+
+                        if request.author:
+                            cmd.append(f"--author={request.author}")
+
+                        commit_result = subprocess.run(
+                            cmd,
+                            cwd=repo_root,
+                            capture_output=True,
+                            text=True,
+                            timeout=10,
+                        )
+
+                        if commit_result.returncode == 0:
+                            commits_created += 1
+                            logger.info(f"Created commit: {suggestion.message}")
+                        else:
+                            logger.warning(f"Failed to create commit: {commit_result.stderr}")
+
+                    except Exception as e:
+                        logger.error(f"Error creating commit: {e}")
+                        continue
+
+            return SmartCommitResult(
+                status="ok",
+                suggestions=suggestions,
+                commits_created=commits_created,
+            )
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Smart commit command timed out for {request.repo_root}")
+            return SmartCommitResult(
+                status="error",
+                suggestions=[],
+                commits_created=0,
+                error_message="Git command timed out",
+            )
+        except Exception as e:
+            logger.error(f"Smart commit failed for client {client_id}: {e}")
+            return SmartCommitResult(
+                status="error",
+                suggestions=[],
+                commits_created=0,
+                error_message=str(e),
+            )
+
+    def _group_files_by_module(self, files: list[str]) -> list[list[str]]:
+        """
+        Group files by module/directory.
+
+        Uses heuristics to group related files:
+        - Files in same directory
+        - Test files together
+        - Config files together
+        - Documentation together
+
+        Args:
+            files: List of file paths.
+
+        Returns:
+            List of file groups.
+        """
+        groups: list[list[str]] = []
+        grouped = set()
+
+        # First pass: group by directory
+        dir_groups: dict[str, list[str]] = {}
+
+        for file_path in files:
+            path_obj = Path(file_path)
+
+            # Special handling for test files
+            if "test" in path_obj.parts or path_obj.name.startswith("test_"):
+                key = "tests"
+            # Special handling for config files at root
+            elif path_obj.parent == Path(".") and path_obj.suffix in [
+                ".toml",
+                ".yaml",
+                ".yml",
+                ".json",
+            ]:
+                key = "config"
+            # Special handling for docs
+            elif path_obj.suffix == ".md" or "doc" in path_obj.parts:
+                key = "docs"
+            # Group by parent directory
+            else:
+                key = str(path_obj.parent)
+
+            if key not in dir_groups:
+                dir_groups[key] = []
+            dir_groups[key].append(file_path)
+
+        # Convert to list of groups
+        for group in dir_groups.values():
+            groups.append(sorted(group))
+
+        return groups
+
+    def _generate_commit_message(self, files: list[str], change_types: list[str]) -> str:
+        """
+        Generate a meaningful commit message.
+
+        Args:
+            files: List of file paths in this commit.
+            change_types: List of change types (new, modified, deleted).
+
+        Returns:
+            Commit message.
+        """
+        # Determine primary change type
+        new_count = change_types.count("new")
+        deleted_count = change_types.count("deleted")
+        modified_count = change_types.count("modified")
+
+        # Extract module name from first file
+        first_file = Path(files[0])
+        parts = first_file.parts
+
+        # Determine module
+        module = "app"
+        if len(parts) > 1:
+            if parts[0] == "src" and len(parts) > 1:
+                module = parts[1]
+            elif parts[0] in ["tests", "test"]:
+                module = "tests"
+            elif parts[0] in ["docs", "doc"]:
+                module = "docs"
+
+        # Determine file description
+        file_desc = ""
+        if len(files) == 1:
+            file_name = Path(files[0]).stem
+            if file_name == "models":
+                file_desc = "models"
+            elif file_name == "__init__":
+                file_desc = "module"
+            else:
+                file_desc = file_name
+        else:
+            file_desc = f"{len(files)} files"
+
+        # Generate message based on change pattern
+        if new_count == len(files):
+            # All new files
+            return f"feat({module}): Add {file_desc}"
+        elif deleted_count == len(files):
+            # All deletions
+            return f"chore({module}): Remove {file_desc}"
+        elif modified_count == len(files):
+            # All modifications
+            if "models" in files[0]:
+                return f"refactor({module}): Update models"
+            elif "test" in files[0]:
+                return f"test({module}): Update tests"
+            else:
+                return f"refactor({module}): Update {file_desc}"
+        else:
+            # Mixed changes
+            if module == "tests":
+                return f"test({module}): Update tests"
+            elif module == "docs":
+                return f"docs: Update documentation"
+            else:
+                return f"chore({module}): Update {file_desc}"
+
+    def _generate_reasoning(self, files: list[str], change_types: list[str]) -> str:
+        """
+        Generate reasoning for why files are grouped together.
+
+        Args:
+            files: List of file paths.
+            change_types: List of change types.
+
+        Returns:
+            Reasoning string.
+        """
+        if len(files) == 1:
+            return f"Single file change: {files[0]}"
+
+        # Analyze grouping
+        common_dir = str(Path(files[0]).parent)
+        all_same_dir = all(str(Path(f).parent) == common_dir for f in files)
+
+        if all_same_dir:
+            return f"Related files in {common_dir}: {len(files)} files"
+
+        # Check if all tests
+        if all("test" in f for f in files):
+            return f"Test files: {len(files)} test files"
+
+        # Check if all docs
+        if all(f.endswith(".md") for f in files):
+            return f"Documentation: {len(files)} markdown files"
+
+        return f"Related changes: {len(files)} files"
 
     async def _track_file_access(self, client_id: str, file_path: str) -> None:
         """Track file access in session."""
