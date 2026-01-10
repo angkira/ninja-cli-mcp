@@ -64,18 +64,16 @@ TOOLS: list[Tool] = [
     Tool(
         name="coder_quick_task",
         description=(
-            "Delegate CODE WRITING ONLY to Ninja AI agent (via Aider). "
-            "Ninja ONLY writes/edits code files based on your specification. "
+            "Delegate a FOCUSED code task to a specialized AI coding agent. "
+            "Best for single-file changes or small, well-defined modifications. "
             "\n\n"
-            "✅ USE FOR: Writing code, creating files, refactoring, adding features, fixing bugs, "
-            "adding docstrings/types, implementing functions/classes. "
+            "IDEAL FOR: Creating a file, adding a function/class, implementing a specific feature, "
+            "fixing a specific bug, adding types/docstrings to a module. "
             "\n\n"
-            "❌ NEVER USE FOR: Running commands, executing tests, checking output, bash/shell operations, "
-            "reading file contents (you should read files yourself if needed for planning). "
+            "NOT IDEAL FOR: Large refactors across many files (use coder_execute_plan_sequential), "
+            "or multiple independent changes (use coder_execute_plan_parallel). "
             "\n\n"
-            "YOU provide the specification, Ninja writes the code. "
-            "Ninja returns ONLY a summary (file paths changed, brief description). "
-            "NO source code is returned to you - Ninja writes directly to files."
+            "Provide a specific task description. Ninja writes code to disk and returns a summary."
         ),
         inputSchema={
             "type": "object",
@@ -123,17 +121,13 @@ TOOLS: list[Tool] = [
     Tool(
         name="coder_execute_plan_sequential",
         description=(
-            "Execute a multi-step CODE WRITING plan sequentially. "
-            "Each step delegates code writing to Ninja AI agent. "
+            "Execute a multi-step implementation plan where each step builds on the previous. "
+            "Use for complex features that require ordered implementation steps. "
             "\n\n"
-            "✅ USE FOR: Multi-step code implementations where steps must happen in order. "
-            "Each step writes code based on your specification. "
+            "WHEN TO USE: Building features with dependencies between steps, "
+            "implementing components that must be created in a specific order. "
             "\n\n"
-            "❌ NEVER USE FOR: Running tests, executing commands, checking outputs. "
-            "This is ONLY for writing code in multiple sequential steps. "
-            "\n\n"
-            "Returns summary of each step (files changed, brief description). "
-            "NO source code is returned - Ninja writes directly to files."
+            "Each step runs sequentially, ensuring earlier changes are available to later steps."
         ),
         inputSchema={
             "type": "object",
@@ -220,17 +214,13 @@ TOOLS: list[Tool] = [
     Tool(
         name="coder_execute_plan_parallel",
         description=(
-            "Execute CODE WRITING steps in parallel with configurable concurrency. "
-            "Each step delegates code writing to Ninja AI agent. "
+            "Execute multiple independent implementation tasks in PARALLEL for faster completion. "
+            "Use when you have several coding tasks that don't depend on each other. "
             "\n\n"
-            "✅ USE FOR: Independent code writing tasks that can happen simultaneously "
-            "(e.g., creating separate modules, different feature implementations). "
+            "WHEN TO USE: Creating multiple independent modules, implementing separate features, "
+            "adding tests for different components, bulk refactoring across unrelated files. "
             "\n\n"
-            "❌ NEVER USE FOR: Running tests, executing commands, tasks with dependencies. "
-            "Steps should have non-overlapping file scopes to avoid conflicts. "
-            "\n\n"
-            "Returns summary of each step plus merge report. "
-            "NO source code is returned - Ninja writes directly to files."
+            "Tasks run concurrently (up to 4 by default), significantly reducing total time."
         ),
         inputSchema={
             "type": "object",
@@ -367,106 +357,28 @@ def create_server() -> Server:
     server = Server(
         "ninja-coder",
         version="0.2.0",
-        instructions="""🥷 Ninja Coder: Delegate CODE WRITING to AI Agent (Aider)
+        instructions="""Ninja Coder - Delegate code writing to a specialized AI agent.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+USE THIS TOOL WHEN you need to:
+• Create new files or modules
+• Implement features, functions, or classes
+• Refactor or modify existing code
+• Add types, docstrings, or tests
+• Fix bugs (when you know what needs to change)
 
-⚠️  CRITICAL: Ninja ONLY writes code. NO bash, NO tests, NO file reading for you.
+HOW TO USE:
+1. Describe WHAT you want (be specific about files, functions, behavior)
+2. Call coder_quick_task with your specification
+3. Ninja writes the code directly to disk
+4. You get a summary of changes - then verify/test the results
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXAMPLE SPECIFICATION:
+"Create src/utils/validator.py with:
+ - validate_email(email: str) -> bool using regex
+ - validate_password(pwd: str) -> bool (min 8 chars, 1 digit, 1 upper)
+ Include type hints and docstrings."
 
-📋 WHAT NINJA DOES:
-   ✅ Writes/edits code files based on your specification
-   ✅ Creates new files and directories
-   ✅ Refactors existing code
-   ✅ Adds features, fixes bugs, implements functions/classes
-   ✅ Returns ONLY summary: "Modified X files: brief description"
-
-🚫 WHAT NINJA DOES NOT DO:
-   ❌ Run commands (bash, shell, npm, pytest, etc.)
-   ❌ Execute tests or check test output
-   ❌ Read files for you (YOU read files for planning)
-   ❌ Return source code to you (writes directly to disk)
-   ❌ Validate or check anything (YOU validate after)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 YOUR WORKFLOW:
-
-1. 📖 READ files yourself (if needed for planning)
-2. 🧠 PLAN what code needs to be written
-3. 📝 WRITE detailed specification for Ninja
-4. 🥷 CALL coder_quick_task with specification
-5. ✅ REVIEW Ninja's summary (files changed)
-6. 🧪 RUN tests yourself (using bash tool)
-7. 🔄 REPEAT if needed
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📝 SPECIFICATION QUALITY:
-
-❌ BAD:  "add authentication"
-❌ BAD:  "fix the bug"
-❌ BAD:  "improve the code"
-
-✅ GOOD: "Create src/auth.py with User class containing:
-          - email: str field with validation
-          - password_hash: str field
-          - hash_password(password: str) method using bcrypt
-          - verify_password(password: str) -> bool method
-          Add type hints and docstrings."
-
-✅ GOOD: "In src/api/routes.py, add POST /login endpoint that:
-          - Accepts JSON with email and password
-          - Validates credentials using User.verify_password
-          - Returns JWT token on success
-          - Returns 401 on failure
-          Handle all error cases with proper status codes."
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔧 AVAILABLE TOOLS:
-
-• coder_quick_task
-  Single code writing task. Use for most implementations.
-  Returns: Summary only (files changed, brief description)
-
-• coder_execute_plan_sequential
-  Multi-step code writing where order matters.
-  Returns: Summary per step
-
-• coder_execute_plan_parallel
-  Independent code writing tasks (non-overlapping files).
-  Returns: Summary per step + merge report
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 EXAMPLES:
-
-User: "Add user authentication"
-
-You:
-1. Read existing code structure (if needed)
-2. Plan: Need User model, auth routes, password hashing
-3. Call coder_quick_task with detailed spec:
-   "Create authentication system:
-    - src/models/user.py: User class with email, password_hash
-    - src/auth/password.py: hash_password and verify_password using bcrypt
-    - src/api/auth.py: /login and /register endpoints
-    Include type hints, docstrings, error handling"
-4. Review Ninja's summary
-5. Run tests yourself: bash "pytest tests/test_auth.py"
-6. If tests fail, call coder_quick_task again with fix specification
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚡ REMEMBER:
-   • Ninja writes code, YOU orchestrate
-   • Ninja returns summaries, NOT source code
-   • YOU read files, run tests, validate
-   • Write detailed specs, get quality code
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""",
+For multiple independent tasks, use coder_execute_plan_parallel for faster execution.""",
     )
 
     @server.list_tools()
