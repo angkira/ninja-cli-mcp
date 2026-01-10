@@ -31,9 +31,14 @@ from ninja_secretary.models import (
     DocumentSummaryRequest,
     FileSearchRequest,
     FileTreeRequest,
+    GitCommitRequest,
+    GitDiffRequest,
+    GitLogRequest,
+    GitStatusRequest,
     GrepRequest,
     ReadFileRequest,
     SessionReportRequest,
+    SmartCommitRequest,
     UpdateDocRequest,
 )
 from ninja_secretary.tools import get_executor
@@ -306,6 +311,146 @@ TOOLS: list[Tool] = [
             "required": ["module_name", "doc_type", "content"],
         },
     ),
+    Tool(
+        name="secretary_git_status",
+        description=(
+            "Get current git repository status. Shows current branch, staged files, "
+            "unstaged changes, untracked files, and ahead/behind remote status. "
+            "Use this to understand the current state before committing."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "repo_root": {
+                    "type": "string",
+                    "description": "Repository root path",
+                },
+                "include_untracked": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Include untracked files",
+                },
+            },
+            "required": ["repo_root"],
+        },
+    ),
+    Tool(
+        name="secretary_git_diff",
+        description=(
+            "View git diff for staged or unstaged changes. Shows what has changed "
+            "in the working directory or staging area. Can optionally filter to a specific file."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "repo_root": {
+                    "type": "string",
+                    "description": "Repository root path",
+                },
+                "staged": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Show staged changes instead of unstaged",
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "Specific file to diff (optional)",
+                },
+            },
+            "required": ["repo_root"],
+        },
+    ),
+    Tool(
+        name="secretary_git_commit",
+        description=(
+            "Create a git commit with the specified message. Can optionally stage specific files first. "
+            "Use git_status first to see what will be committed."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "repo_root": {
+                    "type": "string",
+                    "description": "Repository root path",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "Commit message",
+                },
+                "files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "default": [],
+                    "description": "Files to stage and commit (empty = commit all staged)",
+                },
+                "author": {
+                    "type": "string",
+                    "description": "Override commit author (optional)",
+                },
+            },
+            "required": ["repo_root", "message"],
+        },
+    ),
+    Tool(
+        name="secretary_git_log",
+        description=(
+            "View git commit history. Shows recent commits with hash, author, date, and message. "
+            "Can optionally filter to commits affecting a specific file."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "repo_root": {
+                    "type": "string",
+                    "description": "Repository root path",
+                },
+                "max_count": {
+                    "type": "integer",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Maximum commits to show",
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "Filter to commits affecting this file (optional)",
+                },
+            },
+            "required": ["repo_root"],
+        },
+    ),
+    Tool(
+        name="secretary_smart_commit",
+        description=(
+            "Intelligently analyze changes and create atomic commits with meaningful messages. "
+            "Groups related files together (same module, tests, docs, config) and generates "
+            "conventional commit messages. Use dry_run=True to preview suggested commits first."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "repo_root": {
+                    "type": "string",
+                    "description": "Repository root path",
+                },
+                "include_untracked": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include untracked files",
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Preview commits without creating them",
+                },
+                "author": {
+                    "type": "string",
+                    "description": "Override commit author (optional)",
+                },
+            },
+            "required": ["repo_root"],
+        },
+    ),
 ]
 
 
@@ -327,6 +472,8 @@ def create_server() -> Server:
    ✅ Summarize documentation
    ✅ Track session activity
    ✅ Update module documentation
+   ✅ Manage git repositories (status, diff, commit, log)
+   ✅ Create smart atomic commits with conventional messages
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -363,6 +510,27 @@ def create_server() -> Server:
 • secretary_update_doc
   Update module documentation files.
   Returns: Status and changes made.
+
+• secretary_git_status
+  Get git repository status.
+  Returns: Current branch, staged/unstaged files, ahead/behind status.
+
+• secretary_git_diff
+  View git diff for changes.
+  Returns: Diff output with file change statistics.
+
+• secretary_git_commit
+  Create a git commit.
+  Returns: Commit hash, message, and files committed.
+
+• secretary_git_log
+  View git commit history.
+  Returns: Recent commits with hash, author, date, message.
+
+• secretary_smart_commit
+  Intelligently create atomic commits with conventional messages.
+  Groups related files and generates meaningful commit messages.
+  Returns: List of suggested or created commits.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -412,12 +580,48 @@ def create_server() -> Server:
      }
    })
 
+7. Check git status:
+   secretary_git_status({
+     "repo_root": "/path/to/repo"
+   })
+
+8. View changes:
+   secretary_git_diff({
+     "repo_root": "/path/to/repo",
+     "staged": false
+   })
+
+9. Create commit:
+   secretary_git_commit({
+     "repo_root": "/path/to/repo",
+     "message": "Add new feature"
+   })
+
+10. View history:
+    secretary_git_log({
+      "repo_root": "/path/to/repo",
+      "max_count": 20
+    })
+
+11. Smart commit (preview):
+    secretary_smart_commit({
+      "repo_root": "/path/to/repo",
+      "dry_run": true
+    })
+
+12. Smart commit (create):
+    secretary_smart_commit({
+      "repo_root": "/path/to/repo",
+      "dry_run": false
+    })
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ⚡ RATE LIMITS:
    • Read file: 60 calls/minute
    • File search/grep: 30 calls/minute
    • Reports: 5-10 calls/minute
+   • Git operations: 20 calls/minute
    • Per-client tracking
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""",
@@ -468,6 +672,26 @@ def create_server() -> Server:
             elif name == "secretary_update_doc":
                 request = UpdateDocRequest(**arguments)
                 result = await executor.update_doc(request, client_id=client_id)
+
+            elif name == "secretary_git_status":
+                request = GitStatusRequest(**arguments)
+                result = await executor.git_status(request, client_id=client_id)
+
+            elif name == "secretary_git_diff":
+                request = GitDiffRequest(**arguments)
+                result = await executor.git_diff(request, client_id=client_id)
+
+            elif name == "secretary_git_commit":
+                request = GitCommitRequest(**arguments)
+                result = await executor.git_commit(request, client_id=client_id)
+
+            elif name == "secretary_git_log":
+                request = GitLogRequest(**arguments)
+                result = await executor.git_log(request, client_id=client_id)
+
+            elif name == "secretary_smart_commit":
+                request = SmartCommitRequest(**arguments)
+                result = await executor.smart_commit(request, client_id=client_id)
 
             else:
                 return [
