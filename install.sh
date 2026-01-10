@@ -111,26 +111,40 @@ step "3/6" "Installing ninja-mcp..."
 
 INSTALL_SUCCESS=false
 
-# Try PyPI first, then GitHub
-if uv tool install ninja-mcp[all] 2>/dev/null; then
-    INSTALL_SUCCESS=true
-    success "Installed from PyPI"
-elif uv tool install "ninja-mcp[all] @ git+https://github.com/angkira/ninja-cli-mcp.git" 2>&1; then
-    INSTALL_SUCCESS=true
-    success "Installed from GitHub"
-else
-    # Fallback: clone and install
-    warn "Direct install failed, trying local build..."
-    TEMP_DIR=$(mktemp -d)
-    trap "rm -rf $TEMP_DIR" EXIT
-
-    git clone --depth 1 https://github.com/angkira/ninja-cli-mcp.git "$TEMP_DIR/ninja-mcp" 2>/dev/null || \
-        (curl -sL https://github.com/angkira/ninja-cli-mcp/archive/main.tar.gz | tar xz -C "$TEMP_DIR" && \
-         mv "$TEMP_DIR/ninja-cli-mcp-main" "$TEMP_DIR/ninja-mcp")
-
-    if uv tool install "$TEMP_DIR/ninja-mcp[all]"; then
+# Detect if running from dev directory (has pyproject.toml)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+    info "Detected dev directory, installing from local source..."
+    if uv tool install --force "$SCRIPT_DIR[all]" 2>&1; then
         INSTALL_SUCCESS=true
-        success "Installed from local build"
+        success "Installed from local dev directory"
+    else
+        warn "Local install failed, falling back to remote..."
+    fi
+fi
+
+# If not in dev dir or local install failed, try PyPI then GitHub
+if [[ "$INSTALL_SUCCESS" != "true" ]]; then
+    if uv tool install ninja-mcp[all] 2>/dev/null; then
+        INSTALL_SUCCESS=true
+        success "Installed from PyPI"
+    elif uv tool install "ninja-mcp[all] @ git+https://github.com/angkira/ninja-cli-mcp.git" 2>&1; then
+        INSTALL_SUCCESS=true
+        success "Installed from GitHub"
+    else
+        # Fallback: clone and install
+        warn "Direct install failed, trying local build..."
+        TEMP_DIR=$(mktemp -d)
+        trap "rm -rf $TEMP_DIR" EXIT
+
+        git clone --depth 1 https://github.com/angkira/ninja-cli-mcp.git "$TEMP_DIR/ninja-mcp" 2>/dev/null || \
+            (curl -sL https://github.com/angkira/ninja-cli-mcp/archive/main.tar.gz | tar xz -C "$TEMP_DIR" && \
+             mv "$TEMP_DIR/ninja-cli-mcp-main" "$TEMP_DIR/ninja-mcp")
+
+        if uv tool install "$TEMP_DIR/ninja-mcp[all]"; then
+            INSTALL_SUCCESS=true
+            success "Installed from local build"
+        fi
     fi
 fi
 

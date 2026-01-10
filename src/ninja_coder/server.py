@@ -44,6 +44,16 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
+# Load config from ~/.ninja-mcp.env into environment variables
+try:
+    from ninja_common.config_manager import ConfigManager
+    ConfigManager().export_env()
+except FileNotFoundError:
+    pass  # Config file may not exist, will use env vars directly
+except Exception as e:
+    import sys
+    print(f"WARNING: Failed to load config from ~/.ninja-mcp.env: {e}", file=sys.stderr)
+
 # Set up logging to stderr (stdout is for MCP protocol)
 setup_logging(level=logging.INFO)
 logger = get_logger(__name__)
