@@ -47,8 +47,8 @@ class ConfigManager:
                 if not line or line.startswith("#"):
                     continue
 
-                # Parse export statements
-                match = re.match(r"export\s+(\w+)=['\"]?(.*?)['\"]?$", line)
+                # Parse both "export KEY=value" and "KEY=value" formats
+                match = re.match(r"(?:export\s+)?(\w+)=['\"]?(.*?)['\"]?$", line)
                 if match:
                     key, value = match.groups()
                     config[key] = value

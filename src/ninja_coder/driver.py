@@ -648,29 +648,39 @@ class NinjaDriver:
             self.config.bin_path,
             "--yes",  # Auto-accept changes
             "--no-auto-commits",  # Don't auto-commit (let user decide)
+            "--no-git",  # Disable git operations (prevents hangs)
+            "--no-pretty",  # Disable pretty output (prevents buffering issues)
+            "--no-stream",  # Disable streaming (cleaner output)
+            "--no-suggest-shell-commands",  # Don't suggest shell commands
+            "--no-check-update",  # Don't check for updates
             "--model",
             f"openrouter/{self.config.model}",  # OpenRouter model
         ]
 
         # IMPORTANT: Explicitly pass API key to override aider's cached key
         # Aider caches keys in ~/.aider*/oauth-keys.env and might use that instead
-        if self.config.openai_api_key:
-            cmd.extend(
-                [
-                    "--openai-api-key",
-                    self.config.openai_api_key,  # Force our key
-                    "--openai-api-base",
-                    self.config.openai_base_url,  # Force OpenRouter
-                ]
+        # Use --api-key openrouter=KEY format (not --openai-api-key which doesn't work for OpenRouter)
+        if not self.config.openai_api_key:
+            raise ValueError(
+                "No API key configured! Set OPENROUTER_API_KEY in ~/.ninja-mcp.env or environment. "
+                "Without an API key, aider will hang waiting for interactive input."
             )
+        cmd.extend(
+            [
+                "--api-key",
+                f"openrouter={self.config.openai_api_key}",  # Force our OpenRouter key
+            ]
+        )
 
         # Add conservative limits to avoid incomplete responses
+        # Timeout is configurable via NINJA_AIDER_TIMEOUT env var (default 300s = 5 minutes)
+        aider_timeout = os.environ.get("NINJA_AIDER_TIMEOUT", "300")
         cmd.extend(
             [
                 "--max-chat-history-tokens",
                 "8000",  # Limit context to avoid token limits
                 "--timeout",
-                "120",  # 2 minute timeout for API calls
+                aider_timeout,  # API call timeout (configurable)
             ]
         )
 
@@ -924,6 +934,7 @@ class NinjaDriver:
                 check=False,
                 cwd=str(repo_root),  # Execute in actual repository
                 env=env,
+                stdin=subprocess.DEVNULL,  # Prevent stdin blocking
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -1023,6 +1034,7 @@ class NinjaDriver:
                 *cmd,
                 cwd=str(repo_root),  # Execute in actual repository
                 env=env,
+                stdin=asyncio.subprocess.DEVNULL,  # Prevent stdin blocking
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

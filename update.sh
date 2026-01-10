@@ -86,19 +86,38 @@ if ! command -v uv &> /dev/null; then
     error "uv not found. Run install.sh first."
 fi
 
-# Reinstall/upgrade
-if uv tool upgrade ninja-mcp 2>/dev/null; then
-    success "Updated from PyPI"
-elif uv tool install --force "ninja-mcp[all] @ git+https://github.com/angkira/ninja-cli-mcp.git" 2>&1; then
-    success "Updated from GitHub"
-else
-    warn "Could not update automatically"
-    info "Trying reinstall..."
-    uv tool uninstall ninja-mcp 2>/dev/null || true
-    if uv tool install "ninja-mcp[all] @ git+https://github.com/angkira/ninja-cli-mcp.git" 2>&1; then
-        success "Reinstalled from GitHub"
+UPDATE_SUCCESS=false
+
+# Detect if running from dev directory (has pyproject.toml)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+    info "Detected dev directory, installing from local source..."
+    if uv tool install --force "$SCRIPT_DIR[all]" 2>&1; then
+        UPDATE_SUCCESS=true
+        success "Updated from local dev directory"
     else
-        error "Update failed. Please check your internet connection."
+        warn "Local install failed, falling back to remote..."
+    fi
+fi
+
+# If not in dev dir or local install failed, try PyPI then GitHub
+if [[ "$UPDATE_SUCCESS" != "true" ]]; then
+    if uv tool upgrade ninja-mcp 2>/dev/null; then
+        UPDATE_SUCCESS=true
+        success "Updated from PyPI"
+    elif uv tool install --force "ninja-mcp[all] @ git+https://github.com/angkira/ninja-cli-mcp.git" 2>&1; then
+        UPDATE_SUCCESS=true
+        success "Updated from GitHub"
+    else
+        warn "Could not update automatically"
+        info "Trying reinstall..."
+        uv tool uninstall ninja-mcp 2>/dev/null || true
+        if uv tool install "ninja-mcp[all] @ git+https://github.com/angkira/ninja-cli-mcp.git" 2>&1; then
+            UPDATE_SUCCESS=true
+            success "Reinstalled from GitHub"
+        else
+            error "Update failed. Please check your internet connection."
+        fi
     fi
 fi
 
