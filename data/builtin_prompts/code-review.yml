@@ -1,0 +1,40 @@
+id: code-review-v1
+name: Code Review
+description: Professional code review with focus on quality, security, and maintainability
+scope: global
+tags:
+  - code-review
+  - quality
+  - feedback
+variables:
+  - name: code
+    required: true
+    description: The code to review
+  - name: language
+    required: false
+    default: python
+    description: Programming language of the code
+  - name: focus_areas
+    required: false
+    default: "performance, security, maintainability, readability"
+    description: Areas to focus the review on
+  - name: context
+    required: false
+    description: Additional context about the code or project
+
+template: |
+  Please review this {{language}} code for quality issues:
+
+  ```{{language}}
+  {{code}}
+  ```
+
+  **Focus Areas:** {{focus_areas}}
+
+  {{context}}
+
+  Provide your review in this format:
+  1. **Issues Found** (categorized by severity: critical, major, minor)
+  2. **Specific Improvement Suggestions** (with code examples where applicable)
+  3. **Positive Observations** (what's done well)
+  4. **Overall Assessment** (rating, summary recommendations)
