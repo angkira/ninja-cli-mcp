@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+
+# Add src directory to Python path for imports
+_root = Path(__file__).parent.parent
+if str(_root / "src") not in sys.path:
+    sys.path.insert(0, str(_root / "src"))
 
 
 if TYPE_CHECKING:
