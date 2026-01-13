@@ -111,7 +111,7 @@ class SecretaryToolExecutor:
                     if pattern.search(line):
                         search_results.append({
                             "line_number": line_num,
-                            "line_content": line.rstrip()
+                            "text": line.rstrip()
                         })
                 result["search_results"] = search_results
 
@@ -180,7 +180,7 @@ class SecretaryToolExecutor:
         # Language-specific patterns
         patterns = {
             "python": {
-                "function": r"^def\s+(\w+)",
+                "function": r"^\s*def\s+(\w+)",  # Match indented functions too
                 "class": r"^class\s+(\w+)",
                 "import": r"^(import\s+|from\s+\w+\s+import)"
             },
@@ -218,18 +218,32 @@ class SecretaryToolExecutor:
             if func_match:
                 func_name = next((group for group in func_match.groups() if group), None)
                 if func_name:
-                    structure["functions"].append(func_name)
-            
+                    structure["functions"].append({"name": func_name})
+
             # Check for classes
             class_match = class_pattern.search(line)
             if class_match:
                 class_name = next((group for group in class_match.groups() if group), None)
                 if class_name:
-                    structure["classes"].append(class_name)
-            
+                    structure["classes"].append({"name": class_name})
+
             # Check for imports
             if import_pattern.search(line):
-                structure["imports"].append(line.strip())
+                # Extract module name from import statement
+                import_line = line.strip()
+                if import_line.startswith("import "):
+                    # Handle: import os, import sys as s
+                    module_part = import_line.replace("import ", "").split(" as ")[0].strip()
+                    module_names = [m.strip() for m in module_part.split(",")]
+                    for mod in module_names:
+                        if mod:
+                            structure["imports"].append({"module": mod})
+                elif import_line.startswith("from "):
+                    # Handle: from os import path
+                    parts = import_line.split(" import ")
+                    if len(parts) >= 1:
+                        module_name = parts[0].replace("from ", "").strip()
+                        structure["imports"].append({"module": module_name})
         
         return structure
 
@@ -277,19 +291,20 @@ class SecretaryToolExecutor:
             if not repo_root.exists():
                 return FileSearchResult(
                     status="error",
-                    message=f"Repository root not found: {request.repo_root}",
-                    result={}
+                    matches=[],
+                    total_count=0,
+                    truncated=False
                 )
 
             # Use glob to find matching files
-            matches: list[FileMatch] = []
+            all_matches: list[FileMatch] = []
 
             for path in repo_root.glob(request.pattern):
                 if path.is_file():
                     stat = path.stat()
                     rel_path = str(path.relative_to(repo_root))
 
-                    matches.append(
+                    all_matches.append(
                         FileMatch(
                             path=rel_path,
                             size=stat.st_size,
@@ -297,32 +312,27 @@ class SecretaryToolExecutor:
                         )
                     )
 
-                    if len(matches) >= request.max_results:
-                        break
-
             # Sort by path
-            matches.sort(key=lambda m: m.path)
+            all_matches.sort(key=lambda m: m.path)
 
-            truncated = len(matches) >= request.max_results
-            
-            result = {
-                "matches": [match.dict() for match in matches],
-                "total_count": len(matches),
-                "truncated": truncated
-            }
+            # Truncate to max_results
+            truncated = len(all_matches) > request.max_results
+            matches = all_matches[:request.max_results]
 
             return FileSearchResult(
                 status="ok",
-                message="File search completed successfully",
-                result=result
+                matches=matches,
+                total_count=len(all_matches),
+                truncated=truncated
             )
 
         except Exception as e:
             logger.error(f"File search failed for client {client_id}: {e}")
             return FileSearchResult(
                 status="error",
-                message=str(e),
-                result={}
+                matches=[],
+                total_count=0,
+                truncated=False
             )
 
     @rate_balanced(
@@ -352,22 +362,28 @@ class SecretaryToolExecutor:
             report_parts.append(f"# Codebase Report: {repo_root.name}\n\n")
             report_parts.append(f"**Generated:** {datetime.datetime.now().isoformat()}\n\n")
 
-            # File structure analysis
+            # Analyze directory structure
+            file_count = 0
+            dir_count = 0
+            total_size = 0
+
             if request.include_structure:
-                tree_request = FileTreeRequest(repo_root=request.repo_root, max_depth=3)
-                tree_result = await self.file_tree(tree_request, client_id)
+                for path in repo_root.rglob("*"):
+                    if not any(p in path.parts for p in [".git", "node_modules", "__pycache__", "venv"]):
+                        if path.is_dir():
+                            dir_count += 1
+                        elif path.is_file():
+                            file_count += 1
+                            total_size += path.stat().st_size
 
-                if tree_result.status == "ok":
-                    report_parts.append("## Project Structure\n\n")
-                    report_parts.append(f"- **Total Files:** {tree_result.total_files}\n")
-                    report_parts.append(f"- **Total Directories:** {tree_result.total_dirs}\n")
-                    report_parts.append(
-                        f"- **Total Size:** {tree_result.total_size / 1024 / 1024:.2f} MB\n\n"
-                    )
+                report_parts.append("## Project Structure\n\n")
+                report_parts.append(f"- **Total Files:** {file_count}\n")
+                report_parts.append(f"- **Total Directories:** {dir_count}\n")
+                report_parts.append(f"- **Total Size:** {total_size / 1024 / 1024:.2f} MB\n\n")
 
-                    metrics["file_count"] = tree_result.total_files
-                    metrics["dir_count"] = tree_result.total_dirs
-                    metrics["total_size_mb"] = tree_result.total_size / 1024 / 1024
+                metrics["file_count"] = file_count
+                metrics["dir_count"] = dir_count
+                metrics["total_size_mb"] = total_size / 1024 / 1024
 
             # Code metrics
             if request.include_metrics:
@@ -381,11 +397,11 @@ class SecretaryToolExecutor:
                     if path.is_file() and not any(
                         p in path.parts for p in [".git", "node_modules", "__pycache__", "venv"]
                     ):
-                        ext = path.suffix or "no_extension"
+                        ext = path.suffix.lstrip(".") or "no_extension"
                         extensions[ext] = extensions.get(ext, 0) + 1
 
                         # Count lines for text files
-                        if ext in [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs"]:
+                        if path.suffix in [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs"]:
                             try:
                                 with path.open(encoding="utf-8", errors="replace") as f:
                                     total_lines += sum(1 for _ in f)
@@ -430,24 +446,20 @@ class SecretaryToolExecutor:
 
             report = "".join(report_parts)
             
-            result = {
-                "report": report,
-                "metrics": metrics,
-                "file_count": metrics.get("file_count", 0)
-            }
-
             return CodebaseReportResult(
                 status="ok",
-                message="Codebase report generated successfully",
-                result=result
+                report=report,
+                metrics=metrics,
+                file_count=metrics.get("file_count", 0)
             )
 
         except Exception as e:
             logger.error(f"Codebase report failed for client {client_id}: {e}")
             return CodebaseReportResult(
                 status="error",
-                message=f"Report generation failed: {e}",
-                result={}
+                report="",
+                metrics={},
+                file_count=0
             )
 
     @rate_balanced(
@@ -514,24 +526,20 @@ class SecretaryToolExecutor:
 
             combined_summary = "\n\n".join(combined_parts)
             
-            result = {
-                "summaries": summaries,
-                "combined_summary": combined_summary,
-                "doc_count": len(summaries)
-            }
-
             return DocumentSummaryResult(
                 status="ok",
-                message="Document summary completed successfully",
-                result=result
+                summaries=summaries,
+                combined_summary=combined_summary,
+                doc_count=len(summaries)
             )
 
         except Exception as e:
             logger.error(f"Document summary failed for client {client_id}: {e}")
             return DocumentSummaryResult(
                 status="error",
-                message=f"Summary failed: {e}",
-                result={}
+                summaries=[],
+                combined_summary="",
+                doc_count=0
             )
 
     async def session_report(
