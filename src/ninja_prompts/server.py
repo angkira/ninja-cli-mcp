@@ -1,5 +1,6 @@
 """MCP Server for Prompts module."""
 
+import asyncio
 import json
 import sys
 from typing import Any
@@ -161,8 +162,8 @@ async def call_tool(name: str, arguments: dict) -> Any:
         return [types.TextContent(text=json.dumps({"error": str(e)}))]
 
 
-async def main():
-    """Run the MCP server."""
+async def main_stdio():
+    """Run the MCP server over stdio."""
     # Server instructions
     server.instructions = """
 Prompts Module - Manage reusable prompt templates and multi-step workflows.
@@ -202,12 +203,102 @@ Prompts Module - Manage reusable prompt templates and multi-step workflows.
         await server.run(read_stream, write_stream, server.instructions)
 
 
+async def main_http(host: str, port: int) -> None:
+    """Run the MCP server over HTTP with SSE."""
+    import uvicorn
+    from mcp.server.sse import SseServerTransport
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    server.instructions = """
+Prompts Module - Manage reusable prompt templates and multi-step workflows.
+
+## Available Tools
+
+1. **prompt_registry** - Manage prompt templates
+   - list: List all available prompts
+   - get: Retrieve a specific prompt
+   - create: Create a new prompt
+   - delete: Delete a prompt
+
+2. **prompt_suggest** - Get relevant prompt suggestions
+   - Analyze context and suggest matching prompts
+   - Based on task, language, file_type, etc.
+
+3. **prompt_chain** - Execute multi-step workflows
+   - Compose prompts in sequence
+   - Pass outputs from one step to the next
+   - Use {{prev.step_name}} syntax for output references
+
+## Built-in Prompts
+
+- code-review-v1: Professional code review
+- bug-debugging-v1: Systematic bug investigation
+- feature-implementation-v1: Complete feature workflow
+- architecture-design-v1: System architecture design
+
+## Example Usage
+
+1. Suggest prompts: prompt_suggest({context: {task: "code-review", language: "python"}})
+2. Get a prompt: prompt_registry({action: "get", prompt_id: "code-review-v1"})
+3. Execute chain: prompt_chain({action: "execute", steps: [...]})
+"""
+
+    sse = SseServerTransport("/messages")
+
+    async def handle_sse(request):
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            await server.run(streams[0], streams[1], server.instructions)
+        return Response()
+
+    async def handle_messages(scope, receive, send):
+        await sse.handle_post_message(scope, receive, send)
+
+    async def app(scope, receive, send):
+        path = scope.get("path", "")
+        if path == "/sse":
+            request = Request(scope, receive, send)
+            await handle_sse(request)
+        elif path == "/messages" and scope.get("method") == "POST":
+            await handle_messages(scope, receive, send)
+        else:
+            await Response("Not Found", status_code=404)(scope, receive, send)
+
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    server_instance = uvicorn.Server(config)
+    await server_instance.serve()
+
+
 def run() -> None:
     """Entry point for the ninja-prompts MCP server."""
-    import asyncio
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Ninja Prompts MCP Server")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Run server in HTTP/SSE mode (default: stdio)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8107,
+        help="Port for HTTP server (default: 8107)",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1)",
+    )
+
+    args = parser.parse_args()
 
     try:
-        asyncio.run(main())
+        if args.http:
+            asyncio.run(main_http(args.host, args.port))
+        else:
+            asyncio.run(main_stdio())
     except KeyboardInterrupt:
         pass
     except Exception as e:

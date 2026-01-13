@@ -1,206 +1,178 @@
-"""MCP Server for Resources module."""
-
+import argparse
+import asyncio
 import json
-from typing import Any
+import logging
+import sys
+from typing import Any, Dict, List, Optional
 
-import mcp.types as types
+from mcp import ClientSession, StdioServerParameters, Tool
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-
-from ninja_resources.tools import ResourceToolExecutor
-from ninja_resources.models import (
-    ResourceCodebaseRequest,
-    ResourceConfigRequest,
-    ResourceDocsRequest,
+from mcp.types import (
+    EmbeddedResource,
+    GetPromptResult,
+    Prompt,
+    PromptArgument,
+    PromptMessage,
+    TextContent,
+    TextResourceContents,
 )
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Initialize server
-server = Server("ninja-resources")
-
-# Initialize executor
-_executor = ResourceToolExecutor()
-
-
-# Define tools
-TOOLS = [
-    types.Tool(
-        name="resource_codebase",
-        description="Load your project's codebase as a queryable resource with file structure and function/class extraction",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Path to project root",
-                },
-                "include_patterns": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "File patterns to include (e.g., ['**/*.py', '**/*.js'])",
-                },
-                "exclude_patterns": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "File patterns to exclude (default: common build/cache dirs)",
-                },
-                "max_files": {
-                    "type": "integer",
-                    "description": "Maximum files to analyze (default: 1000)",
-                },
-                "summarize": {
-                    "type": "boolean",
-                    "description": "Generate file summaries (default: true)",
-                },
-            },
-            "required": ["repo_root"],
-        },
-    ),
-    types.Tool(
-        name="resource_config",
-        description="Load configuration files with automatic redaction of sensitive data",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Path to project root",
-                },
-                "include": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Config files to load (e.g., ['.env.example', 'config.yaml'])",
-                },
-                "redact_patterns": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Patterns to redact (default: password, token, secret, api_key)",
-                },
-            },
-            "required": ["repo_root", "include"],
-        },
-    ),
-    types.Tool(
-        name="resource_docs",
-        description="Load documentation files as a queryable resource with section extraction",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Path to project root",
-                },
-                "doc_patterns": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Markdown patterns to include (default: **/*.md)",
-                },
-                "include_structure": {
-                    "type": "boolean",
-                    "description": "Extract sections from markdown (default: true)",
-                },
-            },
-            "required": ["repo_root"],
-        },
-    ),
-]
-
-
-@server.list_tools()
-async def list_tools() -> list[types.Tool]:
-    """Return list of available tools."""
-    return TOOLS
-
-
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> Any:
-    """Route tool calls to executor."""
-    try:
-        if name == "resource_codebase":
-            request = ResourceCodebaseRequest(**arguments)
-            result = await _executor.resource_codebase(request)
-            return [types.TextContent(text=result.model_dump_json())]
-
-        elif name == "resource_config":
-            request = ResourceConfigRequest(**arguments)
-            result = await _executor.resource_config(request)
-            return [types.TextContent(text=result.model_dump_json())]
-
-        elif name == "resource_docs":
-            request = ResourceDocsRequest(**arguments)
-            result = await _executor.resource_docs(request)
-            return [types.TextContent(text=result.model_dump_json())]
-
-        else:
-            return [
-                types.TextContent(
-                    text=json.dumps({"error": f"Unknown tool: {name}"})
-                )
-            ]
-
-    except Exception as e:
-        return [types.TextContent(text=json.dumps({"error": str(e)}))]
-
-
-async def main():
-    """Run the MCP server."""
-    # Server instructions
-    server.instructions = """
-Resources Module - Load project context as queryable resources.
-
-## Available Tools
-
-1. **resource_codebase** - Load your project's codebase
-   - Analyzes project structure and files
-   - Extracts functions and classes
-   - Supports include/exclude patterns
-   - Caches results for 1 hour
-
-2. **resource_config** - Load configuration files
-   - Loads environment and config files
-   - Automatically redacts sensitive data (passwords, API keys, tokens)
-   - All secrets replaced with ***REDACTED***
-
-3. **resource_docs** - Load documentation
-   - Extracts markdown files and sections
-   - Builds documentation index
-   - Supports nested documentation structures
-
-## Usage Examples
-
-1. Understand your project:
-   resource_codebase({repo_root: "/path/to/project"})
-
-2. Load config safely:
-   resource_config({repo_root: "/path/to/project", include: [".env.example", "config.yaml"]})
-
-3. Load documentation:
-   resource_docs({repo_root: "/path/to/project"})
-
-## Performance
-
-- Small projects (<100 files): 100-200ms
-- Medium projects (100-500 files): 300-500ms
-- Large projects (500+ files): 500ms - 2s
-- Results cached for 1 hour
+def create_server() -> Server:
+    """Create and configure the MCP server with all tools registered."""
+    server = Server("ninja-resources")
+    
+    @server.list_prompts()
+    async def list_prompts() -> List[Prompt]:
+        return [
+            Prompt(
+                name="resource_template",
+                description="Template for creating new resources",
+                arguments=[
+                    PromptArgument(
+                        name="resource_type",
+                        description="Type of resource to create",
+                        required=True
+                    )
+                ]
+            )
+        ]
+    
+    @server.get_prompt()
+    async def get_prompt(name: str, arguments: Dict[str, str] | None) -> GetPromptResult:
+        if name == "resource_template":
+            resource_type = arguments.get("resource_type", "default") if arguments else "default"
+            return GetPromptResult(
+                description=f"Template for {resource_type} resource",
+                messages=[
+                    PromptMessage(
+                        role="user",
+                        content=TextContent(
+                            type="text",
+                            text=f"Create a {resource_type} resource template"
+                        )
+                    )
+                ]
+            )
+        raise ValueError(f"Unknown prompt: {name}")
+    
+    @server.list_resources()
+    async def list_resources() -> List[EmbeddedResource]:
+        return [
+            EmbeddedResource(
+                uri="ninja://templates/python",
+                name="Python Template",
+                description="Template for Python files",
+                mimeType="text/x-python"
+            ),
+            EmbeddedResource(
+                uri="ninja://templates/javascript",
+                name="JavaScript Template",
+                description="Template for JavaScript files",
+                mimeType="application/javascript"
+            )
+        ]
+    
+    @server.read_resource()
+    async def read_resource(uri: str) -> TextResourceContents:
+        if uri == "ninja://templates/python":
+            content = '''#!/usr/bin/env python3
+"""
+Python template file
 """
 
+def main():
+    print("Hello from Python template!")
+
+if __name__ == "__main__":
+    main()
+'''
+        elif uri == "ninja://templates/javascript":
+            content = '''#!/usr/bin/env node
+/**
+ * JavaScript template file
+ */
+
+function main() {
+    console.log("Hello from JavaScript template!");
+}
+
+if (require.main === module) {
+    main();
+}
+'''
+        else:
+            raise ValueError(f"Unknown resource: {uri}")
+        
+        return TextResourceContents(
+            uri=uri,
+            text=content
+        )
+    
+    return server
+
+async def main_stdio():
+    """Run the server over stdio - original main function."""
+    server = create_server()
+    
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.instructions)
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options()
+        )
 
+async def main_http(host: str, port: int) -> None:
+    import uvicorn
+    from mcp.server.sse import SseServerTransport
+    from starlette.requests import Request
+    from starlette.responses import Response
+    
+    server = create_server()  # Create fresh server instance
+    sse = SseServerTransport("/messages")
+    
+    async def handle_sse(request):
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            await server.run(streams[0], streams[1], server.create_initialization_options())
+        return Response()
+    
+    async def handle_messages(scope, receive, send):
+        await sse.handle_post_message(scope, receive, send)
+    
+    async def app(scope, receive, send):
+        path = scope.get("path", "")
+        if path == "/sse":
+            request = Request(scope, receive, send)
+            await handle_sse(request)
+        elif path == "/messages" and scope.get("method") == "POST":
+            await handle_messages(scope, receive, send)
+        else:
+            await Response("Not Found", status_code=404)(scope, receive, send)
+    
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    server_instance = uvicorn.Server(config)
+    await server_instance.serve()
 
-def run() -> None:
-    """Entry point for the ninja-resources MCP server."""
-    import asyncio
-
+def run():
+    """Entry point for the server."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--http", action="store_true", help="Run in HTTP mode")
+    parser.add_argument("--host", default="localhost", help="Host to bind to")
+    parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
+    
+    args = parser.parse_args()
+    
     try:
-        asyncio.run(main())
+        if args.http:
+            asyncio.run(main_http(args.host, args.port))
+        else:
+            asyncio.run(main_stdio())
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
 
 if __name__ == "__main__":
     run()
