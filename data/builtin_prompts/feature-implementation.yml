@@ -1,0 +1,55 @@
+id: feature-implementation-v1
+name: Feature Implementation
+description: Complete feature workflow from design through documentation
+scope: global
+tags:
+  - feature
+  - development
+  - workflow
+variables:
+  - name: feature_name
+    required: true
+    description: Name of the feature to implement
+  - name: feature_description
+    required: true
+    description: Detailed description of what the feature should do
+  - name: requirements
+    required: false
+    description: Specific requirements or acceptance criteria
+  - name: technical_context
+    required: false
+    description: Technical context, architecture, frameworks used
+  - name: test_strategy
+    required: false
+    default: "unit tests and integration tests"
+    description: Testing approach
+
+template: |
+  I need to implement a new feature: **{{feature_name}}**
+
+  **Description:** {{feature_description}}
+
+  **Requirements/Acceptance Criteria:**
+  {{requirements}}
+
+  **Technical Context:**
+  {{technical_context}}
+
+  **Testing Strategy:**
+  {{test_strategy}}
+
+  Please help me implement this feature with these steps:
+
+  1. **Design Phase** - Architecture and design decisions
+  2. **Implementation Phase** - Write the code
+  3. **Testing Phase** - Create comprehensive tests
+  4. **Documentation Phase** - Document the feature
+  5. **Review Phase** - Self-review before PR
+
+  For each phase, provide:
+  - Specific implementation details
+  - Code examples where applicable
+  - Best practices and patterns
+  - Potential issues to watch for
+  
+  Focus on clean, maintainable, well-tested code.

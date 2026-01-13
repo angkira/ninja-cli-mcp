@@ -4,9 +4,9 @@ config:
     - name: GitHub Discussions
       url: https://github.com/angkira/ninja-cli-mcp/discussions
       about: Ask questions or start discussions about the project
-    - name: OpenRouter Docs
-      url: https://openrouter.ai/docs
-      about: Learn about supported models and the OpenRouter API
-    - name: MCP Specification
+    - name: Documentation
+      url: https://github.com/angkira/ninja-cli-mcp/wiki
+      about: Read the documentation and usage guides
+    - name: Model Context Protocol
       url: https://modelcontextprotocol.io
-      about: Learn about the Model Context Protocol
+      about: Learn about the Model Context Protocol specification
