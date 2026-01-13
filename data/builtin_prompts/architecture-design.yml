@@ -1,0 +1,49 @@
+id: architecture-design-v1
+name: Architecture Design
+description: Design architecture and system design for features or systems
+scope: global
+tags:
+  - architecture
+  - design
+  - system-design
+variables:
+  - name: problem_statement
+    required: true
+    description: What problem are we solving?
+  - name: constraints
+    required: false
+    description: Technical constraints (performance, scalability, etc)
+  - name: existing_architecture
+    required: false
+    description: Overview of existing system architecture
+  - name: considerations
+    required: false
+    default: "maintainability, testability, performance, security"
+    description: Key architectural considerations
+
+template: |
+  I need help designing the architecture for:
+
+  **Problem Statement:**
+  {{problem_statement}}
+
+  **Constraints:**
+  {{constraints}}
+
+  **Existing Architecture:**
+  {{existing_architecture}}
+
+  **Key Considerations:**
+  {{considerations}}
+
+  Please provide:
+
+  1. **Architecture Overview** - High-level system design
+  2. **Component Design** - Individual components and their responsibilities
+  3. **Data Flow** - How data flows through the system
+  4. **Design Patterns** - Patterns and best practices to use
+  5. **Trade-offs** - Decisions made and their trade-offs
+  6. **Implementation Roadmap** - Phases of implementation
+  7. **Potential Issues** - Risks and mitigation strategies
+  
+  Include diagrams/descriptions where helpful.

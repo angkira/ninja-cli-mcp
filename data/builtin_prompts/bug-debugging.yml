@@ -1,0 +1,46 @@
+id: bug-debugging-v1
+name: Bug Debugging
+description: Systematic bug investigation and root cause analysis
+scope: global
+tags:
+  - debugging
+  - bug-fix
+  - troubleshooting
+variables:
+  - name: bug_description
+    required: true
+    description: Description of the bug observed
+  - name: error_message
+    required: false
+    description: Error message or stack trace if available
+  - name: code_context
+    required: false
+    description: Relevant code section where bug occurs
+  - name: reproduction_steps
+    required: false
+    description: Steps to reproduce the bug
+  - name: expected_behavior
+    required: false
+    description: What should happen instead
+
+template: |
+  I need help debugging this issue:
+
+  **Bug Description:** {{bug_description}}
+
+  {{reproduction_steps}}
+
+  {{expected_behavior}}
+
+  {{error_message}}
+
+  {{code_context}}
+
+  Please help me:
+  1. **Reproduce & Isolate** - Confirm the bug and identify affected components
+  2. **Root Cause Analysis** - Use scientific method to find the actual cause
+  3. **Test Hypotheses** - Propose and test potential solutions
+  4. **Implement Fix** - Write the minimal fix code
+  5. **Verify Solution** - Ensure fix works and doesn't break anything else
+  
+  Provide specific, actionable steps at each stage.
