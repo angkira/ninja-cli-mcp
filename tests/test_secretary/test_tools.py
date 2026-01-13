@@ -36,7 +36,8 @@ def executor() -> SecretaryToolExecutor:
 class TestAnalyseFile:
     """Tests for secretary_analyse_file tool."""
 
-    def test_analyse_file_success(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_analyse_file_success(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test successful file analysis with Python code."""
         # Create a test Python file
         test_file = temp_dir / "test.py"
@@ -61,7 +62,7 @@ def another_function(x, y):
 
         # Call analyse_file
         request = AnalyseFileRequest(file_path=str(test_file))
-        result = executor.analyse_file(request, client_id="test")
+        result = await executor.analyse_file(request, client_id="test")
 
         # Verify success
         assert result.status == "ok"
@@ -97,15 +98,17 @@ def another_function(x, y):
         assert "os" in import_modules
         assert "sys" in import_modules
 
-    def test_analyse_file_not_found(self, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_analyse_file_not_found(self, executor: SecretaryToolExecutor) -> None:
         """Test analysis of non-existent file returns error."""
         request = AnalyseFileRequest(file_path="/non/existent/file.py")
-        result = executor.analyse_file(request, client_id="test")
+        result = await executor.analyse_file(request, client_id="test")
         
         assert result.status == "error"
         assert len(result.message) > 0
 
-    def test_analyse_file_with_search_pattern(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_analyse_file_with_search_pattern(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test file analysis with regex search pattern."""
         # Create a test file with specific content
         test_file = temp_dir / "pattern_test.py"
@@ -127,7 +130,7 @@ class Calculator:
             file_path=str(test_file),
             search_pattern=r"calculate_\w+"
         )
-        result = executor.analyse_file(request, client_id="test")
+        result = await executor.analyse_file(request, client_id="test")
 
         assert result.status == "ok"
         
@@ -140,7 +143,8 @@ class Calculator:
         assert any("calculate_sum" in text for text in match_texts)
         assert any("calculate_product" in text for text in match_texts)
 
-    def test_analyse_file_structure_extraction(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_analyse_file_structure_extraction(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test that functions, classes, and imports are correctly extracted."""
         # Create a comprehensive test file
         test_file = temp_dir / "structure_test.py"
@@ -171,7 +175,7 @@ if __name__ == "__main__":
         test_file.write_text(test_content.strip())
 
         request = AnalyseFileRequest(file_path=str(test_file))
-        result = executor.analyse_file(request, client_id="test")
+        result = await executor.analyse_file(request, client_id="test")
 
         assert result.status == "ok"
         assert "structure" in result.result
@@ -197,34 +201,36 @@ if __name__ == "__main__":
         class_names = [cls["name"] for cls in classes]
         assert "DataProcessor" in class_names
 
-    def test_analyse_file_language_detection(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_analyse_file_language_detection(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test language detection for different file extensions."""
         # Test Python file
         py_file = temp_dir / "test.py"
         py_file.write_text("print('hello')")
         request = AnalyseFileRequest(file_path=str(py_file))
-        result = executor.analyse_file(request, client_id="test")
+        result = await executor.analyse_file(request, client_id="test")
         assert result.result["language"] == "python"
 
         # Test JavaScript file
         js_file = temp_dir / "test.js"
         js_file.write_text("console.log('hello');")
         request = AnalyseFileRequest(file_path=str(js_file))
-        result = executor.analyse_file(request, client_id="test")
+        result = await executor.analyse_file(request, client_id="test")
         assert result.result["language"] == "javascript"
 
         # Test TypeScript file
         ts_file = temp_dir / "test.ts"
         ts_file.write_text("console.log('hello');")
         request = AnalyseFileRequest(file_path=str(ts_file))
-        result = executor.analyse_file(request, client_id="test")
+        result = await executor.analyse_file(request, client_id="test")
         assert result.result["language"] == "typescript"
 
 
 class TestFileSearch:
     """Tests for secretary_file_search tool."""
 
-    def test_file_search_glob_pattern(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_file_search_glob_pattern(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test file search with glob pattern for Python files."""
         # Create mixed file types
         (temp_dir / "test1.py").write_text("print('hello')")
@@ -237,7 +243,7 @@ class TestFileSearch:
             pattern="*.py",
             repo_root=str(temp_dir)
         )
-        result = executor.file_search(request, client_id="test")
+        result = await executor.file_search(request, client_id="test")
         
         assert result.status == "ok"
         assert len(result.matches) == 2
@@ -245,7 +251,8 @@ class TestFileSearch:
         assert any("test1.py" in name for name in file_names)
         assert any("test2.py" in name for name in file_names)
 
-    def test_file_search_max_results(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_file_search_max_results(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test file search with max_results limit."""
         # Create 20 Python files
         for i in range(20):
@@ -257,14 +264,15 @@ class TestFileSearch:
             repo_root=str(temp_dir),
             max_results=5
         )
-        result = executor.file_search(request, client_id="test")
+        result = await executor.file_search(request, client_id="test")
         
         assert result.status == "ok"
         assert len(result.matches) == 5
         assert result.total_count == 20
         assert result.truncated is True
 
-    def test_file_search_nested_pattern(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_file_search_nested_pattern(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test recursive file search with nested directories."""
         # Create nested directory structure
         subdir1 = temp_dir / "subdir1"
@@ -282,7 +290,7 @@ class TestFileSearch:
             pattern="**/*.py",
             repo_root=str(temp_dir)
         )
-        result = executor.file_search(request, client_id="test")
+        result = await executor.file_search(request, client_id="test")
         
         assert result.status == "ok"
         assert len(result.matches) == 3
@@ -291,7 +299,8 @@ class TestFileSearch:
         assert "sub1.py" in file_names
         assert "deep.py" in file_names
 
-    def test_file_search_no_matches(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_file_search_no_matches(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test file search with pattern that doesn't match any files."""
         # Create some files but search for a pattern that won't match
         (temp_dir / "test.py").write_text("print('hello')")
@@ -302,7 +311,7 @@ class TestFileSearch:
             pattern="*.java",
             repo_root=str(temp_dir)
         )
-        result = executor.file_search(request, client_id="test")
+        result = await executor.file_search(request, client_id="test")
         
         assert result.status == "ok"
         assert len(result.matches) == 0
@@ -312,7 +321,8 @@ class TestFileSearch:
 class TestCodebaseReport:
     """Tests for secretary_codebase_report tool."""
 
-    def test_codebase_report_metrics(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_codebase_report_metrics(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test codebase report includes file count, total lines, and extensions."""
         # Create a codebase structure
         subdir = temp_dir / "src"
@@ -325,7 +335,7 @@ class TestCodebaseReport:
         
         # Generate report
         request = CodebaseReportRequest(repo_root=str(temp_dir))
-        result = executor.codebase_report(request, client_id="test")
+        result = await executor.codebase_report(request, client_id="test")
         
         assert result.status == "ok"
         assert len(result.report) > 0
@@ -340,26 +350,28 @@ class TestCodebaseReport:
         assert isinstance(metrics["extensions"], dict)
         assert "py" in metrics["extensions"]
 
-    def test_codebase_report_structure(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_codebase_report_structure(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test codebase report includes both structure and metrics sections."""
         # Create simple codebase
         (temp_dir / "app.py").write_text("print('app')")
         
         request = CodebaseReportRequest(repo_root=str(temp_dir))
-        result = executor.codebase_report(request, client_id="test")
+        result = await executor.codebase_report(request, client_id="test")
         
         assert result.status == "ok"
         assert len(result.report) > 0
         assert result.metrics is not None
         assert result.file_count >= 1
 
-    def test_codebase_report_markdown_format(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_codebase_report_markdown_format(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test that returned report is valid markdown."""
         # Create simple codebase
         (temp_dir / "test.py").write_text("print('test')")
         
         request = CodebaseReportRequest(repo_root=str(temp_dir))
-        result = executor.codebase_report(request, client_id="test")
+        result = await executor.codebase_report(request, client_id="test")
         
         assert result.status == "ok"
         assert len(result.report) > 0
@@ -373,7 +385,8 @@ class TestCodebaseReport:
 class TestDocumentSummary:
     """Tests for secretary_document_summary tool."""
 
-    def test_document_summary_finds_readmes(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_document_summary_finds_readmes(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test that README files are found and summarized."""
         # Create README files
         readme_content = "# Project\n\nThis is the main README file."
@@ -382,7 +395,7 @@ class TestDocumentSummary:
         
         # Summarize documents
         request = DocumentSummaryRequest(repo_root=str(temp_dir))
-        result = executor.document_summary(request, client_id="test")
+        result = await executor.document_summary(request, client_id="test")
         
         assert result.status == "ok"
         assert len(result.summaries) >= 1
@@ -391,7 +404,8 @@ class TestDocumentSummary:
         readme_summaries = [s for s in result.summaries if "README.md" in str(s)]
         assert len(readme_summaries) >= 0  # May vary based on implementation
 
-    def test_document_summary_multiple_docs(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_document_summary_multiple_docs(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test that multiple documentation files are processed."""
         # Create multiple markdown files
         (temp_dir / "README.md").write_text("# Main README")
@@ -401,7 +415,7 @@ class TestDocumentSummary:
         (temp_dir / "docs" / "API.md").write_text("# API Documentation")
         
         request = DocumentSummaryRequest(repo_root=str(temp_dir))
-        result = executor.document_summary(request, client_id="test")
+        result = await executor.document_summary(request, client_id="test")
         
         assert result.status == "ok"
         assert len(result.summaries) >= 3  # Should find multiple docs
@@ -410,7 +424,8 @@ class TestDocumentSummary:
         # Check that we got summaries
         assert len(result.summaries) > 0
 
-    def test_document_summary_custom_patterns(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
+    @pytest.mark.asyncio
+    async def test_document_summary_custom_patterns(self, temp_dir: Path, executor: SecretaryToolExecutor) -> None:
         """Test custom patterns only match specified files."""
         # Create various files
         (temp_dir / "README.md").write_text("# README")
@@ -423,7 +438,7 @@ class TestDocumentSummary:
             repo_root=str(temp_dir),
             doc_patterns=["**/*.txt"]
         )
-        result = executor.document_summary(request, client_id="test")
+        result = await executor.document_summary(request, client_id="test")
         
         assert result.status == "ok"
         # Implementation may vary, but we should get results
