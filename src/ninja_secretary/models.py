@@ -6,7 +6,7 @@ These models define the API surface for the secretary module.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,12 +16,13 @@ from pydantic import BaseModel, Field
 # ============================================================================
 
 
-class ReadFileRequest(BaseModel):
-    """Request to read a file from the codebase."""
+class AnalyseFileRequest(BaseModel):
+    """Request to analyse a file."""
 
-    file_path: str = Field(..., description="Path to file to read (relative to repo root)")
-    start_line: int | None = Field(default=None, description="Start line (1-indexed, optional)")
-    end_line: int | None = Field(default=None, description="End line (1-indexed, optional)")
+    file_path: str = Field(..., description="Path to file (relative to repo root)")
+    search_pattern: Optional[str] = Field(None, description="Optional regex pattern to search within the file")
+    include_structure: bool = Field(default=True, description="Include file structure analysis")
+    include_preview: bool = Field(default=True, description="Include content preview")
 
 
 class FileSearchRequest(BaseModel):
@@ -30,25 +31,6 @@ class FileSearchRequest(BaseModel):
     pattern: str = Field(..., description="Glob pattern to match files (e.g., '**/*.py')")
     repo_root: str = Field(..., description="Repository root path")
     max_results: int = Field(default=100, ge=1, le=1000, description="Maximum results")
-
-
-class GrepRequest(BaseModel):
-    """Request to grep for content in files."""
-
-    pattern: str = Field(..., description="Regex pattern to search for")
-    repo_root: str = Field(..., description="Repository root path")
-    file_pattern: str | None = Field(default=None, description="Glob pattern to filter files")
-    context_lines: int = Field(default=2, ge=0, le=10, description="Lines of context")
-    max_results: int = Field(default=100, ge=1, le=1000, description="Maximum results")
-
-
-class FileTreeRequest(BaseModel):
-    """Request to generate a file tree with details."""
-
-    repo_root: str = Field(..., description="Repository root path")
-    max_depth: int = Field(default=3, ge=1, le=10, description="Maximum directory depth")
-    include_sizes: bool = Field(default=True, description="Include file sizes")
-    include_git_status: bool = Field(default=False, description="Include git status")
 
 
 class CodebaseReportRequest(BaseModel):
@@ -139,22 +121,12 @@ class SmartCommitRequest(BaseModel):
 # ============================================================================
 
 
-class ReadFileResult(BaseModel):
-    """Result of reading a file."""
+class AnalyseFileResult(BaseModel):
+    """Result of file analysis."""
 
-    status: Literal["ok", "error"] = Field(..., description="Operation status")
-    file_path: str = Field(..., description="File path that was read")
-    content: str = Field(default="", description="File content")
-    line_count: int = Field(default=0, description="Total line count")
-    error_message: str = Field(default="", description="Error message if failed")
-
-
-class FileMatch(BaseModel):
-    """A file that matches a search pattern."""
-
-    path: str = Field(..., description="Relative file path")
-    size: int = Field(default=0, description="File size in bytes")
-    modified: str = Field(default="", description="Last modified timestamp")
+    status: Literal["ok", "error"]
+    message: str = Field(default="")
+    result: dict = Field(default_factory=dict)  # Contains: file, language, lines_total, structure, preview, search_results
 
 
 class FileSearchResult(BaseModel):
@@ -166,45 +138,12 @@ class FileSearchResult(BaseModel):
     truncated: bool = Field(default=False, description="Results truncated to max_results")
 
 
-class GrepMatch(BaseModel):
-    """A grep match."""
+class FileMatch(BaseModel):
+    """A file that matches a search pattern."""
 
-    file_path: str = Field(..., description="File containing match")
-    line_number: int = Field(..., description="Line number of match")
-    line_content: str = Field(..., description="Content of matching line")
-    context_before: list[str] = Field(default_factory=list, description="Lines before match")
-    context_after: list[str] = Field(default_factory=list, description="Lines after match")
-
-
-class GrepResult(BaseModel):
-    """Result of grep search."""
-
-    status: Literal["ok", "error"] = Field(..., description="Search status")
-    pattern: str = Field(..., description="Pattern that was searched")
-    matches: list[GrepMatch] = Field(default_factory=list, description="Matches found")
-    total_count: int = Field(..., description="Total matches")
-    truncated: bool = Field(default=False, description="Results truncated")
-
-
-class FileTreeNode(BaseModel):
-    """Node in file tree."""
-
-    name: str = Field(..., description="File/directory name")
-    path: str = Field(..., description="Relative path")
-    type: Literal["file", "directory"] = Field(..., description="Node type")
-    size: int | None = Field(default=None, description="Size in bytes (files only)")
-    children: list[FileTreeNode] = Field(default_factory=list, description="Child nodes")
-    git_status: str | None = Field(default=None, description="Git status if requested")
-
-
-class FileTreeResult(BaseModel):
-    """Result of file tree generation."""
-
-    status: Literal["ok", "error"] = Field(..., description="Generation status")
-    tree: FileTreeNode | None = Field(default=None, description="Root tree node")
-    total_files: int = Field(default=0, description="Total files")
-    total_dirs: int = Field(default=0, description="Total directories")
-    total_size: int = Field(default=0, description="Total size in bytes")
+    path: str = Field(..., description="Relative file path")
+    size: int = Field(default=0, description="File size in bytes")
+    modified: str = Field(default="", description="Last modified timestamp")
 
 
 class CodebaseReportResult(BaseModel):

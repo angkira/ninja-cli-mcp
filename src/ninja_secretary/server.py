@@ -27,18 +27,13 @@ from starlette.responses import Response
 
 from ninja_common.logging_utils import get_logger, setup_logging
 from ninja_secretary.models import (
+    AnalyseFileRequest,
     CodebaseReportRequest,
     DocumentSummaryRequest,
     FileSearchRequest,
-    FileTreeRequest,
-    GitCommitRequest,
-    GitDiffRequest,
-    GitLogRequest,
-    GitStatusRequest,
     GrepRequest,
     ReadFileRequest,
     SessionReportRequest,
-    SmartCommitRequest,
     UpdateDocRequest,
 )
 from ninja_secretary.tools import get_executor
@@ -56,12 +51,12 @@ logger = get_logger(__name__)
 # Tool definitions
 TOOLS: list[Tool] = [
     Tool(
-        name="secretary_read_file",
+        name="secretary_analyse_file",
         description=(
-            "Read a file from the codebase. "
-            "Can read entire file or specific line range. "
+            "Analyse a file from the codebase with optional search pattern. "
+            "Provides file structure, summary, and preview of content. "
             "\n\n"
-            "Use this for: Reading source code, documentation, configuration files."
+            "Use this for: Understanding source code, configuration files, or any file content."
         ),
         inputSchema={
             "type": "object",
@@ -70,15 +65,19 @@ TOOLS: list[Tool] = [
                     "type": "string",
                     "description": "Path to file (relative to repo root)",
                 },
-                "start_line": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "description": "Start line (1-indexed, optional)",
+                "search_pattern": {
+                    "type": "string",
+                    "description": "Optional regex pattern to search within the file",
                 },
-                "end_line": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "description": "End line (1-indexed, optional)",
+                "include_structure": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Include file structure analysis",
+                },
+                "include_preview": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Include content preview",
                 },
             },
             "required": ["file_path"],
@@ -111,83 +110,6 @@ TOOLS: list[Tool] = [
                 },
             },
             "required": ["pattern", "repo_root"],
-        },
-    ),
-    Tool(
-        name="secretary_grep",
-        description=(
-            "Search for content in files using regex patterns. "
-            "Can filter by file pattern and include context lines. "
-            "\n\n"
-            "Use this for: Finding function definitions, searching for text, code analysis."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "pattern": {
-                    "type": "string",
-                    "description": "Regex pattern to search for",
-                },
-                "repo_root": {
-                    "type": "string",
-                    "description": "Repository root path",
-                },
-                "file_pattern": {
-                    "type": "string",
-                    "description": "Glob pattern to filter files (optional)",
-                },
-                "context_lines": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 10,
-                    "default": 2,
-                    "description": "Lines of context before/after match",
-                },
-                "max_results": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1000,
-                    "default": 100,
-                    "description": "Maximum results",
-                },
-            },
-            "required": ["pattern", "repo_root"],
-        },
-    ),
-    Tool(
-        name="secretary_file_tree",
-        description=(
-            "Generate a detailed file tree structure. "
-            "Includes file sizes, directory structure, and optional git status. "
-            "\n\n"
-            "Use this for: Understanding project structure, exploring codebases."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Repository root path",
-                },
-                "max_depth": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 10,
-                    "default": 3,
-                    "description": "Maximum directory depth",
-                },
-                "include_sizes": {
-                    "type": "boolean",
-                    "default": True,
-                    "description": "Include file sizes",
-                },
-                "include_git_status": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include git status",
-                },
-            },
-            "required": ["repo_root"],
         },
     ),
     Tool(
@@ -311,146 +233,6 @@ TOOLS: list[Tool] = [
             "required": ["module_name", "doc_type", "content"],
         },
     ),
-    Tool(
-        name="secretary_git_status",
-        description=(
-            "Get current git repository status. Shows current branch, staged files, "
-            "unstaged changes, untracked files, and ahead/behind remote status. "
-            "Use this to understand the current state before committing."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Repository root path",
-                },
-                "include_untracked": {
-                    "type": "boolean",
-                    "default": True,
-                    "description": "Include untracked files",
-                },
-            },
-            "required": ["repo_root"],
-        },
-    ),
-    Tool(
-        name="secretary_git_diff",
-        description=(
-            "View git diff for staged or unstaged changes. Shows what has changed "
-            "in the working directory or staging area. Can optionally filter to a specific file."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Repository root path",
-                },
-                "staged": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Show staged changes instead of unstaged",
-                },
-                "file_path": {
-                    "type": "string",
-                    "description": "Specific file to diff (optional)",
-                },
-            },
-            "required": ["repo_root"],
-        },
-    ),
-    Tool(
-        name="secretary_git_commit",
-        description=(
-            "Create a git commit with the specified message. Can optionally stage specific files first. "
-            "Use git_status first to see what will be committed."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Repository root path",
-                },
-                "message": {
-                    "type": "string",
-                    "description": "Commit message",
-                },
-                "files": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "default": [],
-                    "description": "Files to stage and commit (empty = commit all staged)",
-                },
-                "author": {
-                    "type": "string",
-                    "description": "Override commit author (optional)",
-                },
-            },
-            "required": ["repo_root", "message"],
-        },
-    ),
-    Tool(
-        name="secretary_git_log",
-        description=(
-            "View git commit history. Shows recent commits with hash, author, date, and message. "
-            "Can optionally filter to commits affecting a specific file."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Repository root path",
-                },
-                "max_count": {
-                    "type": "integer",
-                    "default": 10,
-                    "minimum": 1,
-                    "maximum": 100,
-                    "description": "Maximum commits to show",
-                },
-                "file_path": {
-                    "type": "string",
-                    "description": "Filter to commits affecting this file (optional)",
-                },
-            },
-            "required": ["repo_root"],
-        },
-    ),
-    Tool(
-        name="secretary_smart_commit",
-        description=(
-            "Intelligently analyze changes and create atomic commits with meaningful messages. "
-            "Groups related files together (same module, tests, docs, config) and generates "
-            "conventional commit messages. Use dry_run=True to preview suggested commits first."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Repository root path",
-                },
-                "include_untracked": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include untracked files",
-                },
-                "dry_run": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Preview commits without creating them",
-                },
-                "author": {
-                    "type": "string",
-                    "description": "Override commit author (optional)",
-                },
-            },
-            "required": ["repo_root"],
-        },
-    ),
 ]
 
 
@@ -464,36 +246,42 @@ def create_server() -> Server:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 WHAT SECRETARY DOES:
-   ✅ Read files from codebase (with line ranges)
+   ✅ Analyse files with structure, summary, and preview
    ✅ Search for files (glob patterns)
-   ✅ Grep content (regex search with context)
    ✅ Generate file trees with details
    ✅ Create codebase analysis reports
    ✅ Summarize documentation
    ✅ Track session activity
    ✅ Update module documentation
-   ✅ Manage git repositories (status, diff, commit, log)
-   ✅ Create smart atomic commits with conventional messages
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🔧 AVAILABLE TOOLS:
 
-• secretary_read_file
-  Read file content (entire file or line range).
-  Returns: File content with line count.
+🎯 DECISION TREE - Which tool to use:
+   
+   Need to understand a specific file?
+     → Use secretary_analyse_file (shows structure, summary, preview)
+   
+   Need to find files matching a pattern?
+     → Use secretary_file_search (glob patterns)
+   
+   Need to understand entire codebase?
+     → Use secretary_codebase_report (metrics, structure, dependencies)
+   
+   Need to understand documentation?
+     → Use secretary_document_summary (auto-finds README, CONTRIBUTING, .md files)
+   
+   For complex exploration (patterns, comparisons, deep analysis):
+     → Use Task(Explore) agent for automated synthesis
+
+• secretary_analyse_file
+  Analyse file content with optional search pattern.
+  Returns: File structure, summary, and content preview.
 
 • secretary_file_search
   Search for files matching glob patterns.
   Returns: List of matching files with metadata.
-
-• secretary_grep
-  Search content using regex with context.
-  Returns: Matches with surrounding lines.
-
-• secretary_file_tree
-  Generate detailed file tree structure.
-  Returns: Hierarchical tree with sizes and metadata.
 
 • secretary_codebase_report
   Comprehensive codebase analysis.
@@ -511,33 +299,12 @@ def create_server() -> Server:
   Update module documentation files.
   Returns: Status and changes made.
 
-• secretary_git_status
-  Get git repository status.
-  Returns: Current branch, staged/unstaged files, ahead/behind status.
-
-• secretary_git_diff
-  View git diff for changes.
-  Returns: Diff output with file change statistics.
-
-• secretary_git_commit
-  Create a git commit.
-  Returns: Commit hash, message, and files committed.
-
-• secretary_git_log
-  View git commit history.
-  Returns: Recent commits with hash, author, date, message.
-
-• secretary_smart_commit
-  Intelligently create atomic commits with conventional messages.
-  Groups related files and generates meaningful commit messages.
-  Returns: List of suggested or created commits.
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 💡 USAGE EXAMPLES:
 
-1. Read a specific file:
-   secretary_read_file({
+1. Analyse a specific file:
+   secretary_analyse_file({
      "file_path": "src/main.py"
    })
 
@@ -548,80 +315,29 @@ def create_server() -> Server:
      "max_results": 50
    })
 
-3. Find function definitions:
-   secretary_grep({
-     "pattern": "def \\w+\\(",
-     "repo_root": "/path/to/repo",
-     "file_pattern": "**/*.py",
-     "context_lines": 3
-   })
-
-4. Generate project tree:
-   secretary_file_tree({
-     "repo_root": "/path/to/repo",
-     "max_depth": 3,
-     "include_sizes": true
-   })
-
-5. Analyze codebase:
+3. Generate project analysis:
    secretary_codebase_report({
      "repo_root": "/path/to/repo",
      "include_metrics": true,
      "include_dependencies": true
    })
 
-6. Track session:
+4. Track session:
    secretary_session_report({
      "session_id": "my-session-id",
      "action": "update",
      "updates": {
-       "tools_used": ["read_file", "grep"],
+       "tools_used": ["analyse_file", "file_search"],
        "summary": "Analyzed authentication code"
      }
    })
 
-7. Check git status:
-   secretary_git_status({
-     "repo_root": "/path/to/repo"
-   })
-
-8. View changes:
-   secretary_git_diff({
-     "repo_root": "/path/to/repo",
-     "staged": false
-   })
-
-9. Create commit:
-   secretary_git_commit({
-     "repo_root": "/path/to/repo",
-     "message": "Add new feature"
-   })
-
-10. View history:
-    secretary_git_log({
-      "repo_root": "/path/to/repo",
-      "max_count": 20
-    })
-
-11. Smart commit (preview):
-    secretary_smart_commit({
-      "repo_root": "/path/to/repo",
-      "dry_run": true
-    })
-
-12. Smart commit (create):
-    secretary_smart_commit({
-      "repo_root": "/path/to/repo",
-      "dry_run": false
-    })
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ⚡ RATE LIMITS:
-   • Read file: 60 calls/minute
-   • File search/grep: 30 calls/minute
+   • Analyse file: 60 calls/minute
+   • File search: 30 calls/minute
    • Reports: 5-10 calls/minute
-   • Git operations: 20 calls/minute
    • Per-client tracking
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""",
@@ -641,21 +357,13 @@ def create_server() -> Server:
         executor = get_executor()
 
         try:
-            if name == "secretary_read_file":
-                request = ReadFileRequest(**arguments)
-                result = await executor.read_file(request, client_id=client_id)
+            if name == "secretary_analyse_file":
+                request = AnalyseFileRequest(**arguments)
+                result = await executor.analyse_file(request, client_id=client_id)
 
             elif name == "secretary_file_search":
                 request = FileSearchRequest(**arguments)
                 result = await executor.file_search(request, client_id=client_id)
-
-            elif name == "secretary_grep":
-                request = GrepRequest(**arguments)
-                result = await executor.grep(request, client_id=client_id)
-
-            elif name == "secretary_file_tree":
-                request = FileTreeRequest(**arguments)
-                result = await executor.file_tree(request, client_id=client_id)
 
             elif name == "secretary_codebase_report":
                 request = CodebaseReportRequest(**arguments)
@@ -672,26 +380,6 @@ def create_server() -> Server:
             elif name == "secretary_update_doc":
                 request = UpdateDocRequest(**arguments)
                 result = await executor.update_doc(request, client_id=client_id)
-
-            elif name == "secretary_git_status":
-                request = GitStatusRequest(**arguments)
-                result = await executor.git_status(request, client_id=client_id)
-
-            elif name == "secretary_git_diff":
-                request = GitDiffRequest(**arguments)
-                result = await executor.git_diff(request, client_id=client_id)
-
-            elif name == "secretary_git_commit":
-                request = GitCommitRequest(**arguments)
-                result = await executor.git_commit(request, client_id=client_id)
-
-            elif name == "secretary_git_log":
-                request = GitLogRequest(**arguments)
-                result = await executor.git_log(request, client_id=client_id)
-
-            elif name == "secretary_smart_commit":
-                request = SmartCommitRequest(**arguments)
-                result = await executor.smart_commit(request, client_id=client_id)
 
             else:
                 return [
