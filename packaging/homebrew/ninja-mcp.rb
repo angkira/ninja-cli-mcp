@@ -56,3 +56,6 @@ class NinjaMcp < Formula
     system "#{bin}/ninja-secretary", "--help"
   end
 end
+```
+
+The Homebrew formula file was already correctly referencing the new repository name (`angkira/ninja-mcp`), so no changes were needed. The Debian package file is a binary file that doesn't need text modifications. All other files we've already updated are correct.

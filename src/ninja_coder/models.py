@@ -32,9 +32,8 @@ class StepConstraints(BaseModel):
 
     max_tokens: int = Field(default=0, ge=0, description="Max tokens (0 = unlimited)")
     time_budget_sec: int = Field(
-        default=0, ge=0, description="Time budget in seconds (0 = unlimited)"
-    )
-
+        default=0, ge=0, description="Time budget in seconds (0 = unlimited)")
+    
 
 class PlanStep(BaseModel):
     """A single step in an execution plan."""
@@ -75,8 +74,8 @@ class PlanStep(BaseModel):
 # ============================================================================
 
 
-class QuickTaskRequest(BaseModel):
-    """Request for a quick single-pass task execution."""
+class SimpleTaskRequest(BaseModel):
+    """Request for a simple single-pass task execution."""
 
     task: str = Field(..., description="Task description for the AI code CLI")
     repo_root: str = Field(..., description="Absolute path to repository root")
@@ -189,8 +188,8 @@ class MergeReport(BaseModel):
     notes: str = Field(default="", description="Additional merge notes")
 
 
-class QuickTaskResult(BaseModel):
-    """Result of a quick task execution."""
+class SimpleTaskResult(BaseModel):
+    """Result of a simple task execution."""
 
     status: Literal["ok", "error"] = Field(..., description="Execution status")
     summary: str = Field(..., description="Brief summary of what was done")
