@@ -544,7 +544,7 @@ class DaemonManager:
         Returns:
             List of module names
         """
-        return ["coder", "researcher", "secretary"]
+        return ["coder", "researcher", "secretary", "resources", "prompts"]
 
     def status_all(self) -> dict[str, dict[str, Any]]:
         """Get status for all modules.
@@ -565,7 +565,7 @@ def main() -> int:  # noqa: PLR0911
     start_parser.add_argument(
         "module",
         nargs="?",
-        choices=["coder", "researcher", "secretary"],
+        choices=["coder", "researcher", "secretary", "resources", "prompts"],
         help="Module name (omit to start all)",
     )
 
@@ -574,7 +574,7 @@ def main() -> int:  # noqa: PLR0911
     stop_parser.add_argument(
         "module",
         nargs="?",
-        choices=["coder", "researcher", "secretary"],
+        choices=["coder", "researcher", "secretary", "resources", "prompts"],
         help="Module name (omit to stop all)",
     )
 
@@ -583,7 +583,7 @@ def main() -> int:  # noqa: PLR0911
     restart_parser.add_argument(
         "module",
         nargs="?",
-        choices=["coder", "researcher", "secretary"],
+        choices=["coder", "researcher", "secretary", "resources", "prompts"],
         help="Module name (omit to restart all)",
     )
 
@@ -592,13 +592,13 @@ def main() -> int:  # noqa: PLR0911
     status_parser.add_argument(
         "module",
         nargs="?",
-        choices=["coder", "researcher", "secretary"],
+        choices=["coder", "researcher", "secretary", "resources", "prompts"],
         help="Module name (omit for all)",
     )
 
     # Connect command (for MCP clients)
     connect_parser = subparsers.add_parser("connect", help="Connect to daemon socket")
-    connect_parser.add_argument("module", choices=["coder", "researcher", "secretary"])
+    connect_parser.add_argument("module", choices=["coder", "researcher", "secretary", "resources", "prompts"])
 
     args = parser.parse_args()
 

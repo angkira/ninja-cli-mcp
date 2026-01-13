@@ -189,11 +189,13 @@ def cmd_set_model(args: argparse.Namespace) -> None:
         "coder": "NINJA_CODER_MODEL",
         "researcher": "NINJA_RESEARCHER_MODEL",
         "secretary": "NINJA_SECRETARY_MODEL",
+        "resources": "NINJA_RESOURCES_CACHE_TTL",
+        "prompts": "NINJA_PROMPTS_MAX_SUGGESTIONS",
     }
 
     if args.module not in module_keys:
         print_colored(f"Invalid module: {args.module}", "red")
-        print_colored("Valid modules: coder, researcher, secretary", "dim")
+        print_colored("Valid modules: coder, researcher, secretary, resources, prompts", "dim")
         sys.exit(1)
 
     key = module_keys[args.module]
@@ -370,7 +372,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 
         # Check ninja servers
         servers = mcp_config.get("mcpServers", {})
-        ninja_servers = ["ninja-coder", "ninja-researcher", "ninja-secretary"]
+        ninja_servers = ["ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-resources", "ninja-prompts"]
 
         for server in ninja_servers:
             if server in servers:
@@ -489,10 +491,10 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
         return
 
     # Define servers to register
-    servers = ["ninja-coder", "ninja-researcher", "ninja-secretary"]
+    servers = ["ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-resources", "ninja-prompts"]
 
     # Determine which servers to install
-    if args.all or (not args.coder and not args.researcher and not args.secretary):
+    if args.all or (not args.coder and not args.researcher and not args.secretary and not args.resources and not args.prompts):
         servers_to_install = servers
     else:
         servers_to_install = []
@@ -502,6 +504,10 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
             servers_to_install.append("ninja-researcher")
         if args.secretary:
             servers_to_install.append("ninja-secretary")
+        if args.resources:
+            servers_to_install.append("ninja-resources")
+        if args.prompts:
+            servers_to_install.append("ninja-prompts")
 
     # Register servers using claude mcp add
     print()
@@ -630,7 +636,7 @@ Examples:
     model_parser = subparsers.add_parser("model", help="Set model for a module")
     model_parser.add_argument(
         "module",
-        choices=["coder", "researcher", "secretary"],
+        choices=["coder", "researcher", "secretary", "resources", "prompts"],
         help="Module name",
     )
     model_parser.add_argument("model", help="Model name")
@@ -695,6 +701,16 @@ Examples:
         "--secretary",
         action="store_true",
         help="Register ninja-secretary server",
+    )
+    setup_claude_parser.add_argument(
+        "--resources",
+        action="store_true",
+        help="Register ninja-resources server",
+    )
+    setup_claude_parser.add_argument(
+        "--prompts",
+        action="store_true",
+        help="Register ninja-prompts server",
     )
     setup_claude_parser.add_argument(
         "--all",
