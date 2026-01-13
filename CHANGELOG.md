@@ -7,26 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+(No unreleased changes)
+
+## [0.3.0] - 2026-01-14
+
 ### Added
-- Modern build system using `just`
-- One-line installer script
-- Homebrew formula for macOS
-- Debian package for Ubuntu/Debian
-- GitHub Actions workflows for CI/CD
-- Automated release process
-- Comprehensive installation documentation
-- Multiple installation modes (global/local/development)
+- **Phase 1: Resources Module** - Load project context as queryable resources
+  - `resource_codebase`: Analyze codebases with file structure, function/class extraction
+  - `resource_config`: Load configs with automatic sensitive data redaction
+  - `resource_docs`: Extract documentation with section parsing
+  - Smart caching (1-hour TTL) for performance
+  - Comprehensive API documentation
+
+- **Phase 1: Prompts Module** - Reusable prompt templates and workflow composition
+  - `prompt_registry`: CRUD operations for prompt templates
+  - `prompt_suggest`: AI-powered prompt recommendations with relevance scoring
+  - `prompt_chain`: Multi-step workflows with variable passing ({{prev.step}} syntax)
+  - 4 built-in prompt templates (code-review, bug-debugging, feature-implementation, architecture-design)
+  - YAML-based templates for easy customization
+
+- Secretary module improvements
+  - `secretary_analyse_file`: Unified file analysis with structure extraction
+  - `secretary_git_*`: Git operations (status, diff, log, commit)
+  - `secretary_codebase_report`: Project metrics and structure analysis
+  - `secretary_document_summary`: Documentation indexing and summarization
+  - Session tracking for work logs
+
+- README redesign as "Swiss Knife" positioning
+  - Quick look examples for all modules
+  - Real-world use cases (web apps, debugging, learning, code review)
+  - Module deep dives with feature details
+  - Improved architecture visualization
 
 ### Changed
-- **BREAKING**: Removed hardcoded paths from all configurations
-- Installation script now auto-detects installation mode
-- Updated README with modern installation methods
-- Improved MCP server configuration handling
+- Coder module tool rename: `coder_quick_task` → `coder_simple_task`
+- Secretary API redesigned for better usability
+- Test files renamed to avoid pytest collection conflicts
+- Improved module error handling and validation
 
 ### Fixed
-- Hardcoded user-specific paths in `.mcp.json`
-- Installation portability issues
-- Configuration not working for other users
+- Response model field mismatches in secretary tools
+- File search pagination to count all matches
+- Structure extraction for indented functions/methods
+- Secretary tool import module parsing
+
+### Security
+- Automatic redaction of passwords, API keys, and tokens in config resources
+- Rate limiting on all new tools (60 calls/minute)
+- Input validation on all resource operations
 
 ## [0.2.0] - 2024-12-26
 
@@ -55,6 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Researcher module with web search
 - Basic documentation
 
-[Unreleased]: https://github.com/angkira/ninja-mcp/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/angkira/ninja-mcp/releases/tag/v0.2.0
-[0.1.0]: https://github.com/angkira/ninja-mcp/releases/tag/v0.1.0
+[Unreleased]: https://github.com/angkira/ninja-cli-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/angkira/ninja-cli-mcp/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/angkira/ninja-cli-mcp/releases/tag/v0.2.0
+[0.1.0]: https://github.com/angkira/ninja-cli-mcp/releases/tag/v0.1.0
