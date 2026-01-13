@@ -1,0 +1,347 @@
+{
+  "version": "1.0.0",
+  "description": "Ninja MCP - Consolidated module and tools configuration",
+  "modules": {
+    "ninja-coder": {
+      "name": "Coder",
+      "id": "ninja-coder",
+      "command": "ninja-coder",
+      "description": "AI-powered code generation, modification, and refactoring using Aider",
+      "icon": "🥷",
+      "version": "0.3.0",
+      "status": "stable",
+      "environment_variables": {
+        "NINJA_CODER_MODEL": {
+          "default": "anthropic/claude-haiku-4.5-20250929",
+          "description": "The model to use for code generation"
+        },
+        "NINJA_CODE_BIN": {
+          "default": "aider",
+          "description": "Path to the aider binary"
+        },
+        "NINJA_CODER_TIMEOUT": {
+          "default": "600",
+          "description": "Timeout for code generation in seconds"
+        }
+      },
+      "tools": [
+        {
+          "name": "coder_quick_task",
+          "description": "Quick single-pass code writing task",
+          "parameters": {
+            "task": "The code task specification",
+            "repo_root": "Root directory of the repository",
+            "allowed_globs": "Glob patterns for files Ninja can modify (optional)",
+            "context_paths": "Files/directories for context (optional)",
+            "deny_globs": "Glob patterns for files Ninja must NOT touch (optional)"
+          }
+        },
+        {
+          "name": "coder_execute_plan_sequential",
+          "description": "Execute multi-step code writing plan sequentially",
+          "parameters": {
+            "repo_root": "Root directory of the repository",
+            "steps": "Array of code writing steps",
+            "mode": "Execution mode: 'quick' or 'full'"
+          }
+        },
+        {
+          "name": "coder_execute_plan_parallel",
+          "description": "Execute independent code writing tasks in parallel",
+          "parameters": {
+            "repo_root": "Root directory of the repository",
+            "steps": "Array of independent code writing steps",
+            "fanout": "Maximum concurrent tasks (1-16, default 4)"
+          }
+        }
+      ]
+    },
+    "ninja-researcher": {
+      "name": "Researcher",
+      "id": "ninja-researcher",
+      "command": "ninja-researcher",
+      "description": "Web search and research with Perplexity AI integration",
+      "icon": "🔍",
+      "version": "0.3.0",
+      "status": "stable",
+      "environment_variables": {
+        "NINJA_RESEARCHER_MODEL": {
+          "default": "anthropic/claude-sonnet-4",
+          "description": "The model to use for research analysis"
+        },
+        "NINJA_RESEARCHER_MAX_SOURCES": {
+          "default": "20",
+          "description": "Maximum sources to aggregate"
+        },
+        "NINJA_RESEARCHER_PARALLEL_AGENTS": {
+          "default": "4",
+          "description": "Number of parallel search agents"
+        }
+      },
+      "tools": [
+        {
+          "name": "researcher_deep_research",
+          "description": "Multi-query research with parallel agents",
+          "parameters": {
+            "topic": "Research topic",
+            "queries": "Specific queries (auto-generated if empty)",
+            "max_sources": "Maximum sources to gather (default 20)",
+            "parallel_agents": "Number of parallel agents (default 4)"
+          }
+        },
+        {
+          "name": "researcher_generate_report",
+          "description": "Generate comprehensive reports from sources",
+          "parameters": {
+            "topic": "Report topic",
+            "sources": "Source documents to synthesize",
+            "report_type": "Type: comprehensive, summary, technical, executive"
+          }
+        },
+        {
+          "name": "researcher_fact_check",
+          "description": "Verify claims against web sources",
+          "parameters": {
+            "claim": "Claim to verify",
+            "sources": "URLs to check against (auto-search if empty)"
+          }
+        },
+        {
+          "name": "researcher_summarize_sources",
+          "description": "Extract key information from multiple sources",
+          "parameters": {
+            "urls": "URLs to summarize",
+            "max_length": "Maximum summary length in words (default 500)"
+          }
+        }
+      ]
+    },
+    "ninja-secretary": {
+      "name": "Secretary",
+      "id": "ninja-secretary",
+      "command": "ninja-secretary",
+      "description": "Codebase exploration, analysis, and documentation",
+      "icon": "📋",
+      "version": "0.3.0",
+      "status": "stable",
+      "environment_variables": {
+        "NINJA_SECRETARY_MODEL": {
+          "default": "anthropic/claude-haiku-4.5-20250929",
+          "description": "The model to use for codebase analysis"
+        },
+        "NINJA_SECRETARY_MAX_FILE_SIZE": {
+          "default": "1048576",
+          "description": "Maximum file size to process in bytes"
+        }
+      },
+      "tools": [
+        {
+          "name": "secretary_read_file",
+          "description": "Read file content with optional line range",
+          "parameters": {
+            "file_path": "Path to file (relative to repo root)",
+            "start_line": "Start line (1-indexed, optional)",
+            "end_line": "End line (1-indexed, optional)"
+          }
+        },
+        {
+          "name": "secretary_file_search",
+          "description": "Search for files matching glob patterns",
+          "parameters": {
+            "pattern": "Glob pattern to match files",
+            "repo_root": "Repository root path",
+            "max_results": "Maximum results to return (default 100)"
+          }
+        },
+        {
+          "name": "secretary_grep",
+          "description": "Search content using regex patterns",
+          "parameters": {
+            "pattern": "Regex pattern to search for",
+            "repo_root": "Repository root path",
+            "file_pattern": "Glob pattern to filter files (optional)",
+            "context_lines": "Lines of context (default 2)"
+          }
+        },
+        {
+          "name": "secretary_file_tree",
+          "description": "Generate detailed file tree structure",
+          "parameters": {
+            "repo_root": "Repository root path",
+            "max_depth": "Maximum directory depth (default 3)",
+            "include_sizes": "Include file sizes (default true)"
+          }
+        },
+        {
+          "name": "secretary_codebase_report",
+          "description": "Generate comprehensive codebase analysis",
+          "parameters": {
+            "repo_root": "Repository root path",
+            "include_metrics": "Include code metrics (default true)",
+            "include_dependencies": "Include dependency analysis (default true)"
+          }
+        },
+        {
+          "name": "secretary_document_summary",
+          "description": "Summarize documentation files",
+          "parameters": {
+            "repo_root": "Repository root path",
+            "doc_patterns": "Patterns to match documentation files"
+          }
+        },
+        {
+          "name": "secretary_session_report",
+          "description": "Track and manage session activity",
+          "parameters": {
+            "session_id": "Session identifier",
+            "action": "Action: get, update, or create"
+          }
+        },
+        {
+          "name": "secretary_update_doc",
+          "description": "Update module documentation",
+          "parameters": {
+            "module_name": "Module name",
+            "doc_type": "Type: readme, api, changelog",
+            "content": "Content to add/replace",
+            "mode": "Mode: replace, append, prepend (default replace)"
+          }
+        }
+      ]
+    },
+    "ninja-resources": {
+      "name": "Resources",
+      "id": "ninja-resources",
+      "command": "ninja-resources",
+      "description": "Load project context as queryable resources with automatic caching",
+      "icon": "🧠",
+      "version": "0.3.0",
+      "status": "stable",
+      "environment_variables": {
+        "NINJA_RESOURCES_CACHE_TTL": {
+          "default": "3600",
+          "description": "Cache TTL in seconds (default 1 hour)"
+        },
+        "NINJA_RESOURCES_MAX_FILES": {
+          "default": "1000",
+          "description": "Maximum files to process"
+        }
+      },
+      "tools": [
+        {
+          "name": "resource_codebase",
+          "description": "Load and analyze project codebase structure",
+          "parameters": {
+            "repo_root": "Root directory to analyze",
+            "include_patterns": "File patterns to include (optional)",
+            "exclude_patterns": "File patterns to exclude (optional)",
+            "max_files": "Maximum files to process (optional)"
+          }
+        },
+        {
+          "name": "resource_config",
+          "description": "Load configuration files with automatic secret redaction",
+          "parameters": {
+            "repo_root": "Root directory to search",
+            "include": "Config files to include (optional)",
+            "exclude": "Config files to exclude (optional)"
+          }
+        },
+        {
+          "name": "resource_docs",
+          "description": "Extract documentation with section parsing",
+          "parameters": {
+            "repo_root": "Root directory to analyze",
+            "max_depth": "Maximum directory depth (optional)",
+            "include_patterns": "File patterns to include (optional)"
+          }
+        }
+      ]
+    },
+    "ninja-prompts": {
+      "name": "Prompts",
+      "id": "ninja-prompts",
+      "command": "ninja-prompts",
+      "description": "Reusable prompt templates and multi-step workflow composition",
+      "icon": "✨",
+      "version": "0.3.0",
+      "status": "stable",
+      "environment_variables": {
+        "NINJA_PROMPTS_MAX_SUGGESTIONS": {
+          "default": "5",
+          "description": "Maximum prompt suggestions"
+        },
+        "NINJA_PROMPTS_CACHE_TTL": {
+          "default": "3600",
+          "description": "Cache TTL in seconds"
+        }
+      },
+      "tools": [
+        {
+          "name": "prompt_registry",
+          "description": "Manage prompt templates (CRUD operations)",
+          "parameters": {
+            "action": "Action: list, get, create, update, delete",
+            "prompt_id": "Prompt identifier (for get/delete)",
+            "prompt": "Prompt template data (for create/update)"
+          }
+        },
+        {
+          "name": "prompt_suggest",
+          "description": "Get AI-powered prompt suggestions",
+          "parameters": {
+            "context": "Context object with task, language, file_type",
+            "max_suggestions": "Maximum suggestions (optional)"
+          }
+        },
+        {
+          "name": "prompt_chain",
+          "description": "Execute multi-step workflows",
+          "parameters": {
+            "action": "Action: execute or validate",
+            "steps": "Array of workflow steps"
+          }
+        }
+      ]
+    }
+  },
+  "installation": {
+    "claude_code": {
+      "description": "Register with Claude Code IDE",
+      "script": "./scripts/install_claude_code_mcp.sh",
+      "flags": "--all or --coder --researcher --secretary --resources --prompts"
+    },
+    "vscode": {
+      "description": "Register with VS Code Cline extension",
+      "script": "./scripts/install_vscode_mcp.sh",
+      "flags": "--all or individual module flags"
+    },
+    "zed": {
+      "description": "Register with Zed editor",
+      "script": "./scripts/install_zed_mcp.sh",
+      "flags": "--all or individual module flags"
+    }
+  },
+  "use_cases": [
+    {
+      "title": "Building Web Applications",
+      "modules": ["ninja-coder", "ninja-secretary"],
+      "description": "Use Coder for code generation and Secretary for understanding project structure"
+    },
+    {
+      "title": "Debugging & Problem Solving",
+      "modules": ["ninja-researcher", "ninja-secretary"],
+      "description": "Use Researcher for investigating issues and Secretary for analyzing code"
+    },
+    {
+      "title": "Learning & Documentation",
+      "modules": ["ninja-resources", "ninja-secretary"],
+      "description": "Use Resources to load project context and Secretary for documentation analysis"
+    },
+    {
+      "title": "Code Review & Analysis",
+      "modules": ["ninja-prompts", "ninja-secretary"],
+      "description": "Use Prompts for systematic reviews and Secretary for codebase metrics"
+    }
+  ]
+}
