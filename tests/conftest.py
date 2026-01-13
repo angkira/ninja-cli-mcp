@@ -98,3 +98,41 @@ def sample_plan(sample_plan_step: dict) -> dict:
             },
         ],
     }
+
+
+@pytest.fixture
+def temp_test_repo() -> Generator[Path, None, None]:
+    """Create a temporary repository specifically for coder evaluation tests."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_path = Path(tmpdir)
+
+        # Create basic repo structure
+        (repo_path / "src").mkdir()
+        (repo_path / "tests").mkdir()
+        (repo_path / "docs").mkdir()
+
+        # Create some sample files
+        (repo_path / "src" / "main.py").write_text('print("Hello World")\n')
+        (repo_path / "src" / "utils.py").write_text("def helper(): pass\n")
+        (repo_path / "tests" / "test_main.py").write_text("def test_example(): pass\n")
+        (repo_path / "README.md").write_text("# Test Project\n")
+        (repo_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+
+        yield repo_path
+
+
+@pytest.fixture
+def mock_ninja_result():
+    """Create a mock NinjaResult for testing."""
+    from ninja_coder.driver import NinjaResult
+    return NinjaResult(
+        success=True,
+        summary="✅ Modified 1 file(s): src/new_function.py",
+        notes="",
+        suspected_touched_paths=["src/new_function.py"],
+        raw_logs_path="/tmp/logs/test.log",
+        exit_code=0,
+        stdout="Created src/new_function.py with hello_world function",
+        stderr="",
+        model_used="anthropic/claude-sonnet-4"
+    )

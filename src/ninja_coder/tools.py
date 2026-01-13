@@ -23,8 +23,8 @@ from ninja_coder.models import (
     ParallelPlanRequest,
     PlanExecutionResult,
     PlanStep,
-    QuickTaskRequest,
-    QuickTaskResult,
+    SimpleTaskRequest,
+    SimpleTaskResult,
     RunTestsRequest,
     SequentialPlanRequest,
     StepResult,
@@ -85,11 +85,11 @@ class ToolExecutor:
 
     @rate_limited(max_calls=50, time_window=60)
     @monitored
-    async def quick_task(
-        self, request: QuickTaskRequest, client_id: str = "default"
-    ) -> QuickTaskResult:
+    async def simple_task(
+        self, request: SimpleTaskRequest, client_id: str = "default"
+    ) -> SimpleTaskResult:
         """
-        Execute a quick single-pass CODE WRITING task.
+        Execute a simple single-pass CODE WRITING task.
 
         This tool runs the AI code CLI in quick mode for fast code writing.
         The CLI has full responsibility for reading/writing files.
@@ -97,17 +97,17 @@ class ToolExecutor:
         Returns ONLY a concise summary - NO source code is returned.
 
         Args:
-            request: Quick task request parameters.
+            request: Simple task request parameters.
             client_id: Client identifier for isolation and rate limiting.
 
         Returns:
-            Quick task result with CONCISE summary and metadata (no source code).
+            Simple task result with CONCISE summary and metadata (no source code).
 
         Raises:
             PermissionError: If rate limit is exceeded.
             ValueError: If inputs are invalid.
         """
-        logger.info(f"Executing quick task in {request.repo_root} for client {client_id}")
+        logger.info(f"Executing simple task in {request.repo_root} for client {client_id}")
 
         # Generate task ID and start timer
         task_id = str(uuid.uuid4())
@@ -131,7 +131,7 @@ class ToolExecutor:
             duration = time.time() - start_time
             self._record_metrics(
                 task_id=task_id,
-                tool_name="coder_quick_task",
+                tool_name="coder_simple_task",
                 task_description=request.task[:200],  # Truncate for safety
                 output="",
                 duration_sec=duration,
@@ -141,15 +141,15 @@ class ToolExecutor:
                 error_message=f"Input validation failed: {e!s}",
                 client_id=client_id,
             )
-            return QuickTaskResult(
+            return SimpleTaskResult(
                 status="error",
                 summary=f"❌ Input validation failed: {e!s}",
                 notes="Invalid or potentially unsafe input detected",
             )
         except PermissionError as e:
             # Rate limit exceeded
-            logger.warning(f"Rate limit exceeded for quick_task (client {client_id}): {e}")
-            return QuickTaskResult(
+            logger.warning(f"Rate limit exceeded for simple_task (client {client_id}): {e}")
+            return SimpleTaskResult(
                 status="error",
                 summary=f"⚠️ Rate limit exceeded: {e!s}",
                 notes="Too many requests - please slow down",
@@ -167,7 +167,7 @@ class ToolExecutor:
         # Execute via AI code CLI
         result = await self.driver.execute_async(
             repo_root=request.repo_root,
-            step_id="quick_task",
+            step_id="simple_task",
             instruction=instruction,
         )
 
@@ -176,7 +176,7 @@ class ToolExecutor:
         file_scope = ",".join(request.allowed_globs) if request.allowed_globs else None
         self._record_metrics(
             task_id=task_id,
-            tool_name="coder_quick_task",
+            tool_name="coder_simple_task",
             task_description=request.task,
             output=result.stdout,
             duration_sec=duration,
@@ -189,7 +189,7 @@ class ToolExecutor:
         )
 
         # Return CONCISE result (no source code)
-        return QuickTaskResult(
+        return SimpleTaskResult(
             status="ok" if result.success else "error",
             summary=result.summary[:500],  # Ensure concise
             notes=result.notes[:300],  # Ensure concise
@@ -589,7 +589,7 @@ class ToolExecutor:
         not by this server. This tool returns a not_supported status.
 
         If you need to apply patches, include them in the task description for
-        coder_quick_task or execute_plan_sequential/parallel.
+        coder_simple_task or execute_plan_sequential/parallel.
 
         Args:
             request: Apply patch request parameters.
@@ -604,7 +604,7 @@ class ToolExecutor:
             status="not_supported",
             message=(
                 "⚠️ NOT SUPPORTED: Ninja writes code based on specifications, not patches. "
-                "To apply changes, describe what code to write in coder_quick_task."
+                "To apply changes, describe what code to write in coder_simple_task."
             ),
         )
 
