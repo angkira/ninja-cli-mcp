@@ -182,7 +182,7 @@ info "Updating Claude Code MCP servers..."
 
 if command -v claude &> /dev/null; then
     # Remove and re-add to ensure clean state
-    for server in ninja-coder ninja-researcher ninja-secretary; do
+    for server in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts; do
         claude mcp remove "$server" -s user 2>/dev/null || true
         if claude mcp add --scope user --transport stdio "$server" -- "$server" 2>/dev/null; then
             success "$server registered"
@@ -202,7 +202,7 @@ echo ""
 info "Verifying installation..."
 
 VERIFY_PASSED=true
-for cmd in ninja-coder ninja-researcher ninja-secretary ninja-config; do
+for cmd in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts ninja-config; do
     if command -v "$cmd" &> /dev/null; then
         success "$cmd"
     else

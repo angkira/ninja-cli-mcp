@@ -54,6 +54,8 @@ INSTALL_ALL=1
 INSTALL_CODER=0
 INSTALL_RESEARCHER=0
 INSTALL_SECRETARY=0
+INSTALL_RESOURCES=0
+INSTALL_PROMPTS=0
 
 if [[ $# -gt 0 ]]; then
     INSTALL_ALL=0
@@ -71,8 +73,14 @@ if [[ $# -gt 0 ]]; then
             --secretary)
                 INSTALL_SECRETARY=1
                 ;;
+            --resources)
+                INSTALL_RESOURCES=1
+                ;;
+            --prompts)
+                INSTALL_PROMPTS=1
+                ;;
             *)
-                error "Unknown option: $arg. Use --all, --coder, --researcher, or --secretary"
+                error "Unknown option: $arg. Use --all, --coder, --researcher, --secretary, --resources, or --prompts"
                 ;;
         esac
     done
@@ -82,6 +90,8 @@ if [[ $INSTALL_ALL -eq 1 ]]; then
     INSTALL_CODER=1
     INSTALL_RESEARCHER=1
     INSTALL_SECRETARY=1
+    INSTALL_RESOURCES=1
+    INSTALL_PROMPTS=1
 fi
 
 echo ""
@@ -194,6 +204,16 @@ elif "$server_name" == "ninja-secretary":
         "NINJA_SECRETARY_MODEL": "anthropic/claude-haiku-4.5-20250929",
         "NINJA_SECRETARY_MAX_FILE_SIZE": "1048576"
     }
+elif "$server_name" == "ninja-resources":
+    env_vars = {
+        "NINJA_RESOURCES_CACHE_TTL": "3600",
+        "NINJA_RESOURCES_MAX_FILES": "1000"
+    }
+elif "$server_name" == "ninja-prompts":
+    env_vars = {
+        "NINJA_PROMPTS_MAX_SUGGESTIONS": "5",
+        "NINJA_PROMPTS_CACHE_TTL": "3600"
+    }
 
 # Add API key if available (use actual value, not shell expansion syntax)
 if api_key:
@@ -286,6 +306,28 @@ if [[ $INSTALL_SECRETARY -eq 1 ]]; then
     INSTALL_COUNT=$((INSTALL_COUNT + 1))
 fi
 
+if [[ $INSTALL_RESOURCES -eq 1 ]]; then
+    info "Configuring ninja-resources..."
+    if [[ $INSTALL_MODE == "global" ]]; then
+        update_mcp_config "ninja-resources" "ninja-resources"
+    else
+        update_mcp_config "ninja-resources" "uv" "--directory" "$PROJECT_ROOT" "run" "ninja-resources"
+    fi
+    success "ninja-resources configured"
+    INSTALL_COUNT=$((INSTALL_COUNT + 1))
+fi
+
+if [[ $INSTALL_PROMPTS -eq 1 ]]; then
+    info "Configuring ninja-prompts..."
+    if [[ $INSTALL_MODE == "global" ]]; then
+        update_mcp_config "ninja-prompts" "ninja-prompts"
+    else
+        update_mcp_config "ninja-prompts" "uv" "--directory" "$PROJECT_ROOT" "run" "ninja-prompts"
+    fi
+    success "ninja-prompts configured"
+    INSTALL_COUNT=$((INSTALL_COUNT + 1))
+fi
+
 echo ""
 
 # Validate the final JSON
@@ -329,19 +371,32 @@ echo ""
 
 if [[ $INSTALL_CODER -eq 1 ]]; then
     echo "📦 ${BOLD}ninja-coder${NC} - AI code execution and modification"
-    echo "   Tools: coder_quick_task, coder_execute_plan_*"
+    echo "   Tools: coder_simple_task, coder_execute_plan_sequential, coder_execute_plan_parallel"
     echo ""
 fi
 
 if [[ $INSTALL_RESEARCHER -eq 1 ]]; then
     echo "🔍 ${BOLD}ninja-researcher${NC} - Web search and research"
-    echo "   Tools: researcher_web_search, researcher_deep_research"
+    echo "   Tools: researcher_web_search, researcher_deep_research, researcher_fact_check"
     echo ""
 fi
 
 if [[ $INSTALL_SECRETARY -eq 1 ]]; then
     echo "📋 ${BOLD}ninja-secretary${NC} - Codebase exploration and documentation"
-    echo "   Tools: secretary_read_file, secretary_grep, secretary_file_tree"
+    echo "   Tools: secretary_analyse_file, secretary_file_search, secretary_codebase_report"
+    echo "          secretary_document_summary, secretary_git_status, secretary_git_diff"
+    echo ""
+fi
+
+if [[ $INSTALL_RESOURCES -eq 1 ]]; then
+    echo "🧠 ${BOLD}ninja-resources${NC} - Load project context as queryable resources"
+    echo "   Tools: resource_codebase, resource_config, resource_docs"
+    echo ""
+fi
+
+if [[ $INSTALL_PROMPTS -eq 1 ]]; then
+    echo "✨ ${BOLD}ninja-prompts${NC} - Reusable prompt templates and workflows"
+    echo "   Tools: prompt_registry, prompt_suggest, prompt_chain"
     echo ""
 fi
 

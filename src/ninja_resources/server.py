@@ -189,7 +189,18 @@ Resources Module - Load project context as queryable resources.
         await server.run(read_stream, write_stream, server.instructions)
 
 
-if __name__ == "__main__":
+def run() -> None:
+    """Entry point for the ninja-resources MCP server."""
     import asyncio
 
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    run()
