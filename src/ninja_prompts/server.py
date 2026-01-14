@@ -203,7 +203,6 @@ async def main_http(host: str, port: int) -> None:
     """Run the MCP server over HTTP with SSE."""
     import uvicorn
     from mcp.server.sse import SseServerTransport
-    from starlette.requests import Request
     from starlette.responses import Response
 
     server.instructions = """
@@ -242,16 +241,6 @@ Prompts Module - Manage reusable prompt templates and multi-step workflows.
 
     sse = SseServerTransport("/messages")
 
-    async def handle_sse(request):
-        try:
-            async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-                await server.run(streams[0], streams[1], server.instructions)
-        except Exception as e:
-            # Handle any errors in SSE connection gracefully
-            import logging
-            logging.error(f"Error in SSE handler: {e}", exc_info=True)
-        # Note: Don't return Response() here - SSE transport handles the response
-
     async def handle_messages(scope, receive, send):
         try:
             await sse.handle_post_message(scope, receive, send)
@@ -276,8 +265,8 @@ Prompts Module - Manage reusable prompt templates and multi-step workflows.
     async def app(scope, receive, send):
         path = scope.get("path", "")
         if path == "/sse":
-            request = Request(scope, receive, send)
-            await handle_sse(request)
+            async with sse.connect_sse(scope, receive, send) as streams:
+                await server.run(streams[0], streams[1], server.instructions)
         elif path == "/messages" and scope.get("method") == "POST":
             await handle_messages(scope, receive, send)
         else:
