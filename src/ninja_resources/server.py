@@ -121,20 +121,10 @@ async def main_stdio():
 async def main_http(host: str, port: int) -> None:
     import uvicorn
     from mcp.server.sse import SseServerTransport
-    from starlette.requests import Request
     from starlette.responses import Response
 
     server = create_server()  # Create fresh server instance
     sse = SseServerTransport("/messages")
-
-    async def handle_sse(request):
-        try:
-            async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-                await server.run(streams[0], streams[1], server.create_initialization_options())
-        except Exception as e:
-            # Handle any errors in SSE connection gracefully
-            logger.error(f"Error in SSE handler: {e}", exc_info=True)
-        # Note: Don't return Response() here - SSE transport handles the response
 
     async def handle_messages(scope, receive, send):
         try:
@@ -160,8 +150,8 @@ async def main_http(host: str, port: int) -> None:
     async def app(scope, receive, send):
         path = scope.get("path", "")
         if path == "/sse":
-            request = Request(scope, receive, send)
-            await handle_sse(request)
+            async with sse.connect_sse(scope, receive, send) as streams:
+                await server.run(streams[0], streams[1], server.create_initialization_options())
         elif path == "/messages" and scope.get("method") == "POST":
             await handle_messages(scope, receive, send)
         else:
