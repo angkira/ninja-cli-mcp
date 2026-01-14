@@ -203,6 +203,7 @@ async def main_http(host: str, port: int) -> None:
     """Run the MCP server over HTTP with SSE."""
     import uvicorn
     from mcp.server.sse import SseServerTransport
+    from starlette.requests import Request
     from starlette.responses import Response
 
     server.instructions = """
@@ -241,20 +242,27 @@ Prompts Module - Manage reusable prompt templates and multi-step workflows.
 
     sse = SseServerTransport("/messages")
 
-    async def handle_messages(scope, receive, send):
+    async def handle_sse(request: Request):
+        """Handle SSE connection."""
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            await server.run(streams[0], streams[1], server.instructions)
+        return Response()
+
+    async def handle_messages(request: Request):
+        """Handle POST messages."""
         try:
-            await sse.handle_post_message(scope, receive, send)
+            await sse.handle_post_message(request.scope, request.receive, request._send)
         except Exception as e:
             # Handle closed connections and other errors gracefully
             import logging
             logging.error(f"Error handling SSE message: {e}")
             try:
-                await send({
+                await request._send({
                     "type": "http.response.start",
                     "status": 500,
                     "headers": [[b"content-type", b"application/json"]],
                 })
-                await send({
+                await request._send({
                     "type": "http.response.body",
                     "body": json.dumps({"error": str(e)}).encode(),
                 })
@@ -265,10 +273,11 @@ Prompts Module - Manage reusable prompt templates and multi-step workflows.
     async def app(scope, receive, send):
         path = scope.get("path", "")
         if path == "/sse":
-            async with sse.connect_sse(scope, receive, send) as streams:
-                await server.run(streams[0], streams[1], server.instructions)
+            request = Request(scope, receive, send)
+            await handle_sse(request)
         elif path == "/messages" and scope.get("method") == "POST":
-            await handle_messages(scope, receive, send)
+            request = Request(scope, receive, send)
+            await handle_messages(request)
         else:
             await Response("Not Found", status_code=404)(scope, receive, send)
 
