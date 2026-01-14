@@ -29,16 +29,15 @@ from pathlib import Path
 from typing import Any
 
 from ninja_coder.models import ExecutionMode, PlanStep
-from ninja_common.logging_utils import create_task_logger, get_logger
-from ninja_common.path_utils import ensure_internal_dirs, safe_join
 from ninja_common.defaults import (
+    DEFAULT_CODE_BIN,
     DEFAULT_CODER_MODEL,
-    FALLBACK_CODER_MODELS,
-    RECOMMENDED_MODELS,
     DEFAULT_OPENAI_BASE_URL,
     DEFAULT_TIMEOUT_SEC,
-    DEFAULT_CODE_BIN,
+    FALLBACK_CODER_MODELS,
 )
+from ninja_common.logging_utils import create_task_logger, get_logger
+from ninja_common.path_utils import ensure_internal_dirs, safe_join
 
 
 logger = get_logger(__name__)
@@ -853,15 +852,24 @@ class NinjaDriver:
                 notes = "⚠️ Incomplete API response (token limit or timeout). Try smaller context or different model."
 
             # Detect invalid model ID errors
-            if "is not a valid model" in combined_output.lower() or "model not found" in combined_output.lower():
-                model_match = re.search(r"['\"]?([a-z]+/[a-z0-9._-]+)['\"]?\s+is not a valid", combined_output, re.IGNORECASE)
+            if (
+                "is not a valid model" in combined_output.lower()
+                or "model not found" in combined_output.lower()
+            ):
+                model_match = re.search(
+                    r"['\"]?([a-z]+/[a-z0-9._-]+)['\"]?\s+is not a valid",
+                    combined_output,
+                    re.IGNORECASE,
+                )
                 bad_model = model_match.group(1) if model_match else self.config.model
                 fallbacks = ", ".join(FALLBACK_CODER_MODELS[:3])
                 notes = f"❌ Invalid model ID: {bad_model}. Try: {fallbacks}"
                 summary = f"❌ Model '{bad_model}' not found on OpenRouter"
 
             # Detect API key errors
-            if "api key" in combined_output.lower() and ("not found" in combined_output.lower() or "invalid" in combined_output.lower()):
+            if "api key" in combined_output.lower() and (
+                "not found" in combined_output.lower() or "invalid" in combined_output.lower()
+            ):
                 notes = "❌ OpenRouter API key missing or invalid. Set OPENROUTER_API_KEY in ~/.ninja-mcp.env"
                 summary = "❌ API key error"
 
@@ -920,8 +928,10 @@ class NinjaDriver:
             cmd = self._build_command(task_file, repo_root)
             # Log command without sensitive data (redact API key)
             # Note: use "api-key" not "--api-key" to match "--openai-api-key"
-            safe_cmd = [arg if "api-key" not in prev.lower() else "***REDACTED***"
-                        for prev, arg in zip([""] + cmd[:-1], cmd)]
+            safe_cmd = [
+                arg if "api-key" not in prev.lower() else "***REDACTED***"
+                for prev, arg in zip([""] + cmd[:-1], cmd)
+            ]
             task_logger.info(f"Running command: {' '.join(safe_cmd)}")
 
             # Get environment
@@ -1020,8 +1030,10 @@ class NinjaDriver:
             cmd = self._build_command(task_file, repo_root)
             # Log command without sensitive data (redact API key)
             # Note: use "api-key" not "--api-key" to match "--openai-api-key"
-            safe_cmd = [arg if "api-key" not in prev.lower() else "***REDACTED***"
-                        for prev, arg in zip([""] + cmd[:-1], cmd)]
+            safe_cmd = [
+                arg if "api-key" not in prev.lower() else "***REDACTED***"
+                for prev, arg in zip([""] + cmd[:-1], cmd)
+            ]
             task_logger.info(f"Running command: {' '.join(safe_cmd)}")
 
             # Get environment

@@ -64,16 +64,12 @@ class SecretaryToolExecutor:
 
             if not file_path.exists():
                 return AnalyseFileResult(
-                    status="error",
-                    message=f"File not found: {request.file_path}",
-                    result={}
+                    status="error", message=f"File not found: {request.file_path}", result={}
                 )
 
             if not file_path.is_file():
                 return AnalyseFileResult(
-                    status="error",
-                    message=f"Not a file: {request.file_path}",
-                    result={}
+                    status="error", message=f"Not a file: {request.file_path}", result={}
                 )
 
             # Read file content
@@ -81,16 +77,12 @@ class SecretaryToolExecutor:
                 lines = f.readlines()
 
             total_lines = len(lines)
-            
+
             # Get file language from extension
             language = self._detect_language(file_path.suffix)
 
             # Build result structure
-            result = {
-                "file": request.file_path,
-                "language": language,
-                "lines_total": total_lines
-            }
+            result = {"file": request.file_path, "language": language, "lines_total": total_lines}
 
             # Add structure analysis if requested
             if request.include_structure:
@@ -109,34 +101,23 @@ class SecretaryToolExecutor:
                 search_results = []
                 for line_num, line in enumerate(lines, 1):
                     if pattern.search(line):
-                        search_results.append({
-                            "line_number": line_num,
-                            "text": line.rstrip()
-                        })
+                        search_results.append({"line_number": line_num, "text": line.rstrip()})
                 result["search_results"] = search_results
 
             # Track file access
             await self._track_file_access(client_id, request.file_path)
 
             return AnalyseFileResult(
-                status="ok",
-                message="File analysis completed successfully",
-                result=result
+                status="ok", message="File analysis completed successfully", result=result
             )
 
         except UnicodeDecodeError:
             return AnalyseFileResult(
-                status="error",
-                message="File is not a text file (binary content)",
-                result={}
+                status="error", message="File is not a text file (binary content)", result={}
             )
         except Exception as e:
             logger.error(f"Failed to analyse file {request.file_path}: {e}")
-            return AnalyseFileResult(
-                status="error",
-                message=str(e),
-                result={}
-            )
+            return AnalyseFileResult(status="error", message=str(e), result={})
 
     def _detect_language(self, extension: str) -> str:
         """Detect programming language from file extension."""
@@ -165,53 +146,48 @@ class SecretaryToolExecutor:
             ".yaml": "yaml",
             ".yml": "yaml",
             ".json": "json",
-            ".xml": "xml"
+            ".xml": "xml",
         }
         return lang_map.get(extension.lower(), "unknown")
 
     def _analyse_file_structure(self, lines: list[str], language: str) -> dict:
         """Analyse file structure to extract functions, classes, and imports."""
-        structure = {
-            "functions": [],
-            "classes": [],
-            "imports": []
-        }
-        
+        structure = {"functions": [], "classes": [], "imports": []}
+
         # Language-specific patterns
         patterns = {
             "python": {
                 "function": r"^\s*def\s+(\w+)",  # Match indented functions too
                 "class": r"^class\s+(\w+)",
-                "import": r"^(import\s+|from\s+\w+\s+import)"
+                "import": r"^(import\s+|from\s+\w+\s+import)",
             },
             "javascript": {
                 "function": r"^function\s+(\w+)|(\w+)\s*=\s*function|\b(\w+)\s*=>",
                 "class": r"^class\s+(\w+)",
-                "import": r"^(import\s+|from\s+['\"].*['\"]\s+import)"
+                "import": r"^(import\s+|from\s+['\"].*['\"]\s+import)",
             },
             "typescript": {
                 "function": r"^function\s+(\w+)|(\w+)\s*=\s*function|\b(\w+)\s*=>",
                 "class": r"^class\s+(\w+)",
-                "import": r"^(import\s+|from\s+['\"].*['\"]\s+import)"
+                "import": r"^(import\s+|from\s+['\"].*['\"]\s+import)",
             },
             "java": {
                 "function": r"^\s*(public|private|protected).*\s+(\w+)\s*\(",
                 "class": r"^\s*(public\s+)?(class|interface)\s+(\w+)",
-                "import": r"^import\s+"
-            }
+                "import": r"^import\s+",
+            },
         }
-        
+
         # Default to generic patterns if language not specifically handled
-        lang_patterns = patterns.get(language, {
-            "function": r"function\s+(\w+)",
-            "class": r"class\s+(\w+)",
-            "import": r"import\s+"
-        })
-        
+        lang_patterns = patterns.get(
+            language,
+            {"function": r"function\s+(\w+)", "class": r"class\s+(\w+)", "import": r"import\s+"},
+        )
+
         function_pattern = re.compile(lang_patterns["function"])
         class_pattern = re.compile(lang_patterns["class"])
         import_pattern = re.compile(lang_patterns["import"])
-        
+
         for line in lines:
             # Check for functions
             func_match = function_pattern.search(line)
@@ -244,7 +220,7 @@ class SecretaryToolExecutor:
                     if len(parts) >= 1:
                         module_name = parts[0].replace("from ", "").strip()
                         structure["imports"].append({"module": module_name})
-        
+
         return structure
 
     def _generate_file_summary(self, structure: dict, language: str) -> str:
@@ -252,7 +228,7 @@ class SecretaryToolExecutor:
         functions_count = len(structure["functions"])
         classes_count = len(structure["classes"])
         imports_count = len(structure["imports"])
-        
+
         summary_parts = []
         if classes_count > 0:
             summary_parts.append(f"{classes_count} class{'es' if classes_count > 1 else ''}")
@@ -260,7 +236,7 @@ class SecretaryToolExecutor:
             summary_parts.append(f"{functions_count} function{'s' if functions_count > 1 else ''}")
         if imports_count > 0:
             summary_parts.append(f"{imports_count} import{'s' if imports_count > 1 else ''}")
-            
+
         if summary_parts:
             return f"A {language} file containing {', '.join(summary_parts)}."
         else:
@@ -289,12 +265,7 @@ class SecretaryToolExecutor:
             repo_root = Path(request.repo_root)
 
             if not repo_root.exists():
-                return FileSearchResult(
-                    status="error",
-                    matches=[],
-                    total_count=0,
-                    truncated=False
-                )
+                return FileSearchResult(status="error", matches=[], total_count=0, truncated=False)
 
             # Use glob to find matching files
             all_matches: list[FileMatch] = []
@@ -317,23 +288,15 @@ class SecretaryToolExecutor:
 
             # Truncate to max_results
             truncated = len(all_matches) > request.max_results
-            matches = all_matches[:request.max_results]
+            matches = all_matches[: request.max_results]
 
             return FileSearchResult(
-                status="ok",
-                matches=matches,
-                total_count=len(all_matches),
-                truncated=truncated
+                status="ok", matches=matches, total_count=len(all_matches), truncated=truncated
             )
 
         except Exception as e:
             logger.error(f"File search failed for client {client_id}: {e}")
-            return FileSearchResult(
-                status="error",
-                matches=[],
-                total_count=0,
-                truncated=False
-            )
+            return FileSearchResult(status="error", matches=[], total_count=0, truncated=False)
 
     @rate_balanced(
         max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0
@@ -369,7 +332,9 @@ class SecretaryToolExecutor:
 
             if request.include_structure:
                 for path in repo_root.rglob("*"):
-                    if not any(p in path.parts for p in [".git", "node_modules", "__pycache__", "venv"]):
+                    if not any(
+                        p in path.parts for p in [".git", "node_modules", "__pycache__", "venv"]
+                    ):
                         if path.is_dir():
                             dir_count += 1
                         elif path.is_file():
@@ -401,7 +366,16 @@ class SecretaryToolExecutor:
                         extensions[ext] = extensions.get(ext, 0) + 1
 
                         # Count lines for text files
-                        if path.suffix in [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs"]:
+                        if path.suffix in [
+                            ".py",
+                            ".js",
+                            ".ts",
+                            ".jsx",
+                            ".tsx",
+                            ".java",
+                            ".go",
+                            ".rs",
+                        ]:
                             try:
                                 with path.open(encoding="utf-8", errors="replace") as f:
                                     total_lines += sum(1 for _ in f)
@@ -445,22 +419,14 @@ class SecretaryToolExecutor:
                 metrics["dependencies"] = found_deps
 
             report = "".join(report_parts)
-            
+
             return CodebaseReportResult(
-                status="ok",
-                report=report,
-                metrics=metrics,
-                file_count=metrics.get("file_count", 0)
+                status="ok", report=report, metrics=metrics, file_count=metrics.get("file_count", 0)
             )
 
         except Exception as e:
             logger.error(f"Codebase report failed for client {client_id}: {e}")
-            return CodebaseReportResult(
-                status="error",
-                report="",
-                metrics={},
-                file_count=0
-            )
+            return CodebaseReportResult(status="error", report="", metrics={}, file_count=0)
 
     @rate_balanced(
         max_calls=5, time_window=60, max_retries=3, initial_backoff=2.0, max_backoff=60.0
@@ -525,27 +491,24 @@ class SecretaryToolExecutor:
                 combined_parts.append(f"**{s['path']}**: {s['summary'][:200]}")
 
             combined_summary = "\n\n".join(combined_parts)
-            
+
             return DocumentSummaryResult(
                 status="ok",
                 summaries=summaries,
                 combined_summary=combined_summary,
-                doc_count=len(summaries)
+                doc_count=len(summaries),
             )
 
         except Exception as e:
             logger.error(f"Document summary failed for client {client_id}: {e}")
             return DocumentSummaryResult(
-                status="error",
-                summaries=[],
-                combined_summary="",
-                doc_count=0
+                status="error", summaries=[], combined_summary="", doc_count=0
             )
 
     async def session_report(
         self,
         request: SessionReportRequest,
-        client_id: str = "default",  # noqa: ARG002
+        client_id: str = "default",
     ) -> SessionReport:
         """
         Get or update session report.
@@ -647,9 +610,7 @@ class SecretaryToolExecutor:
             doc_path = doc_paths.get(request.doc_type)
             if not doc_path:
                 return UpdateDocResult(
-                    status="error",
-                    message=f"Unknown doc type: {request.doc_type}",
-                    result={}
+                    status="error", message=f"Unknown doc type: {request.doc_type}", result={}
                 )
 
             full_path = Path(doc_path)
@@ -675,25 +636,16 @@ class SecretaryToolExecutor:
             # Write updated content
             with full_path.open("w", encoding="utf-8") as f:
                 f.write(new_content)
-            
-            result = {
-                "doc_path": str(full_path),
-                "changes_made": changes
-            }
+
+            result = {"doc_path": str(full_path), "changes_made": changes}
 
             return UpdateDocResult(
-                status="ok",
-                message="Document updated successfully",
-                result=result
+                status="ok", message="Document updated successfully", result=result
             )
 
         except Exception as e:
             logger.error(f"Doc update failed for client {client_id}: {e}")
-            return UpdateDocResult(
-                status="error",
-                message=f"Update failed: {e}",
-                result={}
-            )
+            return UpdateDocResult(status="error", message=f"Update failed: {e}", result={})
 
     async def _track_file_access(self, client_id: str, file_path: str) -> None:
         """Track file access in session."""
@@ -726,7 +678,7 @@ class SecretaryToolExecutor:
                 return FileTreeResult(
                     status="error",
                     message=f"Repository root not found: {request.repo_root}",
-                    result={}
+                    result={},
                 )
 
             total_files = 0
@@ -783,27 +735,21 @@ class SecretaryToolExecutor:
                     )
 
             root_node = build_tree(repo_root)
-            
+
             result = {
                 "tree": root_node.dict() if root_node else None,
                 "total_files": total_files,
                 "total_dirs": total_dirs,
-                "total_size": total_size
+                "total_size": total_size,
             }
 
             return FileTreeResult(
-                status="ok",
-                message="File tree generated successfully",
-                result=result
+                status="ok", message="File tree generated successfully", result=result
             )
 
         except Exception as e:
             logger.error(f"File tree generation failed for client {client_id}: {e}")
-            return FileTreeResult(
-                status="error",
-                message=str(e),
-                result={}
-            )
+            return FileTreeResult(status="error", message=str(e), result={})
 
 
 # Singleton executor instance
@@ -812,7 +758,7 @@ _executor: SecretaryToolExecutor | None = None
 
 def get_executor() -> SecretaryToolExecutor:
     """Get the global secretary tool executor instance."""
-    global _executor  # noqa: PLW0603
+    global _executor
     if _executor is None:
         _executor = SecretaryToolExecutor()
     return _executor
@@ -820,5 +766,5 @@ def get_executor() -> SecretaryToolExecutor:
 
 def reset_executor() -> None:
     """Reset the global executor (for testing)."""
-    global _executor  # noqa: PLW0603
+    global _executor
     _executor = None

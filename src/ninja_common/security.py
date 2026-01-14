@@ -145,6 +145,7 @@ class RateLimiter:
                 try:
                     # Try to acquire exclusive lock (non-blocking)
                     import fcntl
+
                     fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                     try:
                         with persistence_file.open("w") as f:
@@ -405,7 +406,7 @@ class ResourceMonitor:
         # Run the async function in the current event loop
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(_release())  # noqa: RUF006
+            loop.create_task(_release())
         except RuntimeError:
             # No event loop running, run synchronously
             pass

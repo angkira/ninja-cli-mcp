@@ -6,7 +6,6 @@ Tests the SmartCommitRequest, CommitSuggestion, and SmartCommitResult models.
 
 import pytest
 from pydantic import ValidationError
-
 from src.ninja_secretary.models import (
     CommitSuggestion,
     SmartCommitRequest,
@@ -63,7 +62,7 @@ class TestSmartCommitRequest:
         """Test that all fields have descriptions."""
         schema = SmartCommitRequest.model_json_schema()
         properties = schema["properties"]
-        
+
         assert "description" in properties["repo_root"]
         assert "description" in properties["include_untracked"]
         assert "description" in properties["dry_run"]
@@ -140,8 +139,10 @@ class TestCommitSuggestion:
 
     def test_commit_suggestion_long_message(self):
         """Test CommitSuggestion with a long commit message."""
-        long_message = "This is a very long commit message that describes " \
-                      "multiple changes across the codebase in great detail"
+        long_message = (
+            "This is a very long commit message that describes "
+            "multiple changes across the codebase in great detail"
+        )
         suggestion = CommitSuggestion(
             files=["file.py"],
             message=long_message,
@@ -153,7 +154,7 @@ class TestCommitSuggestion:
         """Test that all fields have descriptions."""
         schema = CommitSuggestion.model_json_schema()
         properties = schema["properties"]
-        
+
         assert "description" in properties["files"]
         assert "description" in properties["message"]
         assert "description" in properties["reasoning"]
@@ -263,7 +264,7 @@ class TestSmartCommitResult:
         """Test that all fields have descriptions."""
         schema = SmartCommitResult.model_json_schema()
         properties = schema["properties"]
-        
+
         assert "description" in properties["status"]
         assert "description" in properties["suggestions"]
         assert "description" in properties["commits_created"]
@@ -283,7 +284,7 @@ class TestSmartCommitResult:
             suggestions=suggestions,
             commits_created=1,
         )
-        
+
         json_data = result.model_dump_json()
         assert "ok" in json_data
         assert "Test commit" in json_data
@@ -303,7 +304,7 @@ class TestSmartCommitResult:
             "commits_created": 1,
             "error_message": ""
         }"""
-        
+
         result = SmartCommitResult.model_validate_json(json_str)
         assert result.status == "ok"
         assert len(result.suggestions) == 1
@@ -321,7 +322,7 @@ class TestSmartCommitModelsIntegration:
             include_untracked=True,
             dry_run=False,
         )
-        
+
         # Create suggestions based on request
         suggestions = [
             CommitSuggestion(
@@ -330,14 +331,14 @@ class TestSmartCommitModelsIntegration:
                 reasoning="Feature implementation",
             ),
         ]
-        
+
         # Create result
         result = SmartCommitResult(
             status="ok",
             suggestions=suggestions,
             commits_created=1,
         )
-        
+
         assert request.repo_root == "/path/to/repo"
         assert result.status == "ok"
         assert len(result.suggestions) == 1
@@ -361,13 +362,13 @@ class TestSmartCommitModelsIntegration:
                 reasoning="Documentation update",
             ),
         ]
-        
+
         result = SmartCommitResult(
             status="ok",
             suggestions=suggestions,
             commits_created=3,
         )
-        
+
         assert len(result.suggestions) == 3
         assert result.commits_created == 3
         assert all(s.files for s in result.suggestions)

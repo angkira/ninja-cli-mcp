@@ -32,9 +32,9 @@ from mcp.types import (
 from ninja_coder.models import (
     ApplyPatchRequest,
     ParallelPlanRequest,
-    SimpleTaskRequest,
     RunTestsRequest,
     SequentialPlanRequest,
+    SimpleTaskRequest,
 )
 from ninja_coder.tools import get_executor
 from ninja_common.logging_utils import get_logger, setup_logging
@@ -47,11 +47,13 @@ if TYPE_CHECKING:
 # Load config from ~/.ninja-mcp.env into environment variables
 try:
     from ninja_common.config_manager import ConfigManager
+
     ConfigManager().export_env()
 except FileNotFoundError:
     pass  # Config file may not exist, will use env vars directly
 except Exception as e:
     import sys
+
     print(f"WARNING: Failed to load config from ~/.ninja-mcp.env: {e}", file=sys.stderr)
 
 # Set up logging to stderr (stdout is for MCP protocol)

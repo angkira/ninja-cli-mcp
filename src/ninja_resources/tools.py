@@ -1,7 +1,6 @@
 """Tools for resource management in Ninja MCP."""
 
-import logging
-from typing import Any, Optional
+from typing import Optional
 from uuid import uuid4
 
 from ninja_common.logging_utils import get_logger
@@ -14,8 +13,8 @@ from ninja_resources.models import (
     ResourceDocsRequest,
     ResourceDocsResult,
 )
-
 from ninja_resources.resource_manager import ResourceManager
+
 
 logger = get_logger(__name__)
 
@@ -53,14 +52,15 @@ class ResourceToolExecutor:
                 repo_root=request.repo_root,
                 include_patterns=request.include_patterns,
                 exclude_patterns=request.exclude_patterns,
-                max_files=request.max_files
+                max_files=request.max_files,
             )
-            
+
             resource_id = f"codebase-{uuid4()}"
 
             # Create structure info from result, with defaults for missing fields
             structure_data = result.get("structure", {})
             from ninja_resources.models import StructureInfo
+
             # Ensure all required fields are present
             structure_data.setdefault("directories", [])
             structure_data.setdefault("languages", [])
@@ -73,17 +73,22 @@ class ResourceToolExecutor:
                 resource_id=resource_id,
                 summary=result.get("summary", ""),
                 structure=structure,
-                files=result.get("files", [])
+                files=result.get("files", []),
             )
-            
+
         except Exception as e:
-            logger.error(f"Error loading codebase resource: {str(e)}", exc_info=True)
+            logger.error(f"Error loading codebase resource: {e!s}", exc_info=True)
             return ResourceCodebaseResult(
                 status="error",
                 resource_id="",
-                summary=f"Error: {str(e)}",
-                structure={"directories": [], "languages": [], "file_count": 0, "total_size_mb": 0.0},
-                files=[]
+                summary=f"Error: {e!s}",
+                structure={
+                    "directories": [],
+                    "languages": [],
+                    "file_count": 0,
+                    "total_size_mb": 0.0,
+                },
+                files=[],
             )
 
     @rate_limited(60, 60)
@@ -106,25 +111,18 @@ class ResourceToolExecutor:
 
             # Call manager to load config
             result = await self.manager.load_config(
-                repo_root=request.repo_root,
-                config_patterns=request.include
+                repo_root=request.repo_root, config_patterns=request.include
             )
 
             resource_id = f"config-{uuid4()}"
 
             return ResourceConfigResult(
-                status="ok",
-                resource_id=resource_id,
-                files=result.get("files", [])
+                status="ok", resource_id=resource_id, files=result.get("files", [])
             )
-            
+
         except Exception as e:
-            logger.error(f"Error loading config resource: {str(e)}", exc_info=True)
-            return ResourceConfigResult(
-                status="error",
-                resource_id="",
-                files=[]
-            )
+            logger.error(f"Error loading config resource: {e!s}", exc_info=True)
+            return ResourceConfigResult(status="error", resource_id="", files=[])
 
     @rate_limited(60, 60)
     @monitored
@@ -146,25 +144,18 @@ class ResourceToolExecutor:
 
             # Call manager to load docs
             result = await self.manager.load_docs(
-                repo_root=request.repo_root,
-                doc_patterns=request.doc_patterns
+                repo_root=request.repo_root, doc_patterns=request.doc_patterns
             )
 
             resource_id = f"docs-{uuid4()}"
 
             return ResourceDocsResult(
-                status="ok",
-                resource_id=resource_id,
-                docs=result.get("entries", [])
+                status="ok", resource_id=resource_id, docs=result.get("entries", [])
             )
-            
+
         except Exception as e:
-            logger.error(f"Error loading docs resource: {str(e)}", exc_info=True)
-            return ResourceDocsResult(
-                status="error",
-                resource_id="",
-                docs=[]
-            )
+            logger.error(f"Error loading docs resource: {e!s}", exc_info=True)
+            return ResourceDocsResult(status="error", resource_id="", docs=[])
 
 
 def get_executor() -> ResourceToolExecutor:

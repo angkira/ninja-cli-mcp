@@ -6,7 +6,7 @@ These models define the API surface for the secretary module.
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,7 +20,9 @@ class AnalyseFileRequest(BaseModel):
     """Request to analyse a file."""
 
     file_path: str = Field(..., description="Path to file (relative to repo root)")
-    search_pattern: Optional[str] = Field(None, description="Optional regex pattern to search within the file")
+    search_pattern: str | None = Field(
+        None, description="Optional regex pattern to search within the file"
+    )
     include_structure: bool = Field(default=True, description="Include file structure analysis")
     include_preview: bool = Field(default=True, description="Include content preview")
 
@@ -95,7 +97,9 @@ class GitCommitRequest(BaseModel):
 
     repo_root: str = Field(..., description="Repository root path")
     message: str = Field(..., description="Commit message")
-    files: list[str] = Field(default_factory=list, description="Specific files to commit (empty = all staged)")
+    files: list[str] = Field(
+        default_factory=list, description="Specific files to commit (empty = all staged)"
+    )
     author: str | None = Field(default=None, description="Override author")
 
 
@@ -111,8 +115,12 @@ class SmartCommitRequest(BaseModel):
     """Request to intelligently group and commit changes."""
 
     repo_root: str = Field(..., description="Repository root path")
-    include_untracked: bool = Field(default=False, description="Include untracked files in analysis")
-    dry_run: bool = Field(default=False, description="If True, only analyze and suggest, don't actually commit")
+    include_untracked: bool = Field(
+        default=False, description="Include untracked files in analysis"
+    )
+    dry_run: bool = Field(
+        default=False, description="If True, only analyze and suggest, don't actually commit"
+    )
     author: str | None = Field(default=None, description="Override commit author")
 
 
@@ -126,7 +134,9 @@ class AnalyseFileResult(BaseModel):
 
     status: Literal["ok", "error"]
     message: str = Field(default="")
-    result: dict = Field(default_factory=dict)  # Contains: file, language, lines_total, structure, preview, search_results
+    result: dict = Field(
+        default_factory=dict
+    )  # Contains: file, language, lines_total, structure, preview, search_results
 
 
 class FileSearchResult(BaseModel):
@@ -247,6 +257,10 @@ class SmartCommitResult(BaseModel):
     """Result of smart commit operation."""
 
     status: Literal["ok", "error"] = Field(..., description="Operation status")
-    suggestions: list[CommitSuggestion] = Field(default_factory=list, description="Suggested/created commits")
-    commits_created: int = Field(default=0, description="Number of commits actually created (0 if dry_run)")
+    suggestions: list[CommitSuggestion] = Field(
+        default_factory=list, description="Suggested/created commits"
+    )
+    commits_created: int = Field(
+        default=0, description="Number of commits actually created (0 if dry_run)"
+    )
     error_message: str = Field(default="", description="Error message if failed")

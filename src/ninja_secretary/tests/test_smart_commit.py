@@ -4,11 +4,11 @@ Unit tests for smart_commit functionality.
 Tests the smart commit analysis, file grouping, and message generation.
 """
 
-import pytest
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
-from ninja_secretary.models import SmartCommitRequest, SmartCommitResult
+import pytest
+
+from ninja_secretary.models import SmartCommitRequest
 from ninja_secretary.tools import SecretaryToolExecutor
 
 

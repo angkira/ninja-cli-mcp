@@ -1,8 +1,7 @@
 """Prompt management for loading, saving, and managing prompts."""
 
-import os
 from pathlib import Path
-from typing import Optional, Dict, List
+
 import yaml
 
 from ninja_prompts.models import PromptTemplate, PromptVariable
@@ -17,7 +16,7 @@ class PromptManager:
         # Try to find builtin prompts in package data directory
         self.builtin_dir = Path(__file__).parent.parent.parent / "data" / "builtin_prompts"
 
-    def load_prompts(self, scope: str = "all") -> Dict[str, PromptTemplate]:
+    def load_prompts(self, scope: str = "all") -> dict[str, PromptTemplate]:
         """Load prompts from specified scope.
 
         Args:
@@ -26,7 +25,7 @@ class PromptManager:
         Returns:
             Dictionary of prompt_id -> PromptTemplate
         """
-        prompts: Dict[str, PromptTemplate] = {}
+        prompts: dict[str, PromptTemplate] = {}
 
         if scope in ("global", "all"):
             prompts.update(self._load_from_directory(self.builtin_dir, "global"))
@@ -36,7 +35,7 @@ class PromptManager:
 
         return prompts
 
-    def _load_from_directory(self, directory: Path, scope: str) -> Dict[str, PromptTemplate]:
+    def _load_from_directory(self, directory: Path, scope: str) -> dict[str, PromptTemplate]:
         """Load all YAML prompt files from a directory.
 
         Args:
@@ -46,7 +45,7 @@ class PromptManager:
         Returns:
             Dictionary of prompt_id -> PromptTemplate
         """
-        prompts: Dict[str, PromptTemplate] = {}
+        prompts: dict[str, PromptTemplate] = {}
 
         if not directory.exists():
             return prompts
@@ -54,7 +53,7 @@ class PromptManager:
         try:
             for yaml_file in directory.glob("*.yml"):
                 try:
-                    with open(yaml_file, "r") as f:
+                    with open(yaml_file) as f:
                         data = yaml.safe_load(f)
                         if data:
                             # Convert variables list to PromptVariable objects if needed
@@ -79,7 +78,7 @@ class PromptManager:
 
         return prompts
 
-    def get_prompt(self, prompt_id: str) -> Optional[PromptTemplate]:
+    def get_prompt(self, prompt_id: str) -> PromptTemplate | None:
         """Retrieve a specific prompt by ID.
 
         Args:
@@ -91,7 +90,7 @@ class PromptManager:
         prompts = self.load_prompts("all")
         return prompts.get(prompt_id)
 
-    def list_prompts(self) -> List[PromptTemplate]:
+    def list_prompts(self) -> list[PromptTemplate]:
         """List all available prompts.
 
         Returns:

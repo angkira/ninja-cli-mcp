@@ -296,7 +296,7 @@ _rate_balancer: RateBalancer | None = None
 
 def get_rate_balancer() -> RateBalancer:
     """Get the global rate balancer instance."""
-    global _rate_balancer  # noqa: PLW0603
+    global _rate_balancer
     if _rate_balancer is None:
         _rate_balancer = RateBalancer()
     return _rate_balancer
@@ -304,7 +304,7 @@ def get_rate_balancer() -> RateBalancer:
 
 def reset_rate_balancer() -> None:
     """Reset the global rate balancer (for testing)."""
-    global _rate_balancer  # noqa: PLW0603
+    global _rate_balancer
     _rate_balancer = None
 
 

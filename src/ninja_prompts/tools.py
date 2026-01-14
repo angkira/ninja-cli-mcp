@@ -1,18 +1,17 @@
 """Tool executor for prompt operations."""
 
-import asyncio
 from typing import Any
 
 from ninja_common.security import monitored, rate_limited
 from ninja_prompts.models import (
-    PromptRegistryRequest,
-    PromptRegistryResult,
-    PromptSuggestRequest,
-    PromptSuggestResult,
-    PromptSuggestion,
+    ChainStepOutput,
     PromptChainRequest,
     PromptChainResult,
-    ChainStepOutput,
+    PromptRegistryRequest,
+    PromptRegistryResult,
+    PromptSuggestion,
+    PromptSuggestRequest,
+    PromptSuggestResult,
 )
 from ninja_prompts.prompt_manager import PromptManager
 from ninja_prompts.template_engine import TemplateEngine
@@ -53,9 +52,7 @@ class PromptToolExecutor:
                     return PromptRegistryResult(
                         status="error", message=f"Prompt not found: {request.prompt_id}"
                     )
-                return PromptRegistryResult(
-                    status="ok", prompts=[prompt.model_dump()]
-                )
+                return PromptRegistryResult(status="ok", prompts=[prompt.model_dump()])
             elif request.action == "create":
                 from ninja_prompts.models import PromptTemplate
 
@@ -220,6 +217,4 @@ class PromptToolExecutor:
                 status="ok", chain_id=request.chain_id, executed_steps=executed_steps
             )
         except Exception as e:
-            return PromptChainResult(
-                status="error", chain_id=request.chain_id, message=str(e)
-            )
+            return PromptChainResult(status="error", chain_id=request.chain_id, message=str(e))

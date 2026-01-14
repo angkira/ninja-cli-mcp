@@ -372,7 +372,13 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 
         # Check ninja servers
         servers = mcp_config.get("mcpServers", {})
-        ninja_servers = ["ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-resources", "ninja-prompts"]
+        ninja_servers = [
+            "ninja-coder",
+            "ninja-researcher",
+            "ninja-secretary",
+            "ninja-resources",
+            "ninja-prompts",
+        ]
 
         for server in ninja_servers:
             if server in servers:
@@ -491,10 +497,22 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
         return
 
     # Define servers to register
-    servers = ["ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-resources", "ninja-prompts"]
+    servers = [
+        "ninja-coder",
+        "ninja-researcher",
+        "ninja-secretary",
+        "ninja-resources",
+        "ninja-prompts",
+    ]
 
     # Determine which servers to install
-    if args.all or (not args.coder and not args.researcher and not args.secretary and not args.resources and not args.prompts):
+    if args.all or (
+        not args.coder
+        and not args.researcher
+        and not args.secretary
+        and not args.resources
+        and not args.prompts
+    ):
         servers_to_install = servers
     else:
         servers_to_install = []
@@ -516,20 +534,35 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
         if args.force:
             subprocess.run(
                 ["claude", "mcp", "remove", server_name, "-s", "user"],
-                check=False, capture_output=True,
+                check=False,
+                capture_output=True,
             )
 
         # Add server
         result = subprocess.run(
-            ["claude", "mcp", "add", "--scope", "user", "--transport", "stdio", server_name, "--", server_name],
-            check=False, capture_output=True,
+            [
+                "claude",
+                "mcp",
+                "add",
+                "--scope",
+                "user",
+                "--transport",
+                "stdio",
+                server_name,
+                "--",
+                server_name,
+            ],
+            check=False,
+            capture_output=True,
             text=True,
         )
 
         if result.returncode == 0:
             print_colored(f"  ✓ Registered {server_name}", "green")
         elif "already exists" in result.stderr:
-            print_colored(f"  ⚠ {server_name} already registered (use --force to overwrite)", "yellow")
+            print_colored(
+                f"  ⚠ {server_name} already registered (use --force to overwrite)", "yellow"
+            )
         else:
             print_colored(f"  ✗ Failed to register {server_name}: {result.stderr.strip()}", "red")
 

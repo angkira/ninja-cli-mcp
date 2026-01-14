@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ninja_common.logging_utils import get_logger
 from ninja_common.defaults import DEFAULT_PORTS
+from ninja_common.logging_utils import get_logger
 
 
 logger = get_logger(__name__)
@@ -224,7 +224,9 @@ class DaemonManager:
             except OSError:
                 continue
 
-        raise RuntimeError(f"Could not find free port in range {start_port}-{start_port + max_attempts}")
+        raise RuntimeError(
+            f"Could not find free port in range {start_port}-{start_port + max_attempts}"
+        )
 
     def _save_port_to_config(self, module: str, port: int) -> None:
         """Save port to config file."""
@@ -445,7 +447,9 @@ class DaemonManager:
 
                 # Final check - process might be running but port binding is slow
                 if self._is_running(new_pid):
-                    logger.warning(f"{module} daemon running (PID {new_pid}) but port {port} not ready yet, assuming success")
+                    logger.warning(
+                        f"{module} daemon running (PID {new_pid}) but port {port} not ready yet, assuming success"
+                    )
                     return True
 
                 logger.error(f"{module} daemon failed to start properly")
@@ -555,7 +559,7 @@ class DaemonManager:
         return {module: self.status(module) for module in self.list_modules()}
 
 
-def main() -> int:  # noqa: PLR0911
+def main() -> int:
     """CLI entry point for daemon management."""
     parser = argparse.ArgumentParser(description="Ninja MCP Daemon Manager")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
@@ -598,7 +602,9 @@ def main() -> int:  # noqa: PLR0911
 
     # Connect command (for MCP clients)
     connect_parser = subparsers.add_parser("connect", help="Connect to daemon socket")
-    connect_parser.add_argument("module", choices=["coder", "researcher", "secretary", "resources", "prompts"])
+    connect_parser.add_argument(
+        "module", choices=["coder", "researcher", "secretary", "resources", "prompts"]
+    )
 
     args = parser.parse_args()
 

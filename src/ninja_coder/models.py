@@ -32,8 +32,9 @@ class StepConstraints(BaseModel):
 
     max_tokens: int = Field(default=0, ge=0, description="Max tokens (0 = unlimited)")
     time_budget_sec: int = Field(
-        default=0, ge=0, description="Time budget in seconds (0 = unlimited)")
-    
+        default=0, ge=0, description="Time budget in seconds (0 = unlimited)"
+    )
+
 
 class PlanStep(BaseModel):
     """A single step in an execution plan."""
