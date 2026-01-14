@@ -36,11 +36,11 @@ class PromptRegistryRequest(BaseModel):
     )
     prompt_id: str | None = Field(None, description="ID of the prompt (for get/update/delete)")
     name: str | None = Field(None, description="Name of the prompt (for create/update)")
-    description: str = Field(..., description="Description of the prompt")
-    template: str = Field(..., description="The prompt template string")
-    variables: list[PromptVariable] = Field(..., description="List of variables used in the prompt")
-    tags: list[str] = Field(..., description="List of tags for categorization")
-    scope: Literal["user", "global"] = Field(..., description="Scope of the prompt")
+    description: str | None = Field(None, description="Description of the prompt (for create/update)")
+    template: str | None = Field(None, description="The prompt template string (for create/update)")
+    variables: list[PromptVariable] | None = Field(None, description="List of variables used in the prompt (for create/update)")
+    tags: list[str] | None = Field(None, description="List of tags for categorization (for create/update)")
+    scope: Literal["user", "global"] | None = Field(None, description="Scope of the prompt (for create/update)")
 
 
 class PromptRegistryResult(BaseModel):
@@ -57,7 +57,7 @@ class PromptSuggestRequest(BaseModel):
     context: dict[str, Any] = Field(
         ..., description="Context information including task, language, etc."
     )
-    max_suggestions: int = Field(..., description="Maximum number of suggestions to return")
+    max_suggestions: int | None = Field(None, description="Maximum number of suggestions to return (defaults to 5)")
 
 
 class PromptSuggestion(BaseModel):
@@ -94,7 +94,7 @@ class PromptChainRequest(BaseModel):
     action: Literal["list", "create", "execute"] = Field(..., description="Action to perform")
     chain_id: str | None = Field(None, description="ID of the chain (for execute)")
     name: str | None = Field(None, description="Name of the chain (for create)")
-    steps: list[PromptChainStep] = Field(..., description="Steps in the chain")
+    steps: list[PromptChainStep] | None = Field(None, description="Steps in the chain (for create/execute)")
 
 
 class ChainStepOutput(BaseModel):
