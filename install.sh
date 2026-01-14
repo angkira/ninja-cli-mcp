@@ -111,13 +111,35 @@ step "3/6" "Installing ninja-mcp..."
 
 INSTALL_SUCCESS=false
 
-# Detect if running from dev directory (has pyproject.toml)
+# IMPORTANT: Deactivate any virtual environment to avoid PATH conflicts
+if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    info "Deactivating virtual environment..."
+    deactivate 2>/dev/null || true
+    unset VIRTUAL_ENV
+fi
+
+# Remove .venv/bin from PATH if present (dev directory edge case)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "$SCRIPT_DIR/.venv/bin" ]]; then
+    PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "$SCRIPT_DIR/.venv/bin" | tr '\n' ':' | sed 's/:$//')
+    export PATH
+fi
+
+# Ensure ~/.local/bin is at the front of PATH
+export PATH="$HOME/.local/bin:$PATH"
+
+# Detect if running from dev directory (has pyproject.toml)
 if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
     info "Detected dev directory, installing from local source..."
     if uv tool install --force "$SCRIPT_DIR[all]" 2>&1; then
         INSTALL_SUCCESS=true
         success "Installed from local dev directory"
+
+        # Clean up any dev .venv binaries that might conflict
+        if [[ -d "$SCRIPT_DIR/.venv/bin" ]]; then
+            info "Cleaning dev environment binaries to avoid conflicts..."
+            rm -f "$SCRIPT_DIR/.venv/bin/ninja-"* 2>/dev/null || true
+        fi
     else
         warn "Local install failed, falling back to remote..."
     fi
@@ -149,6 +171,20 @@ if [[ "$INSTALL_SUCCESS" != "true" ]]; then
 fi
 
 [[ "$INSTALL_SUCCESS" != "true" ]] && error "Installation failed"
+
+# Verify correct binaries are being used
+info "Verifying binary locations..."
+for cmd in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts ninja-config ninja-daemon; do
+    cmd_path=$(command -v "$cmd" 2>/dev/null || echo "not found")
+    if [[ "$cmd_path" == *"/.local/"* ]]; then
+        success "$cmd: $cmd_path"
+    elif [[ "$cmd_path" == "not found" ]]; then
+        warn "$cmd: not found in PATH"
+    else
+        warn "$cmd: using non-standard location: $cmd_path"
+        warn "This may cause issues. Expected: ~/.local/bin/$cmd"
+    fi
+done
 
 # Ensure PATH is set
 LOCAL_BIN="$HOME/.local/bin"
@@ -310,7 +346,7 @@ find_free_port() {
 }
 
 # Set ports for each daemon (find free ones if defaults are busy)
-for module_port in "CODER:8100" "RESEARCHER:8101" "SECRETARY:8102"; do
+for module_port in "CODER:8100" "RESEARCHER:8101" "SECRETARY:8102" "RESOURCES:8106" "PROMPTS:8107"; do
     module="${module_port%%:*}"
     default_port="${module_port##*:}"
     env_key="NINJA_${module}_PORT"
@@ -357,28 +393,18 @@ if [[ "$CLAUDE_INSTALLED" == "true" ]]; then
 
     # Use claude mcp add command (the correct way to register MCP servers)
     # Remove existing entries first (ignore errors if they don't exist)
-    claude mcp remove ninja-coder -s user 2>/dev/null || true
-    claude mcp remove ninja-researcher -s user 2>/dev/null || true
-    claude mcp remove ninja-secretary -s user 2>/dev/null || true
+    for server in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts; do
+        claude mcp remove "$server" -s user 2>/dev/null || true
+    done
 
-    # Add servers to user scope
-    if claude mcp add --scope user --transport stdio ninja-coder -- ninja-coder 2>/dev/null; then
-        success "ninja-coder registered"
-    else
-        warn "Failed to register ninja-coder"
-    fi
-
-    if claude mcp add --scope user --transport stdio ninja-researcher -- ninja-researcher 2>/dev/null; then
-        success "ninja-researcher registered"
-    else
-        warn "Failed to register ninja-researcher"
-    fi
-
-    if claude mcp add --scope user --transport stdio ninja-secretary -- ninja-secretary 2>/dev/null; then
-        success "ninja-secretary registered"
-    else
-        warn "Failed to register ninja-secretary"
-    fi
+    # Add all 5 servers to user scope
+    for server in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts; do
+        if claude mcp add --scope user --transport stdio "$server" -- "$server" 2>/dev/null; then
+            success "$server registered"
+        else
+            warn "Failed to register $server"
+        fi
+    done
 
     CONFIGURED_IDES+=("Claude Code")
 
@@ -449,6 +475,8 @@ echo -e "${BOLD}Installed commands:${NC}"
 echo "  ninja-coder       - AI code assistant (MCP server)"
 echo "  ninja-researcher  - Web research (MCP server)"
 echo "  ninja-secretary   - File operations (MCP server)"
+echo "  ninja-resources   - Resource templates (MCP server)"
+echo "  ninja-prompts     - Prompt management (MCP server)"
 echo "  ninja-config      - Configuration & diagnostics"
 echo "  ninja-daemon      - Server management"
 echo ""
