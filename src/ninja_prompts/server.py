@@ -248,7 +248,25 @@ Prompts Module - Manage reusable prompt templates and multi-step workflows.
         return Response()
 
     async def handle_messages(scope, receive, send):
-        await sse.handle_post_message(scope, receive, send)
+        try:
+            await sse.handle_post_message(scope, receive, send)
+        except Exception as e:
+            # Handle closed connections and other errors gracefully
+            import logging
+            logging.error(f"Error handling SSE message: {e}")
+            try:
+                await send({
+                    "type": "http.response.start",
+                    "status": 500,
+                    "headers": [[b"content-type", b"application/json"]],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": json.dumps({"error": str(e)}).encode(),
+                })
+            except Exception:
+                # Connection already closed, ignore
+                pass
 
     async def app(scope, receive, send):
         path = scope.get("path", "")

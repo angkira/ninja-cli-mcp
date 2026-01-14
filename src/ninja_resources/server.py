@@ -133,7 +133,25 @@ async def main_http(host: str, port: int) -> None:
         return Response()
 
     async def handle_messages(scope, receive, send):
-        await sse.handle_post_message(scope, receive, send)
+        try:
+            await sse.handle_post_message(scope, receive, send)
+        except Exception as e:
+            # Handle closed connections and other errors gracefully
+            logger.error(f"Error handling SSE message: {e}")
+            try:
+                await send({
+                    "type": "http.response.start",
+                    "status": 500,
+                    "headers": [[b"content-type", b"application/json"]],
+                })
+                import json
+                await send({
+                    "type": "http.response.body",
+                    "body": json.dumps({"error": str(e)}).encode(),
+                })
+            except Exception:
+                # Connection already closed, ignore
+                pass
 
     async def app(scope, receive, send):
         path = scope.get("path", "")
