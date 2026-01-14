@@ -128,8 +128,12 @@ async def main_http(host: str, port: int) -> None:
     sse = SseServerTransport("/messages")
 
     async def handle_sse(request):
-        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-            await server.run(streams[0], streams[1], server.create_initialization_options())
+        try:
+            async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+                await server.run(streams[0], streams[1], server.create_initialization_options())
+        except Exception as e:
+            # Handle any errors in SSE connection gracefully
+            logger.error(f"Error in SSE handler: {e}", exc_info=True)
         return Response()
 
     async def handle_messages(scope, receive, send):

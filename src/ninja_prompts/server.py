@@ -243,8 +243,13 @@ Prompts Module - Manage reusable prompt templates and multi-step workflows.
     sse = SseServerTransport("/messages")
 
     async def handle_sse(request):
-        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-            await server.run(streams[0], streams[1], server.instructions)
+        try:
+            async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+                await server.run(streams[0], streams[1], server.instructions)
+        except Exception as e:
+            # Handle any errors in SSE connection gracefully
+            import logging
+            logging.error(f"Error in SSE handler: {e}", exc_info=True)
         return Response()
 
     async def handle_messages(scope, receive, send):
