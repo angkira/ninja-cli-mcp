@@ -134,7 +134,7 @@ async def main_http(host: str, port: int) -> None:
         except Exception as e:
             # Handle any errors in SSE connection gracefully
             logger.error(f"Error in SSE handler: {e}", exc_info=True)
-        return Response()
+        # Note: Don't return Response() here - SSE transport handles the response
 
     async def handle_messages(scope, receive, send):
         try:
