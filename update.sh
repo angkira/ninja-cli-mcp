@@ -88,13 +88,35 @@ fi
 
 UPDATE_SUCCESS=false
 
-# Detect if running from dev directory (has pyproject.toml)
+# IMPORTANT: Deactivate any virtual environment to avoid PATH conflicts
+if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    info "Deactivating virtual environment..."
+    deactivate 2>/dev/null || true
+    unset VIRTUAL_ENV
+fi
+
+# Remove .venv/bin from PATH if present (dev directory edge case)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "$SCRIPT_DIR/.venv/bin" ]]; then
+    PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "$SCRIPT_DIR/.venv/bin" | tr '\n' ':' | sed 's/:$//')
+    export PATH
+fi
+
+# Ensure ~/.local/bin is at the front of PATH
+export PATH="$HOME/.local/bin:$PATH"
+
+# Detect if running from dev directory (has pyproject.toml)
 if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
     info "Detected dev directory, installing from local source..."
     if uv tool install --force "$SCRIPT_DIR[all]" 2>&1; then
         UPDATE_SUCCESS=true
         success "Updated from local dev directory"
+
+        # Clean up any dev .venv binaries that might conflict
+        if [[ -d "$SCRIPT_DIR/.venv/bin" ]]; then
+            info "Cleaning dev environment binaries to avoid conflicts..."
+            rm -f "$SCRIPT_DIR/.venv/bin/ninja-"* 2>/dev/null || true
+        fi
     else
         warn "Local install failed, falling back to remote..."
     fi
@@ -120,6 +142,20 @@ if [[ "$UPDATE_SUCCESS" != "true" ]]; then
         fi
     fi
 fi
+
+# Verify correct binaries are being used
+info "Verifying binary locations..."
+for cmd in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts; do
+    cmd_path=$(command -v "$cmd" 2>/dev/null || echo "not found")
+    if [[ "$cmd_path" == *"/.local/"* ]]; then
+        success "$cmd: $cmd_path"
+    elif [[ "$cmd_path" == "not found" ]]; then
+        warn "$cmd: not found in PATH"
+    else
+        warn "$cmd: using non-standard location: $cmd_path"
+        warn "This may cause issues. Expected: ~/.local/bin/$cmd"
+    fi
+done
 
 # ============================================================================
 # STEP 3: Restore configuration
@@ -153,7 +189,7 @@ find_free_port() {
     echo "$port"
 }
 
-for module_port in "CODER:8100" "RESEARCHER:8101" "SECRETARY:8102"; do
+for module_port in "CODER:8100" "RESEARCHER:8101" "SECRETARY:8102" "RESOURCES:8106" "PROMPTS:8107"; do
     module="${module_port%%:*}"
     default_port="${module_port##*:}"
     env_key="NINJA_${module}_PORT"
