@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 (No unreleased changes)
 
+## [0.3.1] - 2026-01-14
+
+### Fixed
+- **Daemon Support for All 5 Modules**
+  - Add HTTP/SSE support to ninja-resources and ninja-prompts servers
+  - Implement proper main_http() function for daemon mode
+  - Fix missing asyncio import in ninja_prompts
+  - Updated daemon manager to recognize all 5 modules
+  - All modules now fully operational in daemon mode with HTTP/SSE
+
+- **Configuration Updates**
+  - Add port assignments for new modules (resources=8106, prompts=8107)
+  - Update DEFAULT_PORTS in daemon configuration
+  - Fix port configuration in ~/.ninja-mcp.env
+
+- **Installation Scripts**
+  - Update update.sh to register all 5 modules
+  - Update config_cli.py with new module flags (--resources, --prompts)
+  - All installation commands now support complete 5-module setup
+
+### Status
+- All 5 MCP modules now fully operational in daemon mode
+- Tested and verified: ninja-daemon status shows all modules running
+- Ready for production use
+
 ## [0.3.0] - 2026-01-14
 
 ### Added

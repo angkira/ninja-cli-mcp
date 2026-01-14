@@ -5,16 +5,16 @@ import json
 import sys
 from typing import Any
 
-import mcp.types as types
+from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from ninja_prompts.tools import PromptToolExecutor
 from ninja_prompts.models import (
+    PromptChainRequest,
     PromptRegistryRequest,
     PromptSuggestRequest,
-    PromptChainRequest,
 )
+from ninja_prompts.tools import PromptToolExecutor
 
 
 # Initialize server
@@ -152,11 +152,7 @@ async def call_tool(name: str, arguments: dict) -> Any:
             return [types.TextContent(text=result.model_dump_json())]
 
         else:
-            return [
-                types.TextContent(
-                    text=json.dumps({"error": f"Unknown tool: {name}"})
-                )
-            ]
+            return [types.TextContent(text=json.dumps({"error": f"Unknown tool: {name}"}))]
 
     except Exception as e:
         return [types.TextContent(text=json.dumps({"error": str(e)}))]

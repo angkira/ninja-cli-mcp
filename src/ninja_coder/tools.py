@@ -23,10 +23,10 @@ from ninja_coder.models import (
     ParallelPlanRequest,
     PlanExecutionResult,
     PlanStep,
-    SimpleTaskRequest,
-    SimpleTaskResult,
     RunTestsRequest,
     SequentialPlanRequest,
+    SimpleTaskRequest,
+    SimpleTaskResult,
     StepResult,
     TestResult,
 )
@@ -553,7 +553,7 @@ class ToolExecutor:
             merge_report=merge_report,
         )
 
-    async def run_tests(self, request: RunTestsRequest, client_id: str = "default") -> TestResult:  # noqa: ARG002
+    async def run_tests(self, request: RunTestsRequest, client_id: str = "default") -> TestResult:
         """
         ⚠️ DEPRECATED - Run test commands via the AI code CLI.
 
@@ -579,7 +579,7 @@ class ToolExecutor:
 
     async def apply_patch(
         self,
-        request: ApplyPatchRequest,  # noqa: ARG002
+        request: ApplyPatchRequest,
         client_id: str = "default",
     ) -> ApplyPatchResult:
         """
@@ -615,7 +615,7 @@ _executor: ToolExecutor | None = None
 
 def get_executor() -> ToolExecutor:
     """Get the global tool executor instance."""
-    global _executor  # noqa: PLW0603
+    global _executor
     if _executor is None:
         _executor = ToolExecutor()
     return _executor
@@ -623,5 +623,5 @@ def get_executor() -> ToolExecutor:
 
 def reset_executor() -> None:
     """Reset the global tool executor (for testing)."""
-    global _executor  # noqa: PLW0603
+    global _executor
     _executor = None

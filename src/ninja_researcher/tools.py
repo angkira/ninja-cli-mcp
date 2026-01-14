@@ -579,7 +579,7 @@ _executor: ResearchToolExecutor | None = None
 
 def get_executor() -> ResearchToolExecutor:
     """Get the global research tool executor instance."""
-    global _executor  # noqa: PLW0603
+    global _executor
     if _executor is None:
         _executor = ResearchToolExecutor()
     return _executor
@@ -587,5 +587,5 @@ def get_executor() -> ResearchToolExecutor:
 
 def reset_executor() -> None:
     """Reset the global executor (for testing)."""
-    global _executor  # noqa: PLW0603
+    global _executor
     _executor = None

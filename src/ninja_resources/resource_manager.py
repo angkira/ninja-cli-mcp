@@ -1,10 +1,9 @@
 """Resource manager for Ninja MCP."""
 
-import logging
-from typing import Any, Dict, List, Optional
-from pathlib import Path
+from typing import Any
 
 from ninja_common.logging_utils import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -15,11 +14,11 @@ class ResourceManager:
     async def load_codebase(
         self,
         repo_root: str,
-        include_patterns: Optional[List[str]] = None,
-        exclude_patterns: Optional[List[str]] = None,
-        max_file_size: Optional[int] = None,
-        max_files: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+        max_file_size: int | None = None,
+        max_files: int | None = None,
+    ) -> dict[str, Any]:
         """
         Load codebase resources.
 
@@ -41,17 +40,17 @@ class ResourceManager:
                 "directories": [],
                 "languages": [],
                 "file_count": 0,
-                "total_size_mb": 0.0
+                "total_size_mb": 0.0,
             },
-            "files": []
+            "files": [],
         }
 
     async def load_config(
         self,
         repo_root: str,
-        config_patterns: Optional[List[str]] = None,
-        max_file_size: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        config_patterns: list[str] | None = None,
+        max_file_size: int | None = None,
+    ) -> dict[str, Any]:
         """
         Load configuration resources.
 
@@ -65,17 +64,15 @@ class ResourceManager:
         """
         # Placeholder implementation
         logger.info(f"Loading config from {repo_root}")
-        return {
-            "files": []
-        }
+        return {"files": []}
 
     async def load_docs(
         self,
         repo_root: str,
-        doc_patterns: Optional[List[str]] = None,
-        max_file_size: Optional[int] = None,
-        max_files: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        doc_patterns: list[str] | None = None,
+        max_file_size: int | None = None,
+        max_files: int | None = None,
+    ) -> dict[str, Any]:
         """
         Load documentation resources.
 
@@ -90,6 +87,4 @@ class ResourceManager:
         """
         # Placeholder implementation
         logger.info(f"Loading docs from {repo_root}")
-        return {
-            "entries": []
-        }
+        return {"entries": []}

@@ -68,7 +68,7 @@ def fetch_openrouter_pricing() -> dict[str, dict]:
     Returns:
         Dictionary mapping model IDs to pricing information
     """
-    global _pricing_cache, _pricing_cache_time  # noqa: PLW0603
+    global _pricing_cache, _pricing_cache_time
 
     # Return cached pricing if still valid
     if (

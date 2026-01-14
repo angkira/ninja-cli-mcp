@@ -6,7 +6,6 @@ Tests cover model instantiation, validation, defaults, and type constraints.
 
 import pytest
 from pydantic import ValidationError
-
 from src.ninja_secretary.models import (
     GitCommitRequest,
     GitCommitResult,
@@ -63,11 +62,7 @@ class TestGitStatusResult:
 
     def test_error_result(self):
         """Test creating error GitStatusResult."""
-        result = GitStatusResult(
-            status="error",
-            branch="",
-            error_message="Repository not found"
-        )
+        result = GitStatusResult(status="error", branch="", error_message="Repository not found")
         assert result.status == "error"
         assert result.error_message == "Repository not found"
 
@@ -80,7 +75,7 @@ class TestGitStatusResult:
             unstaged=["file3.py"],
             untracked=["file4.py", "file5.py"],
             ahead=3,
-            behind=1
+            behind=1,
         )
         assert len(result.staged) == 2
         assert len(result.unstaged) == 1
@@ -116,19 +111,12 @@ class TestGitDiffRequest:
 
     def test_with_file_path(self):
         """Test GitDiffRequest for specific file."""
-        req = GitDiffRequest(
-            repo_root="/path/to/repo",
-            file_path="src/main.py"
-        )
+        req = GitDiffRequest(repo_root="/path/to/repo", file_path="src/main.py")
         assert req.file_path == "src/main.py"
 
     def test_all_fields(self):
         """Test GitDiffRequest with all fields."""
-        req = GitDiffRequest(
-            repo_root="/path/to/repo",
-            staged=True,
-            file_path="src/module.py"
-        )
+        req = GitDiffRequest(repo_root="/path/to/repo", staged=True, file_path="src/module.py")
         assert req.repo_root == "/path/to/repo"
         assert req.staged is True
         assert req.file_path == "src/module.py"
@@ -156,11 +144,7 @@ class TestGitDiffResult:
         """Test GitDiffResult with actual diff content."""
         diff_content = "--- a/file.py\n+++ b/file.py\n@@ -1,3 +1,4 @@\n+new line"
         result = GitDiffResult(
-            status="ok",
-            diff=diff_content,
-            files_changed=1,
-            insertions=1,
-            deletions=0
+            status="ok", diff=diff_content, files_changed=1, insertions=1, deletions=0
         )
         assert result.diff == diff_content
         assert result.files_changed == 1
@@ -168,11 +152,7 @@ class TestGitDiffResult:
 
     def test_error_result(self):
         """Test creating error GitDiffResult."""
-        result = GitDiffResult(
-            status="error",
-            diff="",
-            error_message="File not found"
-        )
+        result = GitDiffResult(status="error", diff="", error_message="File not found")
         assert result.status == "error"
         assert result.error_message == "File not found"
 
@@ -192,10 +172,7 @@ class TestGitCommitRequest:
 
     def test_minimal_request(self):
         """Test creating GitCommitRequest with required fields."""
-        req = GitCommitRequest(
-            repo_root="/path/to/repo",
-            message="Initial commit"
-        )
+        req = GitCommitRequest(repo_root="/path/to/repo", message="Initial commit")
         assert req.repo_root == "/path/to/repo"
         assert req.message == "Initial commit"
         assert req.files == []
@@ -204,9 +181,7 @@ class TestGitCommitRequest:
     def test_with_specific_files(self):
         """Test GitCommitRequest with specific files."""
         req = GitCommitRequest(
-            repo_root="/path/to/repo",
-            message="Update files",
-            files=["file1.py", "file2.py"]
+            repo_root="/path/to/repo", message="Update files", files=["file1.py", "file2.py"]
         )
         assert len(req.files) == 2
         assert "file1.py" in req.files
@@ -214,9 +189,7 @@ class TestGitCommitRequest:
     def test_with_author_override(self):
         """Test GitCommitRequest with author override."""
         req = GitCommitRequest(
-            repo_root="/path/to/repo",
-            message="Commit",
-            author="John Doe <john@example.com>"
+            repo_root="/path/to/repo", message="Commit", author="John Doe <john@example.com>"
         )
         assert req.author == "John Doe <john@example.com>"
 
@@ -226,7 +199,7 @@ class TestGitCommitRequest:
             repo_root="/path/to/repo",
             message="Complete commit",
             files=["a.py", "b.py"],
-            author="Jane Doe <jane@example.com>"
+            author="Jane Doe <jane@example.com>",
         )
         assert req.repo_root == "/path/to/repo"
         assert req.message == "Complete commit"
@@ -246,11 +219,7 @@ class TestGitCommitRequest:
     def test_invalid_files_type(self):
         """Test that files must be list of strings."""
         with pytest.raises(ValidationError):
-            GitCommitRequest(
-                repo_root="/path/to/repo",
-                message="Commit",
-                files="file.py"
-            )
+            GitCommitRequest(repo_root="/path/to/repo", message="Commit", files="file.py")
 
 
 class TestGitCommitResult:
@@ -271,7 +240,7 @@ class TestGitCommitResult:
             status="ok",
             commit_hash="abc1234",
             message="Update files",
-            files_committed=["file1.py", "file2.py"]
+            files_committed=["file1.py", "file2.py"],
         )
         assert result.status == "ok"
         assert result.commit_hash == "abc1234"
@@ -279,10 +248,7 @@ class TestGitCommitResult:
 
     def test_error_result(self):
         """Test creating error GitCommitResult."""
-        result = GitCommitResult(
-            status="error",
-            error_message="Nothing to commit"
-        )
+        result = GitCommitResult(status="error", error_message="Nothing to commit")
         assert result.status == "error"
         assert result.error_message == "Nothing to commit"
 
@@ -309,19 +275,12 @@ class TestGitLogRequest:
 
     def test_with_file_path(self):
         """Test GitLogRequest filtered by file."""
-        req = GitLogRequest(
-            repo_root="/path/to/repo",
-            file_path="src/main.py"
-        )
+        req = GitLogRequest(repo_root="/path/to/repo", file_path="src/main.py")
         assert req.file_path == "src/main.py"
 
     def test_all_fields(self):
         """Test GitLogRequest with all fields."""
-        req = GitLogRequest(
-            repo_root="/path/to/repo",
-            max_count=25,
-            file_path="src/module.py"
-        )
+        req = GitLogRequest(repo_root="/path/to/repo", max_count=25, file_path="src/module.py")
         assert req.repo_root == "/path/to/repo"
         assert req.max_count == 25
         assert req.file_path == "src/module.py"
@@ -359,7 +318,7 @@ class TestGitLogEntry:
             hash="abc1234",
             author="John Doe <john@example.com>",
             date="2024-01-15 10:30:00",
-            message="Fix bug in parser"
+            message="Fix bug in parser",
         )
         assert entry.hash == "abc1234"
         assert entry.author == "John Doe <john@example.com>"
@@ -369,38 +328,22 @@ class TestGitLogEntry:
     def test_missing_hash(self):
         """Test that hash is required."""
         with pytest.raises(ValidationError):
-            GitLogEntry(
-                author="John Doe",
-                date="2024-01-15",
-                message="Commit"
-            )
+            GitLogEntry(author="John Doe", date="2024-01-15", message="Commit")
 
     def test_missing_author(self):
         """Test that author is required."""
         with pytest.raises(ValidationError):
-            GitLogEntry(
-                hash="abc1234",
-                date="2024-01-15",
-                message="Commit"
-            )
+            GitLogEntry(hash="abc1234", date="2024-01-15", message="Commit")
 
     def test_missing_date(self):
         """Test that date is required."""
         with pytest.raises(ValidationError):
-            GitLogEntry(
-                hash="abc1234",
-                author="John Doe",
-                message="Commit"
-            )
+            GitLogEntry(hash="abc1234", author="John Doe", message="Commit")
 
     def test_missing_message(self):
         """Test that message is required."""
         with pytest.raises(ValidationError):
-            GitLogEntry(
-                hash="abc1234",
-                author="John Doe",
-                date="2024-01-15"
-            )
+            GitLogEntry(hash="abc1234", author="John Doe", date="2024-01-15")
 
 
 class TestGitLogResult:
@@ -417,16 +360,10 @@ class TestGitLogResult:
         """Test GitLogResult with commit entries."""
         commits = [
             GitLogEntry(
-                hash="abc1234",
-                author="John Doe",
-                date="2024-01-15",
-                message="Initial commit"
+                hash="abc1234", author="John Doe", date="2024-01-15", message="Initial commit"
             ),
             GitLogEntry(
-                hash="def5678",
-                author="Jane Doe",
-                date="2024-01-16",
-                message="Add feature"
+                hash="def5678", author="Jane Doe", date="2024-01-16", message="Add feature"
             ),
         ]
         result = GitLogResult(status="ok", commits=commits)
@@ -436,10 +373,7 @@ class TestGitLogResult:
 
     def test_error_result(self):
         """Test creating error GitLogResult."""
-        result = GitLogResult(
-            status="error",
-            error_message="Repository not found"
-        )
+        result = GitLogResult(status="error", error_message="Repository not found")
         assert result.status == "error"
         assert result.error_message == "Repository not found"
 
@@ -451,10 +385,7 @@ class TestGitLogResult:
     def test_invalid_commits_type(self):
         """Test that commits must be list of GitLogEntry."""
         with pytest.raises(ValidationError):
-            GitLogResult(
-                status="ok",
-                commits=["not", "entries"]
-            )
+            GitLogResult(status="ok", commits=["not", "entries"])
 
 
 class TestModelIntegration:
@@ -463,38 +394,20 @@ class TestModelIntegration:
     def test_request_response_flow_status(self):
         """Test typical request-response flow for status."""
         req = GitStatusRequest(repo_root="/repo", include_untracked=True)
-        result = GitStatusResult(
-            status="ok",
-            branch="main",
-            staged=["file.py"],
-            ahead=2
-        )
+        result = GitStatusResult(status="ok", branch="main", staged=["file.py"], ahead=2)
         assert req.repo_root == result.branch or True  # Just verify both work
 
     def test_request_response_flow_commit(self):
         """Test typical request-response flow for commit."""
-        req = GitCommitRequest(
-            repo_root="/repo",
-            message="Update",
-            files=["a.py"]
-        )
-        result = GitCommitResult(
-            status="ok",
-            commit_hash="abc123",
-            files_committed=req.files
-        )
+        req = GitCommitRequest(repo_root="/repo", message="Update", files=["a.py"])
+        result = GitCommitResult(status="ok", commit_hash="abc123", files_committed=req.files)
         assert result.files_committed == req.files
 
     def test_request_response_flow_log(self):
         """Test typical request-response flow for log."""
         req = GitLogRequest(repo_root="/repo", max_count=5)
         entries = [
-            GitLogEntry(
-                hash=f"hash{i}",
-                author="Author",
-                date="2024-01-15",
-                message=f"Commit {i}"
-            )
+            GitLogEntry(hash=f"hash{i}", author="Author", date="2024-01-15", message=f"Commit {i}")
             for i in range(req.max_count)
         ]
         result = GitLogResult(status="ok", commits=entries)
