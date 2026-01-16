@@ -24,7 +24,10 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 # Load environment config if it exists
-if [[ -f "$HOME/.ninja-cli-mcp.env" ]]; then
+if [[ -f "$HOME/.ninja-mcp.env" ]]; then
+    source "$HOME/.ninja-mcp.env"
+elif [[ -f "$HOME/.ninja-cli-mcp.env" ]]; then
+    # Legacy config file name - still supported
     source "$HOME/.ninja-cli-mcp.env"
 fi
 

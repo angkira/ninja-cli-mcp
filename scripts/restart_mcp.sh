@@ -53,17 +53,24 @@ echo ""
 
 # Verify configuration
 info "Verifying configuration..."
-if [[ -f ~/.ninja-cli-mcp.env ]]; then
-    source ~/.ninja-cli-mcp.env
+if [[ -f ~/.ninja-mcp.env ]]; then
+    source ~/.ninja-mcp.env
     success "Configuration loaded"
     echo "   NINJA_CODE_BIN: $NINJA_CODE_BIN"
     echo "   NINJA_MODEL: ${NINJA_MODEL:0:40}..."
     echo "   API Key: ${OPENROUTER_API_KEY:0:10}...${OPENROUTER_API_KEY: -4}"
+elif [[ -f ~/.ninja-cli-mcp.env ]]; then
+    # Legacy config file name - still supported
+    source ~/.ninja-cli-mcp.env
+    success "Configuration loaded (legacy file)"
+    echo "   NINJA_CODE_BIN: $NINJA_CODE_BIN"
+    echo "   NINJA_MODEL: ${NINJA_MODEL:0:40}..."
+    echo "   API Key: ${OPENROUTER_API_KEY:0:10}...${OPENROUTER_API_KEY: -4}"
 else
-    error "Configuration file not found: ~/.ninja-cli-mcp.env"
+    error "Configuration file not found: ~/.ninja-mcp.env"
     echo ""
     echo "Create it with:"
-    echo "  bash scripts/install_coding_cli.sh aider"
+    echo "  bash scripts/install_interactive.sh"
     exit 1
 fi
 echo ""
@@ -134,7 +141,7 @@ echo "     bash scripts/test_aider_integration.sh"
 echo ""
 echo "Configuration:"
 echo "  • Server location: $PROJECT_ROOT"
-echo "  • Config file: ~/.ninja-cli-mcp.env"
+echo "  • Config file: ~/.ninja-mcp.env"
 echo "  • MCP config: ~/.copilot/mcp-config.json"
 echo "  • Coding CLI: $NINJA_CODE_BIN (Aider)"
 echo "  • Model: ${NINJA_MODEL:0:40}..."

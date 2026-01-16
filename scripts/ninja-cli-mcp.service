@@ -9,6 +9,7 @@ User=%i
 Group=%i
 WorkingDirectory=%h/Project/software/ninja-cli-mcp
 Environment="PATH=%h/.local/bin:%h/.nvm/versions/node/v25.0.0/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=-%h/.ninja-mcp.env
 EnvironmentFile=-%h/.ninja-cli-mcp.env
 ExecStart=/usr/bin/env bash %h/Project/software/ninja-cli-mcp/scripts/run_server.sh
 Restart=on-failure
