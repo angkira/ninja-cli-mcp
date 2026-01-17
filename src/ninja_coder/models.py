@@ -20,6 +20,14 @@ class ExecutionMode(str, Enum):
     FULL = "full"
 
 
+class TaskComplexity(str, Enum):
+    """Task complexity levels for intelligent model selection."""
+
+    PARALLEL = "parallel"  # Multiple independent tasks
+    SEQUENTIAL = "sequential"  # Multi-step dependent tasks
+    QUICK = "quick"  # Single-pass simple task
+
+
 class TestPlan(BaseModel):
     """Test commands to run for validation."""
 

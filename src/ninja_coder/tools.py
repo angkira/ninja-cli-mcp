@@ -10,6 +10,7 @@ IMPORTANT: Tools return ONLY concise summaries to the orchestrator, never source
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import uuid
 from pathlib import Path
@@ -155,7 +156,7 @@ class ToolExecutor:
                 notes="Too many requests - please slow down",
             )
 
-        # Build instruction
+        # Build instruction (reuse on retry)
         builder = InstructionBuilder(request.repo_root, ExecutionMode.QUICK)
         instruction = builder.build_quick_task(
             task=request.task,
@@ -164,37 +165,86 @@ class ToolExecutor:
             deny_globs=request.deny_globs,
         )
 
-        # Execute via AI code CLI
-        result = await self.driver.execute_async(
-            repo_root=request.repo_root,
-            step_id="simple_task",
-            instruction=instruction,
-        )
+        # Retry configuration (configurable via environment variables)
+        max_retries = int(os.environ.get("NINJA_MAX_RETRIES", "2"))
+        retry_delay_sec = int(os.environ.get("NINJA_RETRY_DELAY_SEC", "5"))
 
-        # Record metrics
+        # Execute with retry logic for aider errors
+        last_result = None
+        attempt = 0
+        for attempt in range(max_retries + 1):  # +1 for initial attempt
+            if attempt > 0:
+                logger.info(
+                    f"Retrying task (attempt {attempt + 1}/{max_retries + 1}) after aider error for client {client_id}"
+                )
+                await asyncio.sleep(retry_delay_sec)
+
+            # Execute via AI code CLI
+            result = await self.driver.execute_async(
+                repo_root=request.repo_root,
+                step_id=f"simple_task_attempt_{attempt}",
+                instruction=instruction,
+                task_type="quick",  # Simple tasks are always quick
+            )
+
+            last_result = result
+
+            # Success - no retry needed
+            if result.success:
+                if attempt > 0:
+                    logger.info(f"Task succeeded on attempt {attempt + 1} for client {client_id}")
+                break
+
+            # Check if this is a retryable aider error
+            if hasattr(result, "aider_error_detected") and result.aider_error_detected:
+                logger.warning(
+                    f"Aider error detected on attempt {attempt + 1} for client {client_id}: {result.notes[:100]}"
+                )
+                # Continue to retry (unless we're out of attempts)
+                if attempt < max_retries:
+                    continue
+                else:
+                    logger.error(
+                        f"Max retries ({max_retries}) exceeded for aider errors for client {client_id}"
+                    )
+            else:
+                # Non-retryable error (validation, API key, model not found, etc.)
+                logger.error(f"Non-retryable error for client {client_id}: {result.summary[:100]}")
+                break
+
+        # Record metrics with retry info
         duration = time.time() - start_time
         file_scope = ",".join(request.allowed_globs) if request.allowed_globs else None
+
+        # Add retry info to notes if we retried
+        final_notes = last_result.notes
+        if attempt > 0:
+            retry_info = f" [Succeeded after {attempt} {'retry' if attempt == 1 else 'retries'}]"
+            final_notes = (
+                f"{final_notes}{retry_info}" if final_notes else f"Task completed{retry_info}"
+            )
+
         self._record_metrics(
             task_id=task_id,
             tool_name="coder_simple_task",
             task_description=request.task,
-            output=result.stdout,
+            output=last_result.stdout,
             duration_sec=duration,
-            success=result.success,
+            success=last_result.success,
             execution_mode="quick",
             repo_root=request.repo_root,
             file_scope=file_scope,
-            error_message=result.summary if not result.success else None,
+            error_message=last_result.summary if not last_result.success else None,
             client_id=client_id,
         )
 
         # Return CONCISE result (no source code)
         return SimpleTaskResult(
-            status="ok" if result.success else "error",
-            summary=result.summary[:500],  # Ensure concise
-            notes=result.notes[:300],  # Ensure concise
-            logs_ref=result.raw_logs_path,
-            suspected_touched_paths=result.suspected_touched_paths[:10],  # Max 10 paths
+            status="ok" if last_result.success else "error",
+            summary=last_result.summary[:500],  # Ensure concise
+            notes=final_notes[:300] if final_notes else "",  # Ensure concise
+            logs_ref=last_result.raw_logs_path,
+            suspected_touched_paths=last_result.suspected_touched_paths[:10],  # Max 10 paths
         )
 
     def _record_metrics(
@@ -291,15 +341,70 @@ class ToolExecutor:
                 step.constraints.time_budget_sec if step.constraints.time_budget_sec > 0 else None
             )
 
-            # Execute via AI code CLI
-            result = await self.driver.execute_async(
-                repo_root=request.repo_root,
-                step_id=step.id,
-                instruction=instruction,
-                timeout_sec=timeout,
-            )
+            # Retry configuration (same as simple_task)
+            max_retries = int(os.environ.get("NINJA_MAX_RETRIES", "2"))
+            retry_delay_sec = int(os.environ.get("NINJA_RETRY_DELAY_SEC", "5"))
 
-            step_result = self._result_to_step_result(step.id, result)
+            # Execute with retry logic for aider errors
+            last_result = None
+            retry_count = 0
+            for retry_count in range(max_retries + 1):  # +1 for initial attempt
+                if retry_count > 0:
+                    logger.info(
+                        f"Retrying step {step.id} (attempt {retry_count + 1}/{max_retries + 1}) "
+                        f"after aider error for client {client_id}"
+                    )
+                    await asyncio.sleep(retry_delay_sec)
+
+                # Execute via AI code CLI
+                result = await self.driver.execute_async(
+                    repo_root=request.repo_root,
+                    step_id=f"{step.id}_attempt_{retry_count}",
+                    instruction=instruction,
+                    timeout_sec=timeout,
+                    task_type="sequential",  # Plan steps are sequential
+                )
+
+                last_result = result
+
+                # Success - no retry needed
+                if result.success:
+                    if retry_count > 0:
+                        logger.info(
+                            f"Step {step.id} succeeded on attempt {retry_count + 1} for client {client_id}"
+                        )
+                    break
+
+                # Check if this is a retryable aider error
+                if hasattr(result, "aider_error_detected") and result.aider_error_detected:
+                    logger.warning(
+                        f"Aider error detected in step {step.id} on attempt {retry_count + 1} "
+                        f"for client {client_id}: {result.notes[:100]}"
+                    )
+                    # Continue to retry (unless we're out of attempts)
+                    if retry_count < max_retries:
+                        continue
+                    else:
+                        logger.error(
+                            f"Max retries ({max_retries}) exceeded for step {step.id} for client {client_id}"
+                        )
+                else:
+                    # Non-retryable error
+                    logger.error(
+                        f"Non-retryable error in step {step.id} for client {client_id}: {result.summary[:100]}"
+                    )
+                    break
+
+            # Add retry info to step result if we retried
+            step_result = self._result_to_step_result(step.id, last_result)
+            if retry_count > 0 and last_result.success:
+                retry_info = f" [After {retry_count} {'retry' if retry_count == 1 else 'retries'}]"
+                step_result.notes = (
+                    f"{step_result.notes}{retry_info}"
+                    if step_result.notes
+                    else f"Completed{retry_info}"
+                )
+
             results.append(step_result)
 
             # Record metrics for this step
@@ -309,21 +414,23 @@ class ToolExecutor:
                 task_id=step_task_id,
                 tool_name="coder_plan_step_sequential",
                 task_description=f"{step.title}: {step.task}",
-                output=result.stdout,
+                output=last_result.stdout,
                 duration_sec=step_duration,
-                success=result.success,
+                success=last_result.success,
                 execution_mode=request.mode.value,
                 repo_root=request.repo_root,
                 file_scope=file_scope,
-                error_message=result.summary if not result.success else None,
+                error_message=last_result.summary if not last_result.success else None,
                 client_id=client_id,
             )
 
-            if result.success:
+            if last_result.success:
                 any_success = True
             else:
                 all_success = False
-                logger.warning(f"Step {step.id} failed for client {client_id}: {result.summary}")
+                logger.warning(
+                    f"Step {step.id} failed for client {client_id}: {last_result.summary}"
+                )
 
         # Determine overall status
         if all_success:
@@ -450,6 +557,7 @@ class ToolExecutor:
                     step_id=step.id,
                     instruction=instruction,
                     timeout_sec=timeout,
+                    task_type="parallel",  # Parallel execution
                 )
 
                 step_duration = time.time() - step_start_time
