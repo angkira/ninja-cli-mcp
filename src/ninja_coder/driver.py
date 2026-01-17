@@ -28,7 +28,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ninja_coder.models import ExecutionMode, PlanStep
+from ninja_coder.model_selector import ModelSelector
+from ninja_coder.models import ExecutionMode, PlanStep, TaskComplexity
+from ninja_coder.safety import GitSafetyChecker, validate_task_safety
+from ninja_coder.strategies import CLIStrategyRegistry
 from ninja_common.defaults import (
     DEFAULT_CODE_BIN,
     DEFAULT_CODER_MODEL,
@@ -98,6 +101,7 @@ class NinjaResult:
     stdout: str = ""
     stderr: str = ""
     model_used: str = ""
+    aider_error_detected: bool = False  # Flag for aider-specific internal errors
 
 
 class InstructionBuilder:
@@ -456,6 +460,14 @@ class NinjaDriver:
         """
         self.config = config or NinjaConfig.from_env()
 
+        # Initialize CLI strategy
+        self.strategy = CLIStrategyRegistry.get_strategy(self.config.bin_path, self.config)
+
+        # Initialize model selector
+        self.model_selector = ModelSelector(default_model=self.config.model)
+
+        logger.info(f"Initialized NinjaDriver with strategy: {self.strategy.name}")
+
     def _get_env(self) -> dict[str, str]:
         """Get environment variables for Ninja Code CLI subprocess with security filtering."""
         env = os.environ.copy()
@@ -564,6 +576,51 @@ class NinjaDriver:
         else:
             return "generic"
 
+    def _select_model_for_task(
+        self,
+        instruction: dict[str, Any],
+        task_type: str = "quick",
+    ) -> tuple[str, bool]:
+        """Select best model for task using intelligent selection.
+
+        Args:
+            instruction: Instruction document with task details.
+            task_type: Type of task ('quick', 'sequential', 'parallel').
+
+        Returns:
+            Tuple of (model_name, use_coding_plan_api).
+        """
+        # Determine task complexity
+        if task_type == "parallel":
+            complexity = TaskComplexity.PARALLEL
+            fanout = instruction.get("parallel_context", {}).get("total_steps", 1)
+        elif task_type == "sequential":
+            complexity = TaskComplexity.SEQUENTIAL
+            fanout = 1
+        else:
+            complexity = TaskComplexity.QUICK
+            fanout = 1
+
+        # Check environment overrides
+        prefer_cost = os.environ.get("NINJA_PREFER_COST", "false").lower() == "true"
+        prefer_quality = os.environ.get("NINJA_PREFER_QUALITY", "false").lower() == "true"
+
+        # Select model
+        recommendation = self.model_selector.select_model(
+            complexity,
+            fanout=fanout,
+            prefer_cost=prefer_cost,
+            prefer_quality=prefer_quality,
+        )
+
+        logger.info(
+            f"Selected model: {recommendation.model} "
+            f"(reason: {recommendation.reason}, "
+            f"estimated cost: {recommendation.cost_estimate})"
+        )
+
+        return recommendation.model, recommendation.use_coding_plan_api
+
     def _build_prompt_text(self, instruction: dict[str, Any], repo_root: str) -> str:
         """
         Build a comprehensive prompt from the instruction document.
@@ -655,6 +712,35 @@ class NinjaDriver:
             "--model",
             f"openrouter/{self.config.model}",  # OpenRouter model
         ]
+
+        # Add OpenRouter provider preferences if configured
+        provider_order = os.environ.get("NINJA_OPENROUTER_PROVIDERS")
+        if provider_order:
+            # Create model settings file with provider preferences
+            try:
+                import yaml
+            except ImportError:
+                logger.warning("pyyaml not installed, provider preferences disabled")
+            else:
+                dirs = ensure_internal_dirs(repo_root)
+                settings_file = safe_join(dirs["tasks"], "model_settings.yml")
+
+                providers = [p.strip() for p in provider_order.split(",")]
+                settings = [{
+                    "name": f"openrouter/{self.config.model}",
+                    "extra_params": {
+                        "provider": {
+                            "order": providers,
+                            "allow_fallbacks": False,
+                        }
+                    }
+                }]
+
+                with open(settings_file, "w") as f:
+                    yaml.dump(settings, f)
+
+                cmd.extend(["--model-settings-file", str(settings_file)])
+                logger.info(f"Using OpenRouter provider order: {providers}")
 
         # IMPORTANT: Explicitly pass API key to override aider's cached key
         # Aider caches keys in ~/.aider*/oauth-keys.env and might use that instead
@@ -797,6 +883,51 @@ class NinjaDriver:
             Parsed result with concise summary.
         """
         success = exit_code == 0
+        combined_output = stdout + "\n" + stderr
+
+        # ENHANCED: Detect aider-specific errors even with exit_code=0
+        aider_error_patterns = [
+            # Summarization failures (most common)
+            r"summarization\s+failed",
+            r"summarizer\s+.*?\s+failed",
+            r"cannot\s+schedule\s+new\s+futures\s+after\s+shutdown",
+            r"unexpectedly\s+failed\s+for\s+all\s+models",
+            # Threading/async errors (often fatal but hidden)
+            r"thread\s+.*?\s+error",
+            r"event\s+loop\s+.*?\s+closed",
+            r"event\s+loop\s+is\s+closed",
+            # Model response errors
+            r"incomplete\s+response",
+            r"response\s+.*?\s+truncated",
+            # File operation errors
+            r"failed\s+to\s+(write|create|modify)",
+            r"permission\s+denied.*?(writing|creating|modifying)",
+            # Git errors (when --no-git might not work)
+            r"git\s+.*?\s+error",
+            r"repository\s+.*?\s+error",
+        ]
+
+        aider_error_detected = False
+        aider_error_msg = ""
+
+        for pattern in aider_error_patterns:
+            match = re.search(pattern, combined_output, re.IGNORECASE)
+            if match:
+                aider_error_detected = True
+                # Extract context around the error (80 chars before/after for context)
+                start = max(0, match.start() - 80)
+                end = min(len(combined_output), match.end() + 80)
+                aider_error_msg = combined_output[start:end].strip()
+                # Clean up extra whitespace
+                aider_error_msg = " ".join(aider_error_msg.split())
+                break
+
+        # Override success if aider error detected
+        if aider_error_detected:
+            success = False
+            logger.warning(
+                f"Aider internal error detected despite exit_code={exit_code}: {aider_error_msg[:150]}"
+            )
 
         # Extract file changes (what was modified)
         suspected_paths: list[str] = []
@@ -805,8 +936,6 @@ class NinjaDriver:
             r"(?:writing|creating|modifying|updating|editing)\s+['\"]?([^\s'\"]+)['\"]?",
             r"file:\s*['\"]?([^\s'\"]+)['\"]?",
         ]
-
-        combined_output = stdout + "\n" + stderr
         for pattern in file_patterns:
             matches = re.findall(pattern, combined_output, re.IGNORECASE)
             for match in matches:
@@ -831,24 +960,30 @@ class NinjaDriver:
 
         # Extract brief notes (error messages, warnings) - keep it SHORT
         notes = ""
-        if not success and stderr:
-            # Extract just the error message, not full stack traces
-            error_lines = [line.strip() for line in stderr.split("\n") if line.strip()]
-            # Look for common error indicators
-            for line in error_lines[-10:]:  # Last 10 lines only
-                lower = line.lower()
-                if any(
-                    indicator in lower
-                    for indicator in ["error:", "failed:", "exception:", "traceback"]
-                ):
-                    notes = line[:200]  # Max 200 chars
-                    break
+        if not success:
+            # Priority 1: Aider-specific errors
+            if aider_error_detected:
+                notes = f"🔧 Aider internal error: {aider_error_msg[:200]}"
+                summary = "❌ Aider failed with internal error (retryable)"
+            # Priority 2: Other errors from stderr
+            elif stderr:
+                # Extract just the error message, not full stack traces
+                error_lines = [line.strip() for line in stderr.split("\n") if line.strip()]
+                # Look for common error indicators
+                for line in error_lines[-10:]:  # Last 10 lines only
+                    lower = line.lower()
+                    if any(
+                        indicator in lower
+                        for indicator in ["error:", "failed:", "exception:", "traceback"]
+                    ):
+                        notes = line[:200]  # Max 200 chars
+                        break
 
-            if not notes and error_lines:
-                notes = error_lines[-1][:200]  # Last line, max 200 chars
+                if not notes and error_lines:
+                    notes = error_lines[-1][:200]  # Last line, max 200 chars
 
             # Detect specific OpenRouter/API errors
-            if "finish_reason" in stderr.lower():
+            if "finish_reason" in combined_output.lower():
                 notes = "⚠️ Incomplete API response (token limit or timeout). Try smaller context or different model."
 
             # Detect invalid model ID errors
@@ -893,6 +1028,7 @@ class NinjaDriver:
             stdout=stdout,  # Full output saved to logs, not returned to orchestrator
             stderr=stderr,  # Full output saved to logs, not returned to orchestrator
             model_used=self.config.model,
+            aider_error_detected=aider_error_detected,
         )
 
     def execute_sync(
@@ -1003,6 +1139,7 @@ class NinjaDriver:
         step_id: str,
         instruction: dict[str, Any],
         timeout_sec: int | None = None,
+        task_type: str = "quick",
     ) -> NinjaResult:
         """
         Execute a task asynchronously.
@@ -1012,40 +1149,105 @@ class NinjaDriver:
             step_id: Step identifier.
             instruction: Instruction document.
             timeout_sec: Timeout in seconds.
+            task_type: Type of task for model selection ('quick', 'sequential', 'parallel').
 
         Returns:
             Execution result.
         """
         task_logger = create_task_logger(repo_root, step_id)
-        task_logger.info(f"Starting async task execution with model: {self.config.model}")
-        task_logger.set_metadata("instruction", instruction)
-        task_logger.set_metadata("model", self.config.model)
 
         try:
+            # Safety check with automatic enforcement (AUTO mode by default)
+            task_desc = instruction.get("task", "")
+            context_paths = instruction.get("file_scope", {}).get("context_paths", [])
+
+            safety_results = validate_task_safety(
+                repo_root=repo_root,
+                task_description=task_desc,
+                context_paths=context_paths,
+            )
+
+            # Log all warnings
+            for warning in safety_results.get("warnings", []):
+                task_logger.warning(warning)
+                logger.warning(warning)
+
+            # Log recommendations
+            for rec in safety_results.get("recommendations", []):
+                task_logger.info(f"💡 {rec}")
+
+            # Log action taken
+            action_taken = safety_results.get("action_taken")
+            if action_taken == "auto_committed":
+                logger.info("✅ Automatic safety commit created")
+
+            # ENFORCE SAFETY: Refuse to run if safety check failed
+            if not safety_results.get("safe", True):
+                logs_path = task_logger.save()
+                error_msg = "Safety check failed - refusing to run task"
+                task_logger.error(error_msg)
+                return NinjaResult(
+                    success=False,
+                    summary="❌ Safety check failed",
+                    notes="\n".join(safety_results.get("warnings", [])),
+                    raw_logs_path=logs_path,
+                    exit_code=-2,
+                    model_used=self.config.model,
+                )
+
+            # Store git info for recovery
+            git_info = safety_results.get("git_info", {})
+            if git_info.get("safety_tag"):
+                recovery_cmd = f"git reset --hard {git_info['safety_tag']}"
+                task_logger.info(f"🔖 Recovery point: {recovery_cmd}")
+                logger.info(f"🔖 Recovery point: {recovery_cmd}")
+
             # Write task file
             task_file = self._write_task_file(repo_root, step_id, instruction)
             task_logger.info(f"Wrote task file: {task_file}")
 
-            # Build command
-            cmd = self._build_command(task_file, repo_root)
-            # Log command without sensitive data (redact API key)
-            # Note: use "api-key" not "--api-key" to match "--openai-api-key"
+            # Select model intelligently based on task type
+            model, use_coding_plan = self._select_model_for_task(instruction, task_type)
+
+            task_logger.info(f"Starting async task execution with model: {model}")
+            task_logger.set_metadata("instruction", instruction)
+            task_logger.set_metadata("model", model)
+            task_logger.set_metadata("task_type", task_type)
+
+            # Build prompt from instruction
+            with Path(task_file).open() as f:
+                instruction_data = json.load(f)
+
+            prompt = self._build_prompt_text(instruction_data, repo_root)
+            file_scope = instruction_data.get("file_scope", {})
+            context_paths = file_scope.get("context_paths", [])
+
+            # Build command using strategy
+            additional_flags = {"use_coding_plan": use_coding_plan} if use_coding_plan else None
+
+            cli_result = self.strategy.build_command(
+                prompt=prompt,
+                repo_root=repo_root,
+                file_paths=context_paths,
+                model=model,
+                additional_flags=additional_flags,
+            )
+
+            # Log command (redact sensitive data)
             safe_cmd = [
                 arg if "api-key" not in prev.lower() else "***REDACTED***"
-                for prev, arg in zip([""] + cmd[:-1], cmd)
+                for prev, arg in zip([""] + cli_result.command[:-1], cli_result.command)
             ]
-            task_logger.info(f"Running command: {' '.join(safe_cmd)}")
+            task_logger.info(f"Running {self.strategy.name}: {' '.join(safe_cmd)}")
 
-            # Get environment
-            env = self._get_env()
+            # Get timeout from strategy
+            timeout = timeout_sec or self.strategy.get_timeout(task_type)
 
-            # Execute asynchronously
-            timeout = timeout_sec or self.config.timeout_sec
-
+            # Execute asynchronously using strategy-built command
             process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(repo_root),  # Execute in actual repository
-                env=env,
+                *cli_result.command,
+                cwd=str(cli_result.working_dir),
+                env=cli_result.env,
                 stdin=asyncio.subprocess.DEVNULL,  # Prevent stdin blocking
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -1071,14 +1273,27 @@ class NinjaDriver:
                     notes=f"Execution exceeded {timeout}s timeout",
                     raw_logs_path=logs_path,
                     exit_code=-1,
-                    model_used=self.config.model,
+                    model_used=model,
                 )
 
-            task_logger.log_subprocess(cmd, exit_code, stdout, stderr)
+            task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
 
-            # Parse result (extracts CONCISE summary only)
-            result = self._parse_output(stdout, stderr, exit_code)
-            result.raw_logs_path = task_logger.save()
+            # Parse output using strategy
+            parsed = self.strategy.parse_output(stdout, stderr, exit_code)
+
+            # Build result from parsed output
+            result = NinjaResult(
+                success=parsed.success,
+                summary=parsed.summary,
+                notes=parsed.notes,
+                suspected_touched_paths=parsed.touched_paths,
+                raw_logs_path=task_logger.save(),
+                exit_code=exit_code,
+                stdout=stdout,
+                stderr=stderr,
+                model_used=model,
+                aider_error_detected=parsed.retryable_error,  # Generic retryable error flag
+            )
 
             task_logger.info(
                 f"Task {'succeeded' if result.success else 'failed'}: {result.summary}"
@@ -1089,6 +1304,8 @@ class NinjaDriver:
         except FileNotFoundError:
             task_logger.error(f"Ninja Code CLI not found: {self.config.bin_path}")
             logs_path = task_logger.save()
+            # Use locals() to check if model was defined before error
+            model_used = locals().get("model", self.config.model)
             return NinjaResult(
                 success=False,
                 summary="❌ Ninja Code CLI not found",
@@ -1096,18 +1313,20 @@ class NinjaDriver:
                 f"Install Ninja Code CLI or set NINJA_CODE_BIN environment variable.",
                 raw_logs_path=logs_path,
                 exit_code=-1,
-                model_used=self.config.model,
+                model_used=model_used,
             )
         except Exception as e:
             task_logger.error(f"Unexpected error: {e}")
             logs_path = task_logger.save()
+            # Use locals() to check if model was defined before error
+            model_used = locals().get("model", self.config.model)
             return NinjaResult(
                 success=False,
                 summary="❌ Execution error",
                 notes=str(e)[:200],  # Keep error message concise
                 raw_logs_path=logs_path,
                 exit_code=-1,
-                model_used=self.config.model,
+                model_used=model_used,
             )
 
 

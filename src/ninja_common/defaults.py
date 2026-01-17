@@ -62,3 +62,60 @@ DEFAULT_PORTS = {
 # =============================================================================
 
 DEFAULT_CODE_BIN = "aider"
+
+# =============================================================================
+# MODEL DATABASE FOR INTELLIGENT SELECTION
+# =============================================================================
+
+MODEL_DATABASE = {
+    # Z.ai models (via OpenCode with native support)
+    "glm-4.6v": {
+        "provider": "z.ai",
+        "best_for": ["parallel"],
+        "concurrent_limit": 20,
+        "cost": "low",
+        "livebench_score": None,  # Not yet benchmarked
+        "supports_coding_plan_api": False,
+    },
+    "glm-4.7": {
+        "provider": "z.ai",
+        "best_for": ["sequential"],
+        "concurrent_limit": 5,
+        "cost": "medium",
+        "livebench_score": 84.9,
+        "supports_coding_plan_api": True,
+    },
+    "glm-4.0": {
+        "provider": "z.ai",
+        "best_for": ["quick"],
+        "concurrent_limit": 10,
+        "cost": "low",
+        "livebench_score": 75.0,
+        "supports_coding_plan_api": False,
+    },
+    # OpenRouter models (via Aider)
+    "anthropic/claude-sonnet-4": {
+        "provider": "openrouter",
+        "best_for": ["sequential", "quick"],
+        "concurrent_limit": 5,
+        "cost": "high",
+        "livebench_score": 88.0,
+        "supports_coding_plan_api": False,
+    },
+    "anthropic/claude-haiku-4.5": {
+        "provider": "openrouter",
+        "best_for": ["quick", "parallel"],
+        "concurrent_limit": 10,
+        "cost": "low",
+        "livebench_score": 82.0,
+        "supports_coding_plan_api": False,
+    },
+    "anthropic/claude-opus-4": {
+        "provider": "openrouter",
+        "best_for": ["sequential"],
+        "concurrent_limit": 3,
+        "cost": "very_high",
+        "livebench_score": 91.0,
+        "supports_coding_plan_api": False,
+    },
+}

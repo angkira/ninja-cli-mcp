@@ -228,8 +228,10 @@ class TestApiKeyRedaction:
         cmd = driver._build_command(task_file, str(temp_repo))
 
         # Actual command SHOULD contain API key for execution
-        assert api_key in cmd, "Actual command should contain API key"
-        assert "--openai-api-key" in cmd, "Should have --openai-api-key flag"
+        # API key is in format: openrouter=KEY
+        api_key_with_prefix = f"openrouter={api_key}"
+        assert api_key_with_prefix in cmd, f"Actual command should contain API key with openrouter prefix: {api_key_with_prefix}"
+        assert "--api-key" in cmd, "Should have --api-key flag"
 
 
 class TestCliDetection:
@@ -504,7 +506,7 @@ class TestMcpToolsIntegration:
         os.environ["NINJA_CODE_BIN"] = "aider"
         os.environ["NINJA_MODEL"] = "qwen/qwen3-coder"
 
-        from ninja_coder.models import QuickTaskRequest
+        from ninja_coder.models import SimpleTaskRequest
         from ninja_coder.tools import ToolExecutor
 
         # Create test file
@@ -512,7 +514,7 @@ class TestMcpToolsIntegration:
         test_file.write_text('"""Greeter module."""\n\n')
 
         executor = ToolExecutor()
-        request = QuickTaskRequest(
+        request = SimpleTaskRequest(
             task="Add a function called 'greet' that takes a name and returns 'Hello, {name}!'",
             repo_root=str(temp_repo),
             context_paths=["src/greeter.py"],
@@ -520,7 +522,7 @@ class TestMcpToolsIntegration:
             deny_globs=[],
         )
 
-        result = await executor.quick_task(request, client_id="smoke_test")
+        result = await executor.simple_task(request, client_id="smoke_test")
 
         # Check result
         assert result.status in ["ok", "error"]
