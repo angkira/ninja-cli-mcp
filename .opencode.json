@@ -1,0 +1,35 @@
+{
+  "mcpServers": {
+    "ninja-coder": {
+      "type": "stdio",
+      "command": "ninja-coder",
+      "disabled": false,
+      "env": [
+        "OPENROUTER_API_KEY=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",
+        "NINJA_CODER_MODEL=anthropic/claude-haiku-4.5-20250929",
+        "NINJA_CODE_BIN=aider",
+        "NINJA_CODER_TIMEOUT=600"
+      ]
+    },
+    "ninja-researcher": {
+      "type": "stdio",
+      "command": "ninja-researcher",
+      "disabled": false,
+      "env": [
+        "OPENROUTER_API_KEY=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",
+        "NINJA_RESEARCHER_MODEL=anthropic/claude-sonnet-4",
+        "NINJA_RESEARCHER_MAX_SOURCES=20",
+        "NINJA_RESEARCHER_PARALLEL_AGENTS=4"
+      ]
+    },
+    "ninja-secretary": {
+      "type": "stdio",
+      "command": "ninja-secretary",
+      "disabled": false,
+      "env": [
+        "NINJA_SECRETARY_MODEL=anthropic/claude-haiku-4.5-20250929",
+        "NINJA_SECRETARY_MAX_FILE_SIZE=1048576"
+      ]
+    }
+  }
+}

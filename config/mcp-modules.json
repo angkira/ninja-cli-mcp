@@ -311,6 +311,11 @@
       "script": "./scripts/install_claude_code_mcp.sh",
       "flags": "--all or --coder --researcher --secretary --resources --prompts"
     },
+    "opencode": {
+      "description": "Register with OpenCode CLI",
+      "script": "./scripts/install_opencode_mcp.sh",
+      "flags": "--all or --coder --researcher --secretary --resources --prompts"
+    },
     "vscode": {
       "description": "Register with VS Code Cline extension",
       "script": "./scripts/install_vscode_mcp.sh",

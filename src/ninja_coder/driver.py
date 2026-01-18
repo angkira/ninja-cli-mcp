@@ -30,7 +30,7 @@ from typing import Any
 
 from ninja_coder.model_selector import ModelSelector
 from ninja_coder.models import ExecutionMode, PlanStep, TaskComplexity
-from ninja_coder.safety import GitSafetyChecker, validate_task_safety
+from ninja_coder.safety import validate_task_safety
 from ninja_coder.strategies import CLIStrategyRegistry
 from ninja_common.defaults import (
     DEFAULT_CODE_BIN,
@@ -772,6 +772,11 @@ class NinjaDriver:
         # Add file paths for aider to edit (critical for aider to know what to modify)
         if file_paths:
             for file_path in file_paths:
+                # Check if path is a directory and skip it (aider doesn't support mixing dirs and files)
+                path_obj = Path(file_path)
+                if path_obj.is_dir():
+                    logger.debug(f"Skipping directory for aider --file: {file_path} (aider requires individual files only)")
+                    continue
                 # Use --file to add files to aider's context
                 cmd.extend(["--file", file_path])
 

@@ -3,9 +3,9 @@
 # install_coding_cli.sh - Install AI coding agent CLI for ninja-cli-mcp
 #
 # This script installs a coding agent CLI that supports OpenRouter.
-# Options: Aider (Python), Qwen Code CLI (Node.js), or detect existing.
+# Options: Aider (Python), Qwen Code CLI (Node.js), OpenCode (native MCP), or detect existing.
 #
-# Usage: ./scripts/install_coding_cli.sh [aider|qwen|detect]
+# Usage: ./scripts/install_coding_cli.sh [aider|qwen|opencode|detect]
 
 set -euo pipefail
 
@@ -60,7 +60,13 @@ detect_existing() {
         FOUND_CLIS+=("claude")
         warn "Claude CLI found: $CLAUDE_VERSION (Note: Claude CLI doesn't support OpenRouter directly)"
     fi
-    
+
+    if command -v opencode &> /dev/null; then
+        OPENCODE_VERSION=$(opencode --version 2>/dev/null | head -n1 || echo "unknown")
+        FOUND_CLIS+=("opencode")
+        success "OpenCode CLI found: $OPENCODE_VERSION"
+    fi
+
     if [ ${#FOUND_CLIS[@]} -eq 0 ]; then
         info "No coding agent CLIs found"
         return 1
@@ -103,7 +109,7 @@ install_aider() {
 # Install Qwen Code CLI
 install_qwen() {
     info "Installing Qwen Code CLI via npm..."
-    
+
     # Check for npm
     if ! command -v npm &> /dev/null; then
         error "npm is not installed"
@@ -113,11 +119,11 @@ install_qwen() {
         echo ""
         return 1
     fi
-    
+
     # Install globally
     if npm install -g @qwen-code/qwen-code; then
         success "Qwen Code CLI installed successfully"
-        
+
         # Verify installation
         if command -v qwen &> /dev/null; then
             QWEN_VERSION=$(qwen --version 2>/dev/null | head -n1)
@@ -137,6 +143,32 @@ install_qwen() {
     fi
 }
 
+# Install OpenCode CLI
+install_opencode() {
+    info "Installing OpenCode CLI..."
+
+    if curl -fsSL https://opencode.ai/install | bash; then
+        success "OpenCode CLI installed successfully"
+
+        # Verify installation
+        if command -v opencode &> /dev/null; then
+            OPENCODE_VERSION=$(opencode --version 2>/dev/null | head -n1)
+            success "OpenCode CLI is ready: $OPENCODE_VERSION"
+            echo ""
+            echo "To use OpenCode:"
+            echo "  opencode"
+            echo ""
+            return 0
+        else
+            error "OpenCode CLI installation verification failed"
+            return 1
+        fi
+    else
+        error "Failed to install OpenCode CLI"
+        return 1
+    fi
+}
+
 # Main logic
 MODE="${1:-detect}"
 
@@ -148,6 +180,10 @@ case "$MODE" in
     qwen)
         install_qwen
         RECOMMENDED_BIN="qwen"
+        ;;
+    opencode)
+        install_opencode
+        RECOMMENDED_BIN="opencode"
         ;;
     detect)
         if detect_existing; then
@@ -161,11 +197,12 @@ case "$MODE" in
             echo "Choose an option:"
             echo "  1. Install Aider (Python-based, recommended)"
             echo "  2. Install Qwen Code CLI (Node.js-based)"
-            echo "  3. Skip installation"
+            echo "  3. Install OpenCode CLI (Recommended, MCP-native)"
+            echo "  4. Skip installation"
             echo ""
-            read -p "Enter choice (1-3): " -n 1 -r
+            read -p "Enter choice (1-4): " -n 1 -r
             echo
-            
+
             case "$REPLY" in
                 1)
                     install_aider
@@ -176,11 +213,16 @@ case "$MODE" in
                     RECOMMENDED_BIN="qwen"
                     ;;
                 3)
+                    install_opencode
+                    RECOMMENDED_BIN="opencode"
+                    ;;
+                4)
                     warn "Skipping installation"
                     echo ""
                     echo "You can install a coding agent CLI later:"
                     echo "  ./scripts/install_coding_cli.sh aider"
                     echo "  ./scripts/install_coding_cli.sh qwen"
+                    echo "  ./scripts/install_coding_cli.sh opencode"
                     exit 0
                     ;;
                 *)
@@ -193,7 +235,7 @@ case "$MODE" in
     *)
         error "Invalid mode: $MODE"
         echo ""
-        echo "Usage: $0 [aider|qwen|detect]"
+        echo "Usage: $0 [aider|qwen|opencode|detect]"
         exit 1
         ;;
 esac
