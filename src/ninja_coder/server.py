@@ -97,7 +97,7 @@ TOOLS: list[Tool] = [
                 "context_paths": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Files/directories Ninja should focus on (for context)",
+                    "description": "Files/directories Ninja should focus on (for context). ⚠️ IMPORTANT: If using Aider as the code CLI, do NOT mix directories and individual files in context_paths. Either provide only directories (for repo-wide context) or only individual files.",
                     "default": [],
                 },
                 "allowed_globs": {
@@ -177,6 +177,7 @@ TOOLS: list[Tool] = [
                             "context_paths": {
                                 "type": "array",
                                 "items": {"type": "string"},
+                                "description": "Files/directories Ninja should focus on for this step. ⚠️ IMPORTANT: If using Aider as code CLI, do NOT mix directories and individual files in context_paths. Either provide only directories (for repo-wide context) or only individual files.",
                                 "default": [],
                             },
                             "allowed_globs": {
@@ -278,7 +279,7 @@ TOOLS: list[Tool] = [
                                 "type": "string",
                                 "description": "DETAILED specification of what code to write",
                             },
-                            "context_paths": {"type": "array", "items": {"type": "string"}},
+                            "context_paths": {"type": "array", "items": {"type": "string"}, "description": "Files/directories Ninja should focus on for this step. ⚠️ IMPORTANT: If using Aider as code CLI, do NOT mix directories and individual files in context_paths. Either provide only directories (for repo-wide context) or only individual files."},
                             "allowed_globs": {"type": "array", "items": {"type": "string"}},
                             "deny_globs": {"type": "array", "items": {"type": "string"}},
                             "max_iterations": {"type": "integer"},

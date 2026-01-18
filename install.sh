@@ -413,6 +413,23 @@ else
     info "Claude Code not detected (install from: https://claude.ai/download)"
 fi
 
+# --- OpenCode ---
+OPENCODE_CONFIG="$HOME/.opencode.json"
+[[ ! -f "$OPENCODE_CONFIG" ]] && OPENCODE_CONFIG="$HOME/.config/opencode/.opencode.json"
+
+if command -v opencode &> /dev/null || [[ -f "$OPENCODE_CONFIG" ]]; then
+    info "Detected OpenCode, configuring MCP..."
+
+    if [[ -f "$SCRIPT_DIR/scripts/install_opencode_mcp.sh" ]]; then
+        bash "$SCRIPT_DIR/scripts/install_opencode_mcp.sh" --all
+        CONFIGURED_IDES+=("OpenCode")
+    else
+        warn "OpenCode installation script not found, skipping..."
+    fi
+else
+    info "OpenCode not detected (install from: https://opencode.ai/download)"
+fi
+
 # --- VS Code ---
 VSCODE_CONFIG="$HOME/.config/Code/User/settings.json"
 [[ "$OS" == "macos" ]] && VSCODE_CONFIG="$HOME/Library/Application Support/Code/User/settings.json"
@@ -496,9 +513,12 @@ echo ""
 echo -e "  ${DIM}# Verify everything works${NC}"
 echo "  ninja-config doctor"
 echo ""
-echo -e "  ${DIM}# Reconfigure Claude Code (if needed)${NC}"
-echo "  ninja-config setup-claude --force"
-echo ""
+ echo -e "  ${DIM}# Reconfigure Claude Code (if needed)${NC}"
+ echo "  ninja-config setup-claude --force"
+ echo ""
+ echo -e "  ${DIM}# Reconfigure OpenCode (if needed)${NC}"
+ echo "  ./scripts/install_opencode_mcp.sh --all"
+ echo ""
 
 if [[ "$VERIFY_PASSED" != "true" ]]; then
     echo -e "${YELLOW}⚠ Some commands not in PATH. Restart your shell or run:${NC}"

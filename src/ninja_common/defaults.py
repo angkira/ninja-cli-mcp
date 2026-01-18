@@ -64,6 +64,20 @@ DEFAULT_PORTS = {
 DEFAULT_CODE_BIN = "aider"
 
 # =============================================================================
+# SAFETY DEFAULTS
+# =============================================================================
+
+# Safety mode for git-based protection against file overwrites
+# - "auto": Automatically commit uncommitted changes before running tasks (default)
+# - "strict": Refuse to run with uncommitted changes
+# - "warn": Warn but allow execution
+# - "off": Disable all safety checks (not recommended)
+DEFAULT_SAFETY_MODE = "auto"
+
+# Whether to create safety tags for recovery
+DEFAULT_CREATE_SAFETY_TAGS = True
+
+# =============================================================================
 # MODEL DATABASE FOR INTELLIGENT SELECTION
 # =============================================================================
 

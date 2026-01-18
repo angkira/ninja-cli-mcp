@@ -73,7 +73,7 @@ NINJA_OPENROUTER_PROVIDERS=google-vertex  # Optional provider preference
 ### OpenCode with Z.ai
 
 ```bash
-NINJA_CODE_BIN=opencode-cli
+NINJA_CODE_BIN=opencode
 NINJA_MODEL=glm-4.7
 OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 OPENAI_API_KEY=your-zai-key

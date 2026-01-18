@@ -611,7 +611,14 @@ if [[ "$INSTALL_CODER" == "true" ]]; then
             info "Found: cursor at $CURSOR_PATH"
         fi
     fi
-    
+
+    # Check for opencode
+    if command -v opencode &> /dev/null; then
+        OPENCODE_PATH=$(command -v opencode)
+        DETECTED_CLIS+=("opencode|$OPENCODE_PATH")
+        info "Found: opencode at $OPENCODE_PATH"
+    fi
+
     echo ""
     
     if [[ ${#DETECTED_CLIS[@]} -gt 0 ]]; then
@@ -801,6 +808,12 @@ ZED_INSTALLED=false
 if command -v zed &> /dev/null || [[ -d "$HOME/.config/zed" ]]; then
     success "Zed found"
     ZED_INSTALLED=true
+fi
+
+OPENCODE_INSTALLED=false
+if command -v opencode &> /dev/null || [[ -f "$HOME/.opencode.json" ]] || [[ -f "$HOME/.config/opencode/.opencode.json" ]]; then
+    success "OpenCode found"
+    OPENCODE_INSTALLED=true
 fi
 
 echo ""
@@ -1053,6 +1066,124 @@ PYTHON_SCRIPT
     fi
 fi
 
+# OpenCode
+if [[ "$OPENCODE_INSTALLED" == "true" ]]; then
+    if confirm "Register modules with OpenCode?"; then
+        info "Registering with OpenCode..."
+
+        # Detect OpenCode config location
+        OPENCODE_CONFIG="$HOME/.opencode.json"
+        [[ ! -f "$OPENCODE_CONFIG" ]] && OPENCODE_CONFIG="$HOME/.config/opencode/.opencode.json"
+
+        # Create config directory if needed
+        mkdir -p "$(dirname "$OPENCODE_CONFIG")"
+
+        # Initialize config file if it doesn't exist
+        if [[ ! -f "$OPENCODE_CONFIG" ]]; then
+            info "Creating OpenCode config file..."
+            echo '{}' > "$OPENCODE_CONFIG"
+        fi
+
+        info "Using config: $OPENCODE_CONFIG"
+
+        # Backup existing config
+        cp "$OPENCODE_CONFIG" "$OPENCODE_CONFIG.backup.$(date +%s)"
+
+        # IMPORTANT: Manual registration required
+        warn "⚠  IMPORTANT: Manual registration required"
+        echo ""
+        echo "OpenCode CLI does not support non-interactive MCP registration."
+        echo "You must complete setup by running:"
+        echo -e "  ${CYAN}opencode mcp add${NC}"
+        echo ""
+        echo "This will open an interactive interface where you can:"
+        echo "  1. Select '\''Global'\' location (recommended)"
+        echo "  2. Add each MCP server (ninja-coder, ninja-researcher, ninja-secretary)"
+        echo "  3. Exit when done"
+        echo ""
+        echo "For detailed instructions, see:"
+        echo -e "  ${CYAN}docs/OPENCODE_INTEGRATION.md${NC}"
+
+
+        # Use Python to build MCP config (safer than manual JSON manipulation)
+        TEMP_CONFIG=$(mktemp)
+        cat > "$TEMP_CONFIG" << 'PYTHON_SCRIPT'
+import json
+import sys
+
+# Read existing config
+try:
+    with open(sys.argv[1], 'r') as f:
+        config = json.load(f)
+except:
+    config = {}
+
+# Ensure mcpServers exists
+if 'mcpServers' not in config:
+    config['mcpServers'] = {}
+PYTHON_SCRIPT
+
+        # Add selected modules
+        if [[ "$INSTALL_CODER" == "true" ]]; then
+            cat >> "$TEMP_CONFIG" << PYTHON_SCRIPT
+config['mcpServers']['ninja-coder'] = {
+    "type": "stdio",
+    "command": "uv",
+    "args": ["--directory", "$PROJECT_ROOT", "run", "ninja-coder"],
+    "env": [
+        "OPENROUTER_API_KEY=$OPENROUTER_KEY",
+        "NINJA_CODER_MODEL=$CODER_MODEL",
+        "NINJA_CODE_BIN=$NINJA_CODE_BIN"
+    ],
+    "disabled": False
+}
+PYTHON_SCRIPT
+        fi
+
+        if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
+            cat >> "$TEMP_CONFIG" << PYTHON_SCRIPT
+config['mcpServers']['ninja-researcher'] = {
+    "type": "stdio",
+    "command": "uv",
+    "args": ["--directory", "$PROJECT_ROOT", "run", "ninja-researcher"],
+    "env": [
+        "OPENROUTER_API_KEY=$OPENROUTER_KEY",
+        "NINJA_RESEARCHER_MODEL=$RESEARCHER_MODEL"
+    ],
+    "disabled": False
+}
+PYTHON_SCRIPT
+        fi
+
+        if [[ "$INSTALL_SECRETARY" == "true" ]]; then
+            cat >> "$TEMP_CONFIG" << PYTHON_SCRIPT
+config['mcpServers']['ninja-secretary'] = {
+    "type": "stdio",
+    "command": "uv",
+    "args": ["--directory", "$PROJECT_ROOT", "run", "ninja-secretary"],
+    "env": [
+        "NINJA_SECRETARY_MODEL=$SECRETARY_MODEL"
+    ],
+    "disabled": False
+}
+PYTHON_SCRIPT
+        fi
+
+        cat >> "$TEMP_CONFIG" << 'PYTHON_SCRIPT'
+
+# Write updated config
+with open(sys.argv[1], 'w') as f:
+    json.dump(config, f, indent=2)
+    f.write('\n')
+PYTHON_SCRIPT
+
+        $PYTHON_CMD "$TEMP_CONFIG" "$OPENCODE_CONFIG"
+        rm "$TEMP_CONFIG"
+
+        info "Run 'opencode mcp list' to verify"
+    fi
+fi
+
 # Step 10: Final summary
 echo ""
 echo -e "${BOLD}${MAGENTA}╔══════════════════════════════════════════════════════════╗${NC}"
@@ -1085,6 +1216,7 @@ DETECTED_CLAUDE_CONFIG=$(detect_claude_mcp_config)
 [[ -f "$DETECTED_CLAUDE_CONFIG" ]] && grep -q '"mcpServers"' "$DETECTED_CLAUDE_CONFIG" 2>/dev/null && EDITORS_CONFIGURED+=("Claude Code")
 [[ -f "$HOME/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json" ]] || [[ -f "$HOME/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json" ]] && EDITORS_CONFIGURED+=("VS Code (Cline)")
 [[ -f "$HOME/.config/zed/settings.json.backup" ]] && EDITORS_CONFIGURED+=("Zed")
+[[ -f "$HOME/.opencode.json" ]] || [[ -f "$HOME/.config/opencode/.opencode.json" ]] && EDITORS_CONFIGURED+=("OpenCode")
 
 if [[ ${#EDITORS_CONFIGURED[@]} -gt 0 ]]; then
     echo -e "${BOLD}Editors Configured:${NC}"
