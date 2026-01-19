@@ -127,12 +127,15 @@ class GitSafetyChecker:
             return None
 
     @staticmethod
-    def auto_commit_changes(repo_root: str, task_description: str = "") -> bool:
+    def auto_commit_changes(
+        repo_root: str, task_description: str = "", changed_files: list[str] | None = None
+    ) -> bool:
         """Automatically commit all changes before running task.
 
         Args:
             repo_root: Repository root path.
-            task_description: Description of the task for commit message.
+            task_description: Description of task for commit message.
+            changed_files: List of specific files to commit (if None, add all changes).
 
         Returns:
             True if committed successfully, False otherwise.
@@ -140,17 +143,31 @@ class GitSafetyChecker:
         try:
             import time
 
-            # Add all changes
-            result = subprocess.run(
-                ["git", "add", "."],
-                cwd=repo_root,
-                capture_output=True,
-                timeout=10,
-            )
+            # Add specific files if provided, otherwise add all changes
+            if changed_files:
+                # Only add the specific changed files
+                for file_path in changed_files:
+                    result = subprocess.run(
+                        ["git", "add", file_path],
+                        cwd=repo_root,
+                        capture_output=True,
+                        timeout=10,
+                    )
+                    if result.returncode != 0:
+                        logger.warning(f"Failed to git add {file_path}: {result.stderr.decode()}")
+                        return False
+            else:
+                # Add all changes
+                result = subprocess.run(
+                    ["git", "add", "."],
+                    cwd=repo_root,
+                    capture_output=True,
+                    timeout=10,
+                )
 
-            if result.returncode != 0:
-                logger.warning(f"Failed to git add: {result.stderr.decode()}")
-                return False
+                if result.returncode != 0:
+                    logger.warning(f"Failed to git add: {result.stderr.decode()}")
+                    return False
 
             # Create commit message
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -337,8 +354,11 @@ def validate_task_safety(
 
         elif safety_mode == SafetyMode.AUTO:
             # AUTO: Automatically commit changes
+            changed_files = git_check.get("changed_files", [])
             logger.info(f"🔒 AUTO MODE: Committing {len(changed_files)} uncommitted file(s)")
-            committed = GitSafetyChecker.auto_commit_changes(repo_root, task_description)
+            committed = GitSafetyChecker.auto_commit_changes(
+                repo_root, task_description, changed_files
+            )
 
             if committed:
                 results["action_taken"] = "auto_committed"
