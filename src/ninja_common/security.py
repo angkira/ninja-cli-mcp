@@ -223,8 +223,8 @@ class InputValidator:
         Raises:
             ValueError: If path contains dangerous patterns or escapes base_dir.
         """
-        # Convert to Path and resolve
-        path_obj = Path(path).resolve()
+        # Convert to Path and do NOT resolve (keep it relative)
+        path_obj = Path(path)
 
         # Check for dangerous patterns
         path_str = str(path_obj)
@@ -235,12 +235,11 @@ class InputValidator:
         # If base_dir is provided, ensure path is within it
         if base_dir:
             base_path = Path(base_dir).resolve()
+            # Construct full path by combining base_dir and path
+            full_path = Path(base_dir) / path_obj
             try:
-                # Additional check for symbolic links
-                if path_obj.is_symlink():
-                    target = path_obj.readlink().resolve()
-                    target.relative_to(base_path)
-                path_obj.relative_to(base_path)
+                # Check if full_path is within base_path
+                full_path.relative_to(base_path)
             except (ValueError, OSError):
                 raise ValueError(f"Path {path} is outside allowed directory {base_dir}") from None
 
