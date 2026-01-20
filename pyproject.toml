@@ -40,6 +40,7 @@ researcher = [
     "markdownify>=0.13.0",
 ]
 secretary = [
+    "fastapi>=0.23.0",
     "tree-sitter>=0.21.0",
     "tree-sitter-python>=0.21.0",
     "tree-sitter-javascript>=0.21.0",

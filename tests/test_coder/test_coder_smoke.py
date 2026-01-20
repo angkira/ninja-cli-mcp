@@ -374,7 +374,6 @@ class TestInstructionBuilder:
 
 
 @pytest.mark.integration
-class TestAiderIntegration:
     """Integration tests that actually run aider."""
 
     @pytest.fixture
