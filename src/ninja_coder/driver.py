@@ -26,7 +26,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ninja_coder.model_selector import ModelSelector
 from ninja_coder.models import (
@@ -34,6 +34,7 @@ from ninja_coder.models import (
     PlanStep,
     TaskComplexity,
 )
+from pydantic import Field
 from ninja_coder.safety import validate_task_safety
 from ninja_coder.strategies import CLIStrategyRegistry
 from ninja_common.defaults import (
@@ -97,10 +98,6 @@ class NinjaResult:
     """Result from Ninja Code CLI execution."""
 
     success: bool
-    status: Literal["ok", "error"] = Field(
-        default="ok",
-        description="Execution status (ok/error)",
-    )
     summary: str
     notes: str = ""
     suspected_touched_paths: list[str] = field(default_factory=list)
@@ -108,30 +105,8 @@ class NinjaResult:
     exit_code: int = 0
     stdout: str = ""
     stderr: str = ""
-
-    def __init__(
-        self,
-        success: bool = True,
-        status: Literal["ok", "error"] = "ok",
-        summary: str = "",
-        notes: str = "",
-        suspected_touched_paths: list[str] | None = None,
-        raw_logs_path: str = "",
-        exit_code: int = 0,
-        stdout: str = "",
-        stderr: str = "",
-    ):
-        self.success = success
-        self.status = status
-        self.summary = summary
-        self.notes = notes
-        self.suspected_touched_paths = suspected_touched_paths or []
-        self.raw_logs_path = raw_logs_path
-        self.exit_code = exit_code
-        self.stdout = stdout
-        self.stderr = stderr
-
     model_used: str = ""
+    aider_error_detected: bool = False
     aider_error_detected: bool = False  # Flag for aider-specific internal errors
 
 
@@ -635,7 +610,7 @@ class NinjaDriver:
         recommendation = model_selector.select_model(
             complexity,
             fanout=fanout,
-            task_complexity=TaskComplexity.SIMPLE,
+            task_complexity=TaskComplexity.QUICK,
         )
 
         logger.info(
