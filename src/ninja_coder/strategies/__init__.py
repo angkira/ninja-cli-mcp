@@ -13,10 +13,11 @@ from ninja_coder.strategies.base import (
 )
 from ninja_coder.strategies.registry import CLIStrategyRegistry
 
+
 __all__ = [
-    "CLIStrategy",
     "CLICapabilities",
     "CLICommandResult",
-    "ParsedResult",
+    "CLIStrategy",
     "CLIStrategyRegistry",
+    "ParsedResult",
 ]

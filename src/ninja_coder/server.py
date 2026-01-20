@@ -127,23 +127,117 @@ TOOLS: list[Tool] = [
         description=(
             "Execute a multi-step CODE WRITING plan sequentially. "
             "Each step delegates code writing to Ninja AI agent. "
-            "\n\n"
             "✅ USE FOR: Multi-step code implementations where steps must happen in order. "
             "Each step writes code based on your specification. "
             "\n\n"
-            "❌ NEVER USE FOR: Running tests, executing commands, checking outputs. "
-            "This is ONLY for writing code in multiple sequential steps. "
-            "\n\n"
-            "Returns summary of each step (files changed, brief description). "
-            "NO source code is returned - Ninja writes directly to files."
+            "📋 DIALOGUE MODE (OpenCode CLI only):\n"
+            "When sequential steps are closely related (same module, feature, files, scope), "
+            "enable dialogue mode by setting use_dialogue_mode=true.\n"
+            "This maintains conversation context across all steps instead of spawning "
+            "separate subprocesses for each step.\n"
+            "Set NINJA_USE_DIALOGUE_MODE=true environment variable."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "repo_root": {
                     "type": "string",
-                    "description": "Absolute path to the repository root",
+                    "description": "Absolute path to repository root",
                 },
+                "mode": {
+                    "type": "string",
+                    "enum": ["quick", "full"],
+                    "description": "Execution mode: 'quick' for fast single-pass, 'full' for review loops",
+                    "default": "quick",
+                },
+                "use_dialogue_mode": {
+                    "type": "boolean",
+                    "description": "Use dialogue mode for persistent conversation across steps (default: false)",
+                    "default": False,
+                },
+                "global_allowed_globs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Global allowed glob patterns for all steps",
+                    "default": [],
+                },
+                "global_deny_globs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Global deny glob patterns for all steps",
+                    "default": [],
+                },
+                "steps": {
+                    "type": "array",
+                    "description": "Code writing steps to execute in order",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "description": "Unique step identifier"},
+                            "title": {"type": "string", "description": "Human-readable step title"},
+                            "task": {
+                                "type": "string",
+                                "description": "DETAILED specification of what code to write in this step",
+                            },
+                            "context_paths": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Files/directories Ninja should focus on for this step. ⚠️ IMPORTANT: If using Aider as code CLI, do NOT mix directories and individual files in context_paths. Either provide only directories (for repo-wide context) or only individual files.",
+                                "default": [],
+                            },
+                            "allowed_globs": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Glob patterns for allowed file operations",
+                            },
+                            "deny_globs": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Glob patterns to deny file operations",
+                            },
+                            "max_iterations": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 10,
+                                "description": "Max iterations for test-fix loop in full mode",
+                                "default": 3,
+                            },
+                            "test_plan": {
+                                "type": "object",
+                                "properties": {
+                                    "unit": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "Unit test commands",
+                                    },
+                                    "e2e": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "End-to-end test commands",
+                                    },
+                                },
+                                "default": {},
+                            },
+                            "constraints": {
+                                "type": "object",
+                                "properties": {
+                                    "max_tokens": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "description": "Max tokens (0 = unlimited)",
+                                    },
+                                    "time_budget_sec": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "description": "Time budget in seconds (0 = unlimited)",
+                                    },
+                                },
+                                "default": {},
+                            },
+                        },
+                    },
+            },
+        },
                 "mode": {
                     "type": "string",
                     "enum": ["quick", "full"],

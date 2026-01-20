@@ -173,6 +173,7 @@ class InstructionBuilder:
         step: PlanStep,
         global_allowed_globs: list[str],
         global_deny_globs: list[str],
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """
         Build instruction for a plan step.
@@ -181,6 +182,7 @@ class InstructionBuilder:
             step: Plan step to execute.
             global_allowed_globs: Global allowed patterns.
             global_deny_globs: Global denied patterns.
+            conversation_history: Optional conversation history for dialogue mode.
 
         Returns:
             Instruction document as dict.
@@ -189,16 +191,19 @@ class InstructionBuilder:
         allowed = list(set(step.allowed_globs + global_allowed_globs)) or ["**/*"]
         denied = list(set(step.deny_globs + global_deny_globs))
 
-        return {
+        step_dict = {
+            "id": step.id,
+            "title": step.title,
+            "task": step.task,
+        }
+
+        # Build instruction dict
+        instruction = {
             "version": "1.0",
             "type": "plan_step",
             "timestamp": datetime.now(UTC).isoformat(),
             "repo_root": self.repo_root,
-            "step": {
-                "id": step.id,
-                "title": step.title,
-                "task": step.task,
-            },
+            "step": step_dict,
             "mode": self.mode.value,
             "file_scope": {
                 "context_paths": step.context_paths,
@@ -209,14 +214,13 @@ class InstructionBuilder:
                 "unit": step.test_plan.unit,
                 "e2e": step.test_plan.e2e,
             },
-            "constraints": {
-                "max_iterations": step.max_iterations,
-                "max_tokens": step.constraints.max_tokens,
-                "time_budget_sec": step.constraints.time_budget_sec,
-            },
-            "instructions": self._build_step_instructions(step),
-            "guarantees": self._build_guarantees(),
         }
+
+        # Add conversation history if provided (for dialogue mode)
+        if conversation_history:
+            instruction["conversation_history"] = conversation_history
+
+        return instruction
 
     def build_test_task(
         self,
@@ -466,7 +470,10 @@ class NinjaDriver:
         """
         self.config = config or NinjaConfig.from_env()
 
-        logger.info("Initialized NinjaDriver")
+        # Get strategy based on binary path
+        self._strategy = CLIStrategyRegistry.get_strategy(self.config.bin_path, self.config)
+
+        logger.info(f"Initialized NinjaDriver with {self._strategy.name} strategy")
 
     def _get_env(self) -> dict[str, str]:
         """Get environment variables for Ninja Code CLI subprocess with security filtering."""
@@ -610,7 +617,6 @@ class NinjaDriver:
         recommendation = model_selector.select_model(
             complexity,
             fanout=fanout,
-            complexity=.QUICK,
         )
 
         logger.info(
@@ -1230,6 +1236,16 @@ class NinjaDriver:
             prompt = self._build_prompt_text(instruction_data, repo_root)
             file_scope = instruction_data.get("file_scope", {})
             context_paths = file_scope.get("context_paths", [])
+
+            # Check if strategy supports dialogue mode and task type is sequential
+            use_dialogue_mode = (
+                self.strategy.capabilities.supports_dialogue_mode and task_type == "sequential"
+            )
+
+            if use_dialogue_mode:
+                task_logger.info("Using dialogue mode for sequential execution")
+            else:
+                task_logger.info("Using atomic mode (subprocess per step)")
 
             # Build command using strategy
             additional_flags = {"use_coding_plan": use_coding_plan} if use_coding_plan else None

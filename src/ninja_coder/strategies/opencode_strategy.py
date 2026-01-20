@@ -19,10 +19,60 @@ from ninja_coder.strategies.base import (
 )
 from ninja_common.logging_utils import get_logger
 
+
 if TYPE_CHECKING:
     from ninja_coder.driver import NinjaConfig
 
 logger = get_logger(__name__)
+
+
+class DialogueSession:
+    """Manages a persistent dialogue session for multi-turn conversations."""
+
+    def __init__(self, initial_system_prompt: str = ""):
+        """Initialize dialogue session.
+
+        Args:
+            initial_system_prompt: System prompt to start conversation with.
+        """
+        self.messages: list[dict[str, str]] = []
+        if initial_system_prompt:
+            self.messages.append({"role": "system", "content": initial_system_prompt})
+
+    def add_user_message(self, content: str) -> None:
+        """Add a user message to the conversation.
+
+        Args:
+            content: User message content.
+        """
+        self.messages.append({"role": "user", "content": content})
+
+    def add_assistant_message(self, content: str) -> None:
+        """Add an assistant message to the conversation.
+
+        Args:
+            content: Assistant message content.
+        """
+        self.messages.append({"role": "assistant", "content": content})
+
+    def get_conversation_history(self) -> list[dict[str, str]]:
+        """Get full conversation history for API request.
+
+        Returns:
+            List of message dicts with 'role' and 'content' keys.
+        """
+        return self.messages
+
+    def get_last_response(self) -> str | None:
+        """Get the last assistant response.
+
+        Returns:
+            Last assistant message content or None if no assistant messages.
+        """
+        for msg in reversed(self.messages):
+            if msg.get("role") == "assistant":
+                return msg.get("content", "")
+        return None
 
 
 class OpenCodeStrategy:
@@ -30,6 +80,8 @@ class OpenCodeStrategy:
 
     OpenCode is optimized for parallel tasks and supports 75+ providers
     including native z.ai integration with Coding Plan API.
+
+    Dialogue mode allows persistent conversation across multiple sequential steps.
     """
 
     def __init__(self, bin_path: str, config: NinjaConfig):
@@ -41,13 +93,15 @@ class OpenCodeStrategy:
         """
         self.bin_path = bin_path
         self.config = config
+        self._session: DialogueSession | None = None
         self._capabilities = CLICapabilities(
             supports_streaming=True,
             supports_file_context=True,
             supports_model_routing=True,  # 75+ providers
             supports_native_zai=True,  # Native z.ai endpoint support
+            supports_dialogue_mode=True,  # Supports persistent dialogue sessions
             max_context_files=100,
-            preferred_task_types=["parallel"],  # Optimized for parallel
+            preferred_task_types=["parallel", "sequential"],  # Also supports sequential
         )
 
     @property
@@ -221,11 +275,10 @@ class OpenCodeStrategy:
                 summary = f"✅ Modified {file_count} file(s): {file_list}"
             else:
                 summary = "✅ Task completed successfully"
+        elif error_msg:
+            summary = f"❌ OpenCode failed: {error_msg[:100]}"
         else:
-            if error_msg:
-                summary = f"❌ OpenCode failed: {error_msg[:100]}"
-            else:
-                summary = "❌ Task failed"
+            summary = "❌ Task failed"
 
         # Build notes from error messages
         notes = ""
@@ -264,6 +317,77 @@ class OpenCodeStrategy:
         result = self.parse_output(stdout, stderr, exit_code)
         return result.retryable_error
 
+    def start_dialogue_session(self, system_prompt: str = "") -> DialogueSession:
+        """Start a new dialogue session for multi-turn conversation.
+
+        This creates a new session that maintains conversation history
+        across multiple sequential steps, preserving context and improving quality.
+
+        Args:
+            system_prompt: Optional system prompt for the conversation.
+
+        Returns:
+            New DialogueSession instance.
+        """
+        self._session = DialogueSession(system_prompt)
+        return self._session
+
+    def end_dialogue_session(self) -> None:
+        """End the current dialogue session.
+
+        Clears the active session, releasing conversation memory.
+        """
+        self._session = None
+
+    def send_in_dialogue(
+        self, prompt: str, model: str | None = None
+    ) -> tuple[str, list[dict[str, str]]]:
+        """Send a message within the active dialogue session.
+
+        Maintains conversation history by appending user message and
+        preparing message list for API request including all prior context.
+
+        Args:
+            prompt: The prompt/message to send.
+            model: Optional model override (uses configured model if None).
+
+        Returns:
+            Tuple of (formatted_prompt, full_message_history).
+        """
+        if self._session is None:
+            raise RuntimeError("No active dialogue session. Call start_dialogue_session() first.")
+
+        self._session.add_user_message(prompt)
+        message_history = self._session.get_conversation_history()
+
+        # Format as multiline message for API
+        formatted_prompt = self._format_conversation_as_prompt(message_history)
+
+        return formatted_prompt, message_history
+
+    def _format_conversation_as_prompt(self, messages: list[dict[str, str]]) -> str:
+        """Format conversation history as a multi-line prompt.
+
+        This is used when the CLI doesn't support direct message array.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys.
+
+        Returns:
+            Formatted prompt string with conversation history.
+        """
+        prompt_lines = []
+        for msg in messages:
+            role = msg.get("role", "").upper()
+            content = msg.get("content", "")
+            if role == "SYSTEM":
+                prompt_lines.append(f"[SYSTEM]\n{content}")
+            elif role == "USER":
+                prompt_lines.append(f"[USER]\n{content}")
+            elif role == "ASSISTANT":
+                prompt_lines.append(f"[ASSISTANT]\n{content}")
+        return "\n\n".join(prompt_lines)
+
     def get_timeout(self, task_type: str) -> int:
         """Get timeout for OpenCode based on task type.
 
@@ -297,3 +421,51 @@ class OpenCodeStrategy:
         """
         model_lower = model_name.lower()
         return "zhipu" in model_lower or "glm" in model_lower
+
+    def start_dialogue_session(self, system_prompt: str = "") -> DialogueSession:
+        """Start a new dialogue session for multi-turn conversation.
+
+        Args:
+            system_prompt: Optional system prompt for the conversation.
+
+        Returns:
+            New DialogueSession instance.
+        """
+        self._session = DialogueSession(system_prompt)
+        return self._session
+
+    def end_dialogue_session(self) -> None:
+        """End current dialogue session.
+
+        Clears any active session state.
+        """
+        self._session = None
+
+    def send_in_dialogue(
+        self, prompt: str, model: str | None = None
+    ) -> tuple[str, list[dict[str, str]]]:
+        """Send a message within an active dialogue session.
+
+        Maintains conversation history by appending user message and
+        preparing message list for API request including all prior context.
+
+        Args:
+            prompt: The message to send.
+            model: Optional model override (uses configured model if None).
+
+        Returns:
+            Tuple of (formatted_prompt, full_message_history).
+
+        Raises:
+            RuntimeError: If no active dialogue session exists.
+        """
+        if self._session is None:
+            raise RuntimeError("No active dialogue session. Call start_dialogue_session() first.")
+
+        self._session.add_user_message(prompt)
+        message_history = self._session.get_conversation_history()
+
+        # Format as multiline message for API
+        formatted_prompt = self._format_conversation_as_prompt(message_history)
+
+        return formatted_prompt, message_history

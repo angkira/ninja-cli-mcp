@@ -107,12 +107,25 @@ class SimpleTaskRequest(BaseModel):
 
 
 class SequentialPlanRequest(BaseModel):
-    """Request for sequential plan execution."""
+    """Request for sequential plan execution.
+
+    Enable dialogue mode (persistent conversation) when:
+    - Multiple steps are closely related (same module, feature, files)
+    - Steps build upon previous context
+    - Set USE_DIALOGUE_MODE=true environment variable
+
+    Without dialogue mode, each step spawns a new subprocess.
+    With dialogue mode, AI maintains context across all steps.
+    """
 
     repo_root: str = Field(..., description="Absolute path to repository root")
     mode: ExecutionMode = Field(
         default=ExecutionMode.QUICK,
-        description="Execution mode: quick (single pass) or full (with review/test loop)",
+        description="Execution mode (future-proof)",
+    )
+    use_dialogue_mode: bool = Field(
+        default=False,
+        description="Use dialogue mode for persistent conversation across steps (set NINJA_USE_DIALOGUE_MODE=true)",
     )
     global_allowed_globs: list[str] = Field(
         default_factory=list,
