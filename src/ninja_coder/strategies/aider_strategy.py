@@ -21,6 +21,7 @@ from ninja_common.defaults import FALLBACK_CODER_MODELS
 from ninja_common.logging_utils import get_logger
 from ninja_common.path_utils import ensure_internal_dirs, safe_join
 
+
 if TYPE_CHECKING:
     from ninja_coder.driver import NinjaConfig
 

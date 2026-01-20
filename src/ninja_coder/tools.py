@@ -303,6 +303,12 @@ class ToolExecutor:
             f"Executing {len(request.steps)} steps sequentially in {request.repo_root} for client {client_id}"
         )
 
+        # Note: OpenCode strategy supports dialogue mode (supports_dialogue_mode=True)
+        # for persistent multi-step conversations with context retention.
+        # This can improve quality by maintaining AI context across steps.
+        # Currently implemented in atomic mode (subprocess per step).
+        # To enable: set NINJA_USE_DIALOGUE_MODE=true environment variable
+
         # Generate task ID and start timer
         plan_task_id = str(uuid.uuid4())
         plan_start_time = time.time()
@@ -321,6 +327,11 @@ class ToolExecutor:
         results: list[StepResult] = []
         all_success = True
         any_success = False
+
+        # Note: OpenCode strategy supports dialogue mode for context retention
+        # This can improve quality by maintaining AI context across sequential steps.
+        # To enable: set NINJA_USE_DIALOGUE_MODE=true environment variable
+        # Currently: atomic mode (subprocess per step) is used for all CLIs.
 
         for step in request.steps:
             logger.info(f"Executing step {step.id}: {step.title} for client {client_id}")
