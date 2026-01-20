@@ -460,13 +460,7 @@ class NinjaDriver:
         """
         self.config = config or NinjaConfig.from_env()
 
-        # Initialize CLI strategy
-        self.strategy = CLIStrategyRegistry.get_strategy(self.config.bin_path, self.config)
-
-        # Initialize model selector
-        self.model_selector = ModelSelector(default_model=self.config.model)
-
-        logger.info(f"Initialized NinjaDriver with strategy: {self.strategy.name}")
+        logger.info("Initialized NinjaDriver")
 
     def _get_env(self) -> dict[str, str]:
         """Get environment variables for Ninja Code CLI subprocess with security filtering."""
@@ -605,12 +599,12 @@ class NinjaDriver:
         prefer_cost = os.environ.get("NINJA_PREFER_COST", "false").lower() == "true"
         prefer_quality = os.environ.get("NINJA_PREFER_QUALITY", "false").lower() == "true"
 
-        # Select model
-        recommendation = self.model_selector.select_model(
+        # Select model using model selector directly
+        model_selector = ModelSelector(default_model=self.config.model)
+        recommendation = model_selector.select_model(
             complexity,
             fanout=fanout,
-            prefer_cost=prefer_cost,
-            prefer_quality=prefer_quality,
+            task_complexity=TaskComplexity.SIMPLE,
         )
 
         logger.info(
@@ -726,15 +720,17 @@ class NinjaDriver:
                 settings_file = safe_join(dirs["tasks"], "model_settings.yml")
 
                 providers = [p.strip() for p in provider_order.split(",")]
-                settings = [{
-                    "name": f"openrouter/{self.config.model}",
-                    "extra_params": {
-                        "provider": {
-                            "order": providers,
-                            "allow_fallbacks": False,
-                        }
+                settings = [
+                    {
+                        "name": f"openrouter/{self.config.model}",
+                        "extra_params": {
+                            "provider": {
+                                "order": providers,
+                                "allow_fallbacks": False,
+                            }
+                        },
                     }
-                }]
+                ]
 
                 with open(settings_file, "w") as f:
                     yaml.dump(settings, f)
@@ -775,7 +771,9 @@ class NinjaDriver:
                 # Check if path is a directory and skip it (aider doesn't support mixing dirs and files)
                 path_obj = Path(file_path)
                 if path_obj.is_dir():
-                    logger.debug(f"Skipping directory for aider --file: {file_path} (aider requires individual files only)")
+                    logger.debug(
+                        f"Skipping directory for aider --file: {file_path} (aider requires individual files only)"
+                    )
                     continue
                 # Use --file to add files to aider's context
                 cmd.extend(["--file", file_path])
