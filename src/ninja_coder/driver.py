@@ -610,7 +610,7 @@ class NinjaDriver:
         recommendation = model_selector.select_model(
             complexity,
             fanout=fanout,
-            complexity=TaskComplexity.QUICK,
+            complexity=.QUICK,
         )
 
         logger.info(
