@@ -619,6 +619,13 @@ if [[ "$INSTALL_CODER" == "true" ]]; then
         info "Found: opencode at $OPENCODE_PATH"
     fi
 
+    # Check for gemini
+    if command -v gemini &> /dev/null; then
+        GEMINI_PATH=$(command -v gemini)
+        DETECTED_CLIS+=("gemini|$GEMINI_PATH")
+        info "Found: gemini at $GEMINI_PATH"
+    fi
+
     echo ""
     
     if [[ ${#DETECTED_CLIS[@]} -gt 0 ]]; then
@@ -885,23 +892,27 @@ EOF
     fi
 fi
 
-# VS Code
-if [[ "$VSCODE_INSTALLED" == "true" ]]; then
-    if confirm "Register modules with VS Code (GitHub Copilot)?"; then
-        info "Configuring VS Code native MCP for Copilot..."
+# Gemini CLI
+GEMINI_INSTALLED=false
+if command -v gemini &> /dev/null; then
+    success "Gemini CLI found"
+    GEMINI_INSTALLED=true
+fi
 
-        # Create global MCP config
-        VSCODE_MCP_DIR="$HOME/.vscode/mcp"
-        mkdir -p "$VSCODE_MCP_DIR"
-        VSCODE_MCP_CONFIG="$VSCODE_MCP_DIR/mcp.json"
-
-        if [[ -f "$VSCODE_MCP_CONFIG" ]]; then
-            info "Backing up existing MCP config..."
-            cp "$VSCODE_MCP_CONFIG" "$VSCODE_MCP_CONFIG.backup"
-        fi
+# Add Gemini CLI registration option
+if [[ "$GEMINI_INSTALLED" == "true" ]]; then
+    if confirm "Register modules with Gemini CLI?"; then
+        info "Registering with Gemini CLI..."
+        
+        # Use our dedicated installer script
+        "$SCRIPT_DIR/install_gemini_mcp.sh" --all
+        
+        success "Registered with Gemini CLI"
+    fi
+fi
 
         # Build MCP config
-        cat > "$VSCODE_MCP_CONFIG" << 'EOF'
+        cat > "$"$VSCODE_MCP_CONFIG"" << 'EOF'
 {
   "inputs": [],
   "servers": {
@@ -910,25 +921,28 @@ EOF
         FIRST_ENTRY=true
 
         if [[ "$INSTALL_CODER" == "true" ]]; then
-            [[ "$FIRST_ENTRY" == "false" ]] && echo "," >> "$VSCODE_MCP_CONFIG"
-            cat >> "$VSCODE_MCP_CONFIG" << EOF
-    "ninja-coder": {
+            [[ "$FIRST_ENTRY" == "false" ]] && echo "," >> "$"$VSCODE_MCP_CONFIG""
+            cat >> "$"$VSCODE_MCP_CONFIG"" << EOF
+      "ninja-coder": {
       "type": "stdio",
       "command": "uv",
       "args": ["--directory", "$PROJECT_ROOT", "run", "python", "-m", "ninja_coder.server"],
       "env": {
-        "OPENROUTER_API_KEY": "$OPENROUTER_KEY",
+        "OPENROUTER_API_KEY": "$OPENROUTER_API_KEY",
         "NINJA_CODER_MODEL": "$CODER_MODEL",
-        "NINJA_CODE_BIN": "$NINJA_CODE_BIN"
+        "NINJA_CONFIG_NAME": "ninja-coder",
+        "NINJA_CONFIG_PATH": "$CLAUDE_MCP_CONFIG",
+        "NINJA_CONFIG_VERSION": "1.0",
+        "NINJA_CODE_BIN": "$NINJA_CODE_BIN",
+        "NINJA_CODER_TIMEOUT": "$CODER_TIMEOUT",
       }
-    }
-EOF
+    },
             FIRST_ENTRY=false
         fi
 
         if [[ "$INSTALL_RESEARCHER" == "true" ]]; then
-            [[ "$FIRST_ENTRY" == "false" ]] && echo "," >> "$VSCODE_MCP_CONFIG"
-            cat >> "$VSCODE_MCP_CONFIG" << EOF
+            [[ "$FIRST_ENTRY" == "false" ]] && echo "," >> "$"$VSCODE_MCP_CONFIG""
+            cat >> "$"$VSCODE_MCP_CONFIG"" << EOF
     "ninja-researcher": {
       "type": "stdio",
       "command": "uv",
@@ -944,8 +958,8 @@ EOF
         fi
 
         if [[ "$INSTALL_SECRETARY" == "true" ]]; then
-            [[ "$FIRST_ENTRY" == "false" ]] && echo "," >> "$VSCODE_MCP_CONFIG"
-            cat >> "$VSCODE_MCP_CONFIG" << EOF
+            [[ "$FIRST_ENTRY" == "false" ]] && echo "," >> "$"$VSCODE_MCP_CONFIG""
+            cat >> "$"$VSCODE_MCP_CONFIG"" << EOF
     "ninja-secretary": {
       "type": "stdio",
       "command": "uv",
@@ -959,9 +973,9 @@ EOF
             FIRST_ENTRY=false
         fi
 
-        echo "" >> "$VSCODE_MCP_CONFIG"
-        echo "  }" >> "$VSCODE_MCP_CONFIG"
-        echo "}" >> "$VSCODE_MCP_CONFIG"
+        echo "" >> "$"$VSCODE_MCP_CONFIG""
+        echo "  }" >> "$"$VSCODE_MCP_CONFIG""
+        echo "}" >> "$"$VSCODE_MCP_CONFIG""
 
         success "Registered with VS Code (Copilot)"
         echo ""
