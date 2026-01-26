@@ -122,17 +122,17 @@ TOOLS: list[Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "doc_path": {
+                "repo_root": {
                     "type": "string",
-                    "description": "Path to documentation directory or file",
+                    "description": "Repository root path",
                 },
-                "include_patterns": {
+                "doc_patterns": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "File patterns to include (default: ['**/*.md'])",
+                    "description": "Documentation file patterns (default: ['**/*.md', '**/README*', '**/CONTRIBUTING*'])",
                 },
             },
-            "required": ["doc_path"],
+            "required": ["repo_root"],
         },
     ),
     Tool(
@@ -143,21 +143,27 @@ TOOLS: list[Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "file_path": {
+                "module_name": {
                     "type": "string",
-                    "description": "Path to the documentation file",
+                    "description": "Module name (coder, researcher, secretary)",
+                },
+                "doc_type": {
+                    "type": "string",
+                    "enum": ["readme", "api", "changelog"],
+                    "description": "Type of documentation to update",
                 },
                 "content": {
                     "type": "string",
-                    "description": "New content for the documentation file",
+                    "description": "New content or updates",
                 },
-                "append": {
-                    "type": "boolean",
-                    "description": "Whether to append content instead of overwriting (default: false)",
-                    "default": False,
+                "mode": {
+                    "type": "string",
+                    "enum": ["replace", "append", "prepend"],
+                    "description": "Update mode (default: replace)",
+                    "default": "replace",
                 },
             },
-            "required": ["file_path", "content"],
+            "required": ["module_name", "doc_type", "content"],
         },
     ),
     Tool(
