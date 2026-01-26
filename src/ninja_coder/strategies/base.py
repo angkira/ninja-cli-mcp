@@ -28,7 +28,10 @@ class CLICapabilities:
     supports_native_zai: bool
     """Whether the CLI has native z.ai support."""
 
-    max_context_files: int
+    supports_dialogue_mode: bool = False
+    """Whether the CLI supports persistent dialogue sessions across multiple steps."""
+
+    max_context_files: int = 50
     """Maximum number of files that can be in context."""
 
     preferred_task_types: list[str] = field(default_factory=list)

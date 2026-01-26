@@ -50,7 +50,6 @@ class GeminiStrategy:
             supports_file_context=True,
             supports_model_routing=True,  # Supports model selection
             supports_native_zai=False,
-            supports_dialogue_mode=False,  # Gemini uses atomic mode
             max_context_files=50,
             preferred_task_types=["quick", "sequential"],
         )
