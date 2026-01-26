@@ -201,15 +201,37 @@ class OpenCodeStrategy:
         success = exit_code == 0
         combined_output = stdout + "\n" + stderr
 
-        # OpenCode-specific error patterns (simpler than Aider)
+        # OpenCode-specific error patterns (comprehensive)
         error_patterns = [
+            # Authentication and authorization errors (HIGH PRIORITY)
+            r"AuthenticationError",
+            r"authentication\s+failed",
+            r"User\s+not\s+found",
+            r"Unauthorized",
+            r"401",
+            r"403\s+Forbidden",
+            r"invalid\s+api\s+key",
+            r"api\s+key.*?(not\s+found|invalid|missing)",
+            # Credit and billing errors (HIGH PRIORITY)
+            r"insufficient\s+credits",
+            r"requires\s+more\s+credits",
+            r"can\s+only\s+afford",
+            r"credit\s+limit",
+            r"billing\s+error",
+            r"payment\s+required",
+            # General API errors (HIGH PRIORITY)
+            r"APIError",
+            r"OpenrouterException",
+            r"litellm\..*?Error",
+            r"API\s+request\s+failed",
             r"api\s+error",
+            # Rate limiting and timeouts
             r"rate\s+limit",
             r"timeout",
             r"connection\s+refused",
-            r"authentication\s+failed",
+            # Model errors
             r"model\s+not\s+found",
-            r"invalid\s+api\s+key",
+            r"invalid\s+model",
         ]
 
         retryable_error = False
@@ -266,12 +288,45 @@ class OpenCodeStrategy:
         # Build notes from error messages
         notes = ""
         if not success:
-            if error_msg:
+            # Priority 0: Authentication and credit errors (most critical)
+            if any(
+                pattern in combined_output
+                for pattern in [
+                    "AuthenticationError",
+                    "User not found",
+                    "Unauthorized",
+                    "401",
+                ]
+            ):
+                notes = "❌ Authentication failed. Check OPENROUTER_API_KEY in ~/.ninja-mcp.env or verify account status."
+                summary = "❌ Authentication error"
+            elif any(
+                pattern in combined_output
+                for pattern in ["insufficient credits", "requires more credits", "can only afford"]
+            ):
+                notes = "💰 Insufficient credits. Add credits at https://openrouter.ai/settings/keys or reduce max_tokens."
+                summary = "❌ Insufficient credits"
+            # Priority 1: Error message from pattern matching
+            elif error_msg:
                 notes = error_msg[:200]
+            # Priority 2: Last line from stderr
             elif stderr:
                 error_lines = [line.strip() for line in stderr.split("\n") if line.strip()]
                 if error_lines:
                     notes = error_lines[-1][:200]
+
+        # Final validation: If we claim success but no files were touched, it's suspicious
+        if success and not suspected_paths and len(combined_output) > 100:
+            # Check if output suggests files should have been created/modified
+            action_keywords = ["write", "creat", "modif", "updat", "edit", "add", "implement"]
+            has_action_intent = any(keyword in combined_output.lower() for keyword in action_keywords)
+
+            # If there was intent to modify files but none were touched, mark as failure
+            if has_action_intent:
+                success = False
+                summary = "⚠️ Task completed but no files were modified"
+                notes = "CLI exited successfully but no file changes detected. Check logs for details."
+                logger.warning("Suspicious success: exit_code=0 but no files touched")
 
         return ParsedResult(
             success=success,

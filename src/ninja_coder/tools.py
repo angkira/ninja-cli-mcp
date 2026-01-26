@@ -730,17 +730,57 @@ class ToolExecutor:
 
 # Singleton executor instance
 _executor: ToolExecutor | None = None
+_executor_config_hash: str | None = None
+
+
+def _get_config_hash() -> str:
+    """
+    Get a hash of the current configuration from environment variables.
+
+    This is used to detect when configuration changes require recreating the executor.
+    """
+    import hashlib
+
+    # Get all config-relevant env vars
+    config_vars = [
+        ("NINJA_CODE_BIN", os.getenv("NINJA_CODE_BIN", "")),
+        ("NINJA_MODEL", os.getenv("NINJA_MODEL", "")),
+        ("OPENROUTER_MODEL", os.getenv("OPENROUTER_MODEL", "")),
+        ("OPENAI_MODEL", os.getenv("OPENAI_MODEL", "")),
+        ("OPENAI_BASE_URL", os.getenv("OPENAI_BASE_URL", "")),
+        ("OPENROUTER_API_KEY", os.getenv("OPENROUTER_API_KEY", "")),
+        ("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "")),
+        ("NINJA_TIMEOUT_SEC", os.getenv("NINJA_TIMEOUT_SEC", "")),
+    ]
+
+    # Create a stable hash of the configuration
+    config_str = "|".join(f"{k}={v}" for k, v in sorted(config_vars))
+    return hashlib.sha256(config_str.encode()).hexdigest()
 
 
 def get_executor() -> ToolExecutor:
-    """Get the global tool executor instance."""
-    global _executor
-    if _executor is None:
+    """
+    Get the global tool executor instance.
+
+    If configuration has changed since last call, recreates the executor
+    with the new configuration.
+    """
+    global _executor, _executor_config_hash
+
+    current_config_hash = _get_config_hash()
+
+    # Recreate executor if config changed or doesn't exist
+    if _executor is None or _executor_config_hash != current_config_hash:
+        if _executor is not None:
+            logger.info("Configuration changed, recreating executor")
         _executor = ToolExecutor()
+        _executor_config_hash = current_config_hash
+
     return _executor
 
 
 def reset_executor() -> None:
     """Reset the global tool executor (for testing)."""
-    global _executor
+    global _executor, _executor_config_hash
     _executor = None
+    _executor_config_hash = None
