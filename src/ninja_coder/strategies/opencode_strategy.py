@@ -140,42 +140,25 @@ class OpenCodeStrategy:
             additional_flags.get("use_coding_plan", False) if additional_flags else False
         )
 
+        # OpenCode expects models in format: openrouter/provider/model
+        # If model doesn't start with provider prefix, add openrouter/
+        if "/" in model_name and not model_name.startswith(("opencode/", "openrouter/")):
+            model_name = f"openrouter/{model_name}"
+
         cmd = [
             self.bin_path,
-            "--non-interactive",
+            "run",
             "--model",
             model_name,
         ]
 
-        # Z.ai endpoint selection
-        # Note: OpenCode may have different CLI arguments - this is a reference implementation
-        # Adjust based on actual OpenCode CLI interface
-        if self._is_zai_model(model_name):
-            if use_coding_plan:
-                # Coding Plan API endpoint for advanced coding tasks
-                base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
-                logger.info(f"Using z.ai Coding Plan API for model {model_name}")
-            else:
-                # Standard API endpoint
-                base_url = "https://open.bigmodel.cn/api/paas/v4"
-                logger.info(f"Using z.ai standard API for model {model_name}")
-
-            cmd.extend(["--base-url", base_url])
-        elif self.config.openai_base_url:
-            # Other providers via OpenCode's native routing
-            cmd.extend(["--base-url", self.config.openai_base_url])
-
-        # API key
-        if self.config.openai_api_key:
-            cmd.extend(["--api-key", self.config.openai_api_key])
-
-        # File context
+        # File context (before message positional argument)
         if file_paths:
             for file_path in file_paths:
                 cmd.extend(["--file", file_path])
 
-        # Prompt
-        cmd.extend(["--message", prompt])
+        # Prompt as positional argument
+        cmd.append(prompt)
 
         # Build environment (inherit current environment)
         env = os.environ.copy()
