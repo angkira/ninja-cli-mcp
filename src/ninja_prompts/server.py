@@ -139,23 +139,23 @@ async def call_tool(name: str, arguments: dict) -> Any:
         if name == "prompt_registry":
             request = PromptRegistryRequest(**arguments)
             result = await _executor.prompt_registry(request)
-            return [types.TextContent(text=result.model_dump_json())]
+            return [types.TextContent(type="text", text=result.model_dump_json())]
 
         elif name == "prompt_suggest":
             request = PromptSuggestRequest(**arguments)
             result = await _executor.prompt_suggest(request)
-            return [types.TextContent(text=result.model_dump_json())]
+            return [types.TextContent(type="text", text=result.model_dump_json())]
 
         elif name == "prompt_chain":
             request = PromptChainRequest(**arguments)
             result = await _executor.prompt_chain(request)
-            return [types.TextContent(text=result.model_dump_json())]
+            return [types.TextContent(type="text", text=result.model_dump_json())]
 
         else:
-            return [types.TextContent(text=json.dumps({"error": f"Unknown tool: {name}"}))]
+            return [types.TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
 
     except Exception as e:
-        return [types.TextContent(text=json.dumps({"error": str(e)}))]
+        return [types.TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
 
 async def main_stdio():

@@ -610,7 +610,7 @@ class SecretaryToolExecutor:
             doc_path = doc_paths.get(request.doc_type)
             if not doc_path:
                 return UpdateDocResult(
-                    status="error", message=f"Unknown doc type: {request.doc_type}", result={}
+                    status="error", doc_path="", changes_made=f"Unknown doc type: {request.doc_type}"
                 )
 
             full_path = Path(doc_path)
@@ -637,15 +637,13 @@ class SecretaryToolExecutor:
             with full_path.open("w", encoding="utf-8") as f:
                 f.write(new_content)
 
-            result = {"doc_path": str(full_path), "changes_made": changes}
-
             return UpdateDocResult(
-                status="ok", message="Document updated successfully", result=result
+                status="ok", doc_path=str(full_path), changes_made=changes
             )
 
         except Exception as e:
             logger.error(f"Doc update failed for client {client_id}: {e}")
-            return UpdateDocResult(status="error", message=f"Update failed: {e}", result={})
+            return UpdateDocResult(status="error", doc_path="", changes_made=f"Update failed: {e}")
 
     async def _track_file_access(self, client_id: str, file_path: str) -> None:
         """Track file access in session."""
