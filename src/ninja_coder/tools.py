@@ -13,13 +13,22 @@ import asyncio
 import os
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from ninja_coder.driver import InstructionBuilder, NinjaDriver, NinjaResult
 from ninja_coder.models import (
     ApplyPatchRequest,
     ApplyPatchResult,
+    ContinueSessionRequest,
+    ContinueSessionResult,
+    CreateSessionRequest,
+    CreateSessionResult,
+    DeleteSessionRequest,
+    DeleteSessionResult,
     ExecutionMode,
+    ListSessionsRequest,
+    ListSessionsResult,
     MergeReport,
     ParallelPlanRequest,
     PlanExecutionResult,
@@ -726,6 +735,199 @@ class ToolExecutor:
                 "To apply changes, describe what code to write in coder_simple_task."
             ),
         )
+
+    async def create_session(
+        self,
+        request: CreateSessionRequest,
+        client_id: str = "default",
+    ) -> CreateSessionResult:
+        """Create a new conversation session and execute the initial task.
+
+        Args:
+            request: Create session request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            Create session result with session_id.
+        """
+        logger.info(f"[{client_id}] Creating session for {request.repo_root}")
+
+        step_id = f"session_create_{int(datetime.utcnow().timestamp())}"
+
+        try:
+            # Execute with session using the driver's execute_with_session method
+            result = await self.driver.execute_with_session(
+                task=request.initial_task,
+                repo_root=request.repo_root,
+                step_id=step_id,
+                create_session=True,
+                context_paths=request.context_paths,
+                allowed_globs=request.allowed_globs,
+                deny_globs=request.deny_globs,
+            )
+
+            if result.success:
+                return CreateSessionResult(
+                    status="ok",
+                    session_id=result.session_id,
+                    summary=result.summary,
+                    notes=result.notes,
+                    suspected_touched_paths=result.suspected_touched_paths,
+                )
+            else:
+                return CreateSessionResult(
+                    status="error",
+                    session_id=result.session_id,
+                    summary=result.summary,
+                    notes=result.notes,
+                    suspected_touched_paths=result.suspected_touched_paths,
+                )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] Session creation failed: {e}", exc_info=True)
+            return CreateSessionResult(
+                status="error",
+                summary=f"❌ Failed to create session: {str(e)[:100]}",
+                notes=str(e),
+            )
+
+    async def continue_session(
+        self,
+        request: ContinueSessionRequest,
+        client_id: str = "default",
+    ) -> ContinueSessionResult:
+        """Continue an existing session with a new task.
+
+        Args:
+            request: Continue session request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            Continue session result.
+        """
+        logger.info(f"[{client_id}] Continuing session {request.session_id}")
+
+        step_id = f"session_continue_{int(datetime.utcnow().timestamp())}"
+
+        try:
+            # Execute with existing session
+            result = await self.driver.execute_with_session(
+                task=request.task,
+                repo_root=request.repo_root,
+                step_id=step_id,
+                session_id=request.session_id,
+                context_paths=request.context_paths,
+                allowed_globs=request.allowed_globs,
+                deny_globs=request.deny_globs,
+            )
+
+            if result.success:
+                return ContinueSessionResult(
+                    status="ok",
+                    session_id=request.session_id,
+                    summary=result.summary,
+                    notes=result.notes,
+                    suspected_touched_paths=result.suspected_touched_paths,
+                )
+            else:
+                return ContinueSessionResult(
+                    status="error",
+                    session_id=request.session_id,
+                    summary=result.summary,
+                    notes=result.notes,
+                    suspected_touched_paths=result.suspected_touched_paths,
+                )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] Session continuation failed: {e}", exc_info=True)
+            return ContinueSessionResult(
+                status="error",
+                session_id=request.session_id,
+                summary=f"❌ Failed to continue session: {str(e)[:100]}",
+                notes=str(e),
+            )
+
+    async def list_sessions(
+        self,
+        request: ListSessionsRequest,
+        client_id: str = "default",
+    ) -> ListSessionsResult:
+        """List all conversation sessions, optionally filtered by repository.
+
+        Args:
+            request: List sessions request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            List sessions result with session summaries.
+        """
+        logger.info(f"[{client_id}] Listing sessions for {request.repo_root or 'all repos'}")
+
+        try:
+            # Get sessions from driver's session manager
+            repo_filter = request.repo_root if request.repo_root else None
+            sessions = self.driver.session_manager.list_sessions(repo_root=repo_filter)
+
+            # Convert to summaries
+            from ninja_coder.models import SessionSummary
+
+            session_summaries = []
+            for session in sessions:
+                summary_dict = self.driver.session_manager.get_session_summary(session.session_id)
+                if summary_dict:
+                    session_summaries.append(SessionSummary(**summary_dict))
+
+            return ListSessionsResult(
+                status="ok",
+                sessions=session_summaries,
+                count=len(session_summaries),
+            )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] List sessions failed: {e}", exc_info=True)
+            return ListSessionsResult(
+                status="error",
+                sessions=[],
+                count=0,
+            )
+
+    async def delete_session(
+        self,
+        request: DeleteSessionRequest,
+        client_id: str = "default",
+    ) -> DeleteSessionResult:
+        """Delete a conversation session.
+
+        Args:
+            request: Delete session request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            Delete session result.
+        """
+        logger.info(f"[{client_id}] Deleting session {request.session_id}")
+
+        try:
+            # Delete session using driver's session manager
+            deleted = self.driver.session_manager.delete_session(request.session_id)
+
+            if deleted:
+                return DeleteSessionResult(
+                    status="ok",
+                    message=f"✅ Session {request.session_id} deleted successfully",
+                )
+            else:
+                return DeleteSessionResult(
+                    status="not_found",
+                    message=f"⚠️ Session {request.session_id} not found",
+                )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] Delete session failed: {e}", exc_info=True)
+            return DeleteSessionResult(
+                status="error",
+                message=f"❌ Failed to delete session: {str(e)[:100]}",
+            )
 
 
 # Singleton executor instance
