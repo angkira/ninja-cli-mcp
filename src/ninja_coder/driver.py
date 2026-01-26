@@ -1097,7 +1097,7 @@ class NinjaDriver:
             context_paths = file_scope.get("context_paths", [])
 
             # Build command using strategy
-            cli_result = self.strategy.build_command(
+            cli_result = self._strategy.build_command(
                 prompt=prompt,
                 repo_root=repo_root,
                 file_paths=context_paths,
@@ -1109,10 +1109,10 @@ class NinjaDriver:
                 arg if "api-key" not in prev.lower() else "***REDACTED***"
                 for prev, arg in zip([""] + cli_result.command[:-1], cli_result.command)
             ]
-            task_logger.info(f"Running {self.strategy.name}: {' '.join(safe_cmd)}")
+            task_logger.info(f"Running {self._strategy.name}: {' '.join(safe_cmd)}")
 
             # Get timeout from strategy
-            timeout = timeout_sec or self.strategy.get_timeout("quick")
+            timeout = timeout_sec or self._strategy.get_timeout("quick")
 
             # Execute
             process = subprocess.run(
@@ -1131,7 +1131,7 @@ class NinjaDriver:
             )
 
             # Parse output using strategy
-            parsed = self.strategy.parse_output(process.stdout, process.stderr, process.returncode)
+            parsed = self._strategy.parse_output(process.stdout, process.stderr, process.returncode)
 
             # Build result from parsed output
             result = NinjaResult(
@@ -1278,7 +1278,7 @@ class NinjaDriver:
 
             # Check if strategy supports dialogue mode and task type is sequential
             use_dialogue_mode = (
-                self.strategy.capabilities.supports_dialogue_mode and task_type == "sequential"
+                self._strategy.capabilities.supports_dialogue_mode and task_type == "sequential"
             )
 
             if use_dialogue_mode:
@@ -1289,7 +1289,7 @@ class NinjaDriver:
             # Build command using strategy
             additional_flags = {"use_coding_plan": use_coding_plan} if use_coding_plan else None
 
-            cli_result = self.strategy.build_command(
+            cli_result = self._strategy.build_command(
                 prompt=prompt,
                 repo_root=repo_root,
                 file_paths=context_paths,
@@ -1302,10 +1302,10 @@ class NinjaDriver:
                 arg if "api-key" not in prev.lower() else "***REDACTED***"
                 for prev, arg in zip([""] + cli_result.command[:-1], cli_result.command)
             ]
-            task_logger.info(f"Running {self.strategy.name}: {' '.join(safe_cmd)}")
+            task_logger.info(f"Running {self._strategy.name}: {' '.join(safe_cmd)}")
 
             # Get timeout from strategy
-            timeout = timeout_sec or self.strategy.get_timeout(task_type)
+            timeout = timeout_sec or self._strategy.get_timeout(task_type)
 
             # Execute asynchronously using strategy-built command
             process = await asyncio.create_subprocess_exec(
@@ -1343,7 +1343,7 @@ class NinjaDriver:
             task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
 
             # Parse output using strategy
-            parsed = self.strategy.parse_output(stdout, stderr, exit_code)
+            parsed = self._strategy.parse_output(stdout, stderr, exit_code)
 
             # Build result from parsed output
             result = NinjaResult(

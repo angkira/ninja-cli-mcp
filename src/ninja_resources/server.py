@@ -152,18 +152,18 @@ def create_server() -> Server:
         try:
             if name == "resource_codebase":
                 request = ResourceCodebaseRequest(**arguments)
-                result = await executor.codebase(request, client_id=client_id)
-                return [TextContent(text=result.model_dump_json())]
+                result = await executor.resource_codebase(request, client_id=client_id)
+                return [TextContent(type="text", text=result.model_dump_json())]
 
             elif name == "resource_config":
                 request = ResourceConfigRequest(**arguments)
-                result = await executor.config(request, client_id=client_id)
-                return [TextContent(text=result.model_dump_json())]
+                result = await executor.resource_config(request, client_id=client_id)
+                return [TextContent(type="text", text=result.model_dump_json())]
 
             elif name == "resource_docs":
                 request = ResourceDocsRequest(**arguments)
-                result = await executor.docs(request, client_id=client_id)
-                return [TextContent(text=result.model_dump_json())]
+                result = await executor.resource_docs(request, client_id=client_id)
+                return [TextContent(type="text", text=result.model_dump_json())]
 
             else:
                 return [
