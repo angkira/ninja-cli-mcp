@@ -21,12 +21,24 @@ import httpx
 
 from ninja_common.config_manager import ConfigManager
 
-# Import model selector if available
+# Import ninja_config modules if available
 try:
     from ninja_config.model_selector import run_interactive_selector
     HAS_MODEL_SELECTOR = True
 except ImportError:
     HAS_MODEL_SELECTOR = False
+
+try:
+    from ninja_config.installer import run_installer
+    HAS_INSTALLER = True
+except ImportError:
+    HAS_INSTALLER = False
+
+try:
+    from ninja_config.configurator import run_configurator
+    HAS_CONFIGURATOR = True
+except ImportError:
+    HAS_CONFIGURATOR = False
 
 
 def print_colored(text: str, color: str = "") -> None:
@@ -484,6 +496,55 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print()
 
 
+def cmd_install(args: argparse.Namespace) -> None:
+    """
+    Run interactive installer.
+
+    Args:
+        args: Command arguments.
+    """
+    if not HAS_INSTALLER:
+        print_colored("Installer not available.", "red")
+        print_colored("Install with: pip install InquirerPy", "dim")
+        return
+
+    try:
+        sys.exit(run_installer())
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(1)
+
+
+def cmd_configure(args: argparse.Namespace) -> None:
+    """
+    Run interactive configurator.
+
+    Args:
+        args: Command arguments.
+    """
+    if not HAS_CONFIGURATOR:
+        print_colored("Configurator not available.", "red")
+        print_colored("Install with: pip install InquirerPy", "dim")
+        return
+
+    try:
+        sys.exit(run_configurator())
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(1)
+
+
+def cmd_auth(args: argparse.Namespace) -> None:
+    """
+    Quick API key setup (runs configurator in auth mode).
+
+    Args:
+        args: Command arguments.
+    """
+    # Alias for configure command, will go straight to API keys menu
+    cmd_configure(args)
+
+
 def cmd_select_model(args: argparse.Namespace) -> None:
     """
     Interactive model and operator selection.
@@ -791,10 +852,34 @@ Examples:
         help="Overwrite existing server configurations",
     )
 
+    # Interactive installer
+    subparsers.add_parser(
+        "install",
+        help="Run interactive installer",
+    )
+
+    # Interactive configurator
+    subparsers.add_parser(
+        "configure",
+        help="Interactive configuration manager (API keys, operators, providers)",
+    )
+
+    # Quick auth setup (alias for configure -> api_keys)
+    subparsers.add_parser(
+        "auth",
+        help="Quick API key setup (OpenRouter, Perplexity, etc)",
+    )
+
     # Select model command (interactive)
     subparsers.add_parser(
         "select-model",
         help="Interactive operator and model selection",
+    )
+
+    # Show config (alias for list)
+    subparsers.add_parser(
+        "show",
+        help="Show current configuration (alias for list)",
     )
 
     args = parser.parse_args()
@@ -823,6 +908,14 @@ Examples:
         cmd_setup_claude(args)
     elif args.command == "select-model":
         cmd_select_model(args)
+    elif args.command == "install":
+        cmd_install(args)
+    elif args.command == "configure":
+        cmd_configure(args)
+    elif args.command == "auth":
+        cmd_auth(args)
+    elif args.command == "show":
+        cmd_list(args)  # Alias for list
     else:
         parser.print_help()
 
