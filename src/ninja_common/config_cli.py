@@ -21,6 +21,13 @@ import httpx
 
 from ninja_common.config_manager import ConfigManager
 
+# Import model selector if available
+try:
+    from ninja_config.model_selector import run_interactive_selector
+    HAS_MODEL_SELECTOR = True
+except ImportError:
+    HAS_MODEL_SELECTOR = False
+
 
 def print_colored(text: str, color: str = "") -> None:
     """
@@ -477,6 +484,31 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print()
 
 
+def cmd_select_model(args: argparse.Namespace) -> None:
+    """
+    Interactive model and operator selection.
+
+    Args:
+        args: Command arguments.
+    """
+    if not HAS_MODEL_SELECTOR:
+        print_colored("Model selector not available.", "red")
+        print_colored("Please reinstall ninja-mcp to get this feature.", "dim")
+        return
+
+    try:
+        success = run_interactive_selector()
+        if not success:
+            sys.exit(1)
+    except KeyboardInterrupt:
+        print("\n")
+        print_colored("Cancelled.", "yellow")
+        sys.exit(1)
+    except Exception as e:
+        print_colored(f"Error: {e}", "red")
+        sys.exit(1)
+
+
 def cmd_setup_claude(args: argparse.Namespace) -> None:
     """
     Setup Claude Code MCP configuration using 'claude mcp add' command.
@@ -610,6 +642,9 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Interactive operator & model selection (RECOMMENDED)
+  ninja-config select-model
+
   # List all configuration
   ninja-config list
 
@@ -756,6 +791,12 @@ Examples:
         help="Overwrite existing server configurations",
     )
 
+    # Select model command (interactive)
+    subparsers.add_parser(
+        "select-model",
+        help="Interactive operator and model selection",
+    )
+
     args = parser.parse_args()
 
     # Print header for all commands except get
@@ -780,6 +821,8 @@ Examples:
         cmd_doctor(args)
     elif args.command == "setup-claude":
         cmd_setup_claude(args)
+    elif args.command == "select-model":
+        cmd_select_model(args)
     else:
         parser.print_help()
 
