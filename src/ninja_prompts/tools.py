@@ -74,11 +74,11 @@ class PromptToolExecutor:
         try:
             return PromptChainResult(
                 status="ok",
-                steps=[],
+                executed_steps=[],
             )
         except Exception as e:
             logger.error(f"Error in prompt_chain: {e}")
-            return PromptChainResult(status="error", steps=[])
+            return PromptChainResult(status="error", executed_steps=[])
 
 
 def get_executor() -> PromptToolExecutor:
@@ -149,10 +149,10 @@ class PromptToolExecutor:
         try:
             return PromptChainResult(
                 status="ok",
-                steps=[],
+                executed_steps=[],
             )
         except Exception as e:
             logger.error(f"Error in prompt_chain: {e}")
-            return PromptChainResult(status="error", steps=[])
+            return PromptChainResult(status="error", executed_steps=[])
 
 
