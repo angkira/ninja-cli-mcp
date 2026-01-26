@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -58,6 +59,114 @@ class Operator:
             return True
         return False
 
+    def _get_model_sort_key(self, model_id: str) -> tuple:
+        """Generate sort key to prioritize latest/newest models first."""
+        # Priority 1: "latest" versions go first
+        has_latest = 1 if "latest" in model_id.lower() else 2
+
+        # Priority 2: Extract date (YYYYMMDD) - newer first
+        date_match = re.search(r'(\d{8})', model_id)
+        if date_match:
+            date_str = date_match.group(1)
+            try:
+                model_date = datetime.strptime(date_str, "%Y%m%d")
+                # Negative timestamp so newer dates come first
+                date_priority = -model_date.timestamp()
+            except ValueError:
+                date_priority = 0
+        else:
+            date_priority = 0
+
+        # Priority 3: Version number - higher first (4.5 > 4.0 > 3.7)
+        version_match = re.search(r'(\d+)[.-](\d+)', model_id)
+        if version_match:
+            major = int(version_match.group(1))
+            minor = int(version_match.group(2))
+            version_priority = -(major * 100 + minor)  # Negative for reverse sort
+        else:
+            version_priority = 0
+
+        # Priority 4: Alphabetical by name
+        name_priority = model_id.lower()
+
+        return (has_latest, date_priority, version_priority, name_priority)
+
+    def _is_recent_model(self, model_id: str) -> bool:
+        """Check if model is recent enough to show (not ancient garbage)."""
+        # Filter out embedding/non-chat models
+        if any(x in model_id.lower() for x in ["embedding", "whisper", "tts", "dall-e"]):
+            return False
+
+        # Always show "latest" versions (but not if they're old base models)
+        if "latest" in model_id.lower():
+            # Exclude old model families even with "latest"
+            if any(x in model_id for x in ["claude-3-5", "gpt-4-turbo", "gemini-1"]):
+                return False
+            return True
+
+        # Parse date from model ID (format: YYYYMMDD or YYYY-MM-DD)
+        date_match = re.search(r'(\d{4})[- ]?(\d{2})[- ]?(\d{2})', model_id)
+        if date_match:
+            date_str = ''.join(date_match.groups())  # YYYYMMDD
+            try:
+                model_date = datetime.strptime(date_str, "%Y%m%d")
+                # Only show models from last 12 months
+                cutoff_date = datetime.now() - timedelta(days=365)
+                return model_date >= cutoff_date
+            except ValueError:
+                pass
+
+        # Claude: keep 4.x and 3.7+, exclude 3.5 and older
+        if "claude" in model_id:
+            # Exclude claude-3-5 and older
+            if re.search(r'claude-3-[0-5]', model_id):
+                return False
+            # Keep claude-3-7, claude-4, claude-haiku-4, etc
+            if "claude-3-7" in model_id or "claude-4" in model_id:
+                return True
+            if re.search(r'claude-\w+-4', model_id):
+                return True
+            return False
+
+        # GPT: exclude 3.x, basic gpt-4, keep 4o/4.1+/5.x/o1/o3
+        if "gpt" in model_id or model_id.startswith("openai/o"):
+            # Exclude all gpt-3.x
+            if "gpt-3" in model_id:
+                return False
+            # Exclude basic "gpt-4" without suffix
+            if model_id.endswith("/gpt-4"):
+                return False
+            # Keep gpt-4o, gpt-4.1+, gpt-5.x, o1, o3, o4
+            if any(x in model_id for x in ["gpt-4o", "gpt-4.1", "gpt-4.2", "gpt-5", "o1", "o3", "o4"]):
+                return True
+            # Exclude gpt-4-turbo (old)
+            if "gpt-4-turbo" in model_id:
+                return False
+            return False
+
+        # Gemini: keep 2.x and newer only
+        if "gemini" in model_id:
+            if "gemini-1" in model_id:
+                return False
+            if "gemini-2" in model_id or "gemini-3" in model_id:
+                return True
+            return False
+
+        # DeepSeek: keep v3 and newer
+        if "deepseek" in model_id:
+            if "v3" in model_id or "2025" in model_id or "2026" in model_id:
+                return True
+            return False
+
+        # Qwen: keep 2.5 and newer
+        if "qwen" in model_id:
+            if "2.5" in model_id or "3." in model_id:
+                return True
+            return False
+
+        # Default: if no rule matched, hide it (be conservative)
+        return False
+
     def load_models(self) -> bool:
         """Load available models from this operator."""
         if not self.is_installed:
@@ -85,7 +194,7 @@ class Operator:
             if result.returncode != 0:
                 return False
 
-            # Parse model IDs from output
+            # Parse model IDs from output and filter recent ones
             model_ids = []
             for line in result.stdout.strip().split("\n"):
                 line = line.strip()
@@ -94,7 +203,9 @@ class Operator:
                     continue
                 # Model ID format: provider/model-name
                 if "/" in line:
-                    model_ids.append(line)
+                    # Filter out ancient models
+                    if self._is_recent_model(line):
+                        model_ids.append(line)
 
             # Group by provider and create Model objects
             by_provider = {}
@@ -106,8 +217,10 @@ class Operator:
 
             # Convert to Model objects with nice names
             # NO HARDCODED RECOMMENDATIONS - let the operator decide
+            # Sort models: latest first, then by date (newest first), then by version
             for provider, ids in sorted(by_provider.items()):
-                for model_id in sorted(ids):
+                sorted_ids = sorted(ids, key=self._get_model_sort_key)
+                for model_id in sorted_ids:
                     name = self._format_model_name(model_id)
                     desc = self._get_model_description(model_id)
                     # Operator should indicate recommendations in output
@@ -143,13 +256,14 @@ class Operator:
                 )
 
                 if result.returncode == 0:
-                    # Parse model IDs from output
+                    # Parse model IDs from output and filter recent ones
                     for line in result.stdout.strip().split("\n"):
                         line = line.strip()
                         # Look for lines starting with "- provider/model"
                         if line.startswith("- ") and "/" in line:
                             model_id = line[2:].strip()  # Remove "- " prefix
-                            if model_id not in all_models:
+                            # Filter out ancient models
+                            if model_id not in all_models and self._is_recent_model(model_id):
                                 all_models.append(model_id)
 
             # Group by provider
@@ -162,8 +276,10 @@ class Operator:
                     by_provider[provider].append(model_id)
 
             # NO HARDCODED RECOMMENDATIONS - operator decides
+            # Sort models: latest first, then by date (newest first), then by version
             for provider, ids in sorted(by_provider.items()):
-                for model_id in sorted(ids):
+                sorted_ids = sorted(ids, key=self._get_model_sort_key)
+                for model_id in sorted_ids:
                     name = self._format_model_name(model_id)
                     desc = f"Via OpenRouter"
                     # Operator should indicate recommendations
@@ -206,6 +322,9 @@ class Operator:
                         if line.startswith("google/") and not line.startswith("INFO"):
                             # Remove google/ prefix for Gemini CLI
                             model_id = line.replace("google/", "")
+                            # Filter out ancient models
+                            if not self._is_recent_model(model_id):
+                                continue
                             name = self._format_model_name(model_id)
                             desc = "Google Gemini model"
                             # NO HARDCODED RECOMMENDATIONS
@@ -224,12 +343,10 @@ class Operator:
             return len(self.models) > 0
 
         except Exception:
-            # Fallback to a minimal list if query fails
+            # Fallback to a minimal list if query fails (only recent models)
             fallback_models = [
                 ("gemini-2.5-flash", "Gemini 2.5 Flash", "Latest fast model"),
-                ("gemini-2.0-flash", "Gemini 2.0 Flash", "Experimental flash model"),
-                ("gemini-1.5-pro", "Gemini 1.5 Pro", "Balanced model"),
-                ("gemini-1.5-flash", "Gemini 1.5 Flash", "Fast model"),
+                ("gemini-2.0-flash", "Gemini 2.0 Flash", "Flash model"),
             ]
 
             for model_id, name, desc in fallback_models:
