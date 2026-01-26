@@ -14,6 +14,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+try:
+    import questionary
+    from questionary import Style
+    HAS_QUESTIONARY = True
+except ImportError:
+    HAS_QUESTIONARY = False
+
 
 @dataclass
 class Model:
@@ -97,18 +104,13 @@ class Operator:
                 by_provider[provider].append(model_id)
 
             # Convert to Model objects with nice names
-            recommended_models = {
-                "anthropic/claude-sonnet-4-5-20250929",
-                "anthropic/claude-3-7-sonnet-latest",
-                "google/gemini-2.0-flash",
-                "openai/gpt-4o",
-            }
-
+            # NO HARDCODED RECOMMENDATIONS - let the operator decide
             for provider, ids in sorted(by_provider.items()):
                 for model_id in sorted(ids):
                     name = self._format_model_name(model_id)
                     desc = self._get_model_description(model_id)
-                    recommended = model_id in recommended_models
+                    # Operator should indicate recommendations in output
+                    recommended = False
 
                     self.models.append(
                         Model(
@@ -158,19 +160,13 @@ class Operator:
                         by_provider[provider] = []
                     by_provider[provider].append(model_id)
 
-            # Recommended models for Aider (via OpenRouter)
-            recommended_models = {
-                "anthropic/claude-sonnet-4-5-20250929",
-                "anthropic/claude-3-7-sonnet-latest",
-                "openai/gpt-4o",
-                "google/gemini-2.0-flash",
-            }
-
+            # NO HARDCODED RECOMMENDATIONS - operator decides
             for provider, ids in sorted(by_provider.items()):
                 for model_id in sorted(ids):
                     name = self._format_model_name(model_id)
                     desc = f"Via OpenRouter"
-                    recommended = model_id in recommended_models
+                    # Operator should indicate recommendations
+                    recommended = False
 
                     self.models.append(
                         Model(
@@ -211,7 +207,8 @@ class Operator:
                             model_id = line.replace("google/", "")
                             name = self._format_model_name(model_id)
                             desc = "Google Gemini model"
-                            recommended = "2.0-flash" in model_id or "2.5" in model_id
+                            # NO HARDCODED RECOMMENDATIONS
+                            recommended = False
 
                             self.models.append(
                                 Model(
@@ -228,20 +225,20 @@ class Operator:
         except Exception:
             # Fallback to a minimal list if query fails
             fallback_models = [
-                ("gemini-2.5-flash", "Gemini 2.5 Flash", "Latest fast model", True),
-                ("gemini-2.0-flash", "Gemini 2.0 Flash", "Experimental flash model", False),
-                ("gemini-1.5-pro", "Gemini 1.5 Pro", "Balanced model", False),
-                ("gemini-1.5-flash", "Gemini 1.5 Flash", "Fast model", False),
+                ("gemini-2.5-flash", "Gemini 2.5 Flash", "Latest fast model"),
+                ("gemini-2.0-flash", "Gemini 2.0 Flash", "Experimental flash model"),
+                ("gemini-1.5-pro", "Gemini 1.5 Pro", "Balanced model"),
+                ("gemini-1.5-flash", "Gemini 1.5 Flash", "Fast model"),
             ]
 
-            for model_id, name, desc, recommended in fallback_models:
+            for model_id, name, desc in fallback_models:
                 self.models.append(
                     Model(
                         id=model_id,
                         name=name,
                         description=desc,
                         provider="google",
-                        recommended=recommended,
+                        recommended=False,  # NO HARDCODED RECOMMENDATIONS
                     )
                 )
 
@@ -448,11 +445,7 @@ def select_operator_interactive() -> Optional[Operator]:
 
 
 def select_model_interactive(operator: Operator) -> Optional[Model]:
-    """Interactive model selection for a specific operator."""
-    print("\n" + "=" * 70)
-    print(f"  🤖 MODEL SELECTION - {operator.name}")
-    print("=" * 70)
-
+    """Interactive model selection for a specific operator with arrow-key navigation."""
     if not operator.models:
         print("\n❌ No models available for this operator.")
         return None
@@ -468,22 +461,118 @@ def select_model_interactive(operator: Operator) -> Optional[Model]:
             by_provider[provider] = []
         by_provider[provider].append(model)
 
+    # Use questionary if available, otherwise fall back to number selection
+    if HAS_QUESTIONARY:
+        return _select_model_questionary(operator, by_provider, auth_status)
+    else:
+        return _select_model_fallback(operator, by_provider, auth_status)
+
+
+def _select_model_questionary(
+    operator: Operator,
+    by_provider: dict,
+    auth_status: dict
+) -> Optional[Model]:
+    """Modern interactive selection using questionary with arrow keys."""
+    from questionary import Choice
+
+    print("\n" + "=" * 70)
+    print(f"  🤖 MODEL SELECTION - {operator.name}")
+    print("=" * 70)
+    print(f"\n📋 {len(operator.models)} models available")
+    print("   Use ↑↓ arrow keys to navigate, Enter to select, Ctrl+C to cancel\n")
+
+    # Show warning if some providers not authenticated
+    unauth_providers = [p for p, auth in auth_status.items() if not auth]
+    if unauth_providers:
+        print(f"⚠️  Unauthenticated providers: {', '.join(unauth_providers)}")
+        print(f"   Models from these providers may not work.\n")
+
+    # Build choices list with ALL models, grouped by provider
+    choices = []
+    model_map = {}
+
+    for provider in sorted(by_provider.keys()):
+        models = by_provider[provider]
+        is_auth = auth_status.get(provider, False)
+        auth_symbol = "✓" if is_auth else "✗"
+
+        # Add provider header (disabled, not selectable)
+        choices.append(Choice(
+            title=f"  {auth_symbol} {provider.upper()} ({len(models)} models)",
+            value=None,
+            disabled=True
+        ))
+
+        # Add ALL models for this provider
+        for model in models:
+            # Build display name
+            rec_badge = " 🌟 RECOMMENDED" if model.recommended else ""
+            display_name = f"    {model.name}{rec_badge}"
+            if model.description:
+                display_name += f" — {model.description}"
+
+            # Create unique value key
+            choice_value = f"{provider}::{model.id}"
+            model_map[choice_value] = model
+
+            choices.append(Choice(
+                title=display_name,
+                value=choice_value
+            ))
+
+    # Custom style for better visibility
+    custom_style = Style([
+        ('qmark', 'fg:#5f87ff bold'),
+        ('question', 'bold'),
+        ('pointer', 'fg:#ff5f00 bold'),
+        ('highlighted', 'fg:#5f87ff bold'),
+        ('selected', 'fg:#00d700'),
+        ('separator', 'fg:#6c6c6c'),
+        ('instruction', 'fg:#858585'),
+        ('answer', 'fg:#00d700 bold'),
+    ])
+
+    try:
+        result = questionary.select(
+            "",
+            choices=choices,
+            style=custom_style,
+            use_shortcuts=False,
+            use_arrow_keys=True,
+            use_jk_keys=False,
+        ).ask()
+
+        if result and result in model_map:
+            return model_map[result]
+        return None
+
+    except KeyboardInterrupt:
+        print("\n Cancelled.")
+        return None
+
+
+def _select_model_fallback(
+    operator: Operator,
+    by_provider: dict,
+    auth_status: dict
+) -> Optional[Model]:
+    """Fallback number-based selection if questionary not available."""
+    print("\n" + "=" * 70)
+    print(f"  🤖 MODEL SELECTION - {operator.name}")
+    print("=" * 70)
     print(f"\n📋 Available Models ({len(operator.models)} total):\n")
 
     idx = 1
     model_map = {}
 
     for provider, models in sorted(by_provider.items()):
-        # Check if provider is authenticated
         is_auth = auth_status.get(provider, False)
         auth_symbol = "✓" if is_auth else "✗"
-
         print(f"  {auth_symbol} {provider.upper()} ({len(models)} models)")
 
-        # Show only recommended models + first few, or all if < 10
-        display_models = [m for m in models if m.recommended] or models[:5]
-
-        for model in display_models:
+        # Show ALL models in fallback mode too
+        for model in models:
             rec = " [RECOMMENDED]" if model.recommended else ""
             print(f"    {idx}. {model.name}{rec}")
             if model.description:
@@ -493,18 +582,10 @@ def select_model_interactive(operator: Operator) -> Optional[Model]:
             model_map[idx] = model
             idx += 1
 
-        # Show count of hidden models
-        hidden_count = len(models) - len(display_models)
-        if hidden_count > 0:
-            print(f"    ... and {hidden_count} more {provider} models")
-            print()
-
     # Show warning if some providers not authenticated
     unauth_providers = [p for p, auth in auth_status.items() if not auth]
     if unauth_providers:
-        print(
-            f"⚠️  Unauthenticated providers: {', '.join(unauth_providers)}"
-        )
+        print(f"⚠️  Unauthenticated providers: {', '.join(unauth_providers)}")
         print(f"   Models from these providers may not work.\n")
 
     # Get selection
