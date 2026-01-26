@@ -210,10 +210,12 @@ class InstructionBuilder:
                 "allowed_globs": allowed,
                 "deny_globs": denied,
             },
+            "instructions": self._build_step_instructions(step),
             "test_plan": {
                 "unit": step.test_plan.unit,
                 "e2e": step.test_plan.e2e,
             },
+            "guarantees": self._build_guarantees(),
         }
 
         # Add conversation history if provided (for dialogue mode)
