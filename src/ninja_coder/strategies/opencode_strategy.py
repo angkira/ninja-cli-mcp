@@ -140,10 +140,11 @@ class OpenCodeStrategy:
             additional_flags.get("use_coding_plan", False) if additional_flags else False
         )
 
-        # OpenCode expects models in format: openrouter/provider/model
-        # If model doesn't start with provider prefix, add openrouter/
-        if "/" in model_name and not model_name.startswith(("opencode/", "openrouter/")):
-            model_name = f"openrouter/{model_name}"
+        # OpenCode supports direct provider access (anthropic/, openai/, google/)
+        # and also supports openrouter/ prefix for OpenRouter models
+        # Do NOT add openrouter/ prefix if model already has a provider prefix
+        # Model format: provider/model (e.g., anthropic/claude-sonnet-4-5)
+        # OpenCode will use native API if available, fallback to OpenRouter if not
 
         cmd = [
             self.bin_path,
@@ -459,51 +460,3 @@ class OpenCodeStrategy:
         """
         model_lower = model_name.lower()
         return "zhipu" in model_lower or "glm" in model_lower
-
-    def start_dialogue_session(self, system_prompt: str = "") -> DialogueSession:
-        """Start a new dialogue session for multi-turn conversation.
-
-        Args:
-            system_prompt: Optional system prompt for the conversation.
-
-        Returns:
-            New DialogueSession instance.
-        """
-        self._session = DialogueSession(system_prompt)
-        return self._session
-
-    def end_dialogue_session(self) -> None:
-        """End current dialogue session.
-
-        Clears any active session state.
-        """
-        self._session = None
-
-    def send_in_dialogue(
-        self, prompt: str, model: str | None = None
-    ) -> tuple[str, list[dict[str, str]]]:
-        """Send a message within an active dialogue session.
-
-        Maintains conversation history by appending user message and
-        preparing message list for API request including all prior context.
-
-        Args:
-            prompt: The message to send.
-            model: Optional model override (uses configured model if None).
-
-        Returns:
-            Tuple of (formatted_prompt, full_message_history).
-
-        Raises:
-            RuntimeError: If no active dialogue session exists.
-        """
-        if self._session is None:
-            raise RuntimeError("No active dialogue session. Call start_dialogue_session() first.")
-
-        self._session.add_user_message(prompt)
-        message_history = self._session.get_conversation_history()
-
-        # Format as multiline message for API
-        formatted_prompt = self._format_conversation_as_prompt(message_history)
-
-        return formatted_prompt, message_history
