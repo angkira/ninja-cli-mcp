@@ -566,6 +566,10 @@ class NinjaDriver:
         """
         Detect which type of CLI we're using based on the binary name.
 
+        .. deprecated::
+            Use self._strategy.name instead. This method is kept for backwards
+            compatibility with existing tests but will be removed in a future version.
+
         Returns:
             CLI type: 'aider', 'qwen', 'claude', 'gemini', 'cursor', or 'generic'
         """
@@ -847,6 +851,11 @@ class NinjaDriver:
         """
         Build the command to run AI Code CLI.
 
+        .. deprecated::
+            This method uses old CLI detection logic. New code should use
+            self._strategy.build_command() instead. This method is kept for
+            backwards compatibility with existing tests.
+
         Uses CLI adapter pattern to support different AI assistants.
 
         Args:
@@ -885,6 +894,10 @@ class NinjaDriver:
     def _parse_output(self, stdout: str, stderr: str, exit_code: int) -> NinjaResult:
         """
         Parse Ninja Code CLI output to extract CONCISE results.
+
+        .. deprecated::
+            Use self._strategy.parse_output() instead. This method is kept for
+            backwards compatibility with existing tests.
 
         IMPORTANT: This extracts only summary information, NOT source code.
         The orchestrator should receive minimal information about what changed.
@@ -1075,36 +1088,62 @@ class NinjaDriver:
             task_file = self._write_task_file(repo_root, step_id, instruction)
             task_logger.info(f"Wrote task file: {task_file}")
 
-            # Build command
-            cmd = self._build_command(task_file, repo_root)
+            # Build prompt from instruction
+            with Path(task_file).open() as f:
+                instruction_data = json.load(f)
+
+            prompt = self._build_prompt_text(instruction_data, repo_root)
+            file_scope = instruction_data.get("file_scope", {})
+            context_paths = file_scope.get("context_paths", [])
+
+            # Build command using strategy
+            cli_result = self.strategy.build_command(
+                prompt=prompt,
+                repo_root=repo_root,
+                file_paths=context_paths,
+                model=self.config.model,
+            )
+
             # Log command without sensitive data (redact API key)
-            # Note: use "api-key" not "--api-key" to match "--openai-api-key"
             safe_cmd = [
                 arg if "api-key" not in prev.lower() else "***REDACTED***"
-                for prev, arg in zip([""] + cmd[:-1], cmd)
+                for prev, arg in zip([""] + cli_result.command[:-1], cli_result.command)
             ]
-            task_logger.info(f"Running command: {' '.join(safe_cmd)}")
+            task_logger.info(f"Running {self.strategy.name}: {' '.join(safe_cmd)}")
 
-            # Get environment
-            env = self._get_env()
+            # Get timeout from strategy
+            timeout = timeout_sec or self.strategy.get_timeout("quick")
 
             # Execute
-            timeout = timeout_sec or self.config.timeout_sec
             process = subprocess.run(
-                cmd,
+                cli_result.command,
                 check=False,
-                cwd=str(repo_root),  # Execute in actual repository
-                env=env,
+                cwd=str(cli_result.working_dir),
+                env=cli_result.env,
                 stdin=subprocess.DEVNULL,  # Prevent stdin blocking
                 capture_output=True,
                 text=True,
                 timeout=timeout,
             )
 
-            task_logger.log_subprocess(cmd, process.returncode, process.stdout, process.stderr)
+            task_logger.log_subprocess(
+                cli_result.command, process.returncode, process.stdout, process.stderr
+            )
 
-            # Parse result (extracts CONCISE summary only)
-            result = self._parse_output(process.stdout, process.stderr, process.returncode)
+            # Parse output using strategy
+            parsed = self.strategy.parse_output(process.stdout, process.stderr, process.returncode)
+
+            # Build result from parsed output
+            result = NinjaResult(
+                success=parsed.success,
+                summary=parsed.summary,
+                notes=parsed.notes,
+                suspected_touched_paths=parsed.touched_paths,
+                exit_code=process.returncode,
+                stdout=process.stdout,
+                stderr=process.stderr,
+                model_used=self.config.model,
+            )
             result.raw_logs_path = task_logger.save()
 
             task_logger.info(
