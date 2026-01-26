@@ -272,6 +272,11 @@ class AiderStrategy:
         # Extract file changes (what was modified)
         suspected_paths: list[str] = []
         file_patterns = [
+            # Aider-specific patterns (most reliable)
+            r"Applied edit to\s+([^\s]+)",  # "Applied edit to storage.py"
+            r"Added\s+([^\s]+)\s+to the chat",  # "Added models.py to the chat"
+            r"Create[d]?\s+([^\s]+\.[\w]+)",  # "Created file.py" or "Create file.py"
+            # Generic patterns
             r"(?:wrote|created|modified|updated|edited)\s+['\"]?([^\s'\"]+)['\"]?",
             r"(?:writing|creating|modifying|updating|editing)\s+['\"]?([^\s'\"]+)['\"]?",
             r"file:\s*['\"]?([^\s'\"]+)['\"]?",
@@ -279,11 +284,18 @@ class AiderStrategy:
         for pattern in file_patterns:
             matches = re.findall(pattern, combined_output, re.IGNORECASE)
             for match in matches:
-                if match and ("/" in match or "." in match):
+                # Filter to only actual file paths (must have extension or path separator)
+                if match and ("/" in match or "." in match) and not match.endswith("."):
                     suspected_paths.append(match)
 
         # Deduplicate paths
         suspected_paths = list(set(suspected_paths))
+
+        # DEBUG: Log parsed paths
+        if suspected_paths:
+            logger.info(f"✓ Detected {len(suspected_paths)} modified files: {suspected_paths}")
+        else:
+            logger.warning(f"⚠️ No files detected in output (length: {len(combined_output)})")
 
         # Build CONCISE summary (no code, just what happened)
         if success:

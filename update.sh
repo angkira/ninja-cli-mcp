@@ -211,17 +211,33 @@ done
 [[ -n "$SAVED_PERPLEXITY_KEY" ]] && export PERPLEXITY_API_KEY="$SAVED_PERPLEXITY_KEY"
 
 # ============================================================================
-# STEP 4: Re-register Claude Code MCP servers
+# STEP 4: Start daemons
+# ============================================================================
+echo ""
+info "Starting ninja daemons..."
+
+if ninja-daemon start 2>&1 | grep -q "✓\|already running"; then
+    success "All daemons started"
+else
+    warn "Some daemons may have failed to start"
+    info "Check daemon status with: ninja-daemon status"
+fi
+
+# ============================================================================
+# STEP 5: Re-register Claude Code MCP servers
 # ============================================================================
 echo ""
 info "Updating Claude Code MCP servers..."
 
 if command -v claude &> /dev/null; then
     # Remove and re-add to ensure clean state
-    for server in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts; do
+    # Use daemon proxy mode for hot-reload support
+    for server_config in "ninja-coder:coder" "ninja-researcher:researcher" "ninja-secretary:secretary" "ninja-resources:resources" "ninja-prompts:prompts"; do
+        server="${server_config%%:*}"
+        module="${server_config##*:}"
         claude mcp remove "$server" -s user 2>/dev/null || true
-        if claude mcp add --scope user --transport stdio "$server" -- "$server" 2>/dev/null; then
-            success "$server registered"
+        if claude mcp add --scope user --transport stdio "$server" -- ninja-daemon connect "$module" 2>/dev/null; then
+            success "$server registered (daemon proxy mode)"
         else
             warn "Failed to register $server"
         fi
@@ -258,7 +274,7 @@ else
 fi
 
 # ============================================================================
-# STEP 5: Verify installation
+# STEP 6: Verify installation
 # ============================================================================
 echo ""
 info "Verifying installation..."
