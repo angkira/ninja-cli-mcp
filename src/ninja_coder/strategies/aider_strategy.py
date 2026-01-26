@@ -206,6 +206,27 @@ class AiderStrategy:
 
         # ENHANCED: Detect aider-specific errors even with exit_code=0
         aider_error_patterns = [
+            # Authentication and authorization errors (HIGH PRIORITY)
+            r"AuthenticationError",
+            r"authentication\s+failed",
+            r"User\s+not\s+found",
+            r"Unauthorized",
+            r"401",
+            r"403\s+Forbidden",
+            r"invalid\s+api\s+key",
+            r"api\s+key.*?(not\s+found|invalid|missing)",
+            # Credit and billing errors (HIGH PRIORITY)
+            r"insufficient\s+credits",
+            r"requires\s+more\s+credits",
+            r"can\s+only\s+afford",
+            r"credit\s+limit",
+            r"billing\s+error",
+            r"payment\s+required",
+            # General API errors (HIGH PRIORITY)
+            r"APIError",
+            r"OpenrouterException",
+            r"litellm\..*?Error",
+            r"API\s+request\s+failed",
             # Summarization failures (most common)
             r"summarization\s+failed",
             r"summarizer\s+.*?\s+failed",
@@ -280,8 +301,26 @@ class AiderStrategy:
         # Extract brief notes (error messages, warnings) - keep it SHORT
         notes = ""
         if not success:
+            # Priority 0: Authentication and credit errors (most critical)
+            if any(
+                pattern in combined_output
+                for pattern in [
+                    "AuthenticationError",
+                    "User not found",
+                    "Unauthorized",
+                    "401",
+                ]
+            ):
+                notes = "❌ Authentication failed. Check OPENROUTER_API_KEY in ~/.ninja-mcp.env or verify account status."
+                summary = "❌ Authentication error"
+            elif any(
+                pattern in combined_output
+                for pattern in ["insufficient credits", "requires more credits", "can only afford"]
+            ):
+                notes = "💰 Insufficient credits. Add credits at https://openrouter.ai/settings/keys or reduce max_tokens."
+                summary = "❌ Insufficient credits"
             # Priority 1: Aider-specific errors
-            if aider_error_detected:
+            elif aider_error_detected:
                 notes = f"🔧 Aider internal error: {aider_error_msg[:200]}"
                 summary = "❌ Aider failed with internal error (retryable)"
             # Priority 2: Other errors from stderr
@@ -320,12 +359,26 @@ class AiderStrategy:
                 notes = f"❌ Invalid model ID: {bad_model}. Try: {fallbacks}"
                 summary = f"❌ Model '{bad_model}' not found on OpenRouter"
 
-            # Detect API key errors
+            # Detect API key errors (backward compatibility)
             if "api key" in combined_output.lower() and (
                 "not found" in combined_output.lower() or "invalid" in combined_output.lower()
             ):
                 notes = "❌ OpenRouter API key missing or invalid. Set OPENROUTER_API_KEY in ~/.ninja-mcp.env"
                 summary = "❌ API key error"
+
+        # Final validation: If we claim success but no files were touched, it's suspicious
+        # This catches cases where the CLI exits with 0 but didn't actually do anything
+        if success and not suspected_paths and len(combined_output) > 100:
+            # Check if output suggests files should have been created/modified
+            action_keywords = ["write", "creat", "modif", "updat", "edit", "add", "implement"]
+            has_action_intent = any(keyword in combined_output.lower() for keyword in action_keywords)
+
+            # If there was intent to modify files but none were touched, mark as failure
+            if has_action_intent:
+                success = False
+                summary = "⚠️ Task completed but no files were modified"
+                notes = "CLI exited successfully but no file changes detected. Check logs for details."
+                logger.warning("Suspicious success: exit_code=0 but no files touched")
 
         return ParsedResult(
             success=success,
