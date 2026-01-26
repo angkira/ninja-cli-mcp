@@ -362,4 +362,66 @@ class DeleteSessionResult(BaseModel):
 
     status: Literal["ok", "error", "not_found"] = Field(..., description="Delete status")
     message: str = Field(..., description="Result message")
+
+
+# Multi-Agent Models
+
+
+class AgentInfo(BaseModel):
+    """Information about a specialized agent."""
+
+    name: str = Field(..., description="Agent name")
+    description: str = Field(..., description="Agent description")
+    keywords: list[str] = Field(..., description="Keywords that trigger this agent")
+
+
+class GetAgentsRequest(BaseModel):
+    """Request to get available agents."""
+
+    pass  # No parameters needed
+
+
+class GetAgentsResult(BaseModel):
+    """Result of getting agents."""
+
+    status: Literal["ok", "error"] = Field(..., description="Status")
+    total_agents: int = Field(..., description="Total number of available agents")
+    agents: list[AgentInfo] = Field(..., description="List of available agents")
+
+
+class MultiAgentTaskRequest(BaseModel):
+    """Request to execute task with multi-agent orchestration."""
+
+    task: str = Field(..., description="Task description")
+    repo_root: str = Field(..., description="Absolute path to repository root")
+    context_paths: list[str] = Field(
+        default_factory=list,
+        description="Files/directories to focus on",
+    )
+    allowed_globs: list[str] = Field(
+        default_factory=lambda: ["**/*"],
+        description="Allowed file patterns",
+    )
+    deny_globs: list[str] = Field(
+        default_factory=list,
+        description="Denied file patterns",
+    )
+    session_id: str | None = Field(
+        None,
+        description="Optional session ID to continue (for persistent context)",
+    )
+
+
+class MultiAgentTaskResult(BaseModel):
+    """Result of multi-agent task execution."""
+
+    status: Literal["ok", "error"] = Field(..., description="Execution status")
+    summary: str = Field(..., description="Task execution summary")
+    notes: str = Field(default="", description="Additional notes")
+    agents_used: list[str] = Field(..., description="Agents that were activated")
+    suspected_touched_paths: list[str] = Field(
+        default_factory=list,
+        description="Files modified",
+    )
+    session_id: str | None = Field(None, description="Session ID if session was used")
     message: str = Field(..., description="Result message")

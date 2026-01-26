@@ -1284,6 +1284,25 @@ class NinjaDriver:
             file_scope = instruction_data.get("file_scope", {})
             context_paths = file_scope.get("context_paths", [])
 
+            # Check if multi-agent orchestration is needed
+            enable_multi_agent = False
+            if hasattr(self._strategy, "build_command_with_multi_agent"):
+                # Import multi-agent orchestrator
+                from ninja_coder.multi_agent import MultiAgentOrchestrator
+
+                orchestrator = MultiAgentOrchestrator(self._strategy)
+                analysis = orchestrator.analyze_task(prompt, context_paths)
+
+                if orchestrator.should_use_multi_agent(analysis):
+                    enable_multi_agent = True
+                    agents = orchestrator.select_agents(prompt, analysis)
+                    task_logger.info(
+                        f"🤖 Multi-agent mode activated with {len(agents)} agents: "
+                        f"{', '.join(agents)}"
+                    )
+                    task_logger.set_metadata("multi_agent", True)
+                    task_logger.set_metadata("agents", agents)
+
             # Check if strategy supports dialogue mode and task type is sequential
             use_dialogue_mode = (
                 self._strategy.capabilities.supports_dialogue_mode and task_type == "sequential"
@@ -1295,15 +1314,32 @@ class NinjaDriver:
                 task_logger.info("Using atomic mode (subprocess per step)")
 
             # Build command using strategy
-            additional_flags = {"use_coding_plan": use_coding_plan} if use_coding_plan else None
+            if enable_multi_agent:
+                # Use multi-agent command builder
+                context = {
+                    "complexity": analysis.complexity,
+                    "task_type": analysis.task_type,
+                    "estimated_files": analysis.estimated_files,
+                }
+                cli_result = self._strategy.build_command_with_multi_agent(
+                    prompt=prompt,
+                    repo_root=repo_root,
+                    agents=agents,
+                    context=context,
+                    file_paths=context_paths,
+                    model=model,
+                )
+            else:
+                # Use standard command builder
+                additional_flags = {"use_coding_plan": use_coding_plan} if use_coding_plan else None
 
-            cli_result = self._strategy.build_command(
-                prompt=prompt,
-                repo_root=repo_root,
-                file_paths=context_paths,
-                model=model,
-                additional_flags=additional_flags,
-            )
+                cli_result = self._strategy.build_command(
+                    prompt=prompt,
+                    repo_root=repo_root,
+                    file_paths=context_paths,
+                    model=model,
+                    additional_flags=additional_flags,
+                )
 
             # Log command (redact sensitive data)
             safe_cmd = [
