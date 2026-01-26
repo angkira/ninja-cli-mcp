@@ -226,6 +226,58 @@ if command -v claude &> /dev/null; then
             warn "Failed to register $server"
         fi
     done
+
+    # Configure ninja-coder to use OpenCode if available
+    CLAUDE_CONFIG="$HOME/.claude.json"
+    if [[ -f "$CLAUDE_CONFIG" ]] && command -v opencode &> /dev/null; then
+        info "Configuring ninja-coder to use OpenCode..."
+
+        OPENCODE_PATH=$(command -v opencode)
+
+        # Use Python to safely update the JSON
+        python3 -c "
+import json
+import sys
+
+config_path = '$CLAUDE_CONFIG'
+try:
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+
+    # Update ninja-coder configuration
+    if 'mcpServers' in config and 'ninja-coder' in config['mcpServers']:
+        config['mcpServers']['ninja-coder']['env'] = {
+            'NINJA_CODE_BIN': '$OPENCODE_PATH',
+            'NINJA_MODEL': 'anthropic/claude-sonnet-4-5'
+        }
+
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        print('SUCCESS')
+    else:
+        print('SKIP')
+except Exception as e:
+    print(f'ERROR: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>&1
+
+        if [[ $? -eq 0 ]]; then
+            success "Configured ninja-coder to use OpenCode with Claude Sonnet 4.5"
+            info "Model: anthropic/claude-sonnet-4-5"
+            info "Binary: $OPENCODE_PATH"
+        else
+            warn "Could not auto-configure OpenCode (Claude Code may be running)"
+            info "Manual config: Add to ~/.claude.json ninja-coder env:"
+            echo "    \"NINJA_CODE_BIN\": \"$OPENCODE_PATH\","
+            echo "    \"NINJA_MODEL\": \"anthropic/claude-sonnet-4-5\""
+        fi
+    elif [[ ! -f "$CLAUDE_CONFIG" ]]; then
+        warn "Claude Code config not found at $CLAUDE_CONFIG"
+    elif ! command -v opencode &> /dev/null; then
+        warn "OpenCode not found - using default configuration"
+        info "Install OpenCode from: https://github.com/stackblitz/opencode"
+    fi
 else
     warn "Claude Code CLI not found - skipping MCP registration"
     info "Run 'ninja-config setup-claude' after installing Claude Code"
