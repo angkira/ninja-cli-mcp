@@ -34,7 +34,9 @@ from ninja_coder.models import (
     ContinueSessionRequest,
     CreateSessionRequest,
     DeleteSessionRequest,
+    GetAgentsRequest,
     ListSessionsRequest,
+    MultiAgentTaskRequest,
     ParallelPlanRequest,
     RunTestsRequest,
     SequentialPlanRequest,
@@ -492,6 +494,74 @@ TOOLS: list[Tool] = [
             "required": ["session_id"],
         },
     ),
+    Tool(
+        name="coder_get_agents",
+        description=(
+            "Get information about available specialized agents for multi-agent orchestration. "
+            "\n\n"
+            "Returns list of 7 specialized agents:\n"
+            "• Chief AI Architect - System design and architecture\n"
+            "• Frontend Engineer - React, Vue, UI components\n"
+            "• Backend Engineer - APIs, databases, server logic\n"
+            "• DevOps Engineer - CI/CD, Docker, infrastructure\n"
+            "• Oracle - Decision making and code review\n"
+            "• Librarian - Documentation and organization\n"
+            "• Explorer - Code analysis and refactoring\n"
+            "\n\n"
+            "✅ USE FOR: Understanding what agents are available for complex tasks."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    ),
+    Tool(
+        name="coder_multi_agent_task",
+        description=(
+            "Execute a complex task with multi-agent orchestration (oh-my-opencode). "
+            "Automatically selects and coordinates specialized agents based on task requirements. "
+            "\n\n"
+            "✅ USE FOR: Full-stack applications, complex architectures, tasks requiring multiple "
+            "specialized skills, large-scale refactoring, system design + implementation. "
+            "\n\n"
+            "🤖 AGENTS: Chief Architect, Frontend Engineer, Backend Engineer, DevOps, Oracle, "
+            "Librarian, Explorer work in parallel with shared context. "
+            "\n\n"
+            "⏱️ NOTE: Multi-agent tasks take longer but provide comprehensive solutions. "
+            "\n\n"
+            "💡 TIP: Use sessions for persistent context across multi-agent iterations."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": (
+                        "Complex task description requiring multiple specialized agents. "
+                        "Be specific about requirements (e.g., 'Build e-commerce platform with "
+                        "React frontend, FastAPI backend, PostgreSQL database, and Docker deployment')"
+                    ),
+                },
+                "repo_root": {
+                    "type": "string",
+                    "description": "Absolute path to the repository root",
+                },
+                "context_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Files/directories for context",
+                    "default": [],
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID to continue (for persistent multi-agent context)",
+                    "default": "",
+                },
+            },
+            "required": ["task", "repo_root"],
+        },
+    ),
 ]
 
 
@@ -661,6 +731,14 @@ You:
             elif name == "coder_delete_session":
                 request = DeleteSessionRequest(**arguments)
                 result = await executor.delete_session(request, client_id=client_id)
+
+            elif name == "coder_get_agents":
+                request = GetAgentsRequest(**arguments)
+                result = await executor.get_agents(request, client_id=client_id)
+
+            elif name == "coder_multi_agent_task":
+                request = MultiAgentTaskRequest(**arguments)
+                result = await executor.multi_agent_task(request, client_id=client_id)
 
             else:
                 return [

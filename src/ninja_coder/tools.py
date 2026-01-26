@@ -18,6 +18,7 @@ from pathlib import Path
 
 from ninja_coder.driver import InstructionBuilder, NinjaDriver, NinjaResult
 from ninja_coder.models import (
+    AgentInfo,
     ApplyPatchRequest,
     ApplyPatchResult,
     ContinueSessionRequest,
@@ -27,9 +28,13 @@ from ninja_coder.models import (
     DeleteSessionRequest,
     DeleteSessionResult,
     ExecutionMode,
+    GetAgentsRequest,
+    GetAgentsResult,
     ListSessionsRequest,
     ListSessionsResult,
     MergeReport,
+    MultiAgentTaskRequest,
+    MultiAgentTaskResult,
     ParallelPlanRequest,
     PlanExecutionResult,
     PlanStep,
@@ -927,6 +932,168 @@ class ToolExecutor:
             return DeleteSessionResult(
                 status="error",
                 message=f"❌ Failed to delete session: {str(e)[:100]}",
+            )
+
+    async def get_agents(
+        self,
+        request: GetAgentsRequest,
+        client_id: str = "default",
+    ) -> GetAgentsResult:
+        """Get information about available specialized agents.
+
+        Args:
+            request: Get agents request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            Get agents result with agent information.
+        """
+        logger.info(f"[{client_id}] Getting available agents")
+
+        try:
+            # Import multi-agent orchestrator
+            from ninja_coder.multi_agent import MultiAgentOrchestrator
+
+            # Create orchestrator (requires OpenCode strategy)
+            if hasattr(self.driver._strategy, "build_command_with_multi_agent"):
+                orchestrator = MultiAgentOrchestrator(self.driver._strategy)
+                summary = orchestrator.get_agent_summary()
+
+                agents = [
+                    AgentInfo(
+                        name=agent["name"],
+                        description=agent["description"],
+                        keywords=agent["keywords"],
+                    )
+                    for agent in summary["agents"]
+                ]
+
+                return GetAgentsResult(
+                    status="ok",
+                    total_agents=summary["total_agents"],
+                    agents=agents,
+                )
+            else:
+                return GetAgentsResult(
+                    status="error",
+                    total_agents=0,
+                    agents=[],
+                )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] Get agents failed: {e}", exc_info=True)
+            return GetAgentsResult(
+                status="error",
+                total_agents=0,
+                agents=[],
+            )
+
+    async def multi_agent_task(
+        self,
+        request: MultiAgentTaskRequest,
+        client_id: str = "default",
+    ) -> MultiAgentTaskResult:
+        """Execute task with multi-agent orchestration.
+
+        Args:
+            request: Multi-agent task request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            Multi-agent task result.
+        """
+        logger.info(f"[{client_id}] Executing multi-agent task for {request.repo_root}")
+
+        step_id = f"multiagent_{int(datetime.utcnow().timestamp())}"
+
+        try:
+            # Verify strategy supports multi-agent
+            if not hasattr(self.driver._strategy, "build_command_with_multi_agent"):
+                return MultiAgentTaskResult(
+                    status="error",
+                    summary="❌ Multi-agent orchestration requires OpenCode CLI",
+                    notes="Current CLI does not support multi-agent mode. Set NINJA_CODE_BIN=opencode",
+                    agents_used=[],
+                )
+
+            # Import multi-agent orchestrator
+            from ninja_coder.multi_agent import MultiAgentOrchestrator
+
+            orchestrator = MultiAgentOrchestrator(self.driver._strategy)
+
+            # Analyze task
+            analysis = orchestrator.analyze_task(request.task, request.context_paths)
+
+            # Select agents
+            agents = orchestrator.select_agents(request.task, analysis)
+            logger.info(f"🤖 Selected {len(agents)} agents: {', '.join(agents)}")
+
+            # Build enhanced prompt with ultrawork
+            context = {
+                "complexity": analysis.complexity,
+                "task_type": analysis.task_type,
+                "estimated_files": analysis.estimated_files,
+            }
+            enhanced_prompt = orchestrator.build_ultrawork_prompt(
+                request.task, agents, context
+            )
+
+            # Build instruction
+            builder = InstructionBuilder(request.repo_root, mode=ExecutionMode.QUICK)
+            instruction = builder.build_quick_task(
+                task=enhanced_prompt,
+                context_paths=request.context_paths,
+                allowed_globs=request.allowed_globs,
+                deny_globs=request.deny_globs,
+            )
+
+            # Execute with or without session
+            if request.session_id:
+                # Continue existing session
+                result = await self.driver.execute_with_session(
+                    task=enhanced_prompt,
+                    repo_root=request.repo_root,
+                    step_id=step_id,
+                    session_id=request.session_id,
+                    context_paths=request.context_paths,
+                    allowed_globs=request.allowed_globs,
+                    deny_globs=request.deny_globs,
+                )
+            else:
+                # Execute without session
+                result = await self.driver.execute_async(
+                    repo_root=request.repo_root,
+                    step_id=step_id,
+                    instruction=instruction,
+                    task_type="parallel",  # Multi-agent is like parallel execution
+                )
+
+            if result.success:
+                return MultiAgentTaskResult(
+                    status="ok",
+                    summary=result.summary,
+                    notes=result.notes,
+                    agents_used=agents,
+                    suspected_touched_paths=result.suspected_touched_paths,
+                    session_id=result.session_id,
+                )
+            else:
+                return MultiAgentTaskResult(
+                    status="error",
+                    summary=result.summary,
+                    notes=result.notes,
+                    agents_used=agents,
+                    suspected_touched_paths=result.suspected_touched_paths,
+                    session_id=result.session_id,
+                )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] Multi-agent task failed: {e}", exc_info=True)
+            return MultiAgentTaskResult(
+                status="error",
+                summary=f"❌ Failed to execute multi-agent task: {str(e)[:100]}",
+                notes=str(e),
+                agents_used=[],
             )
 
 

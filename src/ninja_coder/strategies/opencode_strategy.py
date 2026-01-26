@@ -131,6 +131,7 @@ class OpenCodeStrategy:
             model: Model to use (if None, use configured default).
             additional_flags: Additional flags including:
                 - use_coding_plan: Whether to use Coding Plan API (bool)
+                - enable_multi_agent: Whether to add ultrawork keyword (bool)
 
         Returns:
             CLICommandResult with command, env, and metadata.
@@ -138,6 +139,9 @@ class OpenCodeStrategy:
         model_name = model or self.config.model
         use_coding_plan = (
             additional_flags.get("use_coding_plan", False) if additional_flags else False
+        )
+        enable_multi_agent = (
+            additional_flags.get("enable_multi_agent", False) if additional_flags else False
         )
 
         # OpenCode supports direct provider access (anthropic/, openai/, google/)
@@ -158,15 +162,22 @@ class OpenCodeStrategy:
             for file_path in file_paths:
                 cmd.extend(["--file", file_path])
 
+        # Multi-agent activation (add ultrawork to prompt)
+        final_prompt = prompt
+        if enable_multi_agent and "ultrawork" not in prompt.lower():
+            final_prompt = f"{prompt}\n\nultrawork"
+            logger.info("🤖 Multi-agent mode activated (ultrawork)")
+
         # Prompt as positional argument
-        cmd.append(prompt)
+        cmd.append(final_prompt)
 
         # Build environment (inherit current environment)
         env = os.environ.copy()
 
         # Determine timeout based on task type
-        # OpenCode typically has different timeout needs than Aider
-        timeout = int(os.environ.get("NINJA_OPENCODE_TIMEOUT", "600"))
+        # Multi-agent tasks may need more time
+        base_timeout = int(os.environ.get("NINJA_OPENCODE_TIMEOUT", "600"))
+        timeout = base_timeout * 2 if enable_multi_agent else base_timeout
 
         return CLICommandResult(
             command=cmd,
@@ -175,9 +186,46 @@ class OpenCodeStrategy:
             metadata={
                 "provider": "z.ai" if self._is_zai_model(model_name) else "generic",
                 "coding_plan_api": use_coding_plan,
+                "multi_agent": enable_multi_agent,
                 "model": model_name,
                 "timeout": timeout,
             },
+        )
+
+    def build_command_with_multi_agent(
+        self,
+        prompt: str,
+        repo_root: str,
+        agents: list[str],
+        context: dict[str, Any] | None = None,
+        file_paths: list[str] | None = None,
+        model: str | None = None,
+    ) -> CLICommandResult:
+        """Build OpenCode command with multi-agent orchestration.
+
+        Args:
+            prompt: The original task description.
+            repo_root: Repository root path.
+            agents: List of agent names to activate.
+            context: Additional context for agents.
+            file_paths: List of files to include in context.
+            model: Model to use (if None, use configured default).
+
+        Returns:
+            CLICommandResult with enhanced multi-agent prompt.
+        """
+        # Import here to avoid circular dependency
+        from ninja_coder.multi_agent import MultiAgentOrchestrator
+
+        orchestrator = MultiAgentOrchestrator(self)
+        enhanced_prompt = orchestrator.build_ultrawork_prompt(prompt, agents, context)
+
+        return self.build_command(
+            prompt=enhanced_prompt,
+            repo_root=repo_root,
+            file_paths=file_paths,
+            model=model,
+            additional_flags={"enable_multi_agent": True},
         )
 
     def parse_output(
