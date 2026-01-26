@@ -15,11 +15,12 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    import questionary
-    from questionary import Style
-    HAS_QUESTIONARY = True
+    from InquirerPy import inquirer
+    from InquirerPy.base.control import Choice
+    from InquirerPy.separator import Separator
+    HAS_INQUIRERPY = True
 except ImportError:
-    HAS_QUESTIONARY = False
+    HAS_INQUIRERPY = False
 
 
 @dataclass
@@ -383,7 +384,11 @@ def check_operator_auth(operator: Operator) -> dict[str, bool]:
 
 
 def select_operator_interactive() -> Optional[Operator]:
-    """Interactive operator selection."""
+    """Interactive operator selection with InquirerPy."""
+    if not HAS_INQUIRERPY:
+        print("\n⚠️  InquirerPy not installed. Install with: pip install InquirerPy")
+        return None
+
     print("\n" + "=" * 70)
     print("  🥷 NINJA CODER - OPERATOR SELECTION")
     print("=" * 70)
@@ -398,50 +403,48 @@ def select_operator_interactive() -> Optional[Operator]:
         print("\nInstall an operator first, then run this again.")
         return None
 
-    print("\n📦 Available Operators:\n")
-
-    for idx, op in enumerate(installed, 1):
+    # Build choices with operator info
+    choices = []
+    for op in installed:
         auth_status = check_operator_auth(op)
         auth_count = sum(auth_status.values())
 
-        print(f"{idx}. {op.name}")
-        print(f"   {op.description}")
-        print(f"   Binary: {op.binary_path}")
+        auth_providers = ", ".join([p for p, a in auth_status.items() if a]) if auth_count > 0 else "none"
 
-        if auth_status:
-            print(f"   Auth: {auth_count} provider(s) authenticated")
-            for provider, is_auth in auth_status.items():
-                status = "✓" if is_auth else "✗"
-                print(f"     {status} {provider}")
-        print()
+        display_name = f"{op.name}  •  {op.description}"
+        display_name += f"  •  Auth: {auth_providers}"
 
-    # Get selection
-    while True:
-        try:
-            choice = input(
-                f"Select operator [1-{len(installed)}] or 'q' to quit: "
-            ).strip()
-            if choice.lower() == "q":
-                return None
+        choices.append(Choice(
+            value=op.id,
+            name=display_name
+        ))
 
-            idx = int(choice) - 1
-            if 0 <= idx < len(installed):
-                selected = installed[idx]
+    try:
+        result = inquirer.select(
+            message="Select operator:",
+            choices=choices,
+            pointer="►",
+            vi_mode=False,
+        ).execute()
 
+        if result:
+            # Find selected operator
+            selected = next((op for op in installed if op.id == result), None)
+            if selected:
                 # Load models dynamically
                 print(f"\n🔄 Loading available models from {selected.name}...")
                 if selected.load_models():
-                    print(f"   ✓ Loaded {len(selected.models)} models")
+                    print(f"✓ Loaded {len(selected.models)} models\n")
                     return selected
                 else:
-                    print(f"   ✗ Failed to load models from {selected.name}")
-                    print("   Try again or select a different operator")
-                    continue
+                    print(f"✗ Failed to load models from {selected.name}")
+                    return None
 
-            print(f"Invalid choice. Please enter 1-{len(installed)}")
-        except (ValueError, KeyboardInterrupt):
-            print("\nCancelled.")
-            return None
+        return None
+
+    except KeyboardInterrupt:
+        print("\n✗ Cancelled.")
+        return None
 
 
 def select_model_interactive(operator: Operator) -> Optional[Model]:
@@ -461,26 +464,25 @@ def select_model_interactive(operator: Operator) -> Optional[Model]:
             by_provider[provider] = []
         by_provider[provider].append(model)
 
-    # Use questionary if available, otherwise fall back to number selection
-    if HAS_QUESTIONARY:
-        return _select_model_questionary(operator, by_provider, auth_status)
+    # Use InquirerPy for modern interactive selection
+    if HAS_INQUIRERPY:
+        return _select_model_inquirerpy(operator, by_provider, auth_status)
     else:
-        return _select_model_fallback(operator, by_provider, auth_status)
+        print("\n⚠️  InquirerPy not installed. Install with: pip install InquirerPy")
+        return None
 
 
-def _select_model_questionary(
+def _select_model_inquirerpy(
     operator: Operator,
     by_provider: dict,
     auth_status: dict
 ) -> Optional[Model]:
-    """Modern interactive selection using questionary with arrow keys."""
-    from questionary import Choice
-
+    """Modern interactive selection using InquirerPy with arrow keys and fuzzy search."""
     print("\n" + "=" * 70)
     print(f"  🤖 MODEL SELECTION - {operator.name}")
     print("=" * 70)
     print(f"\n📋 {len(operator.models)} models available")
-    print("   Use ↑↓ arrow keys to navigate, Enter to select, Ctrl+C to cancel\n")
+    print("   Use ↑↓ arrows, j/k, or type to filter • Enter to select • Ctrl+C to cancel\n")
 
     # Show warning if some providers not authenticated
     unauth_providers = [p for p, auth in auth_status.items() if not auth]
@@ -497,114 +499,46 @@ def _select_model_questionary(
         is_auth = auth_status.get(provider, False)
         auth_symbol = "✓" if is_auth else "✗"
 
-        # Add provider header (disabled, not selectable)
-        choices.append(Choice(
-            title=f"  {auth_symbol} {provider.upper()} ({len(models)} models)",
-            value=None,
-            disabled=True
-        ))
+        # Add provider separator
+        choices.append(Separator(f"  {auth_symbol} {provider.upper()} ({len(models)} models)"))
 
         # Add ALL models for this provider
         for model in models:
-            # Build display name
-            rec_badge = " 🌟 RECOMMENDED" if model.recommended else ""
-            display_name = f"    {model.name}{rec_badge}"
+            # Build display name with proper spacing
+            display_name = f"    {model.name}"
             if model.description:
-                display_name += f" — {model.description}"
+                display_name += f"  •  {model.description}"
 
             # Create unique value key
             choice_value = f"{provider}::{model.id}"
             model_map[choice_value] = model
 
             choices.append(Choice(
-                title=display_name,
-                value=choice_value
+                value=choice_value,
+                name=display_name
             ))
 
-    # Custom style for better visibility
-    custom_style = Style([
-        ('qmark', 'fg:#5f87ff bold'),
-        ('question', 'bold'),
-        ('pointer', 'fg:#ff5f00 bold'),
-        ('highlighted', 'fg:#5f87ff bold'),
-        ('selected', 'fg:#00d700'),
-        ('separator', 'fg:#6c6c6c'),
-        ('instruction', 'fg:#858585'),
-        ('answer', 'fg:#00d700 bold'),
-    ])
-
     try:
-        result = questionary.select(
-            "",
+        result = inquirer.select(
+            message="Select a model:",
             choices=choices,
-            style=custom_style,
-            use_shortcuts=False,
-            use_arrow_keys=True,
-            use_jk_keys=False,
-        ).ask()
+            height="70%",
+            pointer="►",
+            vi_mode=False,
+            keybindings={
+                "toggle": [],  # Disable space for toggle (not needed for select)
+            },
+        ).execute()
 
         if result and result in model_map:
-            return model_map[result]
+            selected = model_map[result]
+            print(f"\n✓ Selected: {selected.name} ({selected.id})")
+            return selected
         return None
 
     except KeyboardInterrupt:
-        print("\n Cancelled.")
+        print("\n✗ Cancelled.")
         return None
-
-
-def _select_model_fallback(
-    operator: Operator,
-    by_provider: dict,
-    auth_status: dict
-) -> Optional[Model]:
-    """Fallback number-based selection if questionary not available."""
-    print("\n" + "=" * 70)
-    print(f"  🤖 MODEL SELECTION - {operator.name}")
-    print("=" * 70)
-    print(f"\n📋 Available Models ({len(operator.models)} total):\n")
-
-    idx = 1
-    model_map = {}
-
-    for provider, models in sorted(by_provider.items()):
-        is_auth = auth_status.get(provider, False)
-        auth_symbol = "✓" if is_auth else "✗"
-        print(f"  {auth_symbol} {provider.upper()} ({len(models)} models)")
-
-        # Show ALL models in fallback mode too
-        for model in models:
-            rec = " [RECOMMENDED]" if model.recommended else ""
-            print(f"    {idx}. {model.name}{rec}")
-            if model.description:
-                print(f"       {model.description}")
-            print(f"       ID: {model.id}")
-            print()
-            model_map[idx] = model
-            idx += 1
-
-    # Show warning if some providers not authenticated
-    unauth_providers = [p for p, auth in auth_status.items() if not auth]
-    if unauth_providers:
-        print(f"⚠️  Unauthenticated providers: {', '.join(unauth_providers)}")
-        print(f"   Models from these providers may not work.\n")
-
-    # Get selection
-    while True:
-        try:
-            choice = input(
-                f"Select model [1-{len(model_map)}] or 'q' to quit: "
-            ).strip()
-            if choice.lower() == "q":
-                return None
-
-            idx = int(choice)
-            if idx in model_map:
-                return model_map[idx]
-
-            print(f"Invalid choice. Please enter 1-{len(model_map)}")
-        except (ValueError, KeyboardInterrupt):
-            print("\nCancelled.")
-            return None
 
 
 def update_configuration(operator: Operator, model: Model) -> bool:
