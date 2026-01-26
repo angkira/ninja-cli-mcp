@@ -233,71 +233,80 @@ if (require.main === module) {
 
         return content
 
-    async def main_stdio():
-        server = create_server()
-        async with stdio_server() as (read_stream, write_stream):
-            await server.run(read_stream, write_stream, server.create_initialization_options())
+    return server
 
-    async def main_http(host: str, port: int) -> None:
-        server = create_server()
-        sse = SseServerTransport("/messages")
 
-        async def handle_sse(request):
-            async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-                await server.run(streams[0], streams[1], server.create_initialization_options())
-            return Response()
+async def main_stdio():
+    server = create_server()
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
-        async def handle_messages(request):
-            try:
-                await sse.handle_post_message(request.scope, request.receive, request._send)
-            except Exception as e:
-                logger.error(f"Error handling SSE message: {e!s}", exc_info=True)
-                try:
-                    await request._send({
-                        "type": "http.response.start",
-                        "status": 500,
-                        "headers": [[b"content-type", b"application/json"]],
-                    })
-                    await request._send({
-                        "type": "http.response.body",
-                        "body": json.dumps({"error": str(e)}).encode(),
-                    })
-                except Exception:
-                    pass
 
-        async def app(scope, receive, send):
-            path = scope.get("path", "")
-            if path == "/sse":
-                request = Request(scope, receive, send)
-                await handle_sse(request)
-            elif path == "/messages" and scope.get("method") == "POST":
-                request = Request(scope, receive, send)
-                await handle_messages(request)
-            else:
-                await Response("Not Found", status_code=404)(scope, receive, send)
+async def main_http(host: str, port: int) -> None:
+    from starlette.requests import Request
+    from starlette.responses import Response
 
-        config = uvicorn.Config(app, host=host, port=port, log_level="info")
-        server_instance = uvicorn.Server(config)
-        await server_instance.serve()
+    server = create_server()
+    sse = SseServerTransport("/messages")
 
-    def run() -> None:
-        parser = argparse.ArgumentParser(description="Ninja Resources MCP Server")
-        parser.add_argument("--http", action="store_true", help="Run in HTTP mode")
-        parser.add_argument("--host", default="localhost", help="Host to bind to")
-        parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
+    async def handle_sse(request):
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            await server.run(streams[0], streams[1], server.create_initialization_options())
+        return Response()
 
-        args = parser.parse_args()
-
+    async def handle_messages(request):
         try:
-            if args.http:
-                asyncio.run(main_http(args.host, args.port))
-            else:
-                asyncio.run(main_stdio())
-        except KeyboardInterrupt:
-            pass
+            await sse.handle_post_message(request.scope, request.receive, request._send)
         except Exception as e:
-            logger.error(f"Fatal error: {e!s}", exc_info=True)
-            sys.exit(1)
+            logger.error(f"Error handling SSE message: {e!s}", exc_info=True)
+            try:
+                await request._send({
+                    "type": "http.response.start",
+                    "status": 500,
+                    "headers": [[b"content-type", b"application/json"]],
+                })
+                await request._send({
+                    "type": "http.response.body",
+                    "body": json.dumps({"error": str(e)}).encode(),
+                })
+            except Exception:
+                pass
+
+    async def app(scope, receive, send):
+        path = scope.get("path", "")
+        if path == "/sse":
+            request = Request(scope, receive, send)
+            await handle_sse(request)
+        elif path == "/messages" and scope.get("method") == "POST":
+            request = Request(scope, receive, send)
+            await handle_messages(request)
+        else:
+            await Response("Not Found", status_code=404)(scope, receive, send)
+
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    server_instance = uvicorn.Server(config)
+    await server_instance.serve()
+
+
+def run() -> None:
+    """Run the server with command-line argument parsing."""
+    parser = argparse.ArgumentParser(description="Ninja Resources MCP Server")
+    parser.add_argument("--http", action="store_true", help="Run in HTTP/SSE mode (default: stdio)")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8106, help="Port to bind to (default: 8106)")
+
+    args = parser.parse_args()
+
+    try:
+        if args.http:
+            asyncio.run(main_http(args.host, args.port))
+        else:
+            asyncio.run(main_stdio())
+    except KeyboardInterrupt:
+        logger.info("Server shutting down...")
+    except Exception as e:
+        logger.error(f"Fatal error: {e!s}", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
