@@ -1,16 +1,16 @@
 """
 Interactive model selector for ninja-coder.
 
-Allows selecting:
-1. Operator (opencode, aider, gemini-cli, etc.)
-2. Model based on operator capabilities
+Dynamically detects operators and queries their available models.
+NO hardcoded model lists - everything is queried from the actual operators.
 """
 
 import json
 import os
+import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -35,11 +35,7 @@ class Operator:
     binary_name: str
     description: str
     binary_path: Optional[str] = None
-    models: list[Model] = None
-
-    def __post_init__(self):
-        if self.models is None:
-            self.models = []
+    models: list[Model] = field(default_factory=list)
 
     @property
     def is_installed(self) -> bool:
@@ -54,165 +50,293 @@ class Operator:
             return True
         return False
 
+    def load_models(self) -> bool:
+        """Load available models from this operator."""
+        if not self.is_installed:
+            return False
 
-# Available operators with their models
+        if self.id == "opencode":
+            return self._load_opencode_models()
+        elif self.id == "aider":
+            return self._load_aider_models()
+        elif self.id == "gemini":
+            return self._load_gemini_models()
+
+        return False
+
+    def _load_opencode_models(self) -> bool:
+        """Load models from OpenCode CLI."""
+        try:
+            result = subprocess.run(
+                [self.binary_path, "models"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode != 0:
+                return False
+
+            # Parse model IDs from output
+            model_ids = []
+            for line in result.stdout.strip().split("\n"):
+                line = line.strip()
+                # Skip INFO lines and empty lines
+                if not line or line.startswith("INFO"):
+                    continue
+                # Model ID format: provider/model-name
+                if "/" in line:
+                    model_ids.append(line)
+
+            # Group by provider and create Model objects
+            by_provider = {}
+            for model_id in model_ids:
+                provider = model_id.split("/")[0]
+                if provider not in by_provider:
+                    by_provider[provider] = []
+                by_provider[provider].append(model_id)
+
+            # Convert to Model objects with nice names
+            recommended_models = {
+                "anthropic/claude-sonnet-4-5-20250929",
+                "anthropic/claude-3-7-sonnet-latest",
+                "google/gemini-2.0-flash",
+                "openai/gpt-4o",
+            }
+
+            for provider, ids in sorted(by_provider.items()):
+                for model_id in sorted(ids):
+                    name = self._format_model_name(model_id)
+                    desc = self._get_model_description(model_id)
+                    recommended = model_id in recommended_models
+
+                    self.models.append(
+                        Model(
+                            id=model_id,
+                            name=name,
+                            description=desc,
+                            provider=provider,
+                            recommended=recommended,
+                        )
+                    )
+
+            return len(self.models) > 0
+
+        except Exception as e:
+            print(f"Error loading OpenCode models: {e}")
+            return False
+
+    def _load_aider_models(self) -> bool:
+        """Load models from Aider CLI via --list-models."""
+        try:
+            # Query a few major providers
+            all_models = []
+            for query in ["claude", "gpt", "gemini", "deepseek", "qwen"]:
+                result = subprocess.run(
+                    [self.binary_path, "--list-models", query],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if result.returncode == 0:
+                    # Parse model IDs from output
+                    for line in result.stdout.strip().split("\n"):
+                        line = line.strip()
+                        # Look for lines starting with "- provider/model"
+                        if line.startswith("- ") and "/" in line:
+                            model_id = line[2:].strip()  # Remove "- " prefix
+                            if model_id not in all_models:
+                                all_models.append(model_id)
+
+            # Group by provider
+            by_provider = {}
+            for model_id in all_models:
+                if "/" in model_id:
+                    provider = model_id.split("/")[0]
+                    if provider not in by_provider:
+                        by_provider[provider] = []
+                    by_provider[provider].append(model_id)
+
+            # Recommended models for Aider (via OpenRouter)
+            recommended_models = {
+                "anthropic/claude-sonnet-4-5-20250929",
+                "anthropic/claude-3-7-sonnet-latest",
+                "openai/gpt-4o",
+                "google/gemini-2.0-flash",
+            }
+
+            for provider, ids in sorted(by_provider.items()):
+                for model_id in sorted(ids):
+                    name = self._format_model_name(model_id)
+                    desc = f"Via OpenRouter"
+                    recommended = model_id in recommended_models
+
+                    self.models.append(
+                        Model(
+                            id=model_id,
+                            name=name,
+                            description=desc,
+                            provider=provider,
+                            recommended=recommended,
+                        )
+                    )
+
+            return len(self.models) > 0
+
+        except Exception as e:
+            print(f"Error loading Aider models: {e}")
+            return False
+
+    def _load_gemini_models(self) -> bool:
+        """Load models for Gemini CLI."""
+        # Gemini CLI uses Google models directly
+        # Query a reasonable default list based on Google's API
+        try:
+            # Try to query from OpenCode if available
+            opencode = shutil.which("opencode")
+            if opencode:
+                result = subprocess.run(
+                    [opencode, "models", "google"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if result.returncode == 0:
+                    for line in result.stdout.strip().split("\n"):
+                        line = line.strip()
+                        if line.startswith("google/") and not line.startswith("INFO"):
+                            # Remove google/ prefix for Gemini CLI
+                            model_id = line.replace("google/", "")
+                            name = self._format_model_name(model_id)
+                            desc = "Google Gemini model"
+                            recommended = "2.0-flash" in model_id or "2.5" in model_id
+
+                            self.models.append(
+                                Model(
+                                    id=model_id,
+                                    name=name,
+                                    description=desc,
+                                    provider="google",
+                                    recommended=recommended,
+                                )
+                            )
+
+            return len(self.models) > 0
+
+        except Exception:
+            # Fallback to a minimal list if query fails
+            fallback_models = [
+                ("gemini-2.5-flash", "Gemini 2.5 Flash", "Latest fast model", True),
+                ("gemini-2.0-flash", "Gemini 2.0 Flash", "Experimental flash model", False),
+                ("gemini-1.5-pro", "Gemini 1.5 Pro", "Balanced model", False),
+                ("gemini-1.5-flash", "Gemini 1.5 Flash", "Fast model", False),
+            ]
+
+            for model_id, name, desc, recommended in fallback_models:
+                self.models.append(
+                    Model(
+                        id=model_id,
+                        name=name,
+                        description=desc,
+                        provider="google",
+                        recommended=recommended,
+                    )
+                )
+
+            return True
+
+    def _format_model_name(self, model_id: str) -> str:
+        """Format a model ID into a human-readable name."""
+        # Remove provider prefix
+        name = model_id.split("/")[-1]
+
+        # Replace hyphens with spaces and title case
+        name = name.replace("-", " ").title()
+
+        # Clean up common patterns
+        name = re.sub(r"\d{8}", "", name)  # Remove date stamps
+        name = re.sub(r"V\d+:\d+", "", name)  # Remove version suffixes
+        name = re.sub(r"@\d+", "", name)  # Remove @ version
+        name = re.sub(r"\s+", " ", name).strip()  # Clean up spaces
+
+        return name
+
+    def _get_model_description(self, model_id: str) -> str:
+        """Get a description for a model based on its ID."""
+        model_lower = model_id.lower()
+
+        # Claude models
+        if "claude" in model_lower:
+            if "sonnet-4" in model_lower or "sonnet-3-7" in model_lower:
+                return "Latest Claude - Balanced performance"
+            elif "opus-4" in model_lower:
+                return "Most powerful Claude model"
+            elif "haiku-4" in model_lower or "haiku-3-5" in model_lower:
+                return "Fast & cost-effective"
+            elif "sonnet-3-5" in model_lower:
+                return "Previous generation - Fast"
+            else:
+                return "Claude AI model"
+
+        # Gemini models
+        elif "gemini" in model_lower:
+            if "2.5" in model_lower or "2.0" in model_lower:
+                if "flash" in model_lower:
+                    return "Latest fast model"
+                else:
+                    return "Latest balanced model"
+            elif "1.5-pro" in model_lower:
+                return "Balanced model"
+            elif "1.5-flash" in model_lower:
+                return "Fast model"
+            else:
+                return "Google Gemini model"
+
+        # OpenAI models
+        elif "gpt" in model_lower:
+            if "4o" in model_lower:
+                return "Latest OpenAI - Multimodal"
+            elif "4-turbo" in model_lower or "4.1" in model_lower:
+                return "Fast GPT-4 variant"
+            elif "5" in model_lower:
+                return "Next-gen reasoning model"
+            elif "o1" in model_lower or "o3" in model_lower:
+                return "OpenAI reasoning model"
+            else:
+                return "OpenAI model"
+
+        # DeepSeek
+        elif "deepseek" in model_lower:
+            return "Specialized coding model"
+
+        # Qwen
+        elif "qwen" in model_lower:
+            return "Open source coding model"
+
+        return "Available model"
+
+
+# Define available operators (models will be loaded dynamically)
 OPERATORS = [
     Operator(
         id="opencode",
         name="OpenCode",
         binary_name="opencode",
-        description="Multi-provider CLI (75+ providers, native z.ai support)",
-        models=[
-            # Anthropic
-            Model(
-                "anthropic/claude-sonnet-4-5",
-                "Claude Sonnet 4.5",
-                "Latest Claude - Balanced performance & cost",
-                "anthropic",
-                recommended=True,
-            ),
-            Model(
-                "anthropic/claude-opus-4-5",
-                "Claude Opus 4.5",
-                "Most powerful Claude model",
-                "anthropic",
-            ),
-            Model(
-                "anthropic/claude-sonnet-3-5",
-                "Claude Sonnet 3.5",
-                "Previous generation - Fast & capable",
-                "anthropic",
-            ),
-            Model(
-                "anthropic/claude-haiku-3-5",
-                "Claude Haiku 3.5",
-                "Fast & cost-effective for simple tasks",
-                "anthropic",
-            ),
-            # Google
-            Model(
-                "google/gemini-2.0-flash-exp",
-                "Gemini 2.0 Flash",
-                "Fast, experimental, very cost-effective",
-                "google",
-            ),
-            Model(
-                "google/gemini-1.5-pro",
-                "Gemini 1.5 Pro",
-                "Balanced Google model",
-                "google",
-            ),
-            Model(
-                "google/gemini-1.5-flash",
-                "Gemini 1.5 Flash",
-                "Fast Google model",
-                "google",
-            ),
-            # OpenAI
-            Model(
-                "openai/gpt-4o",
-                "GPT-4o",
-                "Latest OpenAI model - Multimodal",
-                "openai",
-            ),
-            Model(
-                "openai/gpt-4-turbo",
-                "GPT-4 Turbo",
-                "Fast GPT-4 variant",
-                "openai",
-            ),
-            Model(
-                "openai/o1-preview",
-                "o1-preview",
-                "Reasoning model - Slow but deep",
-                "openai",
-            ),
-            # GitHub
-            Model(
-                "github/gpt-4o",
-                "GPT-4o (via GitHub)",
-                "Access via GitHub Copilot",
-                "github",
-            ),
-        ],
+        description="Multi-provider CLI - queries models dynamically",
     ),
     Operator(
         id="aider",
         name="Aider",
         binary_name="aider",
-        description="OpenRouter-based CLI (requires OPENROUTER_API_KEY)",
-        models=[
-            Model(
-                "anthropic/claude-sonnet-4-5",
-                "Claude Sonnet 4.5",
-                "Latest Claude via OpenRouter",
-                "anthropic",
-                recommended=True,
-            ),
-            Model(
-                "anthropic/claude-opus-4-5",
-                "Claude Opus 4.5",
-                "Most powerful via OpenRouter",
-                "anthropic",
-            ),
-            Model(
-                "anthropic/claude-sonnet-3.5",
-                "Claude Sonnet 3.5",
-                "Previous generation via OpenRouter",
-                "anthropic",
-            ),
-            Model(
-                "google/gemini-2.0-flash-exp",
-                "Gemini 2.0 Flash",
-                "Fast Google model via OpenRouter",
-                "google",
-            ),
-            Model(
-                "openai/gpt-4o",
-                "GPT-4o",
-                "Latest OpenAI via OpenRouter",
-                "openai",
-            ),
-            Model(
-                "deepseek/deepseek-coder",
-                "DeepSeek Coder",
-                "Specialized coding model",
-                "deepseek",
-            ),
-            Model(
-                "qwen/qwen-2.5-coder-32b-instruct",
-                "Qwen 2.5 Coder 32B",
-                "Open source coding model",
-                "qwen",
-            ),
-        ],
+        description="OpenRouter-based CLI - requires OPENROUTER_API_KEY",
     ),
     Operator(
         id="gemini",
         name="Gemini CLI",
         binary_name="gemini",
         description="Google Gemini native CLI",
-        models=[
-            Model(
-                "gemini-2.0-flash-exp",
-                "Gemini 2.0 Flash",
-                "Latest experimental - Very fast",
-                "google",
-                recommended=True,
-            ),
-            Model(
-                "gemini-1.5-pro",
-                "Gemini 1.5 Pro",
-                "Balanced performance",
-                "google",
-            ),
-            Model(
-                "gemini-1.5-flash",
-                "Gemini 1.5 Flash",
-                "Fast & cost-effective",
-                "google",
-            ),
-        ],
     ),
 ]
 
@@ -234,7 +358,7 @@ def check_operator_auth(operator: Operator) -> dict[str, bool]:
         # Check opencode auth status
         try:
             result = subprocess.run(
-                ["opencode", "auth", "list"],
+                [operator.binary_path, "auth", "list"],
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -297,13 +421,25 @@ def select_operator_interactive() -> Optional[Operator]:
     # Get selection
     while True:
         try:
-            choice = input(f"Select operator [1-{len(installed)}] or 'q' to quit: ").strip()
+            choice = input(
+                f"Select operator [1-{len(installed)}] or 'q' to quit: "
+            ).strip()
             if choice.lower() == "q":
                 return None
 
             idx = int(choice) - 1
             if 0 <= idx < len(installed):
-                return installed[idx]
+                selected = installed[idx]
+
+                # Load models dynamically
+                print(f"\n🔄 Loading available models from {selected.name}...")
+                if selected.load_models():
+                    print(f"   ✓ Loaded {len(selected.models)} models")
+                    return selected
+                else:
+                    print(f"   ✗ Failed to load models from {selected.name}")
+                    print("   Try again or select a different operator")
+                    continue
 
             print(f"Invalid choice. Please enter 1-{len(installed)}")
         except (ValueError, KeyboardInterrupt):
@@ -317,7 +453,11 @@ def select_model_interactive(operator: Operator) -> Optional[Model]:
     print(f"  🤖 MODEL SELECTION - {operator.name}")
     print("=" * 70)
 
-    # Get auth status to filter models
+    if not operator.models:
+        print("\n❌ No models available for this operator.")
+        return None
+
+    # Get auth status to show which providers are authenticated
     auth_status = check_operator_auth(operator)
 
     # Group models by provider
@@ -328,7 +468,7 @@ def select_model_interactive(operator: Operator) -> Optional[Model]:
             by_provider[provider] = []
         by_provider[provider].append(model)
 
-    print("\n📋 Available Models:\n")
+    print(f"\n📋 Available Models ({len(operator.models)} total):\n")
 
     idx = 1
     model_map = {}
@@ -338,21 +478,33 @@ def select_model_interactive(operator: Operator) -> Optional[Model]:
         is_auth = auth_status.get(provider, False)
         auth_symbol = "✓" if is_auth else "✗"
 
-        print(f"  {auth_symbol} {provider.upper()}")
+        print(f"  {auth_symbol} {provider.upper()} ({len(models)} models)")
 
-        for model in models:
+        # Show only recommended models + first few, or all if < 10
+        display_models = [m for m in models if m.recommended] or models[:5]
+
+        for model in display_models:
             rec = " [RECOMMENDED]" if model.recommended else ""
             print(f"    {idx}. {model.name}{rec}")
-            print(f"       {model.description}")
+            if model.description:
+                print(f"       {model.description}")
             print(f"       ID: {model.id}")
             print()
             model_map[idx] = model
             idx += 1
 
+        # Show count of hidden models
+        hidden_count = len(models) - len(display_models)
+        if hidden_count > 0:
+            print(f"    ... and {hidden_count} more {provider} models")
+            print()
+
     # Show warning if some providers not authenticated
     unauth_providers = [p for p, auth in auth_status.items() if not auth]
     if unauth_providers:
-        print(f"⚠️  Some providers not authenticated: {', '.join(unauth_providers)}")
+        print(
+            f"⚠️  Unauthenticated providers: {', '.join(unauth_providers)}"
+        )
         print(f"   Models from these providers may not work.\n")
 
     # Get selection
@@ -391,22 +543,21 @@ def update_configuration(operator: Operator, model: Model) -> bool:
             lines = env_file.read_text().splitlines()
 
         # Update or add NINJA_CODE_BIN and NINJA_MODEL
-        updated = False
+        updated_bin = False
+        updated_model = False
+
         for i, line in enumerate(lines):
             if line.startswith("NINJA_CODE_BIN="):
                 lines[i] = f"NINJA_CODE_BIN={operator.binary_path}"
-                updated = True
+                updated_bin = True
             elif line.startswith("NINJA_MODEL="):
                 lines[i] = f"NINJA_MODEL={model.id}"
-                updated = True
+                updated_model = True
 
-        if not updated:
-            lines.extend(
-                [
-                    f"NINJA_CODE_BIN={operator.binary_path}",
-                    f"NINJA_MODEL={model.id}",
-                ]
-            )
+        if not updated_bin:
+            lines.append(f"NINJA_CODE_BIN={operator.binary_path}")
+        if not updated_model:
+            lines.append(f"NINJA_MODEL={model.id}")
 
         # Write back
         env_file.write_text("\n".join(lines) + "\n")
@@ -428,7 +579,9 @@ def update_configuration(operator: Operator, model: Model) -> bool:
         )
         if result.returncode == 0:
             print("   ⚠️  Claude Code is running!")
-            print("   Configuration will be updated, but you need to restart Claude Code")
+            print(
+                "   Configuration will be updated, but restart Claude Code"
+            )
             print("   for changes to take effect.")
     except Exception:
         pass
@@ -479,7 +632,8 @@ def print_summary(operator: Operator, model: Model):
     print(f"\nModel: {model.name}")
     print(f"  ID: {model.id}")
     print(f"  Provider: {model.provider}")
-    print(f"  {model.description}")
+    if model.description:
+        print(f"  {model.description}")
 
     print("\n📝 Next Steps:")
     print("  1. Restart Claude Code (if running)")
