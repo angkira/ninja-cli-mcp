@@ -160,43 +160,12 @@ async def call_tool(name: str, arguments: dict) -> Any:
 
 async def main_stdio():
     """Run the MCP server over stdio."""
-    # Server instructions
-    server.instructions = """
-Prompts Module - Manage reusable prompt templates and multi-step workflows.
-
-## Available Tools
-
-1. **prompt_registry** - Manage prompt templates
-   - list: List all available prompts
-   - get: Retrieve a specific prompt
-   - create: Create a new prompt
-   - delete: Delete a prompt
-
-2. **prompt_suggest** - Get relevant prompt suggestions
-   - Analyze context and suggest matching prompts
-   - Based on task, language, file_type, etc.
-
-3. **prompt_chain** - Execute multi-step workflows
-   - Compose prompts in sequence
-   - Pass outputs from one step to the next
-   - Use {{prev.step_name}} syntax for output references
-
-## Built-in Prompts
-
-- code-review-v1: Professional code review
-- bug-debugging-v1: Systematic bug investigation
-- feature-implementation-v1: Complete feature workflow
-- architecture-design-v1: System architecture design
-
-## Example Usage
-
-1. Suggest prompts: prompt_suggest({context: {task: "code-review", language: "python"}})
-2. Get a prompt: prompt_registry({action: "get", prompt_id: "code-review-v1"})
-3. Execute chain: prompt_chain({action: "execute", steps: [...]})
-"""
-
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.instructions)
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options()
+        )
 
 
 async def main_http(host: str, port: int) -> None:
@@ -206,46 +175,16 @@ async def main_http(host: str, port: int) -> None:
     from starlette.requests import Request
     from starlette.responses import Response
 
-    server.instructions = """
-Prompts Module - Manage reusable prompt templates and multi-step workflows.
-
-## Available Tools
-
-1. **prompt_registry** - Manage prompt templates
-   - list: List all available prompts
-   - get: Retrieve a specific prompt
-   - create: Create a new prompt
-   - delete: Delete a prompt
-
-2. **prompt_suggest** - Get relevant prompt suggestions
-   - Analyze context and suggest matching prompts
-   - Based on task, language, file_type, etc.
-
-3. **prompt_chain** - Execute multi-step workflows
-   - Compose prompts in sequence
-   - Pass outputs from one step to the next
-   - Use {{prev.step_name}} syntax for output references
-
-## Built-in Prompts
-
-- code-review-v1: Professional code review
-- bug-debugging-v1: Systematic bug investigation
-- feature-implementation-v1: Complete feature workflow
-- architecture-design-v1: System architecture design
-
-## Example Usage
-
-1. Suggest prompts: prompt_suggest({context: {task: "code-review", language: "python"}})
-2. Get a prompt: prompt_registry({action: "get", prompt_id: "code-review-v1"})
-3. Execute chain: prompt_chain({action: "execute", steps: [...]})
-"""
-
     sse = SseServerTransport("/messages")
 
     async def handle_sse(request: Request):
         """Handle SSE connection."""
         async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-            await server.run(streams[0], streams[1], server.instructions)
+            await server.run(
+                streams[0],
+                streams[1],
+                server.create_initialization_options()
+            )
         return Response()
 
     async def handle_messages(request: Request):
