@@ -26,7 +26,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from ninja_coder.model_selector import ModelSelector
 from ninja_coder.models import (
@@ -34,9 +34,8 @@ from ninja_coder.models import (
     PlanStep,
     TaskComplexity,
 )
-from ninja_coder.sessions import SessionManager
-from pydantic import Field
 from ninja_coder.safety import validate_task_safety
+from ninja_coder.sessions import SessionManager
 from ninja_coder.strategies import CLIStrategyRegistry
 from ninja_common.defaults import (
     DEFAULT_CODE_BIN,
@@ -490,7 +489,7 @@ class NinjaDriver:
 
         logger.info(f"Initialized NinjaDriver with {self._strategy.name} strategy")
         self.structured_logger.info(
-            f"Driver initialized",
+            "Driver initialized",
             cli_name=self._strategy.name,
             model=self.config.model,
         )
@@ -633,8 +632,8 @@ class NinjaDriver:
             fanout = 1
 
         # Check environment overrides
-        prefer_cost = os.environ.get("NINJA_PREFER_COST", "false").lower() == "true"
-        prefer_quality = os.environ.get("NINJA_PREFER_QUALITY", "false").lower() == "true"
+        os.environ.get("NINJA_PREFER_COST", "false").lower() == "true"
+        os.environ.get("NINJA_PREFER_QUALITY", "false").lower() == "true"
 
         # Select model using model selector directly
         model_selector = ModelSelector(default_model=self.config.model)
@@ -1437,7 +1436,7 @@ class NinjaDriver:
                                 task_logger.debug(
                                     f"Activity: {stream_name} received {len(chunk)} bytes"
                                 )
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             # No data yet, check inactivity timeout
                             elapsed = asyncio.get_event_loop().time() - last_activity
                             total_elapsed = asyncio.get_event_loop().time() - start_time

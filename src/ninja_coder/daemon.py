@@ -35,6 +35,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+
 try:
     import psutil
 except ImportError:
@@ -42,6 +43,7 @@ except ImportError:
 
 from ninja_common.logging_utils import get_logger
 from ninja_common.path_utils import get_cache_dir
+
 
 logger = get_logger(__name__)
 

@@ -610,7 +610,9 @@ class SecretaryToolExecutor:
             doc_path = doc_paths.get(request.doc_type)
             if not doc_path:
                 return UpdateDocResult(
-                    status="error", doc_path="", changes_made=f"Unknown doc type: {request.doc_type}"
+                    status="error",
+                    doc_path="",
+                    changes_made=f"Unknown doc type: {request.doc_type}",
                 )
 
             full_path = Path(doc_path)
@@ -637,9 +639,7 @@ class SecretaryToolExecutor:
             with full_path.open("w", encoding="utf-8") as f:
                 f.write(new_content)
 
-            return UpdateDocResult(
-                status="ok", doc_path=str(full_path), changes_made=changes
-            )
+            return UpdateDocResult(status="ok", doc_path=str(full_path), changes_made=changes)
 
         except Exception as e:
             logger.error(f"Doc update failed for client {client_id}: {e}")

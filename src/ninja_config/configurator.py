@@ -2,16 +2,15 @@
 Interactive configurator for managing API keys, providers, and settings.
 """
 
-import json
-import os
 import subprocess
 from pathlib import Path
-from typing import Optional
+
 
 try:
     from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
     from InquirerPy.separator import Separator
+
     HAS_INQUIRERPY = True
 except ImportError:
     HAS_INQUIRERPY = False
@@ -78,16 +77,23 @@ class NinjaConfigurator:
             elif action == "reset":
                 self._reset_config()
 
-    def _show_main_menu(self) -> Optional[str]:
+    def _show_main_menu(self) -> str | None:
         """Show main configuration menu."""
         print("\n" + "=" * 70)
         print("  ⚙️  NINJA CONFIGURATION MANAGER")
         print("=" * 70 + "\n")
 
         choices = [
-            Choice(value="api_keys", name="🔑 Manage API Keys  •  Add/update OpenRouter, Perplexity, etc"),
-            Choice(value="operators", name="🎯 Configure Operators  •  Set up Aider, OpenCode, Gemini"),
-            Choice(value="providers", name="🌐 Manage Providers  •  Authenticate OpenCode providers"),
+            Choice(
+                value="api_keys",
+                name="🔑 Manage API Keys  •  Add/update OpenRouter, Perplexity, etc",
+            ),
+            Choice(
+                value="operators", name="🎯 Configure Operators  •  Set up Aider, OpenCode, Gemini"
+            ),
+            Choice(
+                value="providers", name="🌐 Manage Providers  •  Authenticate OpenCode providers"
+            ),
             Choice(value="search", name="🔍 Search Settings  •  Configure research provider"),
             Separator(),
             Choice(value="show", name="📋 Show Configuration  •  View current settings"),
@@ -111,10 +117,30 @@ class NinjaConfigurator:
         print("=" * 70 + "\n")
 
         keys = [
-            ("OPENROUTER_API_KEY", "OpenRouter", "https://openrouter.ai/keys", "For Aider - OpenRouter API key"),
-            ("PERPLEXITY_API_KEY", "Perplexity AI", "https://www.perplexity.ai/settings/api", "For researcher - best research quality"),
-            ("SERPER_API_KEY", "Serper/Google", "https://serper.dev", "For researcher - Google search API"),
-            ("GEMINI_API_KEY", "Google Gemini", "https://makersuite.google.com/app/apikey", "For Gemini CLI operator"),
+            (
+                "OPENROUTER_API_KEY",
+                "OpenRouter",
+                "https://openrouter.ai/keys",
+                "For Aider - OpenRouter API key",
+            ),
+            (
+                "PERPLEXITY_API_KEY",
+                "Perplexity AI",
+                "https://www.perplexity.ai/settings/api",
+                "For researcher - best research quality",
+            ),
+            (
+                "SERPER_API_KEY",
+                "Serper/Google",
+                "https://serper.dev",
+                "For researcher - Google search API",
+            ),
+            (
+                "GEMINI_API_KEY",
+                "Google Gemini",
+                "https://makersuite.google.com/app/apikey",
+                "For Gemini CLI operator",
+            ),
         ]
 
         # Show current status
@@ -127,7 +153,10 @@ class NinjaConfigurator:
 
         # Select which key to configure
         choices = [
-            Choice(value=key, name=f"{name:20} • {desc}  [{self._get_masked_value(self.config.get(key, ''))}]")
+            Choice(
+                value=key,
+                name=f"{name:20} • {desc}  [{self._get_masked_value(self.config.get(key, ''))}]",
+            )
             for key, name, _, desc in keys
         ]
         choices.append(Separator())
@@ -200,10 +229,7 @@ class NinjaConfigurator:
         print()
 
         # Select operator
-        choices = [
-            Choice(value=cmd, name=f"{name:20} • {desc}")
-            for cmd, name, desc in operators
-        ]
+        choices = [Choice(value=cmd, name=f"{name:20} • {desc}") for cmd, name, desc in operators]
         choices.append(Separator())
         choices.append(Choice(value=None, name="← Back"))
 
@@ -256,7 +282,7 @@ class NinjaConfigurator:
         choices = [
             Choice(
                 value=cmd,
-                name=f"{name:25} • {'✓ Authenticated' if provider in authenticated else '✗ Not authenticated'}"
+                name=f"{name:25} • {'✓ Authenticated' if provider in authenticated else '✗ Not authenticated'}",
             )
             for provider, name, cmd in providers
         ]
@@ -322,9 +348,15 @@ class NinjaConfigurator:
 
         # Group by category
         api_keys = {k: v for k, v in self.config.items() if "API_KEY" in k}
-        operators = {k: v for k, v in self.config.items() if k.startswith("NINJA_CODE") or k == "NINJA_MODEL"}
+        operators = {
+            k: v for k, v in self.config.items() if k.startswith("NINJA_CODE") or k == "NINJA_MODEL"
+        }
         search = {k: v for k, v in self.config.items() if "SEARCH" in k}
-        other = {k: v for k, v in self.config.items() if k not in api_keys and k not in operators and k not in search}
+        other = {
+            k: v
+            for k, v in self.config.items()
+            if k not in api_keys and k not in operators and k not in search
+        }
 
         if api_keys:
             print("🔑 API Keys:")
@@ -355,7 +387,9 @@ class NinjaConfigurator:
     def _reset_config(self) -> None:
         """Reset configuration."""
         if not HAS_INQUIRERPY:
-            response = input("\n⚠️  This will delete all configuration. Continue? [y/N]: ").strip().lower()
+            response = (
+                input("\n⚠️  This will delete all configuration. Continue? [y/N]: ").strip().lower()
+            )
             confirm = response == "y"
         else:
             confirm = inquirer.confirm(
@@ -403,4 +437,5 @@ def run_configurator() -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(run_configurator())

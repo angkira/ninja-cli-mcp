@@ -21,21 +21,25 @@ import httpx
 
 from ninja_common.config_manager import ConfigManager
 
+
 # Import ninja_config modules if available
 try:
     from ninja_config.model_selector import run_interactive_selector
+
     HAS_MODEL_SELECTOR = True
 except ImportError:
     HAS_MODEL_SELECTOR = False
 
 try:
     from ninja_config.installer import run_installer
+
     HAS_INSTALLER = True
 except ImportError:
     HAS_INSTALLER = False
 
 try:
     from ninja_config.configurator import run_configurator
+
     HAS_CONFIGURATOR = True
 except ImportError:
     HAS_CONFIGURATOR = False

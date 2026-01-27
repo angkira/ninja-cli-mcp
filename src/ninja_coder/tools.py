@@ -1048,9 +1048,7 @@ class ToolExecutor:
                 "task_type": analysis.task_type,
                 "estimated_files": analysis.estimated_files,
             }
-            enhanced_prompt = orchestrator.build_ultrawork_prompt(
-                request.task, agents, context
-            )
+            enhanced_prompt = orchestrator.build_ultrawork_prompt(request.task, agents, context)
 
             # Build instruction
             builder = InstructionBuilder(request.repo_root, mode=ExecutionMode.QUICK)

@@ -1,6 +1,5 @@
 """Pydantic models for the resources module."""
 
-
 from typing import Literal
 
 from pydantic import BaseModel, Field

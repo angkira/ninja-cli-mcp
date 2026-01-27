@@ -11,8 +11,12 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +277,7 @@ class StructuredLogger:
         skipped = 0
 
         try:
-            with open(self.log_file, "r") as f:
+            with open(self.log_file) as f:
                 for line in f:
                     try:
                         entry = json.loads(line)
@@ -328,7 +332,7 @@ class StructuredLogger:
         count = 0
 
         try:
-            with open(self.log_file, "r") as f:
+            with open(self.log_file) as f:
                 for line in f:
                     try:
                         entry = json.loads(line)
@@ -362,9 +366,7 @@ class StructuredLogger:
         """
         return self.query_logs(level="ERROR", limit=limit)
 
-    def get_session_logs(
-        self, session_id: str, limit: int = 100
-    ) -> list[dict[str, Any]]:
+    def get_session_logs(self, session_id: str, limit: int = 100) -> list[dict[str, Any]]:
         """Get all logs for a specific session.
 
         Args:
@@ -393,8 +395,7 @@ class StructuredLogger:
                 redacted.append("***REDACTED***")
                 redact_next = False
             elif any(
-                sensitive in arg.lower()
-                for sensitive in ["api-key", "password", "token", "secret"]
+                sensitive in arg.lower() for sensitive in ["api-key", "password", "token", "secret"]
             ):
                 if "=" in arg:
                     # Handle --api-key=value format

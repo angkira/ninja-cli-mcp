@@ -7,7 +7,6 @@ generating comparison reports.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,6 +15,7 @@ from typing import Any
 from ninja_coder.driver import InstructionBuilder, NinjaConfig, NinjaDriver
 from ninja_coder.models import ExecutionMode
 from ninja_common.logging_utils import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -208,9 +208,7 @@ class BenchmarkRunner:
             for cli_tool in cli_tools:
                 for model in models:
                     logger.info(f"  Testing {cli_tool} with {model}")
-                    result = await self.run_benchmark(
-                        task, cli_tool, model, repo_root
-                    )
+                    result = await self.run_benchmark(task, cli_tool, model, repo_root)
                     task_results.append(result)
 
             results[task.id] = task_results

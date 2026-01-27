@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from ninja_common.logging_utils import get_logger
 
+
 if TYPE_CHECKING:
     from ninja_coder.strategies.opencode_strategy import OpenCodeStrategy
 
@@ -217,9 +218,7 @@ class MultiAgentOrchestrator:
 
         return "\n".join(prompt_parts)
 
-    def analyze_task(
-        self, prompt: str, context_paths: list[str] | None = None
-    ) -> TaskAnalysis:
+    def analyze_task(self, prompt: str, context_paths: list[str] | None = None) -> TaskAnalysis:
         """Analyze task to determine complexity and requirements.
 
         Args:

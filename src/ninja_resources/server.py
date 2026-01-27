@@ -169,9 +169,7 @@ def create_server() -> Server:
                 return [
                     TextContent(
                         type="text",
-                        text=json.dumps(
-                            {"error": f"Unknown tool: {name}"}
-                        ),
+                        text=json.dumps({"error": f"Unknown tool: {name}"}),
                     )
                 ]
 
@@ -218,7 +216,7 @@ if __name__ == "__main__":
     main()
 """
         elif uri == "ninja://templates/javascript":
-            content = '''#!/usr/bin/env node
+            content = """#!/usr/bin/env node
 
 function main() {
     console.log("Hello from JavaScript template!");
@@ -227,7 +225,7 @@ function main() {
 if (require.main === module) {
     main();
 }
-'''
+"""
         else:
             raise ValueError(f"Unknown resource: {uri}")
 
@@ -260,15 +258,19 @@ async def main_http(host: str, port: int) -> None:
         except Exception as e:
             logger.error(f"Error handling SSE message: {e!s}", exc_info=True)
             try:
-                await request._send({
-                    "type": "http.response.start",
-                    "status": 500,
-                    "headers": [[b"content-type", b"application/json"]],
-                })
-                await request._send({
-                    "type": "http.response.body",
-                    "body": json.dumps({"error": str(e)}).encode(),
-                })
+                await request._send(
+                    {
+                        "type": "http.response.start",
+                        "status": 500,
+                        "headers": [[b"content-type", b"application/json"]],
+                    }
+                )
+                await request._send(
+                    {
+                        "type": "http.response.body",
+                        "body": json.dumps({"error": str(e)}).encode(),
+                    }
+                )
             except Exception:
                 pass
 

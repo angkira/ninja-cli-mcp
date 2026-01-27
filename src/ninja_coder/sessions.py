@@ -11,10 +11,14 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ninja_common.logging_utils import get_logger
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 logger = get_logger(__name__)
 
@@ -60,9 +64,7 @@ class Session:
     messages: list[SessionMessage] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def add_message(
-        self, role: str, content: str, metadata: dict[str, Any] | None = None
-    ) -> None:
+    def add_message(self, role: str, content: str, metadata: dict[str, Any] | None = None) -> None:
         """Add message to session.
 
         Args:
@@ -180,12 +182,10 @@ class SessionManager:
             return None
 
         try:
-            with open(session_file, "r") as f:
+            with open(session_file) as f:
                 data = json.load(f)
                 session = Session.from_dict(data)
-                logger.info(
-                    f"📂 Loaded session {session_id} ({len(session.messages)} messages)"
-                )
+                logger.info(f"📂 Loaded session {session_id} ({len(session.messages)} messages)")
                 return session
         except (json.JSONDecodeError, KeyError) as e:
             logger.error(f"Failed to load session {session_id}: {e}")
@@ -222,7 +222,7 @@ class SessionManager:
         sessions = []
         for session_file in self.sessions_dir.glob("*.json"):
             try:
-                with open(session_file, "r") as f:
+                with open(session_file) as f:
                     data = json.load(f)
                     if repo_root is None or data["repo_root"] == repo_root:
                         sessions.append(Session.from_dict(data))

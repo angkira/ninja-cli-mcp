@@ -10,10 +10,10 @@ from __future__ import annotations
 import os
 import subprocess
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 from ninja_common.logging_utils import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -171,7 +171,9 @@ class GitSafetyChecker:
 
             # Create commit message
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            task_summary = task_description[:60] + "..." if len(task_description) > 60 else task_description
+            task_summary = (
+                task_description[:60] + "..." if len(task_description) > 60 else task_description
+            )
             commit_msg = f"[ninja-auto-save] Before task: {task_summary}\n\nTimestamp: {timestamp}\nAutomatic safety commit by ninja-coder"
 
             # Commit changes
@@ -282,8 +284,7 @@ class GitSafetyChecker:
             if tag:
                 results["safety_tag"] = tag
                 results["warnings"].append(
-                    f"✅ Safety tag created: {tag} "
-                    "(recover with: git reset --hard {tag})"
+                    f"✅ Safety tag created: {tag} (recover with: git reset --hard {{tag}})"
                 )
 
         return results
@@ -348,7 +349,9 @@ def validate_task_safety(
             results["warnings"].append(
                 f"❌ STRICT MODE: Refusing to run with {len(changed_files)} uncommitted file(s)"
             )
-            results["recommendations"].append("Commit your changes first: git add . && git commit -m 'message'")
+            results["recommendations"].append(
+                "Commit your changes first: git add . && git commit -m 'message'"
+            )
             results["recommendations"].append("Or set NINJA_SAFETY_MODE=auto for automatic commits")
             return results
 
@@ -377,7 +380,9 @@ def validate_task_safety(
                 results["warnings"].append(
                     "❌ Failed to auto-commit changes - cannot proceed safely"
                 )
-                results["recommendations"].append("Commit manually: git add . && git commit -m 'message'")
+                results["recommendations"].append(
+                    "Commit manually: git add . && git commit -m 'message'"
+                )
                 return results
 
         else:  # WARN mode
