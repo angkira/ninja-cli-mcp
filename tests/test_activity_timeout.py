@@ -138,22 +138,40 @@ async def test_activity_based_timeout_with_periodic_output(driver, tmp_path, mon
         mock_stdout = AsyncMock()
         mock_stderr = AsyncMock()
 
+        start_time = asyncio.get_event_loop().time()
+
         # Simulate periodic output (every 1s to stay well under 20s inactivity timeout)
         async def periodic_read(*args, **kwargs):
             nonlocal chunks_sent
-            await asyncio.sleep(1)  # Wait 1s before each chunk (well under 20s)
-            chunks_sent += 1
+            elapsed = asyncio.get_event_loop().time() - start_time
 
-            if chunks_sent <= 10:  # 10 chunks over 10s
+            # Return a chunk every 1 second
+            expected_chunks = int(elapsed)
+            if chunks_sent < expected_chunks and chunks_sent < 10:
+                chunks_sent += 1
+                await asyncio.sleep(0.01)  # Tiny delay to simulate real I/O
                 return b"Processing... chunk " + str(chunks_sent).encode()
-            else:
+            elif chunks_sent >= 10:
+                await asyncio.sleep(0.01)
                 return b""  # EOF after 10 chunks
+            else:
+                # Not time for next chunk yet, wait a bit
+                await asyncio.sleep(0.1)
+                # Recursion will be cancelled by wait_for, that's fine
+                return await periodic_read(*args, **kwargs)
 
         mock_stdout.read = periodic_read
 
         async def stderr_read(*args, **kwargs):
-            await asyncio.sleep(100)  # stderr has no data
-            return b""
+            # Stderr has no data, return EOF once stdout is done
+            if chunks_sent >= 10:
+                await asyncio.sleep(0.01)
+                return b""  # EOF
+            else:
+                # Not done yet, wait
+                await asyncio.sleep(0.1)
+                # Will be cancelled and retried
+                return await stderr_read(*args, **kwargs)
 
         mock_stderr.read = stderr_read
 
@@ -404,22 +422,38 @@ async def test_activity_based_timeout_stderr_activity(driver, tmp_path, monkeypa
         mock_stderr = AsyncMock()
 
         # stdout has no data
+        start_time = asyncio.get_event_loop().time()
+
         async def stdout_read(*args, **kwargs):
-            await asyncio.sleep(100)
-            return b""
+            # Stdout has no data, return EOF once stderr is done
+            if stderr_chunks_sent >= 10:
+                await asyncio.sleep(0.01)
+                return b""  # EOF
+            else:
+                # Not done yet, wait
+                await asyncio.sleep(0.1)
+                return await stdout_read(*args, **kwargs)
 
         mock_stdout.read = stdout_read
 
         # stderr produces data periodically (every 1s to stay under 20s timeout)
         async def periodic_stderr_read(*args, **kwargs):
             nonlocal stderr_chunks_sent
-            await asyncio.sleep(1)  # Wait 1s before each chunk
-            stderr_chunks_sent += 1
+            elapsed = asyncio.get_event_loop().time() - start_time
 
-            if stderr_chunks_sent <= 10:
+            # Return a chunk every 1 second
+            expected_chunks = int(elapsed)
+            if stderr_chunks_sent < expected_chunks and stderr_chunks_sent < 10:
+                stderr_chunks_sent += 1
+                await asyncio.sleep(0.01)
                 return b"Warning: processing... " + str(stderr_chunks_sent).encode()
-            else:
+            elif stderr_chunks_sent >= 10:
+                await asyncio.sleep(0.01)
                 return b""  # EOF
+            else:
+                # Not time yet, wait
+                await asyncio.sleep(0.1)
+                return await periodic_stderr_read(*args, **kwargs)
 
         mock_stderr.read = periodic_stderr_read
 
@@ -492,30 +526,44 @@ async def test_activity_based_timeout_mixed_stdout_stderr(driver, tmp_path, monk
 
         stdout_count = [0]
         stderr_count = [0]
+        start_time = asyncio.get_event_loop().time()
 
         # Alternating output (stay under 20s inactivity)
         async def stdout_read(*args, **kwargs):
-            await asyncio.sleep(2)  # Every 2s
-            stdout_count[0] += 1
             nonlocal total_chunks
-            total_chunks += 1
+            elapsed = asyncio.get_event_loop().time() - start_time
 
-            if stdout_count[0] <= 5:
+            # stdout produces every 2s: at t=2, 4, 6, 8, 10
+            expected_chunks = int(elapsed / 2)
+            if stdout_count[0] < expected_chunks and stdout_count[0] < 5:
+                stdout_count[0] += 1
+                total_chunks += 1
+                await asyncio.sleep(0.01)
                 return b"stdout chunk " + str(stdout_count[0]).encode()
+            elif stdout_count[0] >= 5:
+                await asyncio.sleep(0.01)
+                return b""  # EOF
             else:
-                return b""
+                await asyncio.sleep(0.1)
+                return await stdout_read(*args, **kwargs)
 
         async def stderr_read(*args, **kwargs):
-            await asyncio.sleep(1)  # Offset by 1s
-            await asyncio.sleep(2)  # Then every 2s
-            stderr_count[0] += 1
             nonlocal total_chunks
-            total_chunks += 1
+            elapsed = asyncio.get_event_loop().time() - start_time
 
-            if stderr_count[0] <= 5:
+            # stderr produces every 3s: at t=3, 6, 9, 12, 15
+            expected_chunks = int(elapsed / 3)
+            if stderr_count[0] < expected_chunks and stderr_count[0] < 5:
+                stderr_count[0] += 1
+                total_chunks += 1
+                await asyncio.sleep(0.01)
                 return b"stderr chunk " + str(stderr_count[0]).encode()
+            elif stderr_count[0] >= 5:
+                await asyncio.sleep(0.01)
+                return b""  # EOF
             else:
-                return b""
+                await asyncio.sleep(0.1)
+                return await stderr_read(*args, **kwargs)
 
         mock_stdout.read = stdout_read
         mock_stderr.read = stderr_read
