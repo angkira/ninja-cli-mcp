@@ -84,22 +84,22 @@ class OpenCodeStrategy:
 
     Dialogue mode allows persistent conversation across multiple sequential steps.
 
-    Server Mode (Recommended):
-        Set OPENCODE_SERVER_URL=http://localhost:4096 to connect to a persistent
-        OpenCode server. Benefits:
-        - 50x faster execution (2-3s vs 2-4min per task)
-        - Fixes OpenCode v0.15+ exit regression bug
-        - Warm context between tasks
+    Server Mode:
+        Set OPENCODE_SERVER_URL=http://localhost:4096 to connect to a specific
+        OpenCode server. This overrides daemon mode.
 
         Start server: opencode serve --port 4096
 
-    Daemon Mode (Automatic Server Management):
-        Set OPENCODE_USE_DAEMON=true to automatically start and manage
-        OpenCode servers per repository. Benefits:
+    Daemon Mode (Enabled by Default):
+        OpenCode automatically uses daemon mode with per-repository servers.
+        Benefits:
+        - 50x faster execution (2-8s vs 2-4min per task)
+        - Fixes OpenCode v0.15+ exit regression bug
         - Automatic server lifecycle management
         - One server per repo (correct working directory)
-        - Same 50x performance improvement as manual server mode
-        - No manual server management needed
+
+        To disable daemon mode, set OPENCODE_DISABLE_DAEMON=true
+        To manually specify a server, set OPENCODE_SERVER_URL=http://localhost:PORT
     """
 
     def __init__(self, bin_path: str, config: NinjaConfig):
@@ -186,19 +186,21 @@ class OpenCodeStrategy:
         ]
 
         # Use OpenCode daemon for auto-managed servers (50x faster + fixes exit bug)
+        # Daemon mode is enabled by default for OpenCode
         server_url = self.server_url
-        if not server_url:
-            # Check if daemon mode is enabled
-            use_daemon = os.environ.get("OPENCODE_USE_DAEMON", "").lower() in ("true", "1", "yes")
-            if use_daemon:
-                try:
-                    daemon = get_daemon()
-                    server_url = daemon.get_or_start_server(repo_root)
-                    logger.info(f"🚀 Using OpenCode daemon: {server_url}")
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to start daemon server: {e}, falling back to subprocess mode"
-                    )
+        if not server_url and os.environ.get("OPENCODE_DISABLE_DAEMON", "").lower() not in (
+            "true",
+            "1",
+            "yes",
+        ):
+            try:
+                daemon = get_daemon()
+                server_url = daemon.get_or_start_server(repo_root)
+                logger.info(f"🚀 Using OpenCode daemon: {server_url}")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to start daemon server: {e}, falling back to subprocess mode"
+                )
 
         # Connect to server if available
         if server_url:
@@ -562,9 +564,10 @@ class OpenCodeStrategy:
         return "\n\n".join(prompt_lines)
 
     def get_timeout(self, task_type: str) -> int:
-        """Get timeout for OpenCode based on task type.
+        """Get recommended timeout for task type.
 
-        OpenCode is optimized for parallel tasks and can handle them efficiently.
+        With daemon mode, use activity-based timeout (see driver.py).
+        These are maximum timeouts - actual timeout is based on output activity.
 
         Args:
             task_type: Type of task ('quick', 'sequential', 'parallel').
@@ -572,16 +575,12 @@ class OpenCodeStrategy:
         Returns:
             Timeout in seconds.
         """
-        base_timeout = int(os.environ.get("NINJA_OPENCODE_TIMEOUT", "600"))
-
-        if task_type == "parallel":
-            # OpenCode excels at parallel, use full timeout
-            return base_timeout
-        elif task_type == "quick":
-            # Quick tasks can be faster
-            return base_timeout // 2
-
-        return base_timeout
+        # Daemon mode is much faster but still needs generous timeouts for complex tasks
+        return {
+            "quick": 300,  # 5 minutes (was 180s)
+            "sequential": 900,  # 15 minutes (was 600s)
+            "parallel": 1200,  # 20 minutes (was 900s)
+        }.get(task_type, 600)
 
     def _is_zai_model(self, model_name: str) -> bool:
         """Check if model is a z.ai model.
