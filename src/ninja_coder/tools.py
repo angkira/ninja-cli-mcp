@@ -38,6 +38,8 @@ from ninja_coder.models import (
     ParallelPlanRequest,
     PlanExecutionResult,
     PlanStep,
+    QueryLogsRequest,
+    QueryLogsResult,
     RunTestsRequest,
     SequentialPlanRequest,
     SimpleTaskRequest,
