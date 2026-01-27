@@ -38,6 +38,7 @@ from ninja_coder.models import (
     ListSessionsRequest,
     MultiAgentTaskRequest,
     ParallelPlanRequest,
+    QueryLogsRequest,
     RunTestsRequest,
     SequentialPlanRequest,
     SimpleTaskRequest,
@@ -562,6 +563,60 @@ TOOLS: list[Tool] = [
             "required": ["task", "repo_root"],
         },
     ),
+    Tool(
+        name="coder_query_logs",
+        description=(
+            "Query structured logs with filters for debugging and analysis. "
+            "\n\n"
+            "Logs are stored in JSONL format at ~/.cache/ninja-mcp/logs/ninja-YYYYMMDD.jsonl. "
+            "Each entry includes: timestamp, level, message, session_id, task_id, cli_name, model, and extra metadata. "
+            "\n\n"
+            "✅ USE FOR: Debugging failed tasks, analyzing session history, tracking multi-agent execution, "
+            "monitoring system behavior, finding errors. "
+            "\n\n"
+            "💡 FILTERS: Combine session_id, task_id, cli_name, and level to narrow results. "
+            "Use limit/offset for pagination."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Filter by session ID",
+                    "default": "",
+                },
+                "task_id": {
+                    "type": "string",
+                    "description": "Filter by task ID",
+                    "default": "",
+                },
+                "cli_name": {
+                    "type": "string",
+                    "description": "Filter by CLI name (aider, opencode)",
+                    "default": "",
+                },
+                "level": {
+                    "type": "string",
+                    "description": "Filter by log level (INFO, DEBUG, WARNING, ERROR)",
+                    "default": "",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum entries to return (1-1000)",
+                    "default": 100,
+                    "minimum": 1,
+                    "maximum": 1000,
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Number of entries to skip (for pagination)",
+                    "default": 0,
+                    "minimum": 0,
+                },
+            },
+            "required": [],
+        },
+    ),
 ]
 
 
@@ -739,6 +794,10 @@ You:
             elif name == "coder_multi_agent_task":
                 request = MultiAgentTaskRequest(**arguments)
                 result = await executor.multi_agent_task(request, client_id=client_id)
+
+            elif name == "coder_query_logs":
+                request = QueryLogsRequest(**arguments)
+                result = await executor.query_logs(request, client_id=client_id)
 
             else:
                 return [

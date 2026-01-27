@@ -481,7 +481,17 @@ class NinjaDriver:
         cache_dir = get_cache_dir()
         self.session_manager = SessionManager(cache_dir)
 
+        # Initialize structured logger
+        from ninja_common.structured_logger import StructuredLogger
+        log_dir = cache_dir / "logs"
+        self.structured_logger = StructuredLogger("ninja-coder", log_dir)
+
         logger.info(f"Initialized NinjaDriver with {self._strategy.name} strategy")
+        self.structured_logger.info(
+            f"Driver initialized",
+            cli_name=self._strategy.name,
+            model=self.config.model,
+        )
 
     def _get_env(self) -> dict[str, str]:
         """Get environment variables for Ninja Code CLI subprocess with security filtering."""
@@ -1202,6 +1212,7 @@ class NinjaDriver:
         instruction: dict[str, Any],
         timeout_sec: int | None = None,
         task_type: str = "quick",
+        session_id: str | None = None,
     ) -> NinjaResult:
         """
         Execute a task asynchronously.
@@ -1212,6 +1223,7 @@ class NinjaDriver:
             instruction: Instruction document.
             timeout_sec: Timeout in seconds.
             task_type: Type of task for model selection ('quick', 'sequential', 'parallel').
+            session_id: Optional session ID for logging.
 
         Returns:
             Execution result.
@@ -1276,6 +1288,18 @@ class NinjaDriver:
             task_logger.set_metadata("model", model)
             task_logger.set_metadata("task_type", task_type)
 
+            # Structured logging: Task start
+            self.structured_logger.info(
+                f"Starting task execution: {task_desc[:100]}...",
+                session_id=session_id,
+                task_id=step_id,
+                cli_name=self._strategy.name,
+                model=model,
+                task_type=task_type,
+                repo_root=repo_root,
+                context_file_count=len(context_paths),
+            )
+
             # Build prompt from instruction
             with Path(task_file).open() as f:
                 instruction_data = json.load(f)
@@ -1302,6 +1326,16 @@ class NinjaDriver:
                     )
                     task_logger.set_metadata("multi_agent", True)
                     task_logger.set_metadata("agents", agents)
+
+                    # Structured logging: Multi-agent activation
+                    self.structured_logger.log_multi_agent(
+                        agents=agents,
+                        task_id=step_id,
+                        session_id=session_id,
+                        cli_name=self._strategy.name,
+                        complexity=analysis.complexity,
+                        task_type=analysis.task_type,
+                    )
 
             # Check if strategy supports dialogue mode and task type is sequential
             use_dialogue_mode = (
@@ -1347,6 +1381,16 @@ class NinjaDriver:
                 for prev, arg in zip([""] + cli_result.command[:-1], cli_result.command)
             ]
             task_logger.info(f"Running {self._strategy.name}: {' '.join(safe_cmd)}")
+
+            # Structured logging: Command execution
+            self.structured_logger.log_command(
+                command=cli_result.command,
+                session_id=session_id,
+                task_id=step_id,
+                cli_name=self._strategy.name,
+                model=model,
+                working_dir=str(cli_result.working_dir),
+            )
 
             # Get timeout from strategy
             timeout = timeout_sec or self._strategy.get_timeout(task_type)
@@ -1407,6 +1451,18 @@ class NinjaDriver:
                 f"Task {'succeeded' if result.success else 'failed'}: {result.summary}"
             )
 
+            # Structured logging: Task result
+            self.structured_logger.log_result(
+                success=result.success,
+                summary=result.summary,
+                session_id=session_id,
+                task_id=step_id,
+                cli_name=self._strategy.name,
+                model=model,
+                touched_paths=result.suspected_touched_paths,
+                exit_code=exit_code,
+            )
+
             return result
 
         except FileNotFoundError:
@@ -1414,6 +1470,17 @@ class NinjaDriver:
             logs_path = task_logger.save()
             # Use locals() to check if model was defined before error
             model_used = locals().get("model", self.config.model)
+
+            # Structured logging: Error
+            self.structured_logger.error(
+                f"CLI not found: {self.config.bin_path}",
+                session_id=session_id,
+                task_id=step_id,
+                cli_name=self._strategy.name,
+                model=model_used,
+                bin_path=str(self.config.bin_path),
+            )
+
             return NinjaResult(
                 success=False,
                 summary="❌ Ninja Code CLI not found",
@@ -1428,6 +1495,18 @@ class NinjaDriver:
             logs_path = task_logger.save()
             # Use locals() to check if model was defined before error
             model_used = locals().get("model", self.config.model)
+
+            # Structured logging: Error
+            self.structured_logger.error(
+                f"Unexpected error: {type(e).__name__}",
+                session_id=session_id,
+                task_id=step_id,
+                cli_name=self._strategy.name,
+                model=model_used,
+                error_type=type(e).__name__,
+                error_message=str(e)[:500],
+            )
+
             return NinjaResult(
                 success=False,
                 summary="❌ Execution error",
@@ -1472,12 +1551,28 @@ class NinjaDriver:
         if session_id:
             session = self.session_manager.load_session(session_id)
             if not session:
+                # Structured logging: Session load failed
+                self.structured_logger.error(
+                    f"Session not found: {session_id}",
+                    session_id=session_id,
+                    cli_name=self._strategy.name,
+                )
+
                 return NinjaResult(
                     success=False,
                     summary=f"❌ Session {session_id} not found",
                     notes="Session may have been deleted or expired",
                     model_used=self.config.model,
                 )
+
+            # Structured logging: Session loaded
+            self.structured_logger.log_session(
+                action="loaded",
+                session_id=session.session_id,
+                cli_name=self._strategy.name,
+                model=session.model,
+                message_count=len(session.messages),
+            )
         elif create_session:
             session = self.session_manager.create_session(
                 repo_root=repo_root,
@@ -1485,11 +1580,28 @@ class NinjaDriver:
                 metadata={"context_paths": context_paths or []},
             )
 
+            # Structured logging: Session created
+            self.structured_logger.log_session(
+                action="created",
+                session_id=session.session_id,
+                cli_name=self._strategy.name,
+                model=self.config.model,
+                repo_root=repo_root,
+            )
+
         # Add user message to session
         if session:
             session.add_message("user", task)
             self.session_manager.save_session(session)
             logger.info(f"📝 Added user message to session {session.session_id}")
+
+            # Structured logging: Session updated
+            self.structured_logger.log_session(
+                action="updated",
+                session_id=session.session_id,
+                cli_name=self._strategy.name,
+                message_count=len(session.messages),
+            )
 
         # Build instruction
         builder = InstructionBuilder(repo_root, mode=ExecutionMode.QUICK)
@@ -1507,6 +1619,7 @@ class NinjaDriver:
             instruction=instruction,
             timeout_sec=timeout_sec,
             task_type=task_type,
+            session_id=session.session_id if session else None,
         )
 
         # Add assistant response to session
@@ -1523,6 +1636,16 @@ class NinjaDriver:
             self.session_manager.save_session(session)
             result.session_id = session.session_id
             logger.info(f"💾 Saved assistant response to session {session.session_id}")
+
+            # Structured logging: Session saved
+            self.structured_logger.log_session(
+                action="saved",
+                session_id=session.session_id,
+                cli_name=self._strategy.name,
+                model=result.model_used,
+                message_count=len(session.messages),
+                success=result.success,
+            )
 
         return result
 

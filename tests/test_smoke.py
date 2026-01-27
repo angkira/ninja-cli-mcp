@@ -19,6 +19,11 @@ def test_import_ninja_coder():
         import ninja_coder
         import ninja_coder.server
         import ninja_coder.tools
+        import ninja_coder.sessions
+        import ninja_coder.multi_agent
+        import ninja_coder.driver
+        import ninja_coder.models
+        import ninja_coder.strategies
 
         assert True
     except ImportError as e:
@@ -55,6 +60,9 @@ def test_import_ninja_common():
         import ninja_common
         import ninja_common.config_manager
         import ninja_common.daemon
+        import ninja_common.structured_logger
+        import ninja_common.path_utils
+        import ninja_common.logging_utils
 
         assert True
     except ImportError as e:
