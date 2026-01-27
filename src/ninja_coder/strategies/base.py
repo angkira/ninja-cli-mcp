@@ -74,6 +74,9 @@ class ParsedResult:
     retryable_error: bool = False
     """Whether the error is retryable."""
 
+    session_id: str | None = None
+    """OpenCode session ID extracted from output (if available)."""
+
 
 class CLIStrategy(Protocol):
     """Protocol defining the interface for CLI strategies.
