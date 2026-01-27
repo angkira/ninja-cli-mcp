@@ -18,6 +18,28 @@ class PathTraversalError(Exception):
     pass
 
 
+def get_cache_dir() -> Path:
+    """
+    Get the global ninja-mcp cache directory.
+
+    Returns XDG Base Directory compliant cache location:
+    - Linux/macOS: ~/.cache/ninja-mcp
+    - Windows: %LOCALAPPDATA%/ninja-mcp
+
+    Returns:
+        Path to the ninja-mcp cache directory.
+    """
+    if os.name == "nt":  # Windows
+        cache_base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    else:  # Linux/macOS
+        cache_base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+
+    cache_dir = cache_base / "ninja-mcp"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    return cache_dir
+
+
 def safe_resolve(path: str | Path, root: str | Path) -> Path:
     """
     Resolve a path safely within a root directory.

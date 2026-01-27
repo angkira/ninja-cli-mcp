@@ -157,15 +157,18 @@ class OpenCodeStrategy:
             model_name,
         ]
 
-        # File context (before message positional argument)
+        # Build enhanced prompt with file context
+        # NOTE: We don't use --file flag because it causes OpenCode to interpret
+        # the message differently. Instead, we mention files in the prompt and
+        # let OpenCode discover them automatically.
+        final_prompt = prompt
         if file_paths:
-            for file_path in file_paths:
-                cmd.extend(["--file", file_path])
+            files_text = ", ".join(file_paths)
+            final_prompt = f"{prompt}\n\nFocus on these files: {files_text}"
 
         # Multi-agent activation (add ultrawork to prompt)
-        final_prompt = prompt
-        if enable_multi_agent and "ultrawork" not in prompt.lower():
-            final_prompt = f"{prompt}\n\nultrawork"
+        if enable_multi_agent and "ultrawork" not in final_prompt.lower():
+            final_prompt = f"{final_prompt}\n\nultrawork"
             logger.info("🤖 Multi-agent mode activated (ultrawork)")
 
         # Prompt as positional argument
@@ -304,14 +307,20 @@ class OpenCodeStrategy:
                 break
 
         # Extract file changes (similar pattern to Aider)
+        # First, strip ANSI color codes for easier pattern matching
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        clean_output = ansi_escape.sub('', combined_output)
+
         suspected_paths: list[str] = []
         file_patterns = [
             r"(?:wrote|created|modified|updated|edited)\s+['\"]?([^\s'\"]+)['\"]?",
             r"(?:writing|creating|modifying|updating|editing)\s+['\"]?([^\s'\"]+)['\"]?",
             r"file:\s*['\"]?([^\s'\"]+)['\"]?",
+            # OpenCode-specific tool call format: "| Edit     filename.py"
+            r"\|\s+(?:Edit|Write|NotebookEdit)\s+([^\s]+)",
         ]
         for pattern in file_patterns:
-            matches = re.findall(pattern, combined_output, re.IGNORECASE)
+            matches = re.findall(pattern, clean_output, re.IGNORECASE)
             for match in matches:
                 if match and ("/" in match or "." in match):
                     suspected_paths.append(match)

@@ -152,6 +152,7 @@ Thumbs.db
 # Project-specific
 .qwen3-cli-mcp/
 *.log
+.test_repos/
 
 # Secrets (never commit these)
 secrets/

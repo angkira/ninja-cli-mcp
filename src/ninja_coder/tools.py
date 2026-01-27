@@ -917,11 +917,23 @@ class ToolExecutor:
             deleted = self.driver.session_manager.delete_session(request.session_id)
 
             if deleted:
+                # Structured logging: Session deleted
+                self.driver.structured_logger.log_session(
+                    action="deleted",
+                    session_id=request.session_id,
+                )
+
                 return DeleteSessionResult(
                     status="ok",
                     message=f"✅ Session {request.session_id} deleted successfully",
                 )
             else:
+                # Structured logging: Session not found
+                self.driver.structured_logger.warning(
+                    f"Session not found for deletion: {request.session_id}",
+                    session_id=request.session_id,
+                )
+
                 return DeleteSessionResult(
                     status="not_found",
                     message=f"⚠️ Session {request.session_id} not found",
@@ -1094,6 +1106,62 @@ class ToolExecutor:
                 summary=f"❌ Failed to execute multi-agent task: {str(e)[:100]}",
                 notes=str(e),
                 agents_used=[],
+            )
+
+    async def query_logs(
+        self,
+        request: QueryLogsRequest,
+        client_id: str = "default",
+    ) -> QueryLogsResult:
+        """Query structured logs with filters.
+
+        Args:
+            request: Query logs request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            Query logs result with matching entries.
+        """
+        logger.info(
+            f"[{client_id}] Querying logs: session_id={request.session_id}, "
+            f"task_id={request.task_id}, level={request.level}, limit={request.limit}"
+        )
+
+        try:
+            # Query using driver's structured logger
+            entries = self.driver.structured_logger.query_logs(
+                session_id=request.session_id,
+                task_id=request.task_id,
+                cli_name=request.cli_name,
+                level=request.level,
+                limit=request.limit,
+                offset=request.offset,
+            )
+
+            # Count total matching entries
+            total_count = self.driver.structured_logger.count_logs(
+                session_id=request.session_id,
+                task_id=request.task_id,
+                cli_name=request.cli_name,
+                level=request.level,
+            )
+
+            return QueryLogsResult(
+                status="ok",
+                entries=entries,
+                total_count=total_count,
+                returned_count=len(entries),
+                message=f"✅ Found {total_count} matching log entries (returned {len(entries)})",
+            )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] Query logs failed: {e}", exc_info=True)
+            return QueryLogsResult(
+                status="error",
+                entries=[],
+                total_count=0,
+                returned_count=0,
+                message=f"❌ Failed to query logs: {str(e)[:100]}",
             )
 
 

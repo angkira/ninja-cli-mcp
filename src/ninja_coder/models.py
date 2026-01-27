@@ -425,3 +425,32 @@ class MultiAgentTaskResult(BaseModel):
     )
     session_id: str | None = Field(None, description="Session ID if session was used")
     message: str = Field(..., description="Result message")
+
+
+# ============================================================================
+# Log Query Models
+# ============================================================================
+
+
+class QueryLogsRequest(BaseModel):
+    """Request to query structured logs."""
+
+    session_id: str | None = Field(None, description="Filter by session ID")
+    task_id: str | None = Field(None, description="Filter by task ID")
+    cli_name: str | None = Field(None, description="Filter by CLI name (aider, opencode)")
+    level: str | None = Field(None, description="Filter by log level (INFO, DEBUG, WARNING, ERROR)")
+    limit: int = Field(100, ge=1, le=1000, description="Maximum entries to return")
+    offset: int = Field(0, ge=0, description="Number of entries to skip")
+
+
+class QueryLogsResult(BaseModel):
+    """Result of log query."""
+
+    status: Literal["ok", "error"] = Field(..., description="Query status")
+    entries: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Log entries matching filters",
+    )
+    total_count: int = Field(..., description="Total matching entries")
+    returned_count: int = Field(..., description="Number of entries returned")
+    message: str = Field(..., description="Result message")
