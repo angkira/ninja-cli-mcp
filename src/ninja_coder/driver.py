@@ -1395,7 +1395,8 @@ class NinjaDriver:
             )
 
             # Get timeout from strategy
-            timeout = timeout_sec or self._strategy.get_timeout(task_type)
+            max_timeout = timeout_sec or self._strategy.get_timeout(task_type)
+            inactivity_timeout = 20  # Timeout after 20s of no output
 
             # Execute asynchronously using strategy-built command
             process = await asyncio.create_subprocess_exec(
@@ -1408,23 +1409,82 @@ class NinjaDriver:
             )
 
             try:
-                stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=timeout,
+                # Activity-based timeout: monitor stdout/stderr for activity
+                stdout_bytes = b""
+                stderr_bytes = b""
+                last_activity = asyncio.get_event_loop().time()
+                start_time = last_activity
+
+                async def read_stream(stream, buffer_list, stream_name):
+                    """Read from stream and track activity.
+
+                    Args:
+                        stream: The asyncio stream to read from.
+                        buffer_list: List to append chunks to.
+                        stream_name: Name of stream for logging ('stdout' or 'stderr').
+                    """
+                    nonlocal last_activity
+                    while True:
+                        try:
+                            chunk = await asyncio.wait_for(stream.read(8192), timeout=0.1)
+                            if not chunk:
+                                break
+                            buffer_list.append(chunk)
+                            last_activity = asyncio.get_event_loop().time()
+
+                            # Log activity for debugging
+                            if len(chunk) > 0:
+                                task_logger.debug(
+                                    f"Activity: {stream_name} received {len(chunk)} bytes"
+                                )
+                        except asyncio.TimeoutError:
+                            # No data yet, check inactivity timeout
+                            elapsed = asyncio.get_event_loop().time() - last_activity
+                            total_elapsed = asyncio.get_event_loop().time() - start_time
+
+                            if elapsed > inactivity_timeout:
+                                task_logger.warning(
+                                    f"No output for {inactivity_timeout}s, process may be hung"
+                                )
+                                raise TimeoutError(f"No output activity for {inactivity_timeout}s")
+
+                            if total_elapsed > max_timeout:
+                                task_logger.warning(f"Maximum timeout {max_timeout}s reached")
+                                raise TimeoutError(f"Maximum timeout {max_timeout}s reached")
+
+                            continue
+
+                # Read stdout and stderr concurrently
+                stdout_buffer = []
+                stderr_buffer = []
+
+                await asyncio.gather(
+                    read_stream(process.stdout, stdout_buffer, "stdout"),
+                    read_stream(process.stderr, stderr_buffer, "stderr"),
                 )
-                stdout = stdout_bytes.decode() if stdout_bytes else ""
-                stderr = stderr_bytes.decode() if stderr_bytes else ""
+
+                # Wait for process to exit
+                await process.wait()
+
+                # Combine buffers
+                stdout_bytes = b"".join(stdout_buffer)
+                stderr_bytes = b"".join(stderr_buffer)
+                stdout = stdout_bytes.decode(errors="replace") if stdout_bytes else ""
+                stderr = stderr_bytes.decode(errors="replace") if stderr_bytes else ""
                 exit_code = process.returncode or 0
 
-            except TimeoutError:
+                total_time = asyncio.get_event_loop().time() - start_time
+                task_logger.info(f"Task completed in {total_time:.1f}s")
+
+            except TimeoutError as e:
                 process.kill()
                 await process.wait()
-                task_logger.error(f"Task timed out after {timeout}s")
+                task_logger.error(f"Task timed out: {e}")
                 logs_path = task_logger.save()
                 return NinjaResult(
                     success=False,
                     summary="⏱️ Task timed out",
-                    notes=f"Execution exceeded {timeout}s timeout",
+                    notes=str(e),
                     raw_logs_path=logs_path,
                     exit_code=-1,
                     model_used=model,
