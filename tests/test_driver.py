@@ -532,6 +532,9 @@ async def test_execute_async_with_opencode_session_continues_session(
     opencode_driver, tmp_path, monkeypatch
 ):
     """Test that execute_async_with_opencode_session continues an existing session."""
+    # Disable daemon mode to test session continuation logic
+    monkeypatch.setenv("OPENCODE_DISABLE_DAEMON", "true")
+
     # Mock asyncio.create_subprocess_exec
     import asyncio
     from unittest.mock import AsyncMock, MagicMock
@@ -742,6 +745,9 @@ async def test_execute_async_with_opencode_session_continue_last(
     opencode_driver, tmp_path, monkeypatch
 ):
     """Test that execute_async_with_opencode_session uses --continue when appropriate."""
+    # Disable daemon mode to test --continue flag logic
+    monkeypatch.setenv("OPENCODE_DISABLE_DAEMON", "true")
+
     import asyncio
     from unittest.mock import MagicMock
 

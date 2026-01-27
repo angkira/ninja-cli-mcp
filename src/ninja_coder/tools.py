@@ -135,6 +135,10 @@ class ToolExecutor:
             # Validate repo root with security checks
             repo_path = InputValidator.validate_repo_root(request.repo_root)
 
+            # Validate task is not empty
+            if not request.task or not request.task.strip():
+                raise ValueError("Task description cannot be empty")
+
             # Sanitize task description
             InputValidator.sanitize_string(request.task, max_length=50000)
 
