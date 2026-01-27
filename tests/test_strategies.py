@@ -454,6 +454,224 @@ def test_opencode_timeout_recommendations():
 
 
 # ============================================================================
+# OpenCode Server Mode Tests
+# ============================================================================
+
+
+def test_opencode_server_mode_initialization_with_env(monkeypatch):
+    """Test OpenCode server mode initialization with OPENCODE_SERVER_URL."""
+    # Set environment variable
+    monkeypatch.setenv("OPENCODE_SERVER_URL", "http://localhost:4096")
+
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="anthropic/claude-sonnet-4-5",
+        openai_api_key="test-key",
+    )
+
+    strategy = OpenCodeStrategy("opencode", config)
+
+    # Verify server URL is set
+    assert strategy.server_url == "http://localhost:4096"
+
+
+def test_opencode_server_mode_initialization_without_env():
+    """Test OpenCode server mode initialization without OPENCODE_SERVER_URL."""
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="anthropic/claude-sonnet-4-5",
+        openai_api_key="test-key",
+    )
+
+    strategy = OpenCodeStrategy("opencode", config)
+
+    # Verify server URL is empty string
+    assert strategy.server_url == ""
+
+
+def test_opencode_server_mode_adds_attach_flag(monkeypatch):
+    """Test that --attach flag is added when server mode is enabled."""
+    # Set environment variable
+    monkeypatch.setenv("OPENCODE_SERVER_URL", "http://localhost:4096")
+
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="anthropic/claude-sonnet-4-5",
+        openai_api_key="test-key",
+    )
+
+    strategy = OpenCodeStrategy("opencode", config)
+
+    result = strategy.build_command(
+        prompt="Create a User class",
+        repo_root="/tmp/test-repo",
+    )
+
+    # Verify --attach flag is present
+    assert "--attach" in result.command
+    attach_idx = result.command.index("--attach")
+    assert result.command[attach_idx + 1] == "http://localhost:4096"
+
+
+def test_opencode_server_mode_no_attach_flag_without_env():
+    """Test that --attach flag is NOT added when server mode is disabled."""
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="anthropic/claude-sonnet-4-5",
+        openai_api_key="test-key",
+    )
+
+    strategy = OpenCodeStrategy("opencode", config)
+
+    result = strategy.build_command(
+        prompt="Create a User class",
+        repo_root="/tmp/test-repo",
+    )
+
+    # Verify --attach flag is NOT present
+    assert "--attach" not in result.command
+
+
+def test_opencode_server_mode_disables_session_flags(monkeypatch):
+    """Test that session flags are disabled when server mode is enabled."""
+    # Set environment variable
+    monkeypatch.setenv("OPENCODE_SERVER_URL", "http://localhost:4096")
+
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="anthropic/claude-sonnet-4-5",
+        openai_api_key="test-key",
+    )
+
+    strategy = OpenCodeStrategy("opencode", config)
+
+    # Test with session_id
+    result = strategy.build_command(
+        prompt="Create a User class",
+        repo_root="/tmp/test-repo",
+        session_id="test-session-123",
+    )
+
+    # Verify --session flag is NOT present (incompatible with --attach)
+    assert "--session" not in result.command
+    assert "test-session-123" not in result.command
+
+    # Test with continue_last
+    result = strategy.build_command(
+        prompt="Continue previous task",
+        repo_root="/tmp/test-repo",
+        continue_last=True,
+    )
+
+    # Verify --continue flag is NOT present (incompatible with --attach)
+    assert "--continue" not in result.command
+
+
+def test_opencode_server_mode_enables_session_flags_without_server():
+    """Test that session flags work normally when server mode is disabled."""
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="anthropic/claude-sonnet-4-5",
+        openai_api_key="test-key",
+    )
+
+    strategy = OpenCodeStrategy("opencode", config)
+
+    # Test with session_id
+    result = strategy.build_command(
+        prompt="Create a User class",
+        repo_root="/tmp/test-repo",
+        session_id="test-session-123",
+    )
+
+    # Verify --session flag IS present
+    assert "--session" in result.command
+    session_idx = result.command.index("--session")
+    assert result.command[session_idx + 1] == "test-session-123"
+
+    # Test with continue_last
+    result = strategy.build_command(
+        prompt="Continue previous task",
+        repo_root="/tmp/test-repo",
+        continue_last=True,
+    )
+
+    # Verify --continue flag IS present
+    assert "--continue" in result.command
+
+
+def test_opencode_server_mode_metadata_with_server(monkeypatch):
+    """Test that metadata includes server info when server mode is enabled."""
+    # Set environment variable
+    monkeypatch.setenv("OPENCODE_SERVER_URL", "http://localhost:4096")
+
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="anthropic/claude-sonnet-4-5",
+        openai_api_key="test-key",
+    )
+
+    strategy = OpenCodeStrategy("opencode", config)
+
+    result = strategy.build_command(
+        prompt="Create a User class",
+        repo_root="/tmp/test-repo",
+    )
+
+    # Verify metadata includes server info
+    assert result.metadata["server_mode"] is True
+    assert result.metadata["server_url"] == "http://localhost:4096"
+
+
+def test_opencode_server_mode_metadata_without_server():
+    """Test that metadata includes server info when server mode is disabled."""
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="anthropic/claude-sonnet-4-5",
+        openai_api_key="test-key",
+    )
+
+    strategy = OpenCodeStrategy("opencode", config)
+
+    result = strategy.build_command(
+        prompt="Create a User class",
+        repo_root="/tmp/test-repo",
+    )
+
+    # Verify metadata includes server info (disabled)
+    assert result.metadata["server_mode"] is False
+    assert result.metadata["server_url"] is None
+
+
+def test_opencode_server_mode_backward_compatibility():
+    """Test backward compatibility - existing code works without server mode."""
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="anthropic/claude-sonnet-4-5",
+        openai_api_key="test-key",
+    )
+
+    strategy = OpenCodeStrategy("opencode", config)
+
+    # All existing functionality should work normally
+    result = strategy.build_command(
+        prompt="Create a User class",
+        repo_root="/tmp/test-repo",
+        file_paths=["src/user.py"],
+        model="anthropic/claude-haiku-4.5",
+        additional_flags={"use_coding_plan": True, "enable_multi_agent": False},
+        session_id="test-session",
+    )
+
+    assert isinstance(result, CLICommandResult)
+    assert result.command[0] == "opencode"
+    assert "--model" in result.command
+    assert "--session" in result.command
+    assert "--attach" not in result.command
+    assert result.metadata["server_mode"] is False
+
+
+# ============================================================================
 # Strategy Registry Integration Tests
 # ============================================================================
 
