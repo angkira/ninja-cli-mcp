@@ -182,6 +182,7 @@ class Operator:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,
             )
 
             if result.returncode != 0:
@@ -190,15 +191,15 @@ class Operator:
             # Parse model IDs from output and filter recent ones
             model_ids = []
             for line in result.stdout.strip().split("\n"):
-                line = line.strip()
+                output_line = line.strip()
                 # Skip INFO lines and empty lines
-                if not line or line.startswith("INFO"):
+                if not output_line or output_line.startswith("INFO"):
                     continue
                 # Model ID format: provider/model-name
-                if "/" in line:
+                if "/" in output_line:
                     # Filter out ancient models
-                    if self._is_recent_model(line):
-                        model_ids.append(line)
+                    if self._is_recent_model(output_line):
+                        model_ids.append(output_line)
 
             # Group by provider and create Model objects
             by_provider = {}
@@ -246,15 +247,16 @@ class Operator:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
 
                 if result.returncode == 0:
                     # Parse model IDs from output and filter recent ones
                     for line in result.stdout.strip().split("\n"):
-                        line = line.strip()
+                        model_line = line.strip()
                         # Look for lines starting with "- provider/model"
-                        if line.startswith("- ") and "/" in line:
-                            model_id = line[2:].strip()  # Remove "- " prefix
+                        if model_line.startswith("- ") and "/" in model_line:
+                            model_id = model_line[2:].strip()  # Remove "- " prefix
                             # Filter out ancient models
                             if model_id not in all_models and self._is_recent_model(model_id):
                                 all_models.append(model_id)
@@ -307,14 +309,15 @@ class Operator:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
 
                 if result.returncode == 0:
                     for line in result.stdout.strip().split("\n"):
-                        line = line.strip()
-                        if line.startswith("google/") and not line.startswith("INFO"):
+                        gemini_line = line.strip()
+                        if gemini_line.startswith("google/") and not gemini_line.startswith("INFO"):
                             # Remove google/ prefix for Gemini CLI
-                            model_id = line.replace("google/", "")
+                            model_id = gemini_line.replace("google/", "")
                             # Filter out ancient models
                             if not self._is_recent_model(model_id):
                                 continue
@@ -470,6 +473,7 @@ def check_operator_auth(operator: Operator) -> dict[str, bool]:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             output = result.stdout.lower()
 
@@ -695,6 +699,7 @@ def update_configuration(operator: Operator, model: Model) -> bool:
             ["pgrep", "-f", "claude|Claude"],
             capture_output=True,
             timeout=2,
+            check=False,
         )
         if result.returncode == 0:
             print("   ⚠️  Claude Code is running!")

@@ -29,9 +29,9 @@ class NinjaConfigurator:
         if self.config_file.exists():
             with open(self.config_file) as f:
                 for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        key, value = line.split("=", 1)
+                    config_line = line.strip()
+                    if config_line and not config_line.startswith("#") and "=" in config_line:
+                        key, value = config_line.split("=", 1)
                         config[key.strip()] = value.strip()
         return config
 
@@ -205,11 +205,11 @@ class NinjaConfigurator:
 
         # Check installed operators
         operators = []
-        if subprocess.run(["which", "opencode"], capture_output=True).returncode == 0:
+        if subprocess.run(["which", "opencode"], capture_output=True, check=False).returncode == 0:
             operators.append(("opencode", "OpenCode", "Multi-provider CLI (75+ LLMs)"))
-        if subprocess.run(["which", "aider"], capture_output=True).returncode == 0:
+        if subprocess.run(["which", "aider"], capture_output=True, check=False).returncode == 0:
             operators.append(("aider", "Aider", "OpenRouter-based CLI"))
-        if subprocess.run(["which", "gemini"], capture_output=True).returncode == 0:
+        if subprocess.run(["which", "gemini"], capture_output=True, check=False).returncode == 0:
             operators.append(("gemini", "Gemini CLI", "Google Gemini native CLI"))
 
         if not operators:
@@ -254,7 +254,7 @@ class NinjaConfigurator:
         print("  🌐 PROVIDER AUTHENTICATION (OpenCode)")
         print("=" * 70 + "\n")
 
-        if subprocess.run(["which", "opencode"], capture_output=True).returncode != 0:
+        if subprocess.run(["which", "opencode"], capture_output=True, check=False).returncode != 0:
             print("✗ OpenCode not installed")
             print("  Install from: https://opencode.dev")
             return
@@ -268,7 +268,9 @@ class NinjaConfigurator:
 
         # Check current auth status
         print("Checking authentication status...\n")
-        result = subprocess.run(["opencode", "auth", "list"], capture_output=True, text=True)
+        result = subprocess.run(
+            ["opencode", "auth", "list"], capture_output=True, text=True, check=False
+        )
         authenticated = []
         for provider, _, _ in providers:
             if provider in result.stdout.lower():
@@ -298,7 +300,7 @@ class NinjaConfigurator:
         if selected:
             print(f"\n🔄 Running: {selected}")
             print("   Follow the prompts to authenticate...\n")
-            subprocess.run(selected.split())
+            subprocess.run(selected.split(), check=False)
             print("\n✓ Authentication complete")
 
     def _configure_search(self) -> None:

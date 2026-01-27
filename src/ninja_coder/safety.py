@@ -46,6 +46,7 @@ class GitSafetyChecker:
                 cwd=repo_root,
                 capture_output=True,
                 timeout=5,
+                check=False,
             )
             return result.returncode == 0
         except Exception:
@@ -69,6 +70,7 @@ class GitSafetyChecker:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
 
             if result.returncode != 0:
@@ -82,7 +84,6 @@ class GitSafetyChecker:
             changed_files = []
             for line in output.split("\n"):
                 if line.strip():
-                    # Format: "XY filename"
                     parts = line.split(maxsplit=1)
                     if len(parts) == 2:
                         changed_files.append(parts[1])
@@ -113,6 +114,7 @@ class GitSafetyChecker:
                 cwd=repo_root,
                 capture_output=True,
                 timeout=5,
+                check=False,
             )
 
             if result.returncode == 0:
@@ -152,6 +154,7 @@ class GitSafetyChecker:
                         cwd=repo_root,
                         capture_output=True,
                         timeout=10,
+                        check=False,
                     )
                     if result.returncode != 0:
                         logger.warning(f"Failed to git add {file_path}: {result.stderr.decode()}")
@@ -163,6 +166,7 @@ class GitSafetyChecker:
                     cwd=repo_root,
                     capture_output=True,
                     timeout=10,
+                    check=False,
                 )
 
                 if result.returncode != 0:
@@ -182,6 +186,7 @@ class GitSafetyChecker:
                 cwd=repo_root,
                 capture_output=True,
                 timeout=10,
+                check=False,
             )
 
             if result.returncode == 0:
@@ -215,6 +220,7 @@ class GitSafetyChecker:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
 
             if result.returncode == 0:

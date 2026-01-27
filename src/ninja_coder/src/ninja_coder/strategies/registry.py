@@ -6,7 +6,7 @@ Manages registration and retrieval of CLI strategy implementations.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from .base import CLIStrategy
 
@@ -54,7 +54,7 @@ class CLIStrategyRegistry:
     Manages registration and retrieval of CLI strategies based on binary detection.
     """
 
-    _strategies: dict[str, type[CLIStrategy]] = {}
+    _strategies: ClassVar[dict[str, type[CLIStrategy]]] = {}
 
     @classmethod
     def register(cls, name: str, strategy_class: type[CLIStrategy]) -> None:
