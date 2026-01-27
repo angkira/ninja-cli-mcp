@@ -7,12 +7,13 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+
 
 try:
     from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
     from InquirerPy.separator import Separator
+
     HAS_INQUIRERPY = True
 except ImportError:
     HAS_INQUIRERPY = False
@@ -27,9 +28,6 @@ def print_banner() -> None:
 
 def check_python_version() -> bool:
     """Check if Python version is 3.11+."""
-    if sys.version_info < (3, 11):
-        print(f"✗ Python 3.11+ required (you have {sys.version_info.major}.{sys.version_info.minor})")
-        return False
     print(f"✓ Python {sys.version_info.major}.{sys.version_info.minor}")
     return True
 
@@ -56,7 +54,7 @@ def check_uv() -> bool:
             "curl -LsSf https://astral.sh/uv/install.sh | sh",
             shell=True,
             capture_output=True,
-            text=True
+            text=True,
         )
 
         if result.returncode == 0:
@@ -72,7 +70,7 @@ def check_uv() -> bool:
     return False
 
 
-def select_installation_type() -> Optional[str]:
+def select_installation_type() -> str | None:
     """Select installation type."""
     if not HAS_INQUIRERPY:
         print("\n📦 Installation Options:")
@@ -92,7 +90,10 @@ def select_installation_type() -> Optional[str]:
     result = inquirer.select(
         message="Select installation type:",
         choices=[
-            Choice(value="full", name="Full  •  All modules (coder, researcher, secretary, resources, prompts)"),
+            Choice(
+                value="full",
+                name="Full  •  All modules (coder, researcher, secretary, resources, prompts)",
+            ),
             Choice(value="minimal", name="Minimal  •  Core only (coder, resources)"),
             Choice(value="custom", name="Custom  •  Choose modules"),
         ],
@@ -192,9 +193,7 @@ def install_aider() -> bool:
     if install:
         print("\n🔄 Installing aider...")
         result = subprocess.run(
-            ["uv", "tool", "install", "aider-chat"],
-            capture_output=True,
-            text=True
+            ["uv", "tool", "install", "aider-chat"], capture_output=True, text=True
         )
 
         if result.returncode == 0:
@@ -236,7 +235,14 @@ def verify_installation() -> bool:
     print("\n🔍 Verifying installation...")
 
     all_ok = True
-    commands = ["ninja-config", "ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-resources", "ninja-prompts"]
+    commands = [
+        "ninja-config",
+        "ninja-coder",
+        "ninja-researcher",
+        "ninja-secretary",
+        "ninja-resources",
+        "ninja-prompts",
+    ]
 
     for cmd in commands:
         if shutil.which(cmd):

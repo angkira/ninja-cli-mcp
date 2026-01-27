@@ -13,12 +13,13 @@ import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+
 
 try:
     from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
     from InquirerPy.separator import Separator
+
     HAS_INQUIRERPY = True
 except ImportError:
     HAS_INQUIRERPY = False
@@ -43,7 +44,7 @@ class Operator:
     name: str
     binary_name: str
     description: str
-    binary_path: Optional[str] = None
+    binary_path: str | None = None
     models: list[Model] = field(default_factory=list)
 
     @property
@@ -65,7 +66,7 @@ class Operator:
         has_latest = 1 if "latest" in model_id.lower() else 2
 
         # Priority 2: Extract date (YYYYMMDD) - newer first
-        date_match = re.search(r'(\d{8})', model_id)
+        date_match = re.search(r"(\d{8})", model_id)
         if date_match:
             date_str = date_match.group(1)
             try:
@@ -78,7 +79,7 @@ class Operator:
             date_priority = 0
 
         # Priority 3: Version number - higher first (4.5 > 4.0 > 3.7)
-        version_match = re.search(r'(\d+)[.-](\d+)', model_id)
+        version_match = re.search(r"(\d+)[.-](\d+)", model_id)
         if version_match:
             major = int(version_match.group(1))
             minor = int(version_match.group(2))
@@ -100,14 +101,12 @@ class Operator:
         # Always show "latest" versions (but not if they're old base models)
         if "latest" in model_id.lower():
             # Exclude old model families even with "latest"
-            if any(x in model_id for x in ["claude-3-5", "gpt-4-turbo", "gemini-1"]):
-                return False
-            return True
+            return not any(x in model_id for x in ["claude-3-5", "gpt-4-turbo", "gemini-1"])
 
         # Parse date from model ID (format: YYYYMMDD or YYYY-MM-DD)
-        date_match = re.search(r'(\d{4})[- ]?(\d{2})[- ]?(\d{2})', model_id)
+        date_match = re.search(r"(\d{4})[- ]?(\d{2})[- ]?(\d{2})", model_id)
         if date_match:
-            date_str = ''.join(date_match.groups())  # YYYYMMDD
+            date_str = "".join(date_match.groups())  # YYYYMMDD
             try:
                 model_date = datetime.strptime(date_str, "%Y%m%d")
                 # Only show models from last 12 months
@@ -119,14 +118,12 @@ class Operator:
         # Claude: keep 4.x and 3.7+, exclude 3.5 and older
         if "claude" in model_id:
             # Exclude claude-3-5 and older
-            if re.search(r'claude-3-[0-5]', model_id):
+            if re.search(r"claude-3-[0-5]", model_id):
                 return False
             # Keep claude-3-7, claude-4, claude-haiku-4, etc
             if "claude-3-7" in model_id or "claude-4" in model_id:
                 return True
-            if re.search(r'claude-\w+-4', model_id):
-                return True
-            return False
+            return bool(re.search(r"claude-\w+-4", model_id))
 
         # GPT: exclude 3.x, basic gpt-4, keep 4o/4.1+/5.x/o1/o3
         if "gpt" in model_id or model_id.startswith("openai/o"):
@@ -137,7 +134,9 @@ class Operator:
             if model_id.endswith("/gpt-4"):
                 return False
             # Keep gpt-4o, gpt-4.1+, gpt-5.x, o1, o3, o4
-            if any(x in model_id for x in ["gpt-4o", "gpt-4.1", "gpt-4.2", "gpt-5", "o1", "o3", "o4"]):
+            if any(
+                x in model_id for x in ["gpt-4o", "gpt-4.1", "gpt-4.2", "gpt-5", "o1", "o3", "o4"]
+            ):
                 return True
             # Exclude gpt-4-turbo (old)
             if "gpt-4-turbo" in model_id:
@@ -148,21 +147,15 @@ class Operator:
         if "gemini" in model_id:
             if "gemini-1" in model_id:
                 return False
-            if "gemini-2" in model_id or "gemini-3" in model_id:
-                return True
-            return False
+            return bool("gemini-2" in model_id or "gemini-3" in model_id)
 
         # DeepSeek: keep v3 and newer
         if "deepseek" in model_id:
-            if "v3" in model_id or "2025" in model_id or "2026" in model_id:
-                return True
-            return False
+            return bool("v3" in model_id or "2025" in model_id or "2026" in model_id)
 
         # Qwen: keep 2.5 and newer
         if "qwen" in model_id:
-            if "2.5" in model_id or "3." in model_id:
-                return True
-            return False
+            return bool("2.5" in model_id or "3." in model_id)
 
         # Default: if no rule matched, hide it (be conservative)
         return False
@@ -281,7 +274,7 @@ class Operator:
                 sorted_ids = sorted(ids, key=self._get_model_sort_key)
                 for model_id in sorted_ids:
                     name = self._format_model_name(model_id)
-                    desc = f"Via OpenRouter"
+                    desc = "Via OpenRouter"
                     # Operator should indicate recommendations
                     recommended = False
 
@@ -500,7 +493,7 @@ def check_operator_auth(operator: Operator) -> dict[str, bool]:
     return auth_status
 
 
-def select_operator_interactive() -> Optional[Operator]:
+def select_operator_interactive() -> Operator | None:
     """Interactive operator selection with InquirerPy."""
     if not HAS_INQUIRERPY:
         print("\n⚠️  InquirerPy not installed. Install with: pip install InquirerPy")
@@ -526,15 +519,14 @@ def select_operator_interactive() -> Optional[Operator]:
         auth_status = check_operator_auth(op)
         auth_count = sum(auth_status.values())
 
-        auth_providers = ", ".join([p for p, a in auth_status.items() if a]) if auth_count > 0 else "none"
+        auth_providers = (
+            ", ".join([p for p, a in auth_status.items() if a]) if auth_count > 0 else "none"
+        )
 
         display_name = f"{op.name}  •  {op.description}"
         display_name += f"  •  Auth: {auth_providers}"
 
-        choices.append(Choice(
-            value=op.id,
-            name=display_name
-        ))
+        choices.append(Choice(value=op.id, name=display_name))
 
     try:
         result = inquirer.select(
@@ -564,7 +556,7 @@ def select_operator_interactive() -> Optional[Operator]:
         return None
 
 
-def select_model_interactive(operator: Operator) -> Optional[Model]:
+def select_model_interactive(operator: Operator) -> Model | None:
     """Interactive model selection for a specific operator with arrow-key navigation."""
     if not operator.models:
         print("\n❌ No models available for this operator.")
@@ -590,10 +582,8 @@ def select_model_interactive(operator: Operator) -> Optional[Model]:
 
 
 def _select_model_inquirerpy(
-    operator: Operator,
-    by_provider: dict,
-    auth_status: dict
-) -> Optional[Model]:
+    operator: Operator, by_provider: dict, auth_status: dict
+) -> Model | None:
     """Modern interactive selection using InquirerPy with arrow keys and fuzzy search."""
     print("\n" + "=" * 70)
     print(f"  🤖 MODEL SELECTION - {operator.name}")
@@ -605,7 +595,7 @@ def _select_model_inquirerpy(
     unauth_providers = [p for p, auth in auth_status.items() if not auth]
     if unauth_providers:
         print(f"⚠️  Unauthenticated providers: {', '.join(unauth_providers)}")
-        print(f"   Models from these providers may not work.\n")
+        print("   Models from these providers may not work.\n")
 
     # Build choices list with ALL models, grouped by provider
     choices = []
@@ -630,10 +620,7 @@ def _select_model_inquirerpy(
             choice_value = f"{provider}::{model.id}"
             model_map[choice_value] = model
 
-            choices.append(Choice(
-                value=choice_value,
-                name=display_name
-            ))
+            choices.append(Choice(value=choice_value, name=display_name))
 
     try:
         result = inquirer.select(
@@ -711,9 +698,7 @@ def update_configuration(operator: Operator, model: Model) -> bool:
         )
         if result.returncode == 0:
             print("   ⚠️  Claude Code is running!")
-            print(
-                "   Configuration will be updated, but restart Claude Code"
-            )
+            print("   Configuration will be updated, but restart Claude Code")
             print("   for changes to take effect.")
     except Exception:
         pass

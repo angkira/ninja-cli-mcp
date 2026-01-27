@@ -7,8 +7,6 @@ and session ID extraction in parse_output().
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from ninja_coder.driver import NinjaConfig

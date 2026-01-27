@@ -15,6 +15,7 @@ from ninja_coder.models import TaskComplexity
 from ninja_common.defaults import MODEL_DATABASE
 from ninja_common.logging_utils import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -84,9 +85,7 @@ class ModelSelector:
         }
 
         if not suitable_models:
-            logger.warning(
-                f"No models found for complexity '{complexity}', using default"
-            )
+            logger.warning(f"No models found for complexity '{complexity}', using default")
             return self._recommend_default()
 
         # Apply strategy based on complexity
@@ -281,9 +280,7 @@ class ModelSelector:
         model_name = next(iter(models))
         info = models[model_name]
 
-        logger.info(
-            f"Using fallback model {model_name} for {task_type} task"
-        )
+        logger.info(f"Using fallback model {model_name} for {task_type} task")
 
         return ModelRecommendation(
             model=model_name,

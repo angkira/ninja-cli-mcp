@@ -14,7 +14,6 @@ import argparse
 import asyncio
 import json
 import logging
-import sys
 from typing import TYPE_CHECKING, Any
 
 from mcp.server import Server

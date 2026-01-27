@@ -5,17 +5,18 @@ This module provides the base classes and registry for different CLI strategies.
 """
 
 from .base import (
-    CLIStrategy,
     CLICapabilities,
     CLICommandResult,
+    CLIStrategy,
     ParsedResult,
 )
 from .registry import CLIStrategyRegistry
 
+
 __all__ = [
-    "CLIStrategy",
     "CLICapabilities",
     "CLICommandResult",
-    "ParsedResult",
+    "CLIStrategy",
     "CLIStrategyRegistry",
+    "ParsedResult",
 ]

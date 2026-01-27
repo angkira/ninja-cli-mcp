@@ -11,13 +11,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ninja_coder.strategies.aider_strategy import AiderStrategy
-from ninja_coder.strategies.base import CLIStrategy
 from ninja_coder.strategies.gemini_strategy import GeminiStrategy
 from ninja_coder.strategies.opencode_strategy import OpenCodeStrategy
 
 
 if TYPE_CHECKING:
     from ninja_coder.driver import NinjaConfig
+    from ninja_coder.strategies.base import CLIStrategy
 
 
 class CLIStrategyRegistry:

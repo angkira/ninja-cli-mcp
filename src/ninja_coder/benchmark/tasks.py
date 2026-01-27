@@ -7,6 +7,7 @@ complexity levels and use cases.
 
 from ninja_coder.benchmark.framework import BenchmarkTask
 
+
 # Quick tasks - simple, single-pass operations
 QUICK_TASKS = [
     BenchmarkTask(

@@ -152,7 +152,9 @@ async def call_tool(name: str, arguments: dict) -> Any:
             return [types.TextContent(type="text", text=result.model_dump_json())]
 
         else:
-            return [types.TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
+            return [
+                types.TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))
+            ]
 
     except Exception as e:
         return [types.TextContent(type="text", text=json.dumps({"error": str(e)}))]
@@ -161,11 +163,7 @@ async def call_tool(name: str, arguments: dict) -> Any:
 async def main_stdio():
     """Run the MCP server over stdio."""
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options()
-        )
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 async def main_http(host: str, port: int) -> None:
@@ -180,11 +178,7 @@ async def main_http(host: str, port: int) -> None:
     async def handle_sse(request: Request):
         """Handle SSE connection."""
         async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-            await server.run(
-                streams[0],
-                streams[1],
-                server.create_initialization_options()
-            )
+            await server.run(streams[0], streams[1], server.create_initialization_options())
         return Response()
 
     async def handle_messages(request: Request):
@@ -194,17 +188,22 @@ async def main_http(host: str, port: int) -> None:
         except Exception as e:
             # Handle closed connections and other errors gracefully
             import logging
+
             logging.error(f"Error handling SSE message: {e}")
             try:
-                await request._send({
-                    "type": "http.response.start",
-                    "status": 500,
-                    "headers": [[b"content-type", b"application/json"]],
-                })
-                await request._send({
-                    "type": "http.response.body",
-                    "body": json.dumps({"error": str(e)}).encode(),
-                })
+                await request._send(
+                    {
+                        "type": "http.response.start",
+                        "status": 500,
+                        "headers": [[b"content-type", b"application/json"]],
+                    }
+                )
+                await request._send(
+                    {
+                        "type": "http.response.body",
+                        "body": json.dumps({"error": str(e)}).encode(),
+                    }
+                )
             except Exception:
                 # Connection already closed, ignore
                 pass

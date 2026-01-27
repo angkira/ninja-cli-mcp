@@ -1,6 +1,5 @@
 """Tool executor for prompt operations."""
 
-
 from ninja_common.logging_utils import get_logger
 from ninja_common.security import monitored, rate_limited
 from ninja_prompts.models import (
@@ -41,10 +40,7 @@ class PromptToolExecutor:
                 )
             elif request.action == "get":
                 retrieved_prompt = self.manager.get_prompt(request.prompt_id)
-                return PromptRegistryResult(
-                    status="ok",
-                    prompts=[retrieved_prompt.model_dump()]
-                )
+                return PromptRegistryResult(status="ok", prompts=[retrieved_prompt.model_dump()])
         except Exception as e:
             logger.error(f"Error in prompt_registry: {e}")
             return PromptRegistryResult(status="error", prompts=[])
@@ -117,8 +113,7 @@ class PromptToolExecutor:
                 )
             elif request.action == "get":
                 return PromptRegistryResult(
-                    status="ok",
-                    prompts=[self.manager.get_prompt(request.prompt_id).model_dump()]
+                    status="ok", prompts=[self.manager.get_prompt(request.prompt_id).model_dump()]
                 )
         except Exception as e:
             logger.error(f"Error in prompt_registry: {e}")
@@ -154,5 +149,3 @@ class PromptToolExecutor:
         except Exception as e:
             logger.error(f"Error in prompt_chain: {e}")
             return PromptChainResult(status="error", executed_steps=[])
-
-
