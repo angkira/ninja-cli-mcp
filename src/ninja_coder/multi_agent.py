@@ -8,7 +8,7 @@ parallel execution of complex, full-stack development tasks.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from ninja_common.logging_utils import get_logger
 
@@ -64,7 +64,7 @@ class MultiAgentOrchestrator:
     """Orchestrates oh-my-opencode multi-agent tasks."""
 
     # Agent definitions
-    AGENTS = [
+    AGENTS: ClassVar[list[AgentRole]] = [
         AgentRole(
             name="Chief AI Architect",
             description="System design, architecture decisions, technical planning",

@@ -12,7 +12,6 @@ from pathlib import Path
 try:
     from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
-    from InquirerPy.separator import Separator
 
     HAS_INQUIRERPY = True
 except ImportError:
@@ -55,6 +54,7 @@ def check_uv() -> bool:
             shell=True,
             capture_output=True,
             text=True,
+            check=False,
         )
 
         if result.returncode == 0:
@@ -79,13 +79,8 @@ def select_installation_type() -> str | None:
         print("  3) Custom (select modules)")
         choice = input("\nSelect [1]: ").strip() or "1"
 
-        if choice == "1":
-            return "full"
-        elif choice == "2":
-            return "minimal"
-        elif choice == "3":
-            return "custom"
-        return "full"
+        choices = {"1": "full", "2": "minimal", "3": "custom"}
+        return choices.get(choice, "full")
 
     result = inquirer.select(
         message="Select installation type:",
@@ -165,7 +160,7 @@ def install_ninja_mcp(install_type: str) -> bool:
         print("   Installing from PyPI...")
         cmd = ["uv", "tool", "install", "--force", f"ninja-mcp{extras}"]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
     if result.returncode == 0:
         print("✓ ninja-mcp installed successfully")
@@ -193,7 +188,7 @@ def install_aider() -> bool:
     if install:
         print("\n🔄 Installing aider...")
         result = subprocess.run(
-            ["uv", "tool", "install", "aider-chat"], capture_output=True, text=True
+            ["uv", "tool", "install", "aider-chat"], capture_output=True, text=True, check=False
         )
 
         if result.returncode == 0:

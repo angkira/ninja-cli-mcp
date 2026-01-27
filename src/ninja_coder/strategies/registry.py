@@ -8,7 +8,7 @@ appropriate CLI strategies based on binary path.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from ninja_coder.strategies.aider_strategy import AiderStrategy
 from ninja_coder.strategies.gemini_strategy import GeminiStrategy
@@ -28,7 +28,7 @@ class CLIStrategyRegistry:
     based on binary path.
     """
 
-    _strategies: dict[str, type[CLIStrategy]] = {
+    _strategies: ClassVar[dict[str, type[CLIStrategy]]] = {
         "aider": AiderStrategy,
         "opencode": OpenCodeStrategy,
         "gemini": GeminiStrategy,

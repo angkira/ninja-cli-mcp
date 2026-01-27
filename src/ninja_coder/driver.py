@@ -631,10 +631,6 @@ class NinjaDriver:
             complexity = TaskComplexity.QUICK
             fanout = 1
 
-        # Check environment overrides
-        os.environ.get("NINJA_PREFER_COST", "false").lower() == "true"
-        os.environ.get("NINJA_PREFER_QUALITY", "false").lower() == "true"
-
         # Select model using model selector directly
         model_selector = ModelSelector(default_model=self.config.model)
         recommendation = model_selector.select_model(
@@ -1436,7 +1432,7 @@ class NinjaDriver:
                                 task_logger.debug(
                                     f"Activity: {stream_name} received {len(chunk)} bytes"
                                 )
-                        except TimeoutError:
+                        except asyncio.TimeoutError:
                             # No data yet, check inactivity timeout
                             elapsed = asyncio.get_event_loop().time() - last_activity
                             total_elapsed = asyncio.get_event_loop().time() - start_time
@@ -1445,11 +1441,11 @@ class NinjaDriver:
                                 task_logger.warning(
                                     f"No output for {inactivity_timeout}s, process may be hung"
                                 )
-                                raise TimeoutError(f"No output activity for {inactivity_timeout}s")
+                                raise TimeoutError(f"No output activity for {inactivity_timeout}s") from None
 
                             if total_elapsed > max_timeout:
                                 task_logger.warning(f"Maximum timeout {max_timeout}s reached")
-                                raise TimeoutError(f"Maximum timeout {max_timeout}s reached")
+                                raise TimeoutError(f"Maximum timeout {max_timeout}s reached") from None
 
                             continue
 
