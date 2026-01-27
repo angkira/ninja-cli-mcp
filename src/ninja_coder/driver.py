@@ -478,11 +478,13 @@ class NinjaDriver:
 
         # Initialize session manager
         from ninja_common.path_utils import get_cache_dir
+
         cache_dir = get_cache_dir()
         self.session_manager = SessionManager(cache_dir)
 
         # Initialize structured logger
         from ninja_common.structured_logger import StructuredLogger
+
         log_dir = cache_dir / "logs"
         self.structured_logger = StructuredLogger("ninja-coder", log_dir)
 
@@ -1500,6 +1502,298 @@ class NinjaDriver:
             self.structured_logger.error(
                 f"Unexpected error: {type(e).__name__}",
                 session_id=session_id,
+                task_id=step_id,
+                cli_name=self._strategy.name,
+                model=model_used,
+                error_type=type(e).__name__,
+                error_message=str(e)[:500],
+            )
+
+            return NinjaResult(
+                success=False,
+                summary="❌ Execution error",
+                notes=str(e)[:200],  # Keep error message concise
+                raw_logs_path=logs_path,
+                exit_code=-1,
+                model_used=model_used,
+            )
+
+    async def execute_async_with_opencode_session(
+        self,
+        repo_root: str,
+        step_id: str,
+        instruction: dict[str, Any],
+        opencode_session_id: str | None = None,
+        is_initial: bool = False,
+        timeout_sec: int | None = None,
+        task_type: str = "quick",
+    ) -> NinjaResult:
+        """Execute task with OpenCode native session support.
+
+        This method is specifically for OpenCode CLI's --session and --continue flags.
+        For Python-based session management, use execute_with_session().
+
+        Args:
+            repo_root: Repository root path.
+            step_id: Step identifier.
+            instruction: Instruction document.
+            opencode_session_id: OpenCode session ID to continue (e.g., "ses_xxxxx").
+            is_initial: If True, this is the first step (create new session).
+            timeout_sec: Timeout in seconds.
+            task_type: Type of task ('quick', 'sequential', 'parallel').
+
+        Returns:
+            NinjaResult with session_id field populated if session was created/continued.
+        """
+        # Check if strategy is OpenCode
+        if self._strategy.name != "opencode":
+            logger.warning(
+                f"execute_async_with_opencode_session() called with {self._strategy.name} strategy. "
+                f"Falling back to execute_async() (native sessions only available with OpenCode)"
+            )
+            return await self.execute_async(
+                repo_root=repo_root,
+                step_id=step_id,
+                instruction=instruction,
+                timeout_sec=timeout_sec,
+                task_type=task_type,
+                session_id=opencode_session_id,
+            )
+
+        task_logger = create_task_logger(repo_root, step_id)
+
+        try:
+            # Safety check with automatic enforcement (AUTO mode by default)
+            task_desc = instruction.get("task", "")
+            context_paths = instruction.get("file_scope", {}).get("context_paths", [])
+
+            safety_results = validate_task_safety(
+                repo_root=repo_root,
+                task_description=task_desc,
+                context_paths=context_paths,
+            )
+
+            # Log all warnings
+            for warning in safety_results.get("warnings", []):
+                task_logger.warning(warning)
+                logger.warning(warning)
+
+            # Log recommendations
+            for rec in safety_results.get("recommendations", []):
+                task_logger.info(f"💡 {rec}")
+
+            # Log action taken
+            action_taken = safety_results.get("action_taken")
+            if action_taken == "auto_committed":
+                logger.info("✅ Automatic safety commit created")
+
+            # ENFORCE SAFETY: Refuse to run if safety check failed
+            if not safety_results.get("safe", True):
+                logs_path = task_logger.save()
+                error_msg = "Safety check failed - refusing to run task"
+                task_logger.error(error_msg)
+                return NinjaResult(
+                    success=False,
+                    summary="❌ Safety check failed",
+                    notes="\n".join(safety_results.get("warnings", [])),
+                    raw_logs_path=logs_path,
+                    exit_code=-2,
+                    model_used=self.config.model,
+                )
+
+            # Store git info for recovery
+            git_info = safety_results.get("git_info", {})
+            if git_info.get("safety_tag"):
+                recovery_cmd = f"git reset --hard {git_info['safety_tag']}"
+                task_logger.info(f"🔖 Recovery point: {recovery_cmd}")
+                logger.info(f"🔖 Recovery point: {recovery_cmd}")
+
+            # Write task file
+            task_file = self._write_task_file(repo_root, step_id, instruction)
+            task_logger.info(f"Wrote task file: {task_file}")
+
+            # Select model intelligently based on task type
+            model, use_coding_plan = self._select_model_for_task(instruction, task_type)
+
+            task_logger.info(
+                f"Starting OpenCode session task with model: {model} "
+                f"(session_id={opencode_session_id}, is_initial={is_initial})"
+            )
+            task_logger.set_metadata("instruction", instruction)
+            task_logger.set_metadata("model", model)
+            task_logger.set_metadata("task_type", task_type)
+            task_logger.set_metadata("opencode_session_id", opencode_session_id)
+            task_logger.set_metadata("is_initial", is_initial)
+
+            # Structured logging: Task start
+            self.structured_logger.info(
+                f"Starting OpenCode session task: {task_desc[:100]}...",
+                session_id=opencode_session_id,
+                task_id=step_id,
+                cli_name=self._strategy.name,
+                model=model,
+                task_type=task_type,
+                repo_root=repo_root,
+                context_file_count=len(context_paths),
+                is_initial=is_initial,
+            )
+
+            # Build prompt from instruction
+            with Path(task_file).open() as f:
+                instruction_data = json.load(f)
+
+            prompt = self._build_prompt_text(instruction_data, repo_root)
+            file_scope = instruction_data.get("file_scope", {})
+            context_paths = file_scope.get("context_paths", [])
+
+            # Build command using strategy with session parameters
+            additional_flags = {"use_coding_plan": use_coding_plan} if use_coding_plan else None
+
+            cli_result = self._strategy.build_command(
+                prompt=prompt,
+                repo_root=repo_root,
+                file_paths=context_paths,
+                model=model,
+                additional_flags=additional_flags,
+                session_id=opencode_session_id,
+                continue_last=(not is_initial and not opencode_session_id),
+            )
+
+            # Log command (redact sensitive data)
+            safe_cmd = [
+                arg if "api-key" not in prev.lower() else "***REDACTED***"
+                for prev, arg in zip([""] + cli_result.command[:-1], cli_result.command)
+            ]
+            task_logger.info(f"Running {self._strategy.name}: {' '.join(safe_cmd)}")
+
+            # Structured logging: Command execution
+            self.structured_logger.log_command(
+                command=cli_result.command,
+                session_id=opencode_session_id,
+                task_id=step_id,
+                cli_name=self._strategy.name,
+                model=model,
+                working_dir=str(cli_result.working_dir),
+            )
+
+            # Get timeout from strategy
+            timeout = timeout_sec or self._strategy.get_timeout(task_type)
+
+            # Execute asynchronously using strategy-built command
+            process = await asyncio.create_subprocess_exec(
+                *cli_result.command,
+                cwd=str(cli_result.working_dir),
+                env=cli_result.env,
+                stdin=asyncio.subprocess.DEVNULL,  # Prevent stdin blocking
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=timeout,
+                )
+                stdout = stdout_bytes.decode() if stdout_bytes else ""
+                stderr = stderr_bytes.decode() if stderr_bytes else ""
+                exit_code = process.returncode or 0
+
+            except TimeoutError:
+                process.kill()
+                await process.wait()
+                task_logger.error(f"Task timed out after {timeout}s")
+                logs_path = task_logger.save()
+                return NinjaResult(
+                    success=False,
+                    summary="⏱️ Task timed out",
+                    notes=f"Execution exceeded {timeout}s timeout",
+                    raw_logs_path=logs_path,
+                    exit_code=-1,
+                    model_used=model,
+                )
+
+            task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
+
+            # Parse output using strategy (includes session_id extraction)
+            parsed = self._strategy.parse_output(stdout, stderr, exit_code)
+
+            # Build result from parsed output with session_id
+            result = NinjaResult(
+                success=parsed.success,
+                summary=parsed.summary,
+                notes=parsed.notes,
+                suspected_touched_paths=parsed.touched_paths,
+                raw_logs_path=task_logger.save(),
+                exit_code=exit_code,
+                stdout=stdout,
+                stderr=stderr,
+                model_used=model,
+                aider_error_detected=parsed.retryable_error,
+                session_id=parsed.session_id,  # Include extracted session ID
+            )
+
+            # Log session creation/continuation
+            if parsed.session_id:
+                if is_initial:
+                    logger.info(f"✅ Created OpenCode session: {parsed.session_id}")
+                    task_logger.info(f"✅ Created OpenCode session: {parsed.session_id}")
+                else:
+                    logger.info(f"✅ Continued OpenCode session: {parsed.session_id}")
+                    task_logger.info(f"✅ Continued OpenCode session: {parsed.session_id}")
+
+            task_logger.info(
+                f"Task {'succeeded' if result.success else 'failed'}: {result.summary}"
+            )
+
+            # Structured logging: Task result
+            self.structured_logger.log_result(
+                success=result.success,
+                summary=result.summary,
+                session_id=parsed.session_id or opencode_session_id,
+                task_id=step_id,
+                cli_name=self._strategy.name,
+                model=model,
+                touched_paths=result.suspected_touched_paths,
+                exit_code=exit_code,
+            )
+
+            return result
+
+        except FileNotFoundError:
+            task_logger.error(f"Ninja Code CLI not found: {self.config.bin_path}")
+            logs_path = task_logger.save()
+            # Use locals() to check if model was defined before error
+            model_used = locals().get("model", self.config.model)
+
+            # Structured logging: Error
+            self.structured_logger.error(
+                f"CLI not found: {self.config.bin_path}",
+                session_id=opencode_session_id,
+                task_id=step_id,
+                cli_name=self._strategy.name,
+                model=model_used,
+                bin_path=str(self.config.bin_path),
+            )
+
+            return NinjaResult(
+                success=False,
+                summary="❌ Ninja Code CLI not found",
+                notes=f"Could not find executable: {self.config.bin_path}. "
+                f"Install Ninja Code CLI or set NINJA_CODE_BIN environment variable.",
+                raw_logs_path=logs_path,
+                exit_code=-1,
+                model_used=model_used,
+            )
+        except Exception as e:
+            task_logger.error(f"Unexpected error: {e}")
+            logs_path = task_logger.save()
+            # Use locals() to check if model was defined before error
+            model_used = locals().get("model", self.config.model)
+
+            # Structured logging: Error
+            self.structured_logger.error(
+                f"Unexpected error: {type(e).__name__}",
+                session_id=opencode_session_id,
                 task_id=step_id,
                 cli_name=self._strategy.name,
                 model=model_used,

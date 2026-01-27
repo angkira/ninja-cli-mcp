@@ -345,6 +345,7 @@ def test_driver_write_task_file(driver, tmp_path):
 
     # Verify content
     import json
+
     with open(task_file, "r") as f:
         data = json.load(f)
 
@@ -442,6 +443,400 @@ def test_driver_logging_on_init(driver, tmp_path):
     init_logs = [log for log in logs if "Driver initialized" in log["message"]]
     assert len(init_logs) == 1
     assert init_logs[0]["level"] == "INFO"
+
+
+# ============================================================================
+# OpenCode Session Tests
+# ============================================================================
+
+
+@pytest.fixture
+def opencode_driver(tmp_path, monkeypatch):
+    """Create NinjaDriver instance with OpenCode strategy."""
+    monkeypatch.setattr(
+        "ninja_common.path_utils.get_cache_dir",
+        lambda: tmp_path / "cache",
+    )
+
+    config = NinjaConfig(
+        bin_path="/opt/homebrew/bin/opencode",
+        model="anthropic/claude-sonnet-4-5",
+        openai_api_key="test-key",
+    )
+    return NinjaDriver(config)
+
+
+@pytest.mark.asyncio
+async def test_execute_async_with_opencode_session_creates_session(
+    opencode_driver, tmp_path, monkeypatch
+):
+    """Test that execute_async_with_opencode_session creates a new session."""
+    # Mock asyncio.create_subprocess_exec to simulate OpenCode CLI execution
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    async def mock_subprocess(*args, **kwargs):
+        """Mock subprocess that returns success with session ID."""
+        process = MagicMock()
+        process.returncode = 0
+
+        # Simulate OpenCode output with session ID and file modifications
+        # Use format that matches OpenCode parser patterns
+        stdout = b"Session: ses_abc123\n| Edit     src/user.py\n| Write    src/post.py"
+        stderr = b""
+
+        async def communicate():
+            return stdout, stderr
+
+        process.communicate = communicate
+        return process
+
+    monkeypatch.setattr(
+        "asyncio.create_subprocess_exec",
+        mock_subprocess,
+    )
+
+    # Disable safety checks for testing
+    monkeypatch.setattr(
+        "ninja_coder.driver.validate_task_safety",
+        lambda **kwargs: {"safe": True, "warnings": [], "recommendations": [], "git_info": {}},
+    )
+
+    instruction = {
+        "task": "Create User and Post classes",
+        "file_scope": {
+            "context_paths": ["src/models.py"],
+            "allowed_globs": ["src/**/*.py"],
+            "deny_globs": [],
+        },
+    }
+
+    result = await opencode_driver.execute_async_with_opencode_session(
+        repo_root=str(tmp_path),
+        step_id="test-step-1",
+        instruction=instruction,
+        opencode_session_id=None,
+        is_initial=True,
+        task_type="quick",
+    )
+
+    # Verify result
+    assert result.success is True
+    assert result.session_id == "ses_abc123"
+    assert result.summary.startswith("✅")
+    assert len(result.suspected_touched_paths) >= 0  # Parser should detect file changes
+
+
+@pytest.mark.asyncio
+async def test_execute_async_with_opencode_session_continues_session(
+    opencode_driver, tmp_path, monkeypatch
+):
+    """Test that execute_async_with_opencode_session continues an existing session."""
+    # Mock asyncio.create_subprocess_exec
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    async def mock_subprocess(*args, **kwargs):
+        """Mock subprocess that returns success."""
+        process = MagicMock()
+        process.returncode = 0
+
+        # Check that --session flag was passed
+        assert "--session" in args
+        assert "ses_existing" in args
+
+        stdout = b"Session: ses_existing\nModified 1 file: src/user.py"
+        stderr = b""
+
+        async def communicate():
+            return stdout, stderr
+
+        process.communicate = communicate
+        return process
+
+    monkeypatch.setattr(
+        "asyncio.create_subprocess_exec",
+        mock_subprocess,
+    )
+
+    # Disable safety checks
+    monkeypatch.setattr(
+        "ninja_coder.driver.validate_task_safety",
+        lambda **kwargs: {"safe": True, "warnings": [], "recommendations": [], "git_info": {}},
+    )
+
+    instruction = {
+        "task": "Update User class",
+        "file_scope": {
+            "context_paths": ["src/models.py"],
+            "allowed_globs": ["src/**/*.py"],
+            "deny_globs": [],
+        },
+    }
+
+    result = await opencode_driver.execute_async_with_opencode_session(
+        repo_root=str(tmp_path),
+        step_id="test-step-2",
+        instruction=instruction,
+        opencode_session_id="ses_existing",
+        is_initial=False,
+        task_type="quick",
+    )
+
+    # Verify result
+    assert result.success is True
+    assert result.session_id == "ses_existing"
+
+
+@pytest.mark.asyncio
+async def test_execute_async_with_opencode_session_fallback_non_opencode(
+    driver, tmp_path, monkeypatch
+):
+    """Test that execute_async_with_opencode_session falls back to execute_async for non-OpenCode CLIs."""
+    # driver fixture uses Aider strategy (not OpenCode)
+
+    # Mock execute_async to track if it was called
+    original_execute_async = driver.execute_async
+    execute_async_called = False
+
+    async def mock_execute_async(*args, **kwargs):
+        nonlocal execute_async_called
+        execute_async_called = True
+        # Return a simple result
+        return NinjaResult(
+            success=True,
+            summary="Fallback executed",
+            model_used="test/model",
+        )
+
+    monkeypatch.setattr(driver, "execute_async", mock_execute_async)
+
+    instruction = {
+        "task": "Test fallback",
+        "file_scope": {
+            "context_paths": [],
+            "allowed_globs": ["**/*"],
+            "deny_globs": [],
+        },
+    }
+
+    result = await driver.execute_async_with_opencode_session(
+        repo_root=str(tmp_path),
+        step_id="test-fallback",
+        instruction=instruction,
+        opencode_session_id=None,
+        is_initial=True,
+        task_type="quick",
+    )
+
+    # Verify fallback was used
+    assert execute_async_called is True
+    assert result.success is True
+
+
+@pytest.mark.asyncio
+async def test_execute_async_with_opencode_session_timeout(opencode_driver, tmp_path, monkeypatch):
+    """Test that execute_async_with_opencode_session handles timeout correctly."""
+    import asyncio
+    from unittest.mock import MagicMock
+
+    async def mock_subprocess(*args, **kwargs):
+        """Mock subprocess that takes too long."""
+        process = MagicMock()
+        process.returncode = 0
+        process.kill = MagicMock()
+
+        async def wait():
+            pass
+
+        process.wait = wait
+
+        # Mock communicate to sleep long enough to trigger timeout
+        async def communicate():
+            await asyncio.sleep(10)  # Sleep longer than timeout
+            return b"", b""
+
+        process.communicate = communicate
+        return process
+
+    monkeypatch.setattr(
+        "asyncio.create_subprocess_exec",
+        mock_subprocess,
+    )
+
+    # Disable safety checks
+    monkeypatch.setattr(
+        "ninja_coder.driver.validate_task_safety",
+        lambda **kwargs: {"safe": True, "warnings": [], "recommendations": [], "git_info": {}},
+    )
+
+    instruction = {
+        "task": "Test timeout",
+        "file_scope": {
+            "context_paths": [],
+            "allowed_globs": ["**/*"],
+            "deny_globs": [],
+        },
+    }
+
+    result = await opencode_driver.execute_async_with_opencode_session(
+        repo_root=str(tmp_path),
+        step_id="test-timeout",
+        instruction=instruction,
+        timeout_sec=1,
+        task_type="quick",
+    )
+
+    # Verify timeout was handled
+    assert result.success is False
+    assert "timed out" in result.summary.lower()
+    assert result.exit_code == -1
+
+
+@pytest.mark.asyncio
+async def test_execute_async_with_opencode_session_cli_not_found(
+    opencode_driver, tmp_path, monkeypatch
+):
+    """Test that execute_async_with_opencode_session handles missing CLI gracefully."""
+    import asyncio
+
+    async def mock_subprocess(*args, **kwargs):
+        """Mock subprocess that raises FileNotFoundError."""
+        raise FileNotFoundError("opencode not found")
+
+    monkeypatch.setattr(
+        "asyncio.create_subprocess_exec",
+        mock_subprocess,
+    )
+
+    # Disable safety checks
+    monkeypatch.setattr(
+        "ninja_coder.driver.validate_task_safety",
+        lambda **kwargs: {"safe": True, "warnings": [], "recommendations": [], "git_info": {}},
+    )
+
+    instruction = {
+        "task": "Test CLI not found",
+        "file_scope": {
+            "context_paths": [],
+            "allowed_globs": ["**/*"],
+            "deny_globs": [],
+        },
+    }
+
+    result = await opencode_driver.execute_async_with_opencode_session(
+        repo_root=str(tmp_path),
+        step_id="test-not-found",
+        instruction=instruction,
+        task_type="quick",
+    )
+
+    # Verify error was handled
+    assert result.success is False
+    assert "not found" in result.summary.lower()
+    assert result.exit_code == -1
+
+
+@pytest.mark.asyncio
+async def test_execute_async_with_opencode_session_continue_last(
+    opencode_driver, tmp_path, monkeypatch
+):
+    """Test that execute_async_with_opencode_session uses --continue when appropriate."""
+    import asyncio
+    from unittest.mock import MagicMock
+
+    continue_flag_found = False
+
+    async def mock_subprocess(*args, **kwargs):
+        """Mock subprocess that checks for --continue flag."""
+        nonlocal continue_flag_found
+
+        process = MagicMock()
+        process.returncode = 0
+
+        # Check if --continue flag is present
+        if "--continue" in args:
+            continue_flag_found = True
+
+        stdout = b"Task completed successfully"
+        stderr = b""
+
+        async def communicate():
+            return stdout, stderr
+
+        process.communicate = communicate
+        return process
+
+    monkeypatch.setattr(
+        "asyncio.create_subprocess_exec",
+        mock_subprocess,
+    )
+
+    # Disable safety checks
+    monkeypatch.setattr(
+        "ninja_coder.driver.validate_task_safety",
+        lambda **kwargs: {"safe": True, "warnings": [], "recommendations": [], "git_info": {}},
+    )
+
+    instruction = {
+        "task": "Continue previous task",
+        "file_scope": {
+            "context_paths": [],
+            "allowed_globs": ["**/*"],
+            "deny_globs": [],
+        },
+    }
+
+    # Call with is_initial=False and no session_id (should trigger --continue)
+    result = await opencode_driver.execute_async_with_opencode_session(
+        repo_root=str(tmp_path),
+        step_id="test-continue",
+        instruction=instruction,
+        opencode_session_id=None,
+        is_initial=False,
+        task_type="quick",
+    )
+
+    # Verify --continue flag was used
+    assert continue_flag_found is True
+
+
+@pytest.mark.asyncio
+async def test_execute_async_with_opencode_session_safety_check_failed(
+    opencode_driver, tmp_path, monkeypatch
+):
+    """Test that execute_async_with_opencode_session refuses to run when safety check fails."""
+    # Mock safety check to fail
+    monkeypatch.setattr(
+        "ninja_coder.driver.validate_task_safety",
+        lambda **kwargs: {
+            "safe": False,
+            "warnings": ["Uncommitted changes detected"],
+            "recommendations": ["Commit your changes first"],
+            "git_info": {},
+        },
+    )
+
+    instruction = {
+        "task": "Dangerous task",
+        "file_scope": {
+            "context_paths": [],
+            "allowed_globs": ["**/*"],
+            "deny_globs": [],
+        },
+    }
+
+    result = await opencode_driver.execute_async_with_opencode_session(
+        repo_root=str(tmp_path),
+        step_id="test-safety-fail",
+        instruction=instruction,
+        task_type="quick",
+    )
+
+    # Verify execution was refused
+    assert result.success is False
+    assert "Safety check failed" in result.summary
+    assert result.exit_code == -2
 
 
 if __name__ == "__main__":

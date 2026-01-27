@@ -71,6 +71,8 @@ class GeminiStrategy:
         file_paths: list[str] | None = None,
         model: str | None = None,
         additional_flags: dict[str, Any] | None = None,
+        session_id: str | None = None,
+        continue_last: bool = False,
     ) -> CLICommandResult:
         """Build Gemini command with model and context support.
 
@@ -80,6 +82,8 @@ class GeminiStrategy:
             file_paths: List of files to include in context.
             model: Model to use (if None, use configured default).
             additional_flags: Additional CLI-specific flags (unused for Gemini).
+            session_id: Session ID to continue (unused for Gemini).
+            continue_last: Continue last session (unused for Gemini).
 
         Returns:
             CLICommandResult with command, env, and metadata.
@@ -258,13 +262,17 @@ class GeminiStrategy:
         if success and not suspected_paths and len(combined_output) > 100:
             # Check if output suggests files should have been created/modified
             action_keywords = ["write", "creat", "modif", "updat", "edit", "add", "implement"]
-            has_action_intent = any(keyword in combined_output.lower() for keyword in action_keywords)
+            has_action_intent = any(
+                keyword in combined_output.lower() for keyword in action_keywords
+            )
 
             # If there was intent to modify files but none were touched, mark as failure
             if has_action_intent:
                 success = False
                 summary = "⚠️ Task completed but no files were modified"
-                notes = "CLI exited successfully but no file changes detected. Check logs for details."
+                notes = (
+                    "CLI exited successfully but no file changes detected. Check logs for details."
+                )
                 logger.warning("Suspicious success: exit_code=0 but no files touched")
 
         return ParsedResult(
