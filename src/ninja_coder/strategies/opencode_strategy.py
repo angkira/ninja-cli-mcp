@@ -82,6 +82,15 @@ class OpenCodeStrategy:
     including native z.ai integration with Coding Plan API.
 
     Dialogue mode allows persistent conversation across multiple sequential steps.
+
+    Server Mode (Recommended):
+        Set OPENCODE_SERVER_URL=http://localhost:4096 to connect to a persistent
+        OpenCode server. Benefits:
+        - 50x faster execution (2-3s vs 2-4min per task)
+        - Fixes OpenCode v0.15+ exit regression bug
+        - Warm context between tasks
+
+        Start server: opencode serve --port 4096
     """
 
     def __init__(self, bin_path: str, config: NinjaConfig):
@@ -94,6 +103,12 @@ class OpenCodeStrategy:
         self.bin_path = bin_path
         self.config = config
         self._session: DialogueSession | None = None
+
+        # Check if OpenCode server is enabled via environment
+        self.server_url = os.environ.get("OPENCODE_SERVER_URL", "")
+        if self.server_url:
+            logger.info(f"OpenCode server mode enabled: {self.server_url}")
+
         self._capabilities = CLICapabilities(
             supports_streaming=True,
             supports_file_context=True,
@@ -161,11 +176,16 @@ class OpenCodeStrategy:
             model_name,
         ]
 
-        # Session support
-        if session_id:
-            cmd.extend(["--session", session_id])
-        elif continue_last:
-            cmd.append("--continue")
+        # Connect to OpenCode server if configured (50x faster + fixes exit bug)
+        if self.server_url:
+            cmd.extend(["--attach", self.server_url])
+
+        # Session support (only without server mode - sessions don't work with --attach)
+        if not self.server_url:
+            if session_id:
+                cmd.extend(["--session", session_id])
+            elif continue_last:
+                cmd.append("--continue")
 
         # Build enhanced prompt with file context
         # NOTE: We don't use --file flag because it causes OpenCode to interpret
@@ -204,6 +224,8 @@ class OpenCodeStrategy:
                 "timeout": timeout,
                 "session_id": session_id,
                 "continue_last": continue_last,
+                "server_mode": bool(self.server_url),
+                "server_url": self.server_url if self.server_url else None,
             },
         )
 
