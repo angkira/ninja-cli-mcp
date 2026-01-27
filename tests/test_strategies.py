@@ -513,8 +513,11 @@ def test_opencode_server_mode_adds_attach_flag(monkeypatch):
     assert result.command[attach_idx + 1] == "http://localhost:4096"
 
 
-def test_opencode_server_mode_no_attach_flag_without_env():
-    """Test that --attach flag is NOT added when server mode is disabled."""
+def test_opencode_server_mode_no_attach_flag_without_env(monkeypatch):
+    """Test that --attach flag is NOT added when daemon mode is disabled."""
+    # Disable daemon mode explicitly
+    monkeypatch.setenv("OPENCODE_DISABLE_DAEMON", "true")
+
     config = NinjaConfig(
         bin_path="opencode",
         model="anthropic/claude-sonnet-4-5",
@@ -528,7 +531,7 @@ def test_opencode_server_mode_no_attach_flag_without_env():
         repo_root="/tmp/test-repo",
     )
 
-    # Verify --attach flag is NOT present
+    # Verify --attach flag is NOT present when daemon is disabled
     assert "--attach" not in result.command
 
 
@@ -567,8 +570,11 @@ def test_opencode_server_mode_disables_session_flags(monkeypatch):
     assert "--continue" not in result.command
 
 
-def test_opencode_server_mode_enables_session_flags_without_server():
-    """Test that session flags work normally when server mode is disabled."""
+def test_opencode_server_mode_enables_session_flags_without_server(monkeypatch):
+    """Test that session flags work normally when daemon mode is disabled."""
+    # Disable daemon mode explicitly
+    monkeypatch.setenv("OPENCODE_DISABLE_DAEMON", "true")
+
     config = NinjaConfig(
         bin_path="opencode",
         model="anthropic/claude-sonnet-4-5",
@@ -584,7 +590,7 @@ def test_opencode_server_mode_enables_session_flags_without_server():
         session_id="test-session-123",
     )
 
-    # Verify --session flag IS present
+    # Verify --session flag IS present when daemon is disabled
     assert "--session" in result.command
     session_idx = result.command.index("--session")
     assert result.command[session_idx + 1] == "test-session-123"
@@ -623,8 +629,11 @@ def test_opencode_server_mode_metadata_with_server(monkeypatch):
     assert result.metadata["server_url"] == "http://localhost:4096"
 
 
-def test_opencode_server_mode_metadata_without_server():
-    """Test that metadata includes server info when server mode is disabled."""
+def test_opencode_server_mode_metadata_without_server(monkeypatch):
+    """Test that metadata includes server info when daemon mode is disabled."""
+    # Disable daemon mode explicitly
+    monkeypatch.setenv("OPENCODE_DISABLE_DAEMON", "true")
+
     config = NinjaConfig(
         bin_path="opencode",
         model="anthropic/claude-sonnet-4-5",
@@ -643,8 +652,11 @@ def test_opencode_server_mode_metadata_without_server():
     assert result.metadata["server_url"] is None
 
 
-def test_opencode_server_mode_backward_compatibility():
-    """Test backward compatibility - existing code works without server mode."""
+def test_opencode_server_mode_backward_compatibility(monkeypatch):
+    """Test backward compatibility - existing code works when daemon mode is disabled."""
+    # Disable daemon mode to test backward compatibility
+    monkeypatch.setenv("OPENCODE_DISABLE_DAEMON", "true")
+
     config = NinjaConfig(
         bin_path="opencode",
         model="anthropic/claude-sonnet-4-5",
@@ -653,7 +665,7 @@ def test_opencode_server_mode_backward_compatibility():
 
     strategy = OpenCodeStrategy("opencode", config)
 
-    # All existing functionality should work normally
+    # All existing functionality should work normally without daemon
     result = strategy.build_command(
         prompt="Create a User class",
         repo_root="/tmp/test-repo",

@@ -27,7 +27,7 @@ def test_daemon_real_server():
     daemon = get_daemon()
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        repo_root = Path(tmp_dir)
+        repo_root = Path(tmp_dir).resolve()  # Resolve symlinks for macOS
 
         # Create a simple repo structure
         (repo_root / "README.md").write_text("# Test Project\n")
@@ -63,8 +63,8 @@ def test_daemon_multiple_repos():
 
     with tempfile.TemporaryDirectory() as tmp_dir1:
         with tempfile.TemporaryDirectory() as tmp_dir2:
-            repo1 = Path(tmp_dir1)
-            repo2 = Path(tmp_dir2)
+            repo1 = Path(tmp_dir1).resolve()  # Resolve symlinks for macOS
+            repo2 = Path(tmp_dir2).resolve()  # Resolve symlinks for macOS
 
             # Create simple repo structures
             (repo1 / "README.md").write_text("# Repo 1\n")
