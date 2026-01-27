@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ninja_coder.daemon import get_daemon
 from ninja_coder.strategies.base import (
     CLICapabilities,
     CLICommandResult,
@@ -91,6 +92,14 @@ class OpenCodeStrategy:
         - Warm context between tasks
 
         Start server: opencode serve --port 4096
+
+    Daemon Mode (Automatic Server Management):
+        Set OPENCODE_USE_DAEMON=true to automatically start and manage
+        OpenCode servers per repository. Benefits:
+        - Automatic server lifecycle management
+        - One server per repo (correct working directory)
+        - Same 50x performance improvement as manual server mode
+        - No manual server management needed
     """
 
     def __init__(self, bin_path: str, config: NinjaConfig):
@@ -176,12 +185,27 @@ class OpenCodeStrategy:
             model_name,
         ]
 
-        # Connect to OpenCode server if configured (50x faster + fixes exit bug)
-        if self.server_url:
-            cmd.extend(["--attach", self.server_url])
+        # Use OpenCode daemon for auto-managed servers (50x faster + fixes exit bug)
+        server_url = self.server_url
+        if not server_url:
+            # Check if daemon mode is enabled
+            use_daemon = os.environ.get("OPENCODE_USE_DAEMON", "").lower() in ("true", "1", "yes")
+            if use_daemon:
+                try:
+                    daemon = get_daemon()
+                    server_url = daemon.get_or_start_server(repo_root)
+                    logger.info(f"🚀 Using OpenCode daemon: {server_url}")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to start daemon server: {e}, falling back to subprocess mode"
+                    )
+
+        # Connect to server if available
+        if server_url:
+            cmd.extend(["--attach", server_url])
 
         # Session support (only without server mode - sessions don't work with --attach)
-        if not self.server_url:
+        if not server_url:
             if session_id:
                 cmd.extend(["--session", session_id])
             elif continue_last:
@@ -224,8 +248,8 @@ class OpenCodeStrategy:
                 "timeout": timeout,
                 "session_id": session_id,
                 "continue_last": continue_last,
-                "server_mode": bool(self.server_url),
-                "server_url": self.server_url if self.server_url else None,
+                "server_mode": bool(server_url),
+                "server_url": server_url if server_url else None,
             },
         )
 
