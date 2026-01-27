@@ -8,12 +8,128 @@ HTTP client implementations. It supports:
 - Proper type hints and documentation
 """
 
+import threading
 import time
 from abc import ABC, abstractmethod
+from functools import wraps
 from types import TracebackType
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 import requests
+
+# Type variable for generic function type hints
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def rate_limit(calls_per_second: float) -> Callable[[F], F]:
+    """Decorator to limit the rate of function calls per second.
+
+    This decorator ensures that a function is not called more frequently than
+    the specified rate. It uses threading.Lock for thread safety, making it
+    safe to use in multi-threaded environments.
+
+    Args:
+        calls_per_second: Maximum number of calls allowed per second.
+            Must be a positive number. For example:
+            - 1.0 means one call per second
+            - 2.0 means two calls per second (minimum 0.5s between calls)
+            - 0.5 means one call every two seconds
+
+    Returns:
+        A decorator function that wraps the target function with rate limiting.
+
+    Raises:
+        ValueError: If calls_per_second is not positive.
+
+    Thread Safety:
+        This decorator is thread-safe. Multiple threads can safely call the
+        decorated function concurrently, and the rate limit will be enforced
+        across all threads.
+
+    Examples:
+        >>> @rate_limit(calls_per_second=2.0)
+        ... def api_call():
+        ...     return "data"
+        >>> # First call executes immediately
+        >>> api_call()
+        'data'
+        >>> # Second call within 0.5s will be delayed
+        >>> api_call()  # Waits if called too soon
+        'data'
+
+        >>> # Can be used on methods too
+        >>> class APIClient:
+        ...     @rate_limit(calls_per_second=1.0)
+        ...     def fetch_data(self, url: str) -> dict:
+        ...         return {"url": url}
+
+    Notes:
+        - The rate limit is enforced per decorated function, not globally
+        - The first call to a decorated function executes immediately
+        - Subsequent calls will sleep if they occur too soon after the last call
+        - The decorator tracks time using time.time() with second precision
+    """
+    if calls_per_second <= 0:
+        raise ValueError("calls_per_second must be positive")
+
+    # Calculate minimum time between calls in seconds
+    min_interval = 1.0 / calls_per_second
+
+    # Dictionary to store last call time for each function instance
+    # Using a dict allows the decorator to work with different function instances
+    last_call_times: dict[int, float] = {}
+    lock = threading.Lock()
+
+    def decorator(func: F) -> F:
+        """Inner decorator that wraps the actual function.
+
+        Args:
+            func: The function to be rate limited.
+
+        Returns:
+            The wrapped function with rate limiting applied.
+        """
+
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Wrapper that enforces rate limiting before calling the function.
+
+            Args:
+                *args: Positional arguments to pass to the wrapped function.
+                **kwargs: Keyword arguments to pass to the wrapped function.
+
+            Returns:
+                The return value of the wrapped function.
+            """
+            # Get a unique identifier for this function call context
+            # Use id(func) as the key since each function has a unique identity
+            func_id = id(func)
+
+            with lock:
+                current_time = time.time()
+
+                # Get the last call time for this function
+                last_call_time = last_call_times.get(func_id, 0.0)
+
+                # Calculate how long since the last call
+                time_since_last_call = current_time - last_call_time
+
+                # If not enough time has passed, sleep for the remaining time
+                if time_since_last_call < min_interval:
+                    sleep_time = min_interval - time_since_last_call
+                    time.sleep(sleep_time)
+                    # Update current time after sleeping
+                    current_time = time.time()
+
+                # Update the last call time
+                last_call_times[func_id] = current_time
+
+            # Call the actual function
+            return func(*args, **kwargs)
+
+        return wrapper  # type: ignore
+
+    return decorator
 
 
 class HTTPClient(ABC):

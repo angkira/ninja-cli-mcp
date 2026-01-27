@@ -4,13 +4,318 @@ Tests cover abstract base class behavior, context manager protocol,
 method signatures, and concrete implementations.
 """
 
+import threading
 import time
 from unittest.mock import Mock, patch
 
 import pytest
 import requests
 
-from http_client import HTTPClient, RequestsHTTPClient
+from http_client import HTTPClient, RequestsHTTPClient, rate_limit
+
+
+class TestRateLimitDecorator:
+    """Tests for the rate_limit decorator."""
+
+    def test_rate_limit_basic_functionality(self) -> None:
+        """Test that rate_limit enforces minimum time between calls."""
+        call_times = []
+
+        @rate_limit(calls_per_second=2.0)
+        def test_func() -> str:
+            call_times.append(time.time())
+            return "called"
+
+        # Make three calls
+        result1 = test_func()
+        result2 = test_func()
+        result3 = test_func()
+
+        assert result1 == "called"
+        assert result2 == "called"
+        assert result3 == "called"
+        assert len(call_times) == 3
+
+        # With 2 calls per second, minimum interval is 0.5 seconds
+        # Check that there's at least ~0.5s between calls (with small tolerance)
+        time_diff_1_2 = call_times[1] - call_times[0]
+        time_diff_2_3 = call_times[2] - call_times[1]
+
+        assert time_diff_1_2 >= 0.49  # Allow small tolerance
+        assert time_diff_2_3 >= 0.49
+
+    def test_rate_limit_one_call_per_second(self) -> None:
+        """Test rate limiting with 1 call per second."""
+        call_times = []
+
+        @rate_limit(calls_per_second=1.0)
+        def test_func() -> None:
+            call_times.append(time.time())
+
+        # Make two calls
+        test_func()
+        test_func()
+
+        # Should be at least 1 second apart
+        time_diff = call_times[1] - call_times[0]
+        assert time_diff >= 0.99
+
+    def test_rate_limit_fractional_rate(self) -> None:
+        """Test rate limiting with fractional calls per second."""
+        call_times = []
+
+        @rate_limit(calls_per_second=0.5)  # One call every 2 seconds
+        def test_func() -> None:
+            call_times.append(time.time())
+
+        # Make two calls
+        test_func()
+        test_func()
+
+        # Should be at least 2 seconds apart
+        time_diff = call_times[1] - call_times[0]
+        assert time_diff >= 1.99
+
+    def test_rate_limit_with_arguments(self) -> None:
+        """Test that rate limiting works with function arguments."""
+        call_times = []
+
+        @rate_limit(calls_per_second=2.0)
+        def test_func(x: int, y: str) -> tuple[int, str]:
+            call_times.append(time.time())
+            return x, y
+
+        result1 = test_func(1, "a")
+        result2 = test_func(2, "b")
+
+        assert result1 == (1, "a")
+        assert result2 == (2, "b")
+        assert len(call_times) == 2
+
+        time_diff = call_times[1] - call_times[0]
+        assert time_diff >= 0.49
+
+    def test_rate_limit_with_kwargs(self) -> None:
+        """Test that rate limiting works with keyword arguments."""
+        call_times = []
+
+        @rate_limit(calls_per_second=2.0)
+        def test_func(x: int, y: str = "default") -> dict:
+            call_times.append(time.time())
+            return {"x": x, "y": y}
+
+        result1 = test_func(1, y="custom")
+        result2 = test_func(2)
+
+        assert result1 == {"x": 1, "y": "custom"}
+        assert result2 == {"x": 2, "y": "default"}
+        assert len(call_times) == 2
+
+    def test_rate_limit_invalid_rate(self) -> None:
+        """Test that invalid rate values raise ValueError."""
+        with pytest.raises(ValueError, match="calls_per_second must be positive"):
+
+            @rate_limit(calls_per_second=0)
+            def test_func() -> None:
+                pass
+
+        with pytest.raises(ValueError, match="calls_per_second must be positive"):
+
+            @rate_limit(calls_per_second=-1.0)
+            def test_func2() -> None:
+                pass
+
+    def test_rate_limit_on_method(self) -> None:
+        """Test that rate limiting works on class methods."""
+        call_times = []
+
+        class TestClass:
+            @rate_limit(calls_per_second=2.0)
+            def method(self) -> str:
+                call_times.append(time.time())
+                return "method called"
+
+        obj = TestClass()
+        result1 = obj.method()
+        result2 = obj.method()
+
+        assert result1 == "method called"
+        assert result2 == "method called"
+        assert len(call_times) == 2
+
+        time_diff = call_times[1] - call_times[0]
+        assert time_diff >= 0.49
+
+    def test_rate_limit_thread_safety(self) -> None:
+        """Test that rate limiting is thread-safe."""
+        call_times = []
+        lock = threading.Lock()
+
+        @rate_limit(calls_per_second=2.0)
+        def test_func(thread_id: int) -> None:
+            with lock:
+                call_times.append((time.time(), thread_id))
+
+        # Create multiple threads that call the function
+        threads = []
+        for i in range(4):
+            thread = threading.Thread(target=test_func, args=(i,))
+            threads.append(thread)
+
+        # Start all threads
+        for thread in threads:
+            thread.start()
+
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+
+        # All calls should have completed
+        assert len(call_times) == 4
+
+        # Sort by time to check intervals
+        call_times.sort(key=lambda x: x[0])
+
+        # Check that consecutive calls respect the rate limit
+        for i in range(1, len(call_times)):
+            time_diff = call_times[i][0] - call_times[i - 1][0]
+            # Should be at least ~0.5s between calls
+            assert time_diff >= 0.48  # Slightly lower tolerance for threading
+
+    def test_rate_limit_multiple_functions(self) -> None:
+        """Test that different functions have independent rate limits."""
+        call_times_a = []
+        call_times_b = []
+
+        @rate_limit(calls_per_second=1.0)
+        def func_a() -> None:
+            call_times_a.append(time.time())
+
+        @rate_limit(calls_per_second=2.0)
+        def func_b() -> None:
+            call_times_b.append(time.time())
+
+        # Call func_a twice
+        func_a()
+        func_a()
+
+        # Call func_b twice (should be faster)
+        func_b()
+        func_b()
+
+        # func_a should have ~1s interval
+        time_diff_a = call_times_a[1] - call_times_a[0]
+        assert time_diff_a >= 0.99
+
+        # func_b should have ~0.5s interval
+        time_diff_b = call_times_b[1] - call_times_b[0]
+        assert time_diff_b >= 0.49
+        assert time_diff_b < 0.7  # Should be significantly less than func_a
+
+    def test_rate_limit_preserves_function_metadata(self) -> None:
+        """Test that decorator preserves function name and docstring."""
+
+        @rate_limit(calls_per_second=1.0)
+        def test_func() -> None:
+            """Test function docstring."""
+            pass
+
+        assert test_func.__name__ == "test_func"
+        assert test_func.__doc__ == "Test function docstring."
+
+    def test_rate_limit_with_exception(self) -> None:
+        """Test that rate limiting still applies when function raises exception."""
+        call_times = []
+
+        @rate_limit(calls_per_second=2.0)
+        def test_func(should_raise: bool) -> str:
+            call_times.append(time.time())
+            if should_raise:
+                raise ValueError("Test error")
+            return "success"
+
+        # First call succeeds
+        result = test_func(False)
+        assert result == "success"
+
+        # Second call raises exception
+        with pytest.raises(ValueError, match="Test error"):
+            test_func(True)
+
+        # Third call succeeds and should still be rate limited
+        result = test_func(False)
+        assert result == "success"
+
+        # Check that rate limiting was enforced
+        assert len(call_times) == 3
+        time_diff_1 = call_times[1] - call_times[0]
+        time_diff_2 = call_times[2] - call_times[1]
+        assert time_diff_1 >= 0.49
+        assert time_diff_2 >= 0.49
+
+    def test_rate_limit_high_rate(self) -> None:
+        """Test rate limiting with very high rate (10 calls per second)."""
+        call_times = []
+
+        @rate_limit(calls_per_second=10.0)
+        def test_func() -> None:
+            call_times.append(time.time())
+
+        # Make 5 calls
+        for _ in range(5):
+            test_func()
+
+        assert len(call_times) == 5
+
+        # Total time should be at least 0.4 seconds (4 intervals of 0.1s)
+        total_time = call_times[-1] - call_times[0]
+        assert total_time >= 0.39
+
+    def test_rate_limit_first_call_immediate(self) -> None:
+        """Test that the first call to a rate-limited function is immediate."""
+        start_time = time.time()
+
+        @rate_limit(calls_per_second=1.0)
+        def test_func() -> None:
+            pass
+
+        test_func()
+        elapsed = time.time() - start_time
+
+        # First call should be essentially immediate (< 0.1s)
+        assert elapsed < 0.1
+
+    def test_rate_limit_concurrent_access_different_instances(self) -> None:
+        """Test rate limiting with different instances of the same class."""
+        call_times = []
+        lock = threading.Lock()
+
+        class APIClient:
+            @rate_limit(calls_per_second=2.0)
+            def call_api(self, client_id: int) -> None:
+                with lock:
+                    call_times.append((time.time(), client_id))
+
+        # Create two instances
+        client1 = APIClient()
+        client2 = APIClient()
+
+        # Make calls from both instances
+        client1.call_api(1)
+        client2.call_api(2)
+        client1.call_api(1)
+        client2.call_api(2)
+
+        # All calls should be rate limited together
+        assert len(call_times) == 4
+
+        # Sort by time
+        call_times.sort(key=lambda x: x[0])
+
+        # Check intervals
+        for i in range(1, len(call_times)):
+            time_diff = call_times[i][0] - call_times[i - 1][0]
+            assert time_diff >= 0.48
 
 
 class TestHTTPClientAbstract:
