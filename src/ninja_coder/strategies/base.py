@@ -101,6 +101,8 @@ class CLIStrategy(Protocol):
         file_paths: list[str] | None = None,
         model: str | None = None,
         additional_flags: dict[str, Any] | None = None,
+        session_id: str | None = None,
+        continue_last: bool = False,
     ) -> CLICommandResult:
         """Build command for executing this CLI.
 
@@ -110,6 +112,8 @@ class CLIStrategy(Protocol):
             file_paths: List of files to include in context.
             model: Model to use (if None, use configured default).
             additional_flags: CLI-specific flags and options.
+            session_id: Session ID to continue (OpenCode-specific).
+            continue_last: Continue last session (OpenCode-specific).
 
         Returns:
             CLICommandResult with command, env, and metadata.
