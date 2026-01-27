@@ -121,6 +121,8 @@ class OpenCodeStrategy:
         file_paths: list[str] | None = None,
         model: str | None = None,
         additional_flags: dict[str, Any] | None = None,
+        session_id: str | None = None,
+        continue_last: bool = False,
     ) -> CLICommandResult:
         """Build OpenCode command with z.ai endpoint support.
 
@@ -132,6 +134,8 @@ class OpenCodeStrategy:
             additional_flags: Additional flags including:
                 - use_coding_plan: Whether to use Coding Plan API (bool)
                 - enable_multi_agent: Whether to add ultrawork keyword (bool)
+            session_id: OpenCode session ID to continue (optional).
+            continue_last: Continue last session (optional).
 
         Returns:
             CLICommandResult with command, env, and metadata.
@@ -156,6 +160,12 @@ class OpenCodeStrategy:
             "--model",
             model_name,
         ]
+
+        # Session support
+        if session_id:
+            cmd.extend(["--session", session_id])
+        elif continue_last:
+            cmd.append("--continue")
 
         # Build enhanced prompt with file context
         # NOTE: We don't use --file flag because it causes OpenCode to interpret
@@ -192,6 +202,8 @@ class OpenCodeStrategy:
                 "multi_agent": enable_multi_agent,
                 "model": model_name,
                 "timeout": timeout,
+                "session_id": session_id,
+                "continue_last": continue_last,
             },
         )
 
@@ -308,8 +320,8 @@ class OpenCodeStrategy:
 
         # Extract file changes (similar pattern to Aider)
         # First, strip ANSI color codes for easier pattern matching
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        clean_output = ansi_escape.sub('', combined_output)
+        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        clean_output = ansi_escape.sub("", combined_output)
 
         suspected_paths: list[str] = []
         file_patterns = [
@@ -327,6 +339,20 @@ class OpenCodeStrategy:
 
         # Deduplicate paths
         suspected_paths = list(set(suspected_paths))
+
+        # Extract session ID from output
+        session_id = None
+        session_patterns = [
+            r"Session:\s+(\S+)",
+            r"session.*?:\s*(\S+)",
+            r"session[_-]id[:\s]+(\S+)",
+        ]
+        for pattern in session_patterns:
+            match = re.search(pattern, clean_output, re.IGNORECASE)
+            if match:
+                session_id = match.group(1)
+                logger.debug(f"Extracted session ID: {session_id}")
+                break
 
         # Build summary
         if success:
@@ -377,13 +403,17 @@ class OpenCodeStrategy:
         if success and not suspected_paths and len(combined_output) > 100:
             # Check if output suggests files should have been created/modified
             action_keywords = ["write", "creat", "modif", "updat", "edit", "add", "implement"]
-            has_action_intent = any(keyword in combined_output.lower() for keyword in action_keywords)
+            has_action_intent = any(
+                keyword in combined_output.lower() for keyword in action_keywords
+            )
 
             # If there was intent to modify files but none were touched, mark as failure
             if has_action_intent:
                 success = False
                 summary = "⚠️ Task completed but no files were modified"
-                notes = "CLI exited successfully but no file changes detected. Check logs for details."
+                notes = (
+                    "CLI exited successfully but no file changes detected. Check logs for details."
+                )
                 logger.warning("Suspicious success: exit_code=0 but no files touched")
 
         return ParsedResult(
@@ -392,6 +422,7 @@ class OpenCodeStrategy:
             notes=notes,
             touched_paths=suspected_paths,
             retryable_error=retryable_error,
+            session_id=session_id,
         )
 
     def should_retry(
