@@ -119,11 +119,26 @@ curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.
 OPENROUTER_API_KEY='your-key' curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash -s -- --auto
 ```
 
-### Update (Preserves Config)
+### Update (Automatic Migration)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/update.sh | bash
 ```
+
+**Intelligent configuration migration:**
+- ✅ Searches old configs in 10+ locations
+- ✅ Preserves API keys, models, providers, ports
+- ✅ Migrates old variable names to new format
+- ✅ Creates timestamped backups
+- ✅ Zero configuration loss guaranteed
+
+**Migrates from:**
+- Legacy config files (`~/.config/ninja/*`, etc.)
+- Shell RC files (`.bashrc`, `.zshrc`)
+- Environment variables
+- Old variable names (`OPENAI_API_KEY` → `OPENROUTER_API_KEY`)
+
+[→ Migration Guide](MIGRATION.md)
 
 ### Development Setup
 
