@@ -152,6 +152,9 @@ for legacy_config in "${LEGACY_CONFIGS[@]}"; do
 done
 
 # 3. Check environment variables
+# Temporarily disable set -u for indirect variable expansion
+# (bash may error on unbound variables before :- operator applies)
+set +u
 for key in "${!SAVED_VALUES[@]}"; do
     if [[ -z "${SAVED_VALUES[$key]:-}" ]]; then
         # Indirect variable expansion with default empty string
@@ -162,6 +165,7 @@ for key in "${!SAVED_VALUES[@]}"; do
         fi
     fi
 done
+set -u
 
 # 4. Check shell rc files for exported variables
 for rc_file in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile" "$HOME/.bash_profile"; do
@@ -179,6 +183,8 @@ for rc_file in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile" "$HOME/.bash_prof
 done
 
 # 5. Migrate old variable names to new ones
+# Temporarily disable set -u for API key pattern matching
+set +u
 # OPENAI_API_KEY -> OPENROUTER_API_KEY (if OpenRouter not set)
 if [[ -z "${SAVED_VALUES[OPENROUTER_API_KEY]:-}" ]] && [[ -n "${SAVED_VALUES[OPENAI_API_KEY]:-}" ]]; then
     # Check if it's actually an OpenRouter key (starts with sk-or-)
@@ -187,6 +193,7 @@ if [[ -z "${SAVED_VALUES[OPENROUTER_API_KEY]:-}" ]] && [[ -n "${SAVED_VALUES[OPE
         success "Migrated OPENAI_API_KEY to OPENROUTER_API_KEY"
     fi
 fi
+set -u
 
 # OPENROUTER_MODEL or OPENAI_MODEL -> NINJA_MODEL
 if [[ -z "${SAVED_VALUES[NINJA_MODEL]:-}" ]]; then
