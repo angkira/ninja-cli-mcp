@@ -50,6 +50,9 @@ BACKUP_ARCHIVE="$HOME/.ninja-mcp-backups/backup_$BACKUP_TIMESTAMP.env"
 mkdir -p "$HOME/.ninja-mcp-backups"
 
 # Initialize saved values with empty strings
+# Temporarily disable unbound variable check for associative array declaration
+# (bash tries to expand keys as variables with set -u)
+set +u
 declare -A SAVED_VALUES=(
     [OPENROUTER_API_KEY]=""
     [SERPER_API_KEY]=""
@@ -72,6 +75,7 @@ declare -A SAVED_VALUES=(
     [NINJA_PROMPTS_PORT]=""
     [OPENCODE_DISABLE_DAEMON]=""
 )
+set -u
 
 # Function to extract value from config file
 extract_value() {
@@ -94,12 +98,14 @@ extract_value() {
 
 # Function to check if value looks like a real API key (not placeholder)
 is_real_value() {
-    local value="$1"
+    local value="${1:-}"
     [[ -n "$value" ]] && \
     [[ "$value" != "your-"* ]] && \
-    [[ "$value" != "sk-"*"placeholder"* ]] && \
+    [[ "$value" != *"placeholder"* ]] && \
     [[ "$value" != "REPLACE"* ]] && \
-    [[ "$value" != "TODO"* ]]
+    [[ "$value" != "TODO"* ]] && \
+    [[ "$value" != "xxx"* ]] && \
+    [[ "$value" != "..."* ]]
 }
 
 info "Searching for existing configurations..."
@@ -131,7 +137,7 @@ for legacy_config in "${LEGACY_CONFIGS[@]}"; do
         info "Found legacy config: $legacy_config"
 
         for key in "${!SAVED_VALUES[@]}"; do
-            if [[ -z "${SAVED_VALUES[$key]}" ]]; then
+            if [[ -z "${SAVED_VALUES[$key]:-}" ]]; then
                 value=$(extract_value "$legacy_config" "$key")
                 if is_real_value "$value"; then
                     SAVED_VALUES[$key]="$value"
@@ -147,8 +153,9 @@ done
 
 # 3. Check environment variables
 for key in "${!SAVED_VALUES[@]}"; do
-    if [[ -z "${SAVED_VALUES[$key]}" ]]; then
-        value="${!key}"  # Indirect variable expansion
+    if [[ -z "${SAVED_VALUES[$key]:-}" ]]; then
+        # Indirect variable expansion with default empty string
+        value="${!key:-}"
         if is_real_value "$value"; then
             SAVED_VALUES[$key]="$value"
             success "Found $key in environment"
@@ -160,7 +167,7 @@ done
 for rc_file in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile" "$HOME/.bash_profile"; do
     if [[ -f "$rc_file" ]]; then
         for key in "${!SAVED_VALUES[@]}"; do
-            if [[ -z "${SAVED_VALUES[$key]}" ]]; then
+            if [[ -z "${SAVED_VALUES[$key]:-}" ]]; then
                 value=$(extract_value "$rc_file" "$key")
                 if is_real_value "$value"; then
                     SAVED_VALUES[$key]="$value"
@@ -173,16 +180,16 @@ done
 
 # 5. Migrate old variable names to new ones
 # OPENAI_API_KEY -> OPENROUTER_API_KEY (if OpenRouter not set)
-if [[ -z "${SAVED_VALUES[OPENROUTER_API_KEY]}" ]] && [[ -n "${SAVED_VALUES[OPENAI_API_KEY]}" ]]; then
+if [[ -z "${SAVED_VALUES[OPENROUTER_API_KEY]:-}" ]] && [[ -n "${SAVED_VALUES[OPENAI_API_KEY]:-}" ]]; then
     # Check if it's actually an OpenRouter key (starts with sk-or-)
-    if [[ "${SAVED_VALUES[OPENAI_API_KEY]}" == sk-or-* ]]; then
-        SAVED_VALUES[OPENROUTER_API_KEY]="${SAVED_VALUES[OPENAI_API_KEY]}"
+    if [[ "${SAVED_VALUES[OPENAI_API_KEY]:-}" == sk-or-* ]]; then
+        SAVED_VALUES[OPENROUTER_API_KEY]="${SAVED_VALUES[OPENAI_API_KEY]:-}"
         success "Migrated OPENAI_API_KEY to OPENROUTER_API_KEY"
     fi
 fi
 
 # OPENROUTER_MODEL or OPENAI_MODEL -> NINJA_MODEL
-if [[ -z "${SAVED_VALUES[NINJA_MODEL]}" ]]; then
+if [[ -z "${SAVED_VALUES[NINJA_MODEL]:-}" ]]; then
     for old_key in "OPENROUTER_MODEL" "OPENAI_MODEL"; do
         old_value=$(extract_value "$NINJA_CONFIG" "$old_key" 2>/dev/null || echo "")
         if [[ -z "$old_value" ]] && [[ -f "$BACKUP_CONFIG" ]]; then
@@ -201,15 +208,15 @@ echo ""
 info "Configuration migration summary:"
 found_count=0
 for key in OPENROUTER_API_KEY SERPER_API_KEY PERPLEXITY_API_KEY ANTHROPIC_API_KEY; do
-    if [[ -n "${SAVED_VALUES[$key]}" ]]; then
+    if [[ -n "${SAVED_VALUES[$key]:-}" ]]; then
         success "✓ $key (${#SAVED_VALUES[$key]} chars)"
         ((found_count++))
     fi
 done
 
 for key in NINJA_MODEL NINJA_SEARCH_PROVIDER NINJA_CODE_BIN; do
-    if [[ -n "${SAVED_VALUES[$key]}" ]]; then
-        success "✓ $key = ${SAVED_VALUES[$key]}"
+    if [[ -n "${SAVED_VALUES[$key]:-}" ]]; then
+        success "✓ $key = ${SAVED_VALUES[$key]:-}"
         ((found_count++))
     fi
 done
@@ -307,7 +314,7 @@ echo ""
 info "Writing migrated configuration..."
 
 # Create new config with all migrated values
-cat > "$NINJA_CONFIG" << 'EOF'
+cat > "$NINJA_CONFIG" << EOF
 # =============================================================================
 # Ninja MCP Configuration - Centralized
 # =============================================================================
@@ -324,8 +331,8 @@ EOF
 
 # Write API keys
 for key in OPENROUTER_API_KEY SERPER_API_KEY PERPLEXITY_API_KEY ANTHROPIC_API_KEY; do
-    if [[ -n "${SAVED_VALUES[$key]}" ]]; then
-        echo "$key=${SAVED_VALUES[$key]}" >> "$NINJA_CONFIG"
+    if [[ -n "${SAVED_VALUES[$key]:-}" ]]; then
+        echo "$key=${SAVED_VALUES[$key]:-}" >> "$NINJA_CONFIG"
     else
         echo "# $key=" >> "$NINJA_CONFIG"
     fi
@@ -339,16 +346,16 @@ cat >> "$NINJA_CONFIG" << 'EOF'
 EOF
 
 # Write model settings with defaults
-if [[ -n "${SAVED_VALUES[NINJA_MODEL]}" ]]; then
-    echo "NINJA_MODEL=${SAVED_VALUES[NINJA_MODEL]}" >> "$NINJA_CONFIG"
+if [[ -n "${SAVED_VALUES[NINJA_MODEL]:-}" ]]; then
+    echo "NINJA_MODEL=${SAVED_VALUES[NINJA_MODEL]:-}" >> "$NINJA_CONFIG"
 else
     echo "# NINJA_MODEL=anthropic/claude-sonnet-4-5" >> "$NINJA_CONFIG"
 fi
 
 for module in CODER RESEARCHER SECRETARY RESOURCES PROMPTS; do
     key="NINJA_${module}_MODEL"
-    if [[ -n "${SAVED_VALUES[$key]}" ]]; then
-        echo "$key=${SAVED_VALUES[$key]}" >> "$NINJA_CONFIG"
+    if [[ -n "${SAVED_VALUES[$key]:-}" ]]; then
+        echo "$key=${SAVED_VALUES[$key]:-}" >> "$NINJA_CONFIG"
     fi
 done
 
@@ -360,14 +367,14 @@ cat >> "$NINJA_CONFIG" << 'EOF'
 EOF
 
 # Write provider settings
-if [[ -n "${SAVED_VALUES[NINJA_SEARCH_PROVIDER]}" ]]; then
-    echo "NINJA_SEARCH_PROVIDER=${SAVED_VALUES[NINJA_SEARCH_PROVIDER]}" >> "$NINJA_CONFIG"
+if [[ -n "${SAVED_VALUES[NINJA_SEARCH_PROVIDER]:-}" ]]; then
+    echo "NINJA_SEARCH_PROVIDER=${SAVED_VALUES[NINJA_SEARCH_PROVIDER]:-}" >> "$NINJA_CONFIG"
 else
     echo "NINJA_SEARCH_PROVIDER=duckduckgo" >> "$NINJA_CONFIG"
 fi
 
-if [[ -n "${SAVED_VALUES[NINJA_CODE_BIN]}" ]]; then
-    echo "NINJA_CODE_BIN=${SAVED_VALUES[NINJA_CODE_BIN]}" >> "$NINJA_CONFIG"
+if [[ -n "${SAVED_VALUES[NINJA_CODE_BIN]:-}" ]]; then
+    echo "NINJA_CODE_BIN=${SAVED_VALUES[NINJA_CODE_BIN]:-}" >> "$NINJA_CONFIG"
 else
     # Auto-detect code CLI
     if command -v opencode &> /dev/null; then
@@ -381,14 +388,14 @@ else
     fi
 fi
 
-if [[ -n "${SAVED_VALUES[OPENAI_BASE_URL]}" ]]; then
-    echo "OPENAI_BASE_URL=${SAVED_VALUES[OPENAI_BASE_URL]}" >> "$NINJA_CONFIG"
+if [[ -n "${SAVED_VALUES[OPENAI_BASE_URL]:-}" ]]; then
+    echo "OPENAI_BASE_URL=${SAVED_VALUES[OPENAI_BASE_URL]:-}" >> "$NINJA_CONFIG"
 else
     echo "OPENAI_BASE_URL=https://openrouter.ai/api/v1" >> "$NINJA_CONFIG"
 fi
 
-if [[ -n "${SAVED_VALUES[OPENCODE_DISABLE_DAEMON]}" ]]; then
-    echo "OPENCODE_DISABLE_DAEMON=${SAVED_VALUES[OPENCODE_DISABLE_DAEMON]}" >> "$NINJA_CONFIG"
+if [[ -n "${SAVED_VALUES[OPENCODE_DISABLE_DAEMON]:-}" ]]; then
+    echo "OPENCODE_DISABLE_DAEMON=${SAVED_VALUES[OPENCODE_DISABLE_DAEMON]:-}" >> "$NINJA_CONFIG"
 fi
 
 cat >> "$NINJA_CONFIG" << 'EOF'
@@ -418,8 +425,8 @@ for module_port in "CODER:8100" "RESEARCHER:8101" "SECRETARY:8102" "RESOURCES:81
     env_key="NINJA_${module}_PORT"
 
     # Use saved port if exists, otherwise find free port
-    if [[ -n "${SAVED_VALUES[$env_key]}" ]]; then
-        port="${SAVED_VALUES[$env_key]}"
+    if [[ -n "${SAVED_VALUES[$env_key]:-}" ]]; then
+        port="${SAVED_VALUES[$env_key]:-}"
         success "Restored $env_key=$port"
     else
         port=$(find_free_port "$default_port")
@@ -434,8 +441,8 @@ success "Configuration migrated to $NINJA_CONFIG"
 
 # Export keys for current session
 for key in OPENROUTER_API_KEY SERPER_API_KEY PERPLEXITY_API_KEY ANTHROPIC_API_KEY; do
-    if [[ -n "${SAVED_VALUES[$key]}" ]]; then
-        export "$key=${SAVED_VALUES[$key]}"
+    if [[ -n "${SAVED_VALUES[$key]:-}" ]]; then
+        export "$key=${SAVED_VALUES[$key]:-}"
     fi
 done
 
