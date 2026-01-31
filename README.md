@@ -100,6 +100,8 @@ prompt_chain([
 
 ## 🚀 Installation
 
+Choose your preferred installation method:
+
 ### One-Line Install (Recommended)
 
 ```bash
@@ -109,15 +111,54 @@ curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.
 **What happens:**
 - ✅ Detects your OS (macOS/Linux/Windows)
 - ✅ Installs dependencies (Python, Aider, etc.)
-- ✅ Configures API keys
+- ✅ Collects all API keys interactively
+- ✅ Configures default models for all modules
+- ✅ Sets up daemon mode for better performance
 - ✅ Integrates with Claude Code / VS Code / Zed
 - ✅ Ready to use in 2 minutes
 
-### Non-Interactive Install (CI/Scripts)
+### Advanced TUI Installer
 
+For a more comprehensive setup experience, use the new TUI (Text User Interface) installer:
+
+```bash
+# Run the advanced TUI installer
+ninja-config tui-install
+```
+
+**Features:**
+- 🎯 Interactive module selection (coder, researcher, secretary, resources, prompts)
+- 🔑 Secure API key collection for all services (OpenRouter, Serper, Perplexity, Google)
+- 🤖 Model selection with LiveBench recommendations
+- 💻 AI Code CLI selection (Aider, OpenCode, Gemini, Cursor)
+- ⚙️ Daemon configuration for background services
+- 🖥️ Multi-IDE integration setup (Claude Code, VS Code, Zed, OpenCode)
+- 📋 Comprehensive configuration generation
+
+[→ TUI Installer Documentation](docs/TUI_INSTALLER.md)
+
+### Installation Modes
+
+#### Standard Install (Recommended)
+```bash
+curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash
+```
+
+#### Non-Interactive Install (CI/Scripts)
 ```bash
 OPENROUTER_API_KEY='your-key' curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash -s -- --auto
 ```
+
+#### Full Install (Installs all dependencies automatically)
+```bash
+curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash -s -- --full
+```
+
+**Environment variables supported:**
+- `OPENROUTER_API_KEY` - Primary API key for AI models
+- `SERPER_API_KEY` - For Google Search integration
+- `PERPLEXITY_API_KEY` - For AI-powered search
+- `GOOGLE_API_KEY` - For native Gemini integration
 
 ### Update (Automatic Migration)
 
@@ -379,6 +420,22 @@ result = prompt_chain([
 ---
 
 ## 🔧 Configuration
+
+### Interactive Configuration
+
+For a guided setup experience, use the TUI installer:
+
+```bash
+# Run the advanced TUI installer for comprehensive configuration
+ninja-config tui-install
+```
+
+This will guide you through:
+- API key collection for all services
+- Model selection with recommendations
+- IDE integration setup
+- Daemon configuration
+- Module selection
 
 ### Environment Variables
 

@@ -9,13 +9,20 @@ import sys
 from pathlib import Path
 
 
+# Try multiple import patterns for InquirerPy compatibility
 try:
-    from InquirerPy import inquirer
+    import InquirerPy.inquirer as inquirer
     from InquirerPy.base.control import Choice
 
     HAS_INQUIRERPY = True
 except ImportError:
-    HAS_INQUIRERPY = False
+    try:
+        from InquirerPy import inquirer
+        from InquirerPy.base.control import Choice
+
+        HAS_INQUIRERPY = True
+    except ImportError:
+        HAS_INQUIRERPY = False
 
 
 def print_banner() -> None:
@@ -42,10 +49,11 @@ def check_uv() -> bool:
         response = input("Install uv now? [Y/n]: ").strip().lower()
         install_uv = response in ("", "y", "yes")
     else:
-        install_uv = inquirer.confirm(
+        result = inquirer.confirm(
             message="Install uv package manager?",
             default=True,
-        ).execute()
+        )
+        install_uv = result.execute() if hasattr(result, "execute") else result
 
     if install_uv:
         print("\n🔄 Installing uv...")
@@ -93,9 +101,9 @@ def select_installation_type() -> str | None:
             Choice(value="custom", name="Custom  •  Choose modules"),
         ],
         pointer="►",
-    ).execute()
+    )
 
-    return result
+    return result.execute() if hasattr(result, "execute") else result
 
 
 def select_modules() -> list[str]:
@@ -124,15 +132,17 @@ def select_modules() -> list[str]:
             print("Invalid selection, using full installation")
             return [name for name, _ in all_modules]
 
-    selected = inquirer.checkbox(
-        message="Select modules to install:",
-        choices=[
-            Choice(value=name, name=f"{name}  •  {desc}", enabled=True)
-            for name, desc in all_modules
-        ],
-        pointer="►",
-    ).execute()
+    choices = [
+        Choice(value=name, name=f"{name}  •  {desc}", enabled=True) for name, desc in all_modules
+    ]
 
+    result = inquirer.checkbox(
+        message="Select modules to install:",
+        choices=choices,
+        pointer="►",
+    )
+
+    selected = result.execute() if hasattr(result, "execute") else result
     return selected if selected else ["coder", "resources"]
 
 
@@ -180,10 +190,11 @@ def install_aider() -> bool:
         response = input("\nInstall aider (AI coding assistant)? [Y/n]: ").strip().lower()
         install = response in ("", "y", "yes")
     else:
-        install = inquirer.confirm(
+        result = inquirer.confirm(
             message="Install aider-chat (AI coding assistant)?",
             default=True,
-        ).execute()
+        )
+        install = result.execute() if hasattr(result, "execute") else result
 
     if install:
         print("\n🔄 Installing aider...")
@@ -211,10 +222,11 @@ def install_opencode() -> bool:
         response = input("\nInstall OpenCode (multi-provider CLI)? [Y/n]: ").strip().lower()
         install = response in ("", "y", "yes")
     else:
-        install = inquirer.confirm(
+        result = inquirer.confirm(
             message="Install OpenCode (multi-provider CLI with 75+ LLMs)?",
             default=True,
-        ).execute()
+        )
+        install = result.execute() if hasattr(result, "execute") else result
 
     if install:
         print("\n🔄 Installing OpenCode...")

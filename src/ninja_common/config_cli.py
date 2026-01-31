@@ -44,6 +44,13 @@ try:
 except ImportError:
     HAS_CONFIGURATOR = False
 
+try:
+    from ninja_config.tui_installer import run_tui_installer
+
+    HAS_TUI_INSTALLER = True
+except ImportError:
+    HAS_TUI_INSTALLER = False
+
 
 def print_colored(text: str, color: str = "") -> None:
     """
@@ -549,6 +556,25 @@ def cmd_auth(args: argparse.Namespace) -> None:
     cmd_configure(args)
 
 
+def cmd_tui_install(args: argparse.Namespace) -> None:
+    """
+    Run advanced TUI installer with comprehensive configuration.
+
+    Args:
+        args: Command arguments.
+    """
+    if not HAS_TUI_INSTALLER:
+        print_colored("TUI installer not available.", "red")
+        print_colored("Install with: pip install InquirerPy", "dim")
+        return
+
+    try:
+        sys.exit(run_tui_installer())
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(1)
+
+
 def cmd_select_model(args: argparse.Namespace) -> None:
     """
     Interactive model and operator selection.
@@ -706,32 +732,35 @@ def main() -> None:
         description="Ninja MCP Configuration Manager",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Interactive operator & model selection (RECOMMENDED)
-  ninja-config select-model
+ Examples:
+   # Interactive operator & model selection (RECOMMENDED)
+   ninja-config select-model
 
-  # List all configuration
-  ninja-config list
+   # Advanced TUI installer with comprehensive configuration
+   ninja-config tui-install
 
-  # Get a specific value
-  ninja-config get NINJA_CODER_MODEL
+   # List all configuration
+   ninja-config list
 
-  # Set a value
-  ninja-config set NINJA_CODER_MODEL anthropic/claude-sonnet-4
+   # Get a specific value
+   ninja-config get NINJA_CODER_MODEL
 
-  # Set model for a module
-  ninja-config model coder anthropic/claude-sonnet-4
+   # Set a value
+   ninja-config set NINJA_CODER_MODEL anthropic/claude-sonnet-4
 
-  # Set search provider
-  ninja-config search-provider serper
+   # Set model for a module
+   ninja-config model coder anthropic/claude-sonnet-4
 
-  # Set API key
-  ninja-config api-key openrouter
+   # Set search provider
+   ninja-config search-provider serper
 
-  # Diagnose issues
-  ninja-config doctor
-  ninja-config doctor --fix
-        """,
+   # Set API key
+   ninja-config api-key openrouter
+
+   # Diagnose issues
+   ninja-config doctor
+   ninja-config doctor --fix
+         """,
     )
 
     parser.add_argument(
@@ -862,6 +891,12 @@ Examples:
         help="Run interactive installer",
     )
 
+    # Advanced TUI installer
+    subparsers.add_parser(
+        "tui-install",
+        help="Run advanced TUI installer with comprehensive configuration",
+    )
+
     # Interactive configurator
     subparsers.add_parser(
         "configure",
@@ -914,6 +949,8 @@ Examples:
         cmd_select_model(args)
     elif args.command == "install":
         cmd_install(args)
+    elif args.command == "tui-install":
+        cmd_tui_install(args)
     elif args.command == "configure":
         cmd_configure(args)
     elif args.command == "auth":
