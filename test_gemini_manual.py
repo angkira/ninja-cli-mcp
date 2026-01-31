@@ -7,6 +7,7 @@ Run this with: python test_gemini_manual.py
 import sys
 from pathlib import Path
 
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
@@ -63,22 +64,22 @@ def test_gemini_command_building():
             model=None,
         )
 
-        print(f"✅ Command built successfully")
+        print("✅ Command built successfully")
         print(f"  Command: {' '.join(result.command)}")
         print(f"  Working dir: {result.working_dir}")
         print(f"  Metadata: {result.metadata}")
 
         # Check if command looks correct
         if "gemini" not in ' '.join(result.command):
-            print(f"⚠️  Warning: 'gemini' not found in command")
+            print("⚠️  Warning: 'gemini' not found in command")
             return False
 
         if "--model" not in result.command:
-            print(f"⚠️  Warning: '--model' not found in command")
+            print("⚠️  Warning: '--model' not found in command")
             return False
 
         if "--message" not in result.command:
-            print(f"⚠️  Warning: '--message' not found in command")
+            print("⚠️  Warning: '--message' not found in command")
             return False
 
         return True
@@ -111,7 +112,7 @@ def test_gemini_output_parsing():
         """
         result = strategy.parse_output(stdout, "", 0)
 
-        print(f"✅ Parsed success output")
+        print("✅ Parsed success output")
         print(f"  Success: {result.success}")
         print(f"  Summary: {result.summary}")
         print(f"  Touched paths: {result.touched_paths}")
@@ -124,7 +125,7 @@ def test_gemini_output_parsing():
         stderr = "Error: API rate limit exceeded"
         result = strategy.parse_output("", stderr, 1)
 
-        print(f"✅ Parsed error output")
+        print("✅ Parsed error output")
         print(f"  Success: {result.success}")
         print(f"  Retryable: {result.retryable_error}")
         print(f"  Notes: {result.notes}")
@@ -158,7 +159,7 @@ def test_driver_uses_strategy():
     try:
         driver = NinjaDriver(config)
 
-        print(f"✅ Driver created")
+        print("✅ Driver created")
         print(f"  Strategy name: {driver._strategy.name}")
 
         if driver._strategy.name != "gemini":

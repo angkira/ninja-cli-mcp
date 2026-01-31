@@ -1,5 +1,5 @@
+
 import pytest
-from unittest.mock import patch, mock_open
 from src.ninja_prompts.template_engine import TemplateEngine
 
 

@@ -61,7 +61,7 @@ def test_log_file_creation(driver):
 
     assert driver.structured_logger.log_file.exists()
 
-    with open(driver.structured_logger.log_file, "r") as f:
+    with open(driver.structured_logger.log_file) as f:
         lines = f.readlines()
 
     # Should have driver initialization log + test message

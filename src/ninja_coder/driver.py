@@ -1432,7 +1432,7 @@ class NinjaDriver:
                                 task_logger.debug(
                                     f"Activity: {stream_name} received {len(chunk)} bytes"
                                 )
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             # No data yet, check inactivity timeout
                             elapsed = asyncio.get_event_loop().time() - last_activity
                             total_elapsed = asyncio.get_event_loop().time() - start_time

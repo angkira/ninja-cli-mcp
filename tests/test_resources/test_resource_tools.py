@@ -1,14 +1,15 @@
 """Tests for resource tools."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from ninja_resources.tools import ResourceToolExecutor, get_executor
+import pytest
+
 from ninja_resources.models import (
     ResourceCodebaseRequest,
     ResourceConfigRequest,
     ResourceDocsRequest,
 )
+from ninja_resources.tools import ResourceToolExecutor, get_executor
 
 
 class TestResourceToolExecutor:
@@ -22,7 +23,6 @@ class TestResourceToolExecutor:
     def test_singleton_pattern(self) -> None:
         """Test that get_executor returns singleton instance."""
         # Reset the singleton instance
-        from ninja_resources.tools import _executor_instance
         import ninja_resources.tools
         ninja_resources.tools._executor_instance = None
 

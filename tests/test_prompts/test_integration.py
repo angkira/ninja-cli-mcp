@@ -1,8 +1,8 @@
 """Integration tests for prompts with other modules."""
 
-import pytest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock
 
+import pytest
 from src.ninja_prompts.template_engine import TemplateEngine
 from src.ninja_resources.resource_manager import ResourceManager
 

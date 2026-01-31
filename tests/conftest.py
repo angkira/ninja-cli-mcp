@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+
 # Add src directory to Python path for imports
 _root = Path(__file__).parent.parent
 if str(_root / "src") not in sys.path:

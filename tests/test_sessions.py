@@ -4,14 +4,13 @@ Tests for session management functionality.
 Tests session creation, persistence, continuation, listing, and deletion.
 """
 
-import asyncio
 import tempfile
 from pathlib import Path
 
 import pytest
 
 from ninja_coder.driver import NinjaConfig, NinjaDriver
-from ninja_coder.sessions import Session, SessionManager
+from ninja_coder.sessions import SessionManager
 
 
 def test_session_manager_initialization():

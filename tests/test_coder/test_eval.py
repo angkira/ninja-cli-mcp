@@ -13,6 +13,7 @@ import pytest
 from ninja_coder.models import SimpleTaskRequest
 from ninja_coder.tools import get_executor
 
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
@@ -234,7 +235,7 @@ def add(a, b):
             
             # Function should be simple (no complex control flow)
             function_node = function_nodes[0]
-            complex_nodes = [n for n in ast.walk(function_node) 
+            complex_nodes = [n for n in ast.walk(function_node)
                            if isinstance(n, (ast.For, ast.While, ast.If, ast.Try))]
             assert len(complex_nodes) == 0  # No complex control flow
 
@@ -572,7 +573,7 @@ def _calculate_stats(numbers: List[Union[int, float]]) -> Dict[str, Union[int, f
             tree = ast.parse(content)
             
             # Check for both functions
-            function_names = [node.name for node in tree.body 
+            function_names = [node.name for node in tree.body
                             if isinstance(node, ast.FunctionDef)]
             assert "analyze_numbers" in function_names
             assert "_calculate_stats" in function_names
