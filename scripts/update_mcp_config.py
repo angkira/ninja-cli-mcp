@@ -17,7 +17,7 @@ def update_mcp_config(config_path, server_name):
     # Load existing config or create new one
     if config_file.exists():
         try:
-            with open(config_file, "r") as f:
+            with open(config_file) as f:
                 config = json.load(f)
         except json.JSONDecodeError as e:
             print(f"Error: Invalid JSON in {config_file}: {e}", file=sys.stderr)

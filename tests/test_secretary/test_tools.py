@@ -1,23 +1,19 @@
 """Unit tests for ninja-secretary tools."""
 
-import tempfile
 import os
+import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pytest
 
-from ninja_secretary.tools import SecretaryToolExecutor
 from ninja_secretary.models import (
     AnalyseFileRequest,
-    FileSearchRequest,
     CodebaseReportRequest,
     DocumentSummaryRequest,
-    AnalyseFileResult,
-    FileSearchResult,
-    CodebaseReportResult,
-    DocumentSummaryResult,
+    FileSearchRequest,
 )
+from ninja_secretary.tools import SecretaryToolExecutor
 
 
 @pytest.fixture

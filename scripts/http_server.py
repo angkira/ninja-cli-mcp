@@ -38,7 +38,7 @@ executor = None
 
 async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle MCP tool call."""
-    global executor  # noqa: PLW0603
+    global executor
 
     if executor is None:
         executor = get_executor()

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
@@ -98,7 +97,7 @@ def test_basic_logging(logger, temp_log_dir):
     # Check file exists and contains entry
     assert logger.log_file.exists()
 
-    with open(logger.log_file, "r") as f:
+    with open(logger.log_file) as f:
         lines = f.readlines()
 
     assert len(lines) == 1
@@ -118,7 +117,7 @@ def test_convenience_methods(logger):
     logger.warning("Warning message", task_id="task-3")
     logger.error("Error message", task_id="task-4")
 
-    with open(logger.log_file, "r") as f:
+    with open(logger.log_file) as f:
         lines = f.readlines()
 
     assert len(lines) == 4
@@ -138,7 +137,7 @@ def test_log_command(logger):
         task_id="task-1",
     )
 
-    with open(logger.log_file, "r") as f:
+    with open(logger.log_file) as f:
         entry = json.loads(f.readline())
 
     assert entry["level"] == "INFO"
@@ -162,7 +161,7 @@ def test_log_result(logger):
         exit_code=0,
     )
 
-    with open(logger.log_file, "r") as f:
+    with open(logger.log_file) as f:
         entry = json.loads(f.readline())
 
     assert entry["level"] == "INFO"  # Success = INFO
@@ -182,7 +181,7 @@ def test_log_result_failure(logger):
         exit_code=1,
     )
 
-    with open(logger.log_file, "r") as f:
+    with open(logger.log_file) as f:
         entry = json.loads(f.readline())
 
     assert entry["level"] == "ERROR"  # Failure = ERROR
@@ -200,7 +199,7 @@ def test_log_multi_agent(logger):
         task_type="feature",
     )
 
-    with open(logger.log_file, "r") as f:
+    with open(logger.log_file) as f:
         entry = json.loads(f.readline())
 
     assert entry["level"] == "INFO"
@@ -224,7 +223,7 @@ def test_log_session(logger):
         repo_root="/tmp/test-repo",
     )
 
-    with open(logger.log_file, "r") as f:
+    with open(logger.log_file) as f:
         entry = json.loads(f.readline())
 
     assert entry["level"] == "INFO"
@@ -471,7 +470,7 @@ def test_log_with_extra_fields(logger):
         list_field=["a", "b", "c"],
     )
 
-    with open(logger.log_file, "r") as f:
+    with open(logger.log_file) as f:
         entry = json.loads(f.readline())
 
     assert entry["extra"]["custom_field"] == "custom_value"
@@ -485,7 +484,7 @@ def test_jsonl_format_multiple_entries(logger):
     logger.info("Message 2")
     logger.info("Message 3")
 
-    with open(logger.log_file, "r") as f:
+    with open(logger.log_file) as f:
         lines = f.readlines()
 
     assert len(lines) == 3

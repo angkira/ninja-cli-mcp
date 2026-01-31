@@ -10,7 +10,6 @@ from unittest.mock import Mock, patch
 
 import pytest
 import requests
-
 from http_client import HTTPClient, RequestsHTTPClient, rate_limit
 
 

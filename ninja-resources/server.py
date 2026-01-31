@@ -1,9 +1,11 @@
+import asyncio
 import json
-from typing import Any, Dict, List
+import logging
+from typing import Any
+
 from mcp.server import Server
 from mcp.types import TextContent, Tool
-import asyncio
-import logging
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -68,23 +70,23 @@ def create_server() -> Server:
     server = Server("ninja-resources")
     
     @server.list_tools()
-    async def list_tools() -> List[Tool]:
+    async def list_tools() -> list[Tool]:
         """List all available tools."""
         return TOOLS
     
     @server.call_tool()
-    async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
+    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         """Execute a tool with the given arguments."""
         try:
             result = await executor(name, arguments)
             return [TextContent(type="text", text=result)]
         except Exception as e:
-            logger.error(f"Error executing tool {name}: {str(e)}")
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
+            logger.error(f"Error executing tool {name}: {e!s}")
+            return [TextContent(type="text", text=f"Error: {e!s}")]
     
     return server
 
-async def executor(name: str, arguments: Dict[str, Any]) -> str:
+async def executor(name: str, arguments: dict[str, Any]) -> str:
     """Execute the requested tool."""
     logger.info(f"Executing tool: {name} with arguments: {arguments}")
     

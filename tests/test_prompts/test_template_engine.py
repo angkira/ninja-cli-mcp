@@ -1,4 +1,3 @@
-import pytest
 from src.ninja_prompts.template_engine import TemplateEngine
 
 

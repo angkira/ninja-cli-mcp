@@ -8,11 +8,12 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
+
 
 # Try multiple import patterns for InquirerPy compatibility
 try:
-    import InquirerPy.inquirer as inquirer
+    from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
     from InquirerPy.separator import Separator
     from InquirerPy.validator import PathValidator
@@ -54,13 +55,13 @@ class TUIInstaller:
 
     def print_info(self, message: str) -> None:
         """Print info message."""
-        print(f"ℹ️  {message}")
+        print(f"i  {message}")
 
     def print_warning(self, message: str) -> None:
         """Print warning message."""
         print(f"⚠️  {message}")
 
-    def detect_system(self) -> Dict[str, str]:
+    def detect_system(self) -> dict[str, str]:
         """Detect system information."""
         system_info = {
             "os": "unknown",
@@ -129,7 +130,7 @@ class TUIInstaller:
                     return False
             return False
 
-    def detect_installed_tools(self) -> Dict[str, str]:
+    def detect_installed_tools(self) -> dict[str, str]:
         """Detect installed AI coding tools."""
         tools = {}
 
@@ -151,7 +152,7 @@ class TUIInstaller:
 
         return tools
 
-    def detect_ide_configs(self) -> Dict[str, str]:
+    def detect_ide_configs(self) -> dict[str, str]:
         """Detect IDE configuration files."""
         configs = {}
 
@@ -215,7 +216,7 @@ class TUIInstaller:
 
         return result.execute() if hasattr(result, "execute") else result
 
-    def select_modules(self) -> List[str]:
+    def select_modules(self) -> list[str]:
         """Select modules for installation."""
         all_modules = [
             ("coder", "AI code assistant with Aider/OpenCode/Gemini support"),
@@ -244,7 +245,7 @@ class TUIInstaller:
         selected = result.execute() if hasattr(result, "execute") else result
         return selected if selected else ["coder", "resources"]
 
-    def collect_api_keys(self) -> Dict[str, str]:
+    def collect_api_keys(self) -> dict[str, str]:
         """Collect all required API keys."""
         keys = {}
 
@@ -329,7 +330,7 @@ class TUIInstaller:
 
         return keys
 
-    def fetch_model_recommendations(self, category: str) -> List[Dict[str, Any]]:
+    def fetch_model_recommendations(self, category: str) -> list[dict[str, Any]]:
         """Fetch model recommendations from LiveBench or fallback."""
         try:
             script_path = (
@@ -450,7 +451,7 @@ class TUIInstaller:
 
         return fallback_models.get(category, fallback_models["coder"])
 
-    def select_models(self) -> Dict[str, str]:
+    def select_models(self) -> dict[str, str]:
         """Select models for each module."""
         models = {}
 
@@ -562,7 +563,7 @@ class TUIInstaller:
                     self.print_warning(f"Failed to install aider: {result.stderr}")
                     return "aider"
             else:
-                print(f"ℹ️  Please install {tool_name} manually")
+                print(f"i  Please install {tool_name} manually")
                 return tool_name
 
         elif selected == "custom":
@@ -588,7 +589,7 @@ class TUIInstaller:
         enable_daemon = result.execute() if hasattr(result, "execute") else result
         return enable_daemon
 
-    def configure_ide_integration(self) -> List[str]:
+    def configure_ide_integration(self) -> list[str]:
         """Configure IDE integration."""
         if not self.detected_ide_configs:
             return []
@@ -615,7 +616,7 @@ class TUIInstaller:
         return selected_ides if selected_ides else []
 
     def save_configuration(
-        self, api_keys: Dict[str, str], models: Dict[str, str], code_cli: str
+        self, api_keys: dict[str, str], models: dict[str, str], code_cli: str
     ) -> bool:
         """Save configuration to ~/.ninja-mcp.env."""
         config_file = Path.home() / ".ninja-mcp.env"
@@ -686,7 +687,7 @@ class TUIInstaller:
             print(f"❌ Failed to save configuration: {e}")
             return False
 
-    def install_ninja_mcp(self, install_type: str, modules: List[str]) -> bool:
+    def install_ninja_mcp(self, install_type: str, modules: list[str]) -> bool:
         """Install ninja-mcp with selected modules."""
         print("\n🔄 Installing ninja-mcp...")
 
@@ -741,7 +742,7 @@ class TUIInstaller:
 
         return all_ok
 
-    def show_completion_summary(self, selected_ides: List[str]) -> None:
+    def show_completion_summary(self, selected_ides: list[str]) -> None:
         """Show installation completion summary."""
         print("\n" + "🎉" * 80)
         print("  🎉 INSTALLATION COMPLETE!")

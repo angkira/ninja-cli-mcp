@@ -13,12 +13,11 @@ Run with: pytest tests/test_integration.py -v -s
 from __future__ import annotations
 
 import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from ninja_coder.driver import ExecutionMode, InstructionBuilder, NinjaConfig, NinjaDriver
+from ninja_coder.driver import NinjaConfig, NinjaDriver
 from ninja_coder.models import TaskComplexity
 
 
@@ -116,7 +115,7 @@ def test_driver_config_from_env(skip_if_no_api_key):
     assert config.openai_api_key is not None
     assert config.model is not None
 
-    print(f"\n✓ Config loaded:")
+    print("\n✓ Config loaded:")
     print(f"  Binary: {config.bin_path}")
     print(f"  Model: {config.model}")
     print(f"  Base URL: {config.openai_base_url}")
@@ -129,7 +128,7 @@ def test_driver_initialization(skip_if_no_api_key, real_driver):
     assert real_driver.session_manager is not None
     assert real_driver.structured_logger is not None
 
-    print(f"\n✓ Driver initialized:")
+    print("\n✓ Driver initialized:")
     print(f"  Strategy: {real_driver._strategy.name}")
     print(f"  Model: {real_driver.config.model}")
 
@@ -145,7 +144,7 @@ def test_model_selection_for_task_types(skip_if_no_api_key, real_driver):
     seq_rec = selector.select_model(TaskComplexity.SEQUENTIAL)
     parallel_rec = selector.select_model(TaskComplexity.PARALLEL, fanout=5)
 
-    print(f"\n✓ Model recommendations:")
+    print("\n✓ Model recommendations:")
     print(f"  QUICK: {quick_rec.model} ({quick_rec.reason})")
     print(f"  SEQUENTIAL: {seq_rec.model} ({seq_rec.reason})")
     print(f"  PARALLEL: {parallel_rec.model} ({parallel_rec.reason})")
@@ -160,7 +159,7 @@ def test_model_selection_for_task_types(skip_if_no_api_key, real_driver):
 async def test_quick_task_execution(skip_if_no_api_key, real_driver, test_repo):
     """Test executing a quick task with real API call using direct execute_async."""
     print(f"\n✓ Running quick task in {test_repo}")
-    print(f"  Task: Add a docstring")
+    print("  Task: Add a docstring")
     print(f"  Model: {real_driver.config.model}")
 
     # Build minimal instruction to avoid ARG_MAX limit
@@ -186,7 +185,7 @@ async def test_quick_task_execution(skip_if_no_api_key, real_driver, test_repo):
         task_type="quick",
     )
 
-    print(f"\n✓ Task completed:")
+    print("\n✓ Task completed:")
     print(f"  Success: {result.success}")
     print(f"  Summary: {result.summary}")
     print(f"  Model used: {result.model_used}")
@@ -205,7 +204,7 @@ async def test_quick_task_execution(skip_if_no_api_key, real_driver, test_repo):
     # Check that file was actually modified
     example_content = (test_repo / "example.py").read_text()
     assert '"""' in example_content, "Docstring not found in file"
-    print(f"\n✓ File content after task:")
+    print("\n✓ File content after task:")
     print(example_content)
 
 
@@ -220,7 +219,7 @@ async def test_multi_agent_task_execution(
         pytest.skip("Multi-agent test requires OpenCode binary")
 
     print(f"\n✓ Running multi-agent task in {test_repo}")
-    print(f"  Task: Create calculator module")
+    print("  Task: Create calculator module")
     print(f"  Model: {real_driver.config.model}")
 
     # Execute task with multi-agent orchestration
@@ -235,7 +234,7 @@ async def test_multi_agent_task_execution(
         task_type="sequential",
     )
 
-    print(f"\n✓ Multi-agent task completed:")
+    print("\n✓ Multi-agent task completed:")
     print(f"  Success: {result.success}")
     print(f"  Summary: {result.summary}")
     print(f"  Model used: {result.model_used}")
@@ -260,16 +259,16 @@ async def test_multi_agent_task_execution(
     assert "def divide(" in calc_content
     assert "ZeroDivisionError" in calc_content or "division by zero" in calc_content.lower()
 
-    print(f"\n✓ Calculator module created with all required functions")
-    print(f"  Functions: add, subtract, multiply, divide")
-    print(f"  Error handling: division by zero implemented")
+    print("\n✓ Calculator module created with all required functions")
+    print("  Functions: add, subtract, multiply, divide")
+    print("  Error handling: division by zero implemented")
 
 
 @pytest.mark.slow
 @pytest.mark.asyncio
 async def test_session_continuation(skip_if_no_api_key, real_driver, test_repo):
     """Test that sessions can be continued across multiple tasks."""
-    print(f"\n✓ Task 1: Create greet function")
+    print("\n✓ Task 1: Create greet function")
     result1 = await real_driver.execute_with_session(
         task="Create a function called greet() that takes a name parameter and prints a greeting",
         repo_root=str(test_repo),
@@ -314,9 +313,9 @@ async def test_session_continuation(skip_if_no_api_key, real_driver, test_repo):
     assert "def greet(" in example_content, "greet function not found"
     assert "def goodbye(" in example_content, "goodbye function not found"
 
-    print(f"\n✓ Final file content:")
+    print("\n✓ Final file content:")
     print(example_content)
-    print(f"\n✓ Session continuation successful!")
+    print("\n✓ Session continuation successful!")
 
 
 @pytest.mark.asyncio
@@ -338,7 +337,7 @@ async def test_structured_logging_integration(skip_if_no_api_key, real_driver, t
         task_type="quick",
     )
 
-    print(f"\n✓ Task completed:")
+    print("\n✓ Task completed:")
     print(f"  Success: {result.success}")
     print(f"  Summary: {result.summary}")
 
@@ -363,8 +362,8 @@ async def test_structured_logging_integration(skip_if_no_api_key, real_driver, t
     # Verify file was modified (OpenCode may add docstring instead of comment)
     example_content = (test_repo / "example.py").read_text()
     assert ('"""' in example_content or "#" in example_content or "comment" in example_content.lower())
-    print(f"\n✓ File modified successfully")
-    print(f"\n✓ Logging integration successful!")
+    print("\n✓ File modified successfully")
+    print("\n✓ Logging integration successful!")
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ executor = None
 
 async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle MCP tool call."""
-    global executor  # noqa: PLW0603
+    global executor
 
     if executor is None:
         executor = get_executor()
@@ -84,7 +84,7 @@ async def handle_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[st
         return {"error": str(e)}
 
 
-async def sse_endpoint(request: Request):  # noqa: ARG001
+async def sse_endpoint(request: Request):
     """SSE endpoint for MCP protocol."""
 
     async def event_generator():

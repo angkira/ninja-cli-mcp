@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Try multiple import patterns for InquirerPy compatibility
 try:
-    import InquirerPy.inquirer as inquirer
+    from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
 
     HAS_INQUIRERPY = True

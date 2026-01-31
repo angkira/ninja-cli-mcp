@@ -1,8 +1,8 @@
-import asyncio
-from typing import Any, Dict, List
 from functools import wraps
+from typing import Any
 
-from . import resources, prompts, tools
+from . import prompts, resources, tools
+
 
 # Store registered resources, prompts, and tools
 _registered_resources = {}

@@ -6,7 +6,6 @@ Tests config management, instruction building, model selection, and session/logg
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -18,7 +17,6 @@ from ninja_coder.driver import (
     NinjaDriver,
     NinjaResult,
 )
-from ninja_coder.models import TaskComplexity
 
 
 # ============================================================================
@@ -346,7 +344,7 @@ def test_driver_write_task_file(driver, tmp_path):
     # Verify content
     import json
 
-    with open(task_file, "r") as f:
+    with open(task_file) as f:
         data = json.load(f)
 
     assert data["mode"] == "quick"
@@ -472,8 +470,7 @@ async def test_execute_async_with_opencode_session_creates_session(
 ):
     """Test that execute_async_with_opencode_session creates a new session."""
     # Mock asyncio.create_subprocess_exec to simulate OpenCode CLI execution
-    import asyncio
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import MagicMock
 
     async def mock_subprocess(*args, **kwargs):
         """Mock subprocess that returns success with session ID."""
@@ -536,8 +533,7 @@ async def test_execute_async_with_opencode_session_continues_session(
     monkeypatch.setenv("OPENCODE_DISABLE_DAEMON", "true")
 
     # Mock asyncio.create_subprocess_exec
-    import asyncio
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import MagicMock
 
     async def mock_subprocess(*args, **kwargs):
         """Mock subprocess that returns success."""
@@ -701,7 +697,6 @@ async def test_execute_async_with_opencode_session_cli_not_found(
     opencode_driver, tmp_path, monkeypatch
 ):
     """Test that execute_async_with_opencode_session handles missing CLI gracefully."""
-    import asyncio
 
     async def mock_subprocess(*args, **kwargs):
         """Mock subprocess that raises FileNotFoundError."""
@@ -748,7 +743,6 @@ async def test_execute_async_with_opencode_session_continue_last(
     # Disable daemon mode to test --continue flag logic
     monkeypatch.setenv("OPENCODE_DISABLE_DAEMON", "true")
 
-    import asyncio
     from unittest.mock import MagicMock
 
     continue_flag_found = False

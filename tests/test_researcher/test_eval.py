@@ -2,26 +2,17 @@
 
 from __future__ import annotations
 
-import asyncio
-import os
-from pathlib import Path
-from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from ninja_researcher.models import (
     DeepResearchRequest,
-    FactCheckRequest,
-    GenerateReportRequest,
     ResearchResult,
     SummarizeSourcesRequest,
     SummaryResult,
-    WebSearchRequest,
 )
 from ninja_researcher.tools import ResearchToolExecutor
-
-if TYPE_CHECKING:
-    from collections.abc import Generator
 
 
 # Mark all tests in this file as integration tests
@@ -37,7 +28,9 @@ def skip_integration_tests():
     These tests require proper mocking setup or external API keys.
     To run: pytest -m integration tests/test_researcher/test_eval.py
     """
-    pytest.skip("Researcher eval tests require proper mocking or API keys - use pytest -m integration to run")
+    pytest.skip(
+        "Researcher eval tests require proper mocking or API keys - use pytest -m integration to run"
+    )
 
 
 @pytest.fixture
@@ -73,9 +66,9 @@ def mock_html_content():
     <head><title>Test Article</title></head>
     <body>
     <h1>Main Topic Header</h1>
-    <p>This is the key information that should be captured in the summary. 
+    <p>This is the key information that should be captured in the summary.
     It contains important facts about the subject matter that are essential to understand.</p>
-    <p>Secondary information that provides additional context to the main points 
+    <p>Secondary information that provides additional context to the main points
     and helps to better understand the topic in depth.</p>
     <footer>Footer content that should be ignored</footer>
     </body>
@@ -92,7 +85,7 @@ class TestResearcherDeepResearch:
         # Arrange
         executor = ResearchToolExecutor()
         request = DeepResearchRequest(topic="Python programming")
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.SearchProviderFactory") as mock_factory:
             mock_provider = AsyncMock()
@@ -101,7 +94,7 @@ class TestResearcherDeepResearch:
             mock_factory.get_default_provider.return_value = "mock_provider"
 
             result = await executor.deep_research(request)
-            
+
             # Verify the result
             assert isinstance(result, ResearchResult)
             assert result.status == "ok"
@@ -123,9 +116,9 @@ class TestResearcherDeepResearch:
                 "score": 0.80,
             }
         ]
-        
+
         request = DeepResearchRequest(topic="Python programming")
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.SearchProviderFactory") as mock_factory:
             mock_provider = AsyncMock()
@@ -134,7 +127,7 @@ class TestResearcherDeepResearch:
             mock_factory.get_default_provider.return_value = "mock_provider"
 
             result = await executor.deep_research(request)
-            
+
             # Verify the result
             assert isinstance(result, ResearchResult)
             assert result.status == "ok"
@@ -152,7 +145,7 @@ class TestResearcherDeepResearch:
         # Arrange
         executor = ResearchToolExecutor()
         request = DeepResearchRequest(topic="Python programming")
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.SearchProviderFactory") as mock_factory:
             mock_provider = AsyncMock()
@@ -161,7 +154,7 @@ class TestResearcherDeepResearch:
             mock_factory.get_default_provider.return_value = "mock_provider"
 
             result = await executor.deep_research(request)
-            
+
             # Verify the result
             assert isinstance(result, ResearchResult)
             assert result.status == "ok"
@@ -182,15 +175,17 @@ class TestResearcherDeepResearch:
         # Create more sources than max_sources
         many_results = []
         for i in range(15):
-            many_results.append({
-                "title": f"Test Article {i}",
-                "url": f"https://example.com/article{i}",
-                "snippet": f"This is test article {i} snippet about Python programming.",
-                "score": 1.0 - (i * 0.05),
-            })
-        
+            many_results.append(
+                {
+                    "title": f"Test Article {i}",
+                    "url": f"https://example.com/article{i}",
+                    "snippet": f"This is test article {i} snippet about Python programming.",
+                    "score": 1.0 - (i * 0.05),
+                }
+            )
+
         request = DeepResearchRequest(topic="Python programming", max_sources=10)
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.SearchProviderFactory") as mock_factory:
             mock_provider = AsyncMock()
@@ -199,7 +194,7 @@ class TestResearcherDeepResearch:
             mock_factory.get_default_provider.return_value = "mock_provider"
 
             result = await executor.deep_research(request)
-            
+
             # Verify the result
             assert isinstance(result, ResearchResult)
             assert result.status == "ok"
@@ -214,11 +209,9 @@ class TestResearcherDeepResearch:
         executor = ResearchToolExecutor()
         custom_queries = ["query1", "query2", "query3"]
         request = DeepResearchRequest(
-            topic="Python programming", 
-            parallel_agents=3,
-            queries=custom_queries
+            topic="Python programming", parallel_agents=3, queries=custom_queries
         )
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.SearchProviderFactory") as mock_factory:
             mock_provider = AsyncMock()
@@ -236,7 +229,7 @@ class TestResearcherDeepResearch:
             # Mock asyncio.Semaphore to track parallel_agents usage
             with patch("ninja_researcher.tools.asyncio.Semaphore") as mock_semaphore:
                 await executor.deep_research(request)
-                
+
                 # Check that semaphore was created with correct value
                 mock_semaphore.assert_called_with(3)
 
@@ -247,11 +240,8 @@ class TestResearcherDeepResearch:
         # Arrange
         executor = ResearchToolExecutor()
         custom_queries = ["custom python query 1", "custom python query 2", "custom python query 3"]
-        request = DeepResearchRequest(
-            topic="Python programming",
-            queries=custom_queries
-        )
-        
+        request = DeepResearchRequest(topic="Python programming", queries=custom_queries)
+
         # Act & Assert
         with patch("ninja_researcher.tools.SearchProviderFactory") as mock_factory:
             mock_provider = AsyncMock()
@@ -260,7 +250,7 @@ class TestResearcherDeepResearch:
             mock_factory.get_default_provider.return_value = "mock_provider"
 
             await executor.deep_research(request)
-            
+
             # Verify that search was called for each custom query
             assert mock_provider.search.call_count == len(custom_queries)
             called_queries = [call[0][0] for call in mock_provider.search.call_args_list]
@@ -276,10 +266,8 @@ class TestResearcherSummarizeSources:
         """Test that summarize sources extracts key information."""
         # Arrange
         executor = ResearchToolExecutor()
-        request = SummarizeSourcesRequest(
-            urls=["https://example.com/article"]
-        )
-        
+        request = SummarizeSourcesRequest(urls=["https://example.com/article"])
+
         # Act & Assert
         with patch("ninja_researcher.tools.httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
@@ -315,12 +303,9 @@ class TestResearcherSummarizeSources:
         </body>
         </html>
         """
-        
-        request = SummarizeSourcesRequest(
-            urls=["https://example.com/article"],
-            max_length=200
-        )
-        
+
+        request = SummarizeSourcesRequest(urls=["https://example.com/article"], max_length=200)
+
         # Act & Assert
         with patch("ninja_researcher.tools.httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
@@ -349,7 +334,7 @@ class TestResearcherSummarizeSources:
         html_content1 = mock_html_content.replace("Main Topic Header", "Python Basics")
         html_content2 = mock_html_content.replace("Main Topic Header", "Python Applications")
         html_content3 = mock_html_content.replace("Main Topic Header", "Python Libraries")
-        
+
         # Mock responses for multiple URLs
         async def mock_get(url, follow_redirects=True):
             mock_response = MagicMock()
@@ -366,10 +351,10 @@ class TestResearcherSummarizeSources:
             urls=[
                 "https://example.com/article1",
                 "https://example.com/article2",
-                "https://example.com/article3"
+                "https://example.com/article3",
             ]
         )
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.httpx.AsyncClient") as mock_client:
             mock_client_instance = AsyncMock()
@@ -383,11 +368,15 @@ class TestResearcherSummarizeSources:
             assert isinstance(result, SummaryResult)
             assert result.status == "ok"
             assert len(result.summaries) == 3
-            
+
             # Check that combined summary includes info from all sources
             assert "Python" in result.combined_summary
             # Should mention content from different sources
-            assert "Basics" in result.combined_summary or "Applications" in result.combined_summary or "Libraries" in result.combined_summary
+            assert (
+                "Basics" in result.combined_summary
+                or "Applications" in result.combined_summary
+                or "Libraries" in result.combined_summary
+            )
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -395,10 +384,8 @@ class TestResearcherSummarizeSources:
         """Test that summarize sources handles invalid URLs gracefully."""
         # Arrange
         executor = ResearchToolExecutor()
-        request = SummarizeSourcesRequest(
-            urls=["https://invalid-url-that-does-not-exist.com"]
-        )
-        
+        request = SummarizeSourcesRequest(urls=["https://invalid-url-that-does-not-exist.com"])
+
         # Act & Assert
         with patch("ninja_researcher.tools.httpx.AsyncClient") as mock_client:
             # Mock an exception for invalid URL
@@ -429,7 +416,7 @@ class TestResearcherSummarizeSources:
         </body>
         </html>
         """
-        
+
         html_content2 = """
         <html>
         <head><title>Python Applications</title></head>
@@ -438,7 +425,7 @@ class TestResearcherSummarizeSources:
         </body>
         </html>
         """
-        
+
         # Mock responses
         async def mock_get(url, follow_redirects=True):
             mock_response = MagicMock()
@@ -450,12 +437,9 @@ class TestResearcherSummarizeSources:
             return mock_response
 
         request = SummarizeSourcesRequest(
-            urls=[
-                "https://example.com/python-basics",
-                "https://example.com/python-applications"
-            ]
+            urls=["https://example.com/python-basics", "https://example.com/python-applications"]
         )
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.httpx.AsyncClient") as mock_client:
             mock_client_instance = AsyncMock()
@@ -468,13 +452,14 @@ class TestResearcherSummarizeSources:
             # Verify the result
             assert isinstance(result, SummaryResult)
             assert result.status == "ok"
-            
+
             # Check that combined summary connects themes
             assert "Python" in result.combined_summary
             # Should mention both aspects (language characteristics and applications)
-            assert ("high-level" in result.combined_summary and 
-                   ("web development" in result.combined_summary or 
-                    "data science" in result.combined_summary))
+            assert "high-level" in result.combined_summary and (
+                "web development" in result.combined_summary
+                or "data science" in result.combined_summary
+            )
 
 
 class TestResearcherErrorHandling:
@@ -487,11 +472,11 @@ class TestResearcherErrorHandling:
         # Arrange
         executor = ResearchToolExecutor()
         request = DeepResearchRequest(topic="Python programming")
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.SearchProviderFactory") as mock_factory:
             mock_provider = AsyncMock()
-            mock_provider.search.side_effect = asyncio.TimeoutError("Search timeout")
+            mock_provider.search.side_effect = TimeoutError("Search timeout")
             mock_factory.get_provider.return_value = mock_provider
             mock_factory.get_default_provider.return_value = "mock_provider"
 
@@ -509,10 +494,8 @@ class TestResearcherErrorHandling:
         """Test that summarize sources handles completely invalid URLs."""
         # Arrange
         executor = ResearchToolExecutor()
-        request = SummarizeSourcesRequest(
-            urls=["not-a-valid-url", "also-invalid"]
-        )
-        
+        request = SummarizeSourcesRequest(urls=["not-a-valid-url", "also-invalid"])
+
         # Act & Assert
         with patch("ninja_researcher.tools.httpx.AsyncClient") as mock_client:
             mock_client_instance = AsyncMock()
@@ -535,7 +518,7 @@ class TestResearcherErrorHandling:
         # Arrange
         executor = ResearchToolExecutor()
         request = DeepResearchRequest(topic="Python programming")
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.SearchProviderFactory") as mock_factory:
             mock_provider = AsyncMock()
@@ -570,7 +553,7 @@ class TestResearcherResultQualityMetrics:
         # Arrange
         executor = ResearchToolExecutor()
         request = DeepResearchRequest(topic="Python programming")
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.SearchProviderFactory") as mock_factory:
             mock_provider = AsyncMock()
@@ -583,7 +566,7 @@ class TestResearcherResultQualityMetrics:
             # Verify the result
             assert isinstance(result, ResearchResult)
             assert result.status == "ok"
-            
+
             # Check that sources are relevant to the topic
             for source in result.sources:
                 title_and_snippet = (source["title"] + " " + source["snippet"]).lower()
@@ -604,11 +587,9 @@ class TestResearcherResultQualityMetrics:
         </body>
         </html>
         """
-        
-        request = SummarizeSourcesRequest(
-            urls=["https://example.com/factual-article"]
-        )
-        
+
+        request = SummarizeSourcesRequest(urls=["https://example.com/factual-article"])
+
         # Act & Assert
         with patch("ninja_researcher.tools.httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
@@ -624,7 +605,7 @@ class TestResearcherResultQualityMetrics:
             # Verify the result
             assert isinstance(result, SummaryResult)
             assert result.status == "ok"
-            
+
             summary = result.summaries[0]["summary"]
             # Should contain key facts from source
             assert "Python" in summary
@@ -658,9 +639,9 @@ class TestResearcherResultQualityMetrics:
                 "score": 0.7,
             },
         ]
-        
+
         request = DeepResearchRequest(topic="Python programming")
-        
+
         # Act & Assert
         with patch("ninja_researcher.tools.SearchProviderFactory") as mock_factory:
             mock_provider = AsyncMock()
@@ -673,7 +654,7 @@ class TestResearcherResultQualityMetrics:
             # Verify the result
             assert isinstance(result, ResearchResult)
             assert result.status == "ok"
-            
+
             # Extract domains
             domains = set()
             for source in result.sources:
@@ -682,6 +663,6 @@ class TestResearcherResultQualityMetrics:
                 if "://" in url:
                     domain = url.split("/")[2]
                     domains.add(domain)
-            
+
             # Should have sources from different domains
             assert len(domains) >= 2  # At least 2 different domains

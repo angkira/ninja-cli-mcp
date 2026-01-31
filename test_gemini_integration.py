@@ -6,6 +6,7 @@ Integration test for GeminiStrategy with NinjaDriver.
 import sys
 from pathlib import Path
 
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
@@ -38,7 +39,7 @@ def test_driver_with_gemini():
 
     # Test prompt building
     prompt = driver._build_prompt_text(instruction, "/tmp/test")
-    print(f"✅ Prompt built successfully")
+    print("✅ Prompt built successfully")
     print(f"  Prompt length: {len(prompt)} chars")
 
     # Test strategy command building
@@ -49,7 +50,7 @@ def test_driver_with_gemini():
         model=config.model,
     )
 
-    print(f"✅ Strategy command built successfully")
+    print("✅ Strategy command built successfully")
     print(f"  Command: {' '.join(cli_result.command)}")
     print(f"  Working dir: {cli_result.working_dir}")
     print(f"  Has env vars: {len(cli_result.env)} vars")
@@ -60,7 +61,7 @@ def test_driver_with_gemini():
     assert config.model in cli_result.command, "Command should have model name"
     assert "--message" in cli_result.command, "Command should have --message flag"
 
-    print(f"✅ All assertions passed!")
+    print("✅ All assertions passed!")
 
     return True
 

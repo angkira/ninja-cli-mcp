@@ -8,8 +8,7 @@ of no output activity, while still respecting maximum timeout as a safety net.
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

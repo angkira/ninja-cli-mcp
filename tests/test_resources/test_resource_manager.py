@@ -1,7 +1,7 @@
 """Tests for resource manager."""
 
+
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from ninja_resources.resource_manager import ResourceManager
 
