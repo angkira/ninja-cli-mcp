@@ -51,6 +51,13 @@ try:
 except ImportError:
     HAS_TUI_INSTALLER = False
 
+try:
+    from ninja_config.interactive_configurator import run_power_configurator
+
+    HAS_POWER_CONFIGURATOR = True
+except ImportError:
+    HAS_POWER_CONFIGURATOR = False
+
 
 def print_colored(text: str, color: str = "") -> None:
     """
@@ -556,6 +563,25 @@ def cmd_auth(args: argparse.Namespace) -> None:
     cmd_configure(args)
 
 
+def cmd_power_configure(args: argparse.Namespace) -> None:
+    """
+    Run powerful interactive configurator with TUI interface.
+
+    Args:
+        args: Command arguments.
+    """
+    if not HAS_POWER_CONFIGURATOR:
+        print_colored("Power configurator not available.", "red")
+        print_colored("Install with: pip install InquirerPy", "dim")
+        return
+
+    try:
+        sys.exit(run_power_configurator(args.config))
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(1)
+
+
 def cmd_tui_install(args: argparse.Namespace) -> None:
     """
     Run advanced TUI installer with comprehensive configuration.
@@ -739,6 +765,9 @@ def main() -> None:
    # Advanced TUI installer with comprehensive configuration
    ninja-config tui-install
 
+   # Powerful TUI configurator with full settings management
+   ninja-config power-configure
+
    # List all configuration
    ninja-config list
 
@@ -903,6 +932,12 @@ def main() -> None:
         help="Interactive configuration manager (API keys, operators, providers)",
     )
 
+    # Power configurator
+    subparsers.add_parser(
+        "power-configure",
+        help="Powerful TUI configurator with comprehensive settings management",
+    )
+
     # Quick auth setup (alias for configure -> api_keys)
     subparsers.add_parser(
         "auth",
@@ -953,6 +988,8 @@ def main() -> None:
         cmd_tui_install(args)
     elif args.command == "configure":
         cmd_configure(args)
+    elif args.command == "power-configure":
+        cmd_power_configure(args)
     elif args.command == "auth":
         cmd_auth(args)
     elif args.command == "show":

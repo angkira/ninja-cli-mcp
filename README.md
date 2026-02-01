@@ -421,21 +421,26 @@ result = prompt_chain([
 
 ## 🔧 Configuration
 
-### Interactive Configuration
+### Configuration
 
-For a guided setup experience, use the TUI installer:
+For a guided setup experience, use one of the interactive configuration tools:
 
 ```bash
-# Run the advanced TUI installer for comprehensive configuration
+# Run the advanced TUI installer for comprehensive initial setup
 ninja-config tui-install
+
+# Run the powerful interactive configurator for ongoing management
+ninja-config power-configure
 ```
 
-This will guide you through:
-- API key collection for all services
-- Model selection with recommendations
-- IDE integration setup
-- Daemon configuration
-- Module selection
+These tools provide:
+- **API Key Management**: Secure collection for all services
+- **Operator Selection**: Choose between Aider, OpenCode, Gemini, Cursor
+- **Model Configuration**: Set optimal models for each module
+- **Search Provider Setup**: Configure DuckDuckGo, Serper, or Perplexity
+- **Daemon Configuration**: Performance tuning and port management
+- **IDE Integration**: Connect to Claude Code, VS Code, Zed, OpenCode
+- **Advanced Settings**: Fine-tune any configuration value
 
 ### Environment Variables
 
