@@ -423,14 +423,14 @@ result = prompt_chain([
 
 ### Configuration
 
-For a guided setup experience, use one of the interactive configuration tools:
+For ongoing management of your Ninja MCP setup:
 
 ```bash
-# Run the advanced TUI installer for comprehensive initial setup
-ninja-config tui-install
+# Run the comprehensive installer for initial setup
+ninja-config install-full
 
-# Run the powerful interactive configurator for ongoing management
-ninja-config power-configure
+# Run the interactive configurator for ongoing management
+ninja-config configure
 ```
 
 These tools provide:

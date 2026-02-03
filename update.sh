@@ -257,7 +257,7 @@ if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
     if uv tool install --force "$SCRIPT_DIR[all]" 2>&1; then
         UPDATE_SUCCESS=true
         success "Updated from local dev directory"
-
+        
         # Clean up any dev .venv binaries that might conflict
         if [[ -d "$SCRIPT_DIR/.venv/bin" ]]; then
             info "Cleaning dev environment binaries to avoid conflicts..."
@@ -289,9 +289,9 @@ if [[ "$UPDATE_SUCCESS" != "true" ]]; then
     fi
 fi
 
-# Verify correct binaries are being used
+# Verify correct binaries are being used and update command aliases
 info "Verifying binary locations..."
-for cmd in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts; do
+for cmd in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts ninja-config ninja-daemon; do
     cmd_path=$(command -v "$cmd" 2>/dev/null || echo "not found")
     if [[ "$cmd_path" == *"/.local/"* ]]; then
         success "$cmd: $cmd_path"
@@ -552,7 +552,7 @@ echo -e "  ${BLUE}➜ Config file: $NINJA_CONFIG${NC}"
 echo ""
 echo -e "${BOLD}Next steps:${NC}"
 if [[ $found_count -eq 0 ]]; then
-    echo "  ninja-config select-model    # Configure operator & model"
+    echo "  ninja-config install-full    # Comprehensive setup"
     echo "  ninja-config api-key openrouter"
 fi
 echo "  ninja-config doctor          # Verify configuration"
