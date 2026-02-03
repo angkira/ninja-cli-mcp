@@ -563,6 +563,67 @@ def cmd_auth(args: argparse.Namespace) -> None:
     cmd_configure(args)
 
 
+def cmd_update(args: argparse.Namespace) -> None:
+    """
+    Update ninja-mcp to the latest version.
+
+    Args:
+        args: Command arguments.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    # Find the update script
+    script_dir = Path(__file__).parent.parent.parent
+    update_script = script_dir / "update.sh"
+
+    # If update.sh exists in the current directory, use it
+    if update_script.exists():
+        print_colored("🔄 Running update from local source...", "cyan")
+        try:
+            result = subprocess.run(["bash", str(update_script)], check=True)
+            if result.returncode == 0:
+                print_colored("✅ Update completed successfully", "green")
+            else:
+                print_colored("❌ Update failed", "red")
+        except subprocess.CalledProcessError as e:
+            print_colored(f"❌ Update failed: {e}", "red")
+        except FileNotFoundError:
+            print_colored("❌ Update script not found", "red")
+    else:
+        # Fallback to downloading from GitHub
+        print_colored("🔄 Downloading update script from GitHub...", "cyan")
+        try:
+            import urllib.request
+            import tempfile
+            import os
+
+            update_url = "https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/update.sh"
+
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
+                temp_script = f.name
+
+            try:
+                urllib.request.urlretrieve(update_url, temp_script)
+                os.chmod(temp_script, 0o755)
+                result = subprocess.run(["bash", temp_script], check=True)
+                if result.returncode == 0:
+                    print_colored("✅ Update completed successfully", "green")
+                else:
+                    print_colored("❌ Update failed", "red")
+            finally:
+                os.unlink(temp_script)
+
+        except Exception as e:
+            print_colored(f"❌ Failed to download and run update: {e}", "red")
+            print_colored("Please try running the update script manually:", "dim")
+            print_colored(
+                "  curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/update.sh | bash",
+                "dim",
+            )
+
+
 def cmd_power_configure(args: argparse.Namespace) -> None:
     """
     Run powerful interactive configurator with TUI interface.
@@ -762,11 +823,11 @@ def main() -> None:
    # Interactive operator & model selection (RECOMMENDED)
    ninja-config select-model
 
-   # Advanced TUI installer with comprehensive configuration
-   ninja-config tui-install
+   # Install with comprehensive setup
+   ninja-config install-full
 
-   # Powerful TUI configurator with full settings management
-   ninja-config power-configure
+   # Update to the latest version
+   ninja-config update
 
    # List all configuration
    ninja-config list
@@ -920,28 +981,22 @@ def main() -> None:
         help="Run interactive installer",
     )
 
-    # Advanced TUI installer
+    # Advanced installer
     subparsers.add_parser(
-        "tui-install",
-        help="Run advanced TUI installer with comprehensive configuration",
+        "install-full",
+        help="Run advanced installer with comprehensive setup",
     )
 
     # Interactive configurator
     subparsers.add_parser(
         "configure",
-        help="Interactive configuration manager (API keys, operators, providers)",
+        help="Interactive configuration manager",
     )
 
-    # Power configurator
-    subparsers.add_parser(
-        "power-configure",
-        help="Powerful TUI configurator with comprehensive settings management",
-    )
-
-    # Quick auth setup (alias for configure -> api_keys)
+    # Quick auth setup
     subparsers.add_parser(
         "auth",
-        help="Quick API key setup (OpenRouter, Perplexity, etc)",
+        help="Quick API key setup",
     )
 
     # Select model command (interactive)
@@ -956,6 +1011,12 @@ def main() -> None:
         help="Show current configuration (alias for list)",
     )
 
+    # Update command
+    subparsers.add_parser(
+        "update",
+        help="Update ninja-mcp to the latest version",
+    )
+
     args = parser.parse_args()
 
     # Print header for all commands except get
@@ -963,37 +1024,27 @@ def main() -> None:
         print()
         print_header()
 
-    # Dispatch to command handler
-    if args.command == "list":
-        cmd_list(args)
-    elif args.command == "get":
-        cmd_get(args)
-    elif args.command == "set":
-        cmd_set(args)
-    elif args.command == "model":
-        cmd_set_model(args)
-    elif args.command == "search-provider":
-        cmd_set_search_provider(args)
-    elif args.command == "api-key":
-        cmd_set_api_key(args)
-    elif args.command == "doctor":
-        cmd_doctor(args)
-    elif args.command == "setup-claude":
-        cmd_setup_claude(args)
-    elif args.command == "select-model":
-        cmd_select_model(args)
-    elif args.command == "install":
-        cmd_install(args)
-    elif args.command == "tui-install":
-        cmd_tui_install(args)
-    elif args.command == "configure":
-        cmd_configure(args)
-    elif args.command == "power-configure":
-        cmd_power_configure(args)
-    elif args.command == "auth":
-        cmd_auth(args)
-    elif args.command == "show":
-        cmd_list(args)  # Alias for list
+    # Dispatch to command handler using dictionary mapping
+    command_handlers = {
+        "list": cmd_list,
+        "get": cmd_get,
+        "set": cmd_set,
+        "model": cmd_set_model,
+        "search-provider": cmd_set_search_provider,
+        "api-key": cmd_set_api_key,
+        "doctor": cmd_doctor,
+        "setup-claude": cmd_setup_claude,
+        "select-model": cmd_select_model,
+        "install": cmd_install,
+        "install-full": cmd_tui_install,
+        "update": cmd_update,
+        "configure": cmd_configure,
+        "auth": cmd_auth,
+        "show": cmd_list,  # Alias for list
+    }
+
+    if args.command in command_handlers:
+        command_handlers[args.command](args)
     else:
         parser.print_help()
 
