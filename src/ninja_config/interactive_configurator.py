@@ -73,6 +73,10 @@ class PowerConfigurator:
         if shutil.which("gemini"):
             tools["gemini"] = shutil.which("gemini")
 
+        # Check for claude (Claude Code)
+        if shutil.which("claude"):
+            tools["claude"] = shutil.which("claude")
+
         # Check for cursor
         if shutil.which("cursor"):
             tools["cursor"] = shutil.which("cursor")
@@ -100,6 +104,8 @@ class PowerConfigurator:
                     providers.append("openai")
                 if "github" in output:
                     providers.append("github")
+                if "zai" in output or "zhipu" in output:
+                    providers.append("zai")
                 return providers
         except Exception:
             pass
@@ -128,6 +134,8 @@ class PowerConfigurator:
                     self._configure_operators()
                 elif action == "models":
                     self._configure_models()
+                elif action == "task_models":
+                    self._configure_task_based_models()
                 elif action == "search":
                     self._configure_search()
                 elif action == "daemon":
@@ -169,11 +177,15 @@ class PowerConfigurator:
         )
         operator_status = self.config.get("NINJA_CODE_BIN", "Not set")
         model_status = self.config.get("NINJA_CODER_MODEL", "Not set")
+        quick_model = self.config.get("NINJA_MODEL_QUICK", "Not set")
+        sequential_model = self.config.get("NINJA_MODEL_SEQUENTIAL", "Not set")
 
         print(f"\n📋 Current Status:")
         print(f"   🔑 API Keys:     {api_key_status}")
         print(f"   🎯 Operator:     {operator_status}")
         print(f"   🤖 Coder Model:  {model_status}")
+        print(f"   ⚡ Quick Model:  {quick_model}")
+        print(f"   📊 Sequential:   {sequential_model}")
         print(f"   🔍 Search:       {self.config.get('NINJA_SEARCH_PROVIDER', 'duckduckgo')}")
 
         choices = [
@@ -187,6 +199,7 @@ class PowerConfigurator:
                 name="🎯 Operator Configuration  •  Choose your AI coding assistant",
             ),
             Choice(value="models", name="🤖 Model Selection  •  Set models for each module"),
+            Choice(value="task_models", name="📊 Task-Based Models  •  Configure models for different task types"),
             Choice(value="search", name="🔍 Search Provider  •  Configure web search capabilities"),
             Choice(
                 value="daemon", name="⚙️  Daemon Settings  •  Performance and port configuration"
@@ -320,6 +333,12 @@ class PowerConfigurator:
                 "For research quality",
             ),
             ("SERPER_API_KEY", "Serper", "https://serper.dev", "For Google search integration"),
+            (
+                "ZHIPU_API_KEY",
+                "Zhipu AI (Z.ai)",
+                "https://open.bigmodel.cn/usercenter/apikeys",
+                "For GLM models via z.ai",
+            ),
         ]
 
         # Show current status
@@ -407,7 +426,7 @@ class PowerConfigurator:
                 print("\nℹ️  No changes made")
 
     def _configure_operators(self) -> None:
-        """Configure operator settings."""
+        """Configure operator settings with provider-first flow."""
         print("\n" + "=" * 80)
         print("  🎯 OPERATOR CONFIGURATION")
         print("=" * 80)
@@ -415,24 +434,36 @@ class PowerConfigurator:
         # Detect installed operators
         tools = self._detect_installed_tools()
 
+        # Operator descriptions with provider info
+        operator_info = {
+            "aider": ("Aider", "OpenRouter-based CLI", ["openrouter"]),
+            "opencode": ("OpenCode", "Multi-provider CLI (75+ LLMs)", ["anthropic", "google", "openai", "github", "zai"]),
+            "gemini": ("Gemini CLI", "Google native CLI", ["google"]),
+            "claude": ("Claude Code", "Anthropic's official CLI", ["anthropic"]),
+            "cursor": ("Cursor", "AI code editor", ["openai", "anthropic"]),
+        }
+
         if not tools:
             print("\n⚠️  No operators detected!")
             print("   Install at least one operator:")
             print("     • Aider: uv tool install aider-chat")
             print("     • OpenCode: https://opencode.dev/download")
+            print("     • Claude Code: https://claude.ai/download")
             print("     • Gemini CLI: npm install -g @google/generative-ai-cli")
-            print("     • Cursor: https://cursor.sh")
             return
 
         # Show current operator
         current_operator = self.config.get("NINJA_CODE_BIN", "Not set")
         print(f"\n📋 Current operator: {current_operator}")
 
-        # Build choices
+        # Build choices with provider info
         choices = []
         for name, path in tools.items():
             status = "✓ Current" if name == current_operator else "Available"
-            choices.append(Choice(name, name=f"{name.title():15} • {path:30} [{status}]"))
+            info = operator_info.get(name, (name.title(), "Unknown", []))
+            display_name, desc, providers = info
+            provider_str = ", ".join(providers) if providers else "unknown"
+            choices.append(Choice(name, name=f"{display_name:15} • {desc:30} [Providers: {provider_str}]"))
 
         choices.append(Separator())
         choices.append(Choice(None, name="← Back"))
@@ -447,8 +478,24 @@ class PowerConfigurator:
             self._save_config("NINJA_CODE_BIN", selected)
             print(f"\n✅ Operator set to: {selected}")
 
+            # Show available providers for selected operator
+            info = operator_info.get(selected, (selected.title(), "Unknown", []))
+            _, _, providers = info
+            if providers:
+                print(f"\n📋 Available providers for {selected}:")
+                for provider in providers:
+                    print(f"   • {provider}")
+
+            # Prompt for authentication if needed
+            if selected == "opencode":
+                print("\n💡 Go to 'OpenCode Authentication' to authenticate with providers")
+            elif selected == "claude":
+                print("\n💡 Run 'claude auth' to authenticate with Anthropic")
+            elif selected == "aider":
+                print("\n💡 Set OPENROUTER_API_KEY in 'API Key Management'")
+
             # Clear model selection when changing operator
-            model_keys = [k for k in self.config.keys() if "MODEL" in k]
+            model_keys = [k for k in self.config.keys() if "MODEL" in k and k != "NINJA_MODEL_QUICK" and k != "NINJA_MODEL_SEQUENTIAL" and k != "NINJA_MODEL_PARALLEL"]
             for model_key in model_keys:
                 if model_key in self.config:
                     del self.config[model_key]
@@ -464,8 +511,9 @@ class PowerConfigurator:
                             f.writelines(lines)
 
             print(
-                "ℹ️  Model selections cleared (run 'ninja-config select-model' to choose new models)"
+                "\nℹ️  Module model selections cleared (task-based models preserved)"
             )
+            print("   Go to 'Model Selection' to choose new models for modules")
 
     def _configure_models(self) -> None:
         """Configure models for each module."""
@@ -527,14 +575,189 @@ class PowerConfigurator:
         elif model == "":
             print("\nℹ️  No changes made")
 
+    def _configure_task_based_models(self) -> None:
+        """Configure task-based model selection."""
+        print("\n" + "=" * 80)
+        print("  📊 TASK-BASED MODEL SELECTION")
+        print("=" * 80)
+
+        # Show current task models
+        task_models = [
+            ("NINJA_MODEL_QUICK", "Quick Tasks", "Fast simple tasks", "anthropic/claude-haiku-4.5"),
+            ("NINJA_MODEL_SEQUENTIAL", "Sequential Tasks", "Complex multi-step tasks", "anthropic/claude-sonnet-4"),
+            ("NINJA_MODEL_PARALLEL", "Parallel Tasks", "High concurrency parallel tasks", "anthropic/claude-haiku-4.5"),
+        ]
+
+        print("\n📋 Current Task Models:")
+        for key, name, _, default in task_models:
+            current = self.config.get(key, default)
+            print(f"  {name:20} {current}")
+
+        # Show cost/quality preferences
+        prefer_cost = self.config.get("NINJA_PREFER_COST", "false").lower() == "true"
+        prefer_quality = self.config.get("NINJA_PREFER_QUALITY", "false").lower() == "true"
+        preference = "Cost" if prefer_cost else "Quality" if prefer_quality else "Balanced"
+        print(f"\n🎯 Current Preference: {preference}")
+
+        # Select what to configure
+        choices = [
+            Choice(value="quick", name="⚡ Quick Tasks Model     • Fast simple tasks (default: Claude Haiku 4.5)"),
+            Choice(value="sequential", name="📊 Sequential Model     • Complex multi-step (default: Claude Sonnet 4)"),
+            Choice(value="parallel", name="🔀 Parallel Model       • High concurrency (default: Claude Haiku 4.5)"),
+            Separator(),
+            Choice(value="preferences", name="🎯 Model Preferences    • Cost vs Quality toggle"),
+            Choice(value="reset_task_models", name="🔄 Reset to Defaults    • Restore default models"),
+            Separator(),
+            Choice(value=None, name="← Back"),
+        ]
+
+        selected = inquirer.select(
+            message="What would you like to configure?",
+            choices=choices,
+            pointer="►",
+        ).execute()
+
+        if not selected:
+            return
+
+        if selected == "preferences":
+            self._configure_model_preferences()
+        elif selected == "reset_task_models":
+            self._reset_task_models(task_models)
+        else:
+            self._configure_single_task_model(selected, task_models)
+
+    def _configure_single_task_model(self, task_type: str, task_models: list) -> None:
+        """Configure a single task model."""
+        # Find the task model config
+        task_info = None
+        for key, name, desc, default in task_models:
+            if task_type.lower() in name.lower():
+                task_info = (key, name, desc, default)
+                break
+
+        if not task_info:
+            return
+
+        key, name, desc, default = task_info
+        current = self.config.get(key, default)
+
+        print(f"\n🎯 {name} Model Configuration")
+        print(f"   Purpose: {desc}")
+        print(f"   Current: {current}")
+
+        # Recommended models based on task type
+        if task_type == "quick":
+            recommended = [
+                ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast and cost-effective (Recommended)"),
+                ("claude-haiku-4", "Claude Haiku 4 (Claude Code)", "Fast via Claude Code"),
+                ("glm-4.0", "GLM-4.0 (z.ai)", "Low cost, fast"),
+                ("openai/gpt-4o-mini", "GPT-4o Mini", "OpenAI's fast model"),
+            ]
+        elif task_type == "sequential":
+            recommended = [
+                ("anthropic/claude-sonnet-4", "Claude Sonnet 4", "High quality (Recommended)"),
+                ("claude-sonnet-4", "Claude Sonnet 4 (Claude Code)", "Via Claude Code"),
+                ("glm-4.7", "GLM-4.7 (z.ai)", "Supports Coding Plan API"),
+                ("anthropic/claude-opus-4", "Claude Opus 4", "Maximum quality"),
+            ]
+        else:  # parallel
+            recommended = [
+                ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Balanced (Recommended)"),
+                ("glm-4.6v", "GLM-4.6V (z.ai)", "20 concurrent limit"),
+                ("claude-haiku-4", "Claude Haiku 4 (Claude Code)", "Via Claude Code"),
+                ("openai/gpt-4o-mini", "GPT-4o Mini", "OpenAI's fast model"),
+            ]
+
+        print("\n📋 Recommended Models:")
+        choices = [
+            Choice(value=model_id, name=f"{name:30} • {desc}")
+            for model_id, name, desc in recommended
+        ]
+        choices.append(Separator())
+        choices.append(Choice(value="custom", name="✏️  Enter custom model"))
+        choices.append(Choice(value=None, name="← Keep current"))
+
+        selected = inquirer.select(
+            message=f"Select model for {name}:",
+            choices=choices,
+            pointer="►",
+        ).execute()
+
+        if selected == "custom":
+            custom_model = inquirer.text(
+                message="Enter model name:",
+                default=current,
+                instruction="e.g., anthropic/claude-sonnet-4, glm-4.7, openai/gpt-4o",
+            ).execute()
+            if custom_model:
+                self._save_config(key, custom_model)
+                print(f"\n✅ {name} model set to: {custom_model}")
+        elif selected:
+            self._save_config(key, selected)
+            print(f"\n✅ {name} model set to: {selected}")
+
+    def _configure_model_preferences(self) -> None:
+        """Configure cost vs quality preferences."""
+        print("\n🎯 Model Preferences")
+        print("   This affects automatic model selection recommendations.")
+
+        prefer_cost = self.config.get("NINJA_PREFER_COST", "false").lower() == "true"
+        prefer_quality = self.config.get("NINJA_PREFER_QUALITY", "false").lower() == "true"
+
+        choices = [
+            Choice(value="balanced", name="⚖️  Balanced       • Balance between cost and quality (Default)"),
+            Choice(value="cost", name="💰 Prefer Cost    • Use cheaper models when possible"),
+            Choice(value="quality", name="🏆 Prefer Quality • Use best models for maximum quality"),
+        ]
+
+        current = "cost" if prefer_cost else "quality" if prefer_quality else "balanced"
+
+        selected = inquirer.select(
+            message="Select preference:",
+            choices=choices,
+            pointer="►",
+            default=current,
+        ).execute()
+
+        if selected == "cost":
+            self._save_config("NINJA_PREFER_COST", "true")
+            self._save_config("NINJA_PREFER_QUALITY", "false")
+            print("\n✅ Preference set to: Prefer Cost")
+        elif selected == "quality":
+            self._save_config("NINJA_PREFER_COST", "false")
+            self._save_config("NINJA_PREFER_QUALITY", "true")
+            print("\n✅ Preference set to: Prefer Quality")
+        else:
+            self._save_config("NINJA_PREFER_COST", "false")
+            self._save_config("NINJA_PREFER_QUALITY", "false")
+            print("\n✅ Preference set to: Balanced")
+
+    def _reset_task_models(self, task_models: list) -> None:
+        """Reset task models to defaults."""
+        confirm = inquirer.confirm(
+            message="Reset all task models to defaults?",
+            default=False,
+        ).execute()
+
+        if confirm:
+            for key, name, desc, default in task_models:
+                self._save_config(key, default)
+            self._save_config("NINJA_PREFER_COST", "false")
+            self._save_config("NINJA_PREFER_QUALITY", "false")
+            print("\n✅ Task models reset to defaults")
+
     def _configure_search(self) -> None:
-        """Configure search provider."""
+        """Configure search provider with Perplexity model selection."""
         print("\n" + "=" * 80)
         print("  🔍 SEARCH PROVIDER CONFIGURATION")
         print("=" * 80)
 
         current_provider = self.config.get("NINJA_SEARCH_PROVIDER", "duckduckgo")
+        current_model = self.config.get("NINJA_RESEARCHER_MODEL", "sonar")
         print(f"\n📋 Current provider: {current_provider}")
+        if current_provider == "perplexity":
+            print(f"📋 Current model: {current_model}")
 
         choices = [
             Choice("duckduckgo", name="DuckDuckGo  •  Free, no API key needed"),
@@ -554,12 +777,50 @@ class PowerConfigurator:
             print(f"\n✅ Search provider set to: {selected}")
 
             # Check if API key needed
-            if selected == "perplexity" and not self.config.get("PERPLEXITY_API_KEY"):
-                print("\n⚠️  Perplexity API key required")
-                print("   Run 'ninja-config configure' → 'API Key Management' to add it")
+            if selected == "perplexity":
+                if not self.config.get("PERPLEXITY_API_KEY"):
+                    print("\n⚠️  Perplexity API key required")
+                    print("   Go to 'API Key Management' to add it")
+                else:
+                    # Offer Perplexity model selection
+                    self._configure_perplexity_model()
             elif selected == "serper" and not self.config.get("SERPER_API_KEY"):
                 print("\n⚠️  Serper API key required")
-                print("   Run 'ninja-config configure' → 'API Key Management' to add it")
+                print("   Go to 'API Key Management' to add it")
+
+    def _configure_perplexity_model(self) -> None:
+        """Configure Perplexity model for researcher."""
+        print("\n" + "-" * 50)
+        print("  📊 PERPLEXITY MODEL SELECTION")
+        print("-" * 50)
+
+        # Perplexity models
+        perplexity_models = [
+            ("sonar", "Sonar", "Fast search-focused model"),
+            ("sonar-pro", "Sonar Pro", "Advanced search with better reasoning"),
+            ("sonar-reasoning", "Sonar Reasoning", "Complex reasoning with search"),
+        ]
+
+        current_model = self.config.get("NINJA_RESEARCHER_MODEL", "sonar")
+        print(f"\nCurrent model: {current_model}")
+
+        choices = [
+            Choice(value=model_id, name=f"{name:20} • {desc}")
+            for model_id, name, desc in perplexity_models
+        ]
+        choices.append(Separator())
+        choices.append(Choice(value=None, name="← Keep current"))
+
+        selected = inquirer.select(
+            message="Select Perplexity model:",
+            choices=choices,
+            pointer="►",
+            default=current_model,
+        ).execute()
+
+        if selected:
+            self._save_config("NINJA_RESEARCHER_MODEL", selected)
+            print(f"\n✅ Researcher model set to: {selected}")
 
     def _configure_daemon(self) -> None:
         """Configure daemon settings."""
@@ -742,7 +1003,7 @@ class PowerConfigurator:
         print("   Run 'ninja-config configure' → 'OpenCode Authentication' to manage providers")
 
     def _configure_opencode_auth(self) -> None:
-        """Configure OpenCode authentication."""
+        """Configure OpenCode authentication with z.ai support."""
         print("\n" + "=" * 80)
         print("  🌐 OPENCODE AUTHENTICATION")
         print("=" * 80)
@@ -761,6 +1022,7 @@ class PowerConfigurator:
             ("google", "Google/Gemini", "opencode auth google"),
             ("openai", "OpenAI/GPT", "opencode auth openai"),
             ("github", "GitHub Copilot", "opencode auth github"),
+            ("zai", "Z.ai / Zhipu AI", "opencode auth zai"),
         ]
 
         for provider, name, _ in providers:

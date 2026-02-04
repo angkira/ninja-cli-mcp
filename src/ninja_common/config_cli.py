@@ -4,12 +4,13 @@ ninja-config CLI tool for managing configuration.
 
 Allows users to view and update Ninja MCP configuration settings
 after installation.
+
+UNIFIED ENTRY POINT: Use 'ninja-config configure' for all configuration needs.
 """
 
 from __future__ import annotations
 
 import argparse
-import getpass
 import json
 import os
 import shutil
@@ -23,34 +24,6 @@ from ninja_common.config_manager import ConfigManager
 
 
 # Import ninja_config modules if available
-try:
-    from ninja_config.model_selector import run_interactive_selector
-
-    HAS_MODEL_SELECTOR = True
-except ImportError:
-    HAS_MODEL_SELECTOR = False
-
-try:
-    from ninja_config.installer import run_installer
-
-    HAS_INSTALLER = True
-except ImportError:
-    HAS_INSTALLER = False
-
-try:
-    from ninja_config.configurator import run_configurator
-
-    HAS_CONFIGURATOR = True
-except ImportError:
-    HAS_CONFIGURATOR = False
-
-try:
-    from ninja_config.tui_installer import run_tui_installer
-
-    HAS_TUI_INSTALLER = True
-except ImportError:
-    HAS_TUI_INSTALLER = False
-
 try:
     from ninja_config.interactive_configurator import run_power_configurator
 
@@ -212,144 +185,6 @@ def cmd_set(args: argparse.Namespace) -> None:
     print_colored("  ninja-daemon restart all", "dim")
 
 
-def cmd_set_model(args: argparse.Namespace) -> None:
-    """
-    Set model for a module.
-
-    Args:
-        args: Command arguments.
-    """
-    config_mgr = ConfigManager(args.config)
-
-    # Map module to config key
-    module_keys = {
-        "coder": "NINJA_CODER_MODEL",
-        "researcher": "NINJA_RESEARCHER_MODEL",
-        "secretary": "NINJA_SECRETARY_MODEL",
-        "resources": "NINJA_RESOURCES_CACHE_TTL",
-        "prompts": "NINJA_PROMPTS_MAX_SUGGESTIONS",
-    }
-
-    if args.module not in module_keys:
-        print_colored(f"Invalid module: {args.module}", "red")
-        print_colored("Valid modules: coder, researcher, secretary, resources, prompts", "dim")
-        sys.exit(1)
-
-    key = module_keys[args.module]
-
-    # Validate model
-    if args.validate:
-        api_key = config_mgr.get("OPENROUTER_API_KEY")
-        if api_key and not validate_openrouter_model(args.model, api_key):
-            print_colored(
-                f"Warning: Model '{args.model}' not found in OpenRouter",
-                "yellow",
-            )
-            response = input("Continue anyway? [y/N]: ")
-            if not response.lower().startswith("y"):
-                print_colored("Aborted.", "yellow")
-                return
-
-    config_mgr.set(key, args.model)
-    print_colored(f"✓ Updated {args.module} model to {args.model}", "green")
-    print()
-    print_colored("Restart daemons to apply changes:", "dim")
-    print_colored(f"  ninja-daemon restart {args.module}", "dim")
-
-
-def cmd_set_search_provider(args: argparse.Namespace) -> None:
-    """
-    Set search provider for researcher module.
-
-    Args:
-        args: Command arguments.
-    """
-    config_mgr = ConfigManager(args.config)
-
-    # Validate provider
-    valid_providers = ["duckduckgo", "serper", "perplexity"]
-    if args.provider not in valid_providers:
-        print_colored(f"Invalid provider: {args.provider}", "red")
-        print_colored(f"Valid providers: {', '.join(valid_providers)}", "dim")
-        sys.exit(1)
-
-    # Check API key requirements
-    if args.provider == "serper":
-        api_key = config_mgr.get("SERPER_API_KEY")
-        if not api_key:
-            print_colored(
-                "Warning: SERPER_API_KEY not configured",
-                "yellow",
-            )
-            print_colored("Get your key from: https://serper.dev", "dim")
-            api_key = input("Enter Serper API key (or press Enter to skip): ")
-            if api_key:
-                config_mgr.set("SERPER_API_KEY", api_key)
-            else:
-                print_colored("Cannot use Serper without API key.", "red")
-                return
-
-    elif args.provider == "perplexity":
-        api_key = config_mgr.get("PERPLEXITY_API_KEY")
-        if not api_key:
-            print_colored(
-                "Warning: PERPLEXITY_API_KEY not configured",
-                "yellow",
-            )
-            print_colored("Get your key from: https://www.perplexity.ai/settings/api", "dim")
-            api_key = input("Enter Perplexity API key (or press Enter to skip): ")
-            if api_key:
-                config_mgr.set("PERPLEXITY_API_KEY", api_key)
-            else:
-                print_colored("Cannot use Perplexity without API key.", "red")
-                return
-
-    config_mgr.set("NINJA_SEARCH_PROVIDER", args.provider)
-    print_colored(f"✓ Updated search provider to {args.provider}", "green")
-    print()
-    print_colored("Restart researcher daemon to apply changes:", "dim")
-    print_colored("  ninja-daemon restart researcher", "dim")
-
-
-def cmd_set_api_key(args: argparse.Namespace) -> None:
-    """
-    Set API key.
-
-    Args:
-        args: Command arguments.
-    """
-    config_mgr = ConfigManager(args.config)
-
-    # Map service to config key
-    key_map = {
-        "openrouter": "OPENROUTER_API_KEY",
-        "serper": "SERPER_API_KEY",
-        "perplexity": "PERPLEXITY_API_KEY",
-    }
-
-    if args.service not in key_map:
-        print_colored(f"Invalid service: {args.service}", "red")
-        print_colored(f"Valid services: {', '.join(key_map.keys())}", "dim")
-        sys.exit(1)
-
-    key = key_map[args.service]
-
-    # Get API key
-    if args.key:
-        api_key = args.key
-    else:
-        # Prompt for API key (hidden input)
-        api_key = getpass.getpass(f"Enter {args.service} API key: ")
-
-    if not api_key:
-        print_colored("API key cannot be empty.", "red")
-        return
-
-    config_mgr.set(key, api_key)
-    print_colored(f"✓ Updated {args.service} API key", "green")
-    print()
-    print_colored("Restart daemons to apply changes:", "dim")
-    print_colored("  ninja-daemon restart all", "dim")
 
 
 def cmd_doctor(args: argparse.Namespace) -> None:
@@ -458,12 +293,27 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     # Check 3: Dependencies
     print_colored("Checking dependencies...", "cyan")
 
-    # Check aider
+    # Check operators (at least one should be installed)
+    operators_found = []
     if shutil.which("aider"):
+        operators_found.append("aider")
         print_colored("  ✓ aider is installed", "green")
-    else:
-        print_colored("  ⚠ aider not found (needed for ninja-coder)", "yellow")
-        print_colored("    Install: uv tool install aider-chat", "dim")
+    if shutil.which("opencode"):
+        operators_found.append("opencode")
+        print_colored("  ✓ opencode is installed", "green")
+    if shutil.which("claude"):
+        operators_found.append("claude")
+        print_colored("  ✓ claude (Claude Code) is installed", "green")
+    if shutil.which("gemini"):
+        operators_found.append("gemini")
+        print_colored("  ✓ gemini is installed", "green")
+
+    if not operators_found:
+        print_colored("  ⚠ No operators found (need at least one for ninja-coder)", "yellow")
+        print_colored("    Install one of:", "dim")
+        print_colored("      • Aider: uv tool install aider-chat", "dim")
+        print_colored("      • OpenCode: https://opencode.dev", "dim")
+        print_colored("      • Claude Code: https://claude.ai/download", "dim")
         issues_found += 1
 
     # Check uv
@@ -514,53 +364,120 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print()
 
 
-def cmd_install(args: argparse.Namespace) -> None:
-    """
-    Run interactive installer.
-
-    Args:
-        args: Command arguments.
-    """
-    if not HAS_INSTALLER:
-        print_colored("Installer not available.", "red")
-        print_colored("Install with: pip install InquirerPy", "dim")
-        return
-
-    try:
-        sys.exit(run_installer())
-    except KeyboardInterrupt:
-        print("\nCancelled.")
-        sys.exit(1)
 
 
 def cmd_configure(args: argparse.Namespace) -> None:
     """
-    Run interactive configurator.
+    Run interactive configurator (MAIN ENTRY POINT).
+
+    This is the unified configuration entry point for all ninja-mcp settings.
+    Use --quick for simple API key + operator selection.
+    Use --full (default) for comprehensive TUI configurator.
 
     Args:
         args: Command arguments.
     """
-    if not HAS_CONFIGURATOR:
-        print_colored("Configurator not available.", "red")
+    if not HAS_POWER_CONFIGURATOR:
+        print_colored("Power configurator not available.", "red")
         print_colored("Install with: pip install InquirerPy", "dim")
         return
 
-    try:
-        sys.exit(run_configurator())
-    except KeyboardInterrupt:
-        print("\nCancelled.")
-        sys.exit(1)
+    # Check for quick mode
+    quick_mode = getattr(args, "quick", False)
+
+    if quick_mode:
+        # Quick mode: simple API key + operator selection
+        print_colored("Quick Configuration Mode", "cyan")
+        print_colored("─" * 40, "dim")
+        _run_quick_configure(args.config)
+    else:
+        # Full mode: comprehensive TUI configurator
+        try:
+            sys.exit(run_power_configurator(args.config))
+        except KeyboardInterrupt:
+            print("\nCancelled.")
+            sys.exit(1)
 
 
-def cmd_auth(args: argparse.Namespace) -> None:
-    """
-    Quick API key setup (runs configurator in auth mode).
+def _run_quick_configure(config_path: str | None = None) -> None:
+    """Run quick configuration mode.
+
+    Provides simple API key and operator selection without full TUI.
 
     Args:
-        args: Command arguments.
+        config_path: Optional path to config file.
     """
-    # Alias for configure command, will go straight to API keys menu
-    cmd_configure(args)
+    import getpass
+
+    config_mgr = ConfigManager(config_path)
+
+    print()
+    print_colored("1. API Key Configuration", "bold")
+    print_colored("─" * 40, "dim")
+
+    # Check current API key
+    current_key = config_mgr.get("OPENROUTER_API_KEY")
+    if current_key:
+        masked = f"{current_key[:4]}...{current_key[-4:]}" if len(current_key) > 8 else "***"
+        print_colored(f"Current OpenRouter API key: {masked}", "dim")
+
+    # Ask for new key
+    new_key = getpass.getpass("Enter OpenRouter API key (or press Enter to keep current): ")
+    if new_key:
+        config_mgr.set("OPENROUTER_API_KEY", new_key)
+        print_colored("✓ API key updated", "green")
+    else:
+        print_colored("✓ Keeping current API key", "dim")
+
+    print()
+    print_colored("2. Operator Selection", "bold")
+    print_colored("─" * 40, "dim")
+
+    # Detect installed operators
+    operators = []
+    if shutil.which("opencode"):
+        operators.append(("opencode", "OpenCode - Multi-provider CLI"))
+    if shutil.which("aider"):
+        operators.append(("aider", "Aider - OpenRouter-based CLI"))
+    if shutil.which("gemini"):
+        operators.append(("gemini", "Gemini CLI - Google native"))
+    if shutil.which("claude"):
+        operators.append(("claude", "Claude Code - Anthropic native"))
+
+    if not operators:
+        print_colored("No operators found. Install one of:", "yellow")
+        print_colored("  • OpenCode: https://opencode.dev", "dim")
+        print_colored("  • Aider: uv tool install aider-chat", "dim")
+        print_colored("  • Claude Code: https://claude.ai/download", "dim")
+        return
+
+    print("Available operators:")
+    for i, (op_id, op_desc) in enumerate(operators, 1):
+        print(f"  {i}. {op_desc}")
+
+    # Get selection
+    current_op = config_mgr.get("NINJA_CODE_BIN") or "aider"
+    default_idx = 1
+    for i, (op_id, _) in enumerate(operators, 1):
+        if op_id == current_op:
+            default_idx = i
+            break
+
+    selection = input(f"Select operator [{default_idx}]: ").strip() or str(default_idx)
+    try:
+        idx = int(selection) - 1
+        if 0 <= idx < len(operators):
+            selected_op = operators[idx][0]
+            config_mgr.set("NINJA_CODE_BIN", selected_op)
+            print_colored(f"✓ Operator set to: {selected_op}", "green")
+        else:
+            print_colored("Invalid selection", "red")
+    except ValueError:
+        print_colored("Invalid selection", "red")
+
+    print()
+    print_colored("✓ Quick configuration complete!", "green")
+    print_colored("Run 'ninja-config configure' for full options.", "dim")
 
 
 def cmd_update(args: argparse.Namespace) -> None:
@@ -624,67 +541,6 @@ def cmd_update(args: argparse.Namespace) -> None:
             )
 
 
-def cmd_power_configure(args: argparse.Namespace) -> None:
-    """
-    Run powerful interactive configurator with TUI interface.
-
-    Args:
-        args: Command arguments.
-    """
-    if not HAS_POWER_CONFIGURATOR:
-        print_colored("Power configurator not available.", "red")
-        print_colored("Install with: pip install InquirerPy", "dim")
-        return
-
-    try:
-        sys.exit(run_power_configurator(args.config))
-    except KeyboardInterrupt:
-        print("\nCancelled.")
-        sys.exit(1)
-
-
-def cmd_tui_install(args: argparse.Namespace) -> None:
-    """
-    Run advanced TUI installer with comprehensive configuration.
-
-    Args:
-        args: Command arguments.
-    """
-    if not HAS_TUI_INSTALLER:
-        print_colored("TUI installer not available.", "red")
-        print_colored("Install with: pip install InquirerPy", "dim")
-        return
-
-    try:
-        sys.exit(run_tui_installer())
-    except KeyboardInterrupt:
-        print("\nCancelled.")
-        sys.exit(1)
-
-
-def cmd_select_model(args: argparse.Namespace) -> None:
-    """
-    Interactive model and operator selection.
-
-    Args:
-        args: Command arguments.
-    """
-    if not HAS_MODEL_SELECTOR:
-        print_colored("Model selector not available.", "red")
-        print_colored("Please reinstall ninja-mcp to get this feature.", "dim")
-        return
-
-    try:
-        success = run_interactive_selector()
-        if not success:
-            sys.exit(1)
-    except KeyboardInterrupt:
-        print("\n")
-        print_colored("Cancelled.", "yellow")
-        sys.exit(1)
-    except Exception as e:
-        print_colored(f"Error: {e}", "red")
-        sys.exit(1)
 
 
 def cmd_setup_claude(args: argparse.Namespace) -> None:
@@ -819,38 +675,32 @@ def main() -> None:
         description="Ninja MCP Configuration Manager",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
- Examples:
-   # Interactive operator & model selection (RECOMMENDED)
-   ninja-config select-model
+Examples:
+  # Full interactive configuration (RECOMMENDED)
+  ninja-config configure
 
-   # Install with comprehensive setup
-   ninja-config install-full
+  # Quick setup (API key + operator only)
+  ninja-config configure --quick
 
-   # Update to the latest version
-   ninja-config update
+  # Update to the latest version
+  ninja-config update
 
-   # List all configuration
-   ninja-config list
+  # List all configuration
+  ninja-config list
 
-   # Get a specific value
-   ninja-config get NINJA_CODER_MODEL
+  # Get a specific value
+  ninja-config get NINJA_CODER_MODEL
 
-   # Set a value
-   ninja-config set NINJA_CODER_MODEL anthropic/claude-sonnet-4
+  # Set a value
+  ninja-config set NINJA_CODER_MODEL anthropic/claude-sonnet-4
 
-   # Set model for a module
-   ninja-config model coder anthropic/claude-sonnet-4
+  # Diagnose issues
+  ninja-config doctor
+  ninja-config doctor --fix
 
-   # Set search provider
-   ninja-config search-provider serper
-
-   # Set API key
-   ninja-config api-key openrouter
-
-   # Diagnose issues
-   ninja-config doctor
-   ninja-config doctor --fix
-         """,
+  # Setup Claude Code MCP servers
+  ninja-config setup-claude
+        """,
     )
 
     parser.add_argument(
@@ -861,8 +711,30 @@ def main() -> None:
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
+    # Configure command (MAIN ENTRY POINT)
+    configure_parser = subparsers.add_parser(
+        "configure",
+        help="Interactive configuration manager (MAIN ENTRY POINT)",
+    )
+    configure_parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Quick setup mode (API key + operator only)",
+    )
+    configure_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Full TUI configurator (default)",
+    )
+
     # List command
     subparsers.add_parser("list", help="List all configuration values")
+
+    # Show config (alias for list)
+    subparsers.add_parser(
+        "show",
+        help="Show current configuration (alias for list)",
+    )
 
     # Get command
     get_parser = subparsers.add_parser("get", help="Get a configuration value")
@@ -882,45 +754,6 @@ def main() -> None:
         dest="validate",
         action="store_false",
         help="Skip validation",
-    )
-
-    # Model command
-    model_parser = subparsers.add_parser("model", help="Set model for a module")
-    model_parser.add_argument(
-        "module",
-        choices=["coder", "researcher", "secretary", "resources", "prompts"],
-        help="Module name",
-    )
-    model_parser.add_argument("model", help="Model name")
-    model_parser.add_argument(
-        "--no-validate",
-        dest="validate",
-        action="store_false",
-        help="Skip validation",
-    )
-
-    # Search provider command
-    search_parser = subparsers.add_parser(
-        "search-provider",
-        help="Set search provider for researcher",
-    )
-    search_parser.add_argument(
-        "provider",
-        choices=["duckduckgo", "serper", "perplexity"],
-        help="Search provider name",
-    )
-
-    # API key command
-    api_key_parser = subparsers.add_parser("api-key", help="Set API key")
-    api_key_parser.add_argument(
-        "service",
-        choices=["openrouter", "serper", "perplexity"],
-        help="Service name",
-    )
-    api_key_parser.add_argument(
-        "key",
-        nargs="?",
-        help="API key (will prompt if not provided)",
     )
 
     # Doctor command
@@ -975,42 +808,6 @@ def main() -> None:
         help="Overwrite existing server configurations",
     )
 
-    # Interactive installer
-    subparsers.add_parser(
-        "install",
-        help="Run interactive installer",
-    )
-
-    # Advanced installer
-    subparsers.add_parser(
-        "install-full",
-        help="Run advanced installer with comprehensive setup",
-    )
-
-    # Interactive configurator
-    subparsers.add_parser(
-        "configure",
-        help="Interactive configuration manager",
-    )
-
-    # Quick auth setup
-    subparsers.add_parser(
-        "auth",
-        help="Quick API key setup",
-    )
-
-    # Select model command (interactive)
-    subparsers.add_parser(
-        "select-model",
-        help="Interactive operator and model selection",
-    )
-
-    # Show config (alias for list)
-    subparsers.add_parser(
-        "show",
-        help="Show current configuration (alias for list)",
-    )
-
     # Update command
     subparsers.add_parser(
         "update",
@@ -1026,27 +823,27 @@ def main() -> None:
 
     # Dispatch to command handler using dictionary mapping
     command_handlers = {
+        "configure": cmd_configure,
         "list": cmd_list,
+        "show": cmd_list,  # Alias for list
         "get": cmd_get,
         "set": cmd_set,
-        "model": cmd_set_model,
-        "search-provider": cmd_set_search_provider,
-        "api-key": cmd_set_api_key,
         "doctor": cmd_doctor,
         "setup-claude": cmd_setup_claude,
-        "select-model": cmd_select_model,
-        "install": cmd_install,
-        "install-full": cmd_tui_install,
         "update": cmd_update,
-        "configure": cmd_configure,
-        "auth": cmd_auth,
-        "show": cmd_list,  # Alias for list
     }
 
     if args.command in command_handlers:
         command_handlers[args.command](args)
     else:
-        parser.print_help()
+        # Default to configure if no command given
+        if args.command is None:
+            args.quick = False
+            cmd_configure(args)
+        else:
+            print_colored(f"Unknown command: {args.command}", "red")
+            print_colored("Run 'ninja-config configure' for interactive configuration.", "dim")
+            parser.print_help()
 
 
 if __name__ == "__main__":

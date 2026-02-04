@@ -2,7 +2,7 @@
 CLI strategy pattern infrastructure for ninja-coder.
 
 This package provides the abstraction layer for supporting multiple CLI tools
-(Aider, OpenCode, etc.) through a strategy pattern.
+(Aider, OpenCode, Claude Code, etc.) through a strategy pattern.
 """
 
 from ninja_coder.strategies.base import (
@@ -11,6 +11,7 @@ from ninja_coder.strategies.base import (
     CLIStrategy,
     ParsedResult,
 )
+from ninja_coder.strategies.claude_strategy import ClaudeStrategy
 from ninja_coder.strategies.registry import CLIStrategyRegistry
 
 
@@ -19,5 +20,6 @@ __all__ = [
     "CLICommandResult",
     "CLIStrategy",
     "CLIStrategyRegistry",
+    "ClaudeStrategy",
     "ParsedResult",
 ]
