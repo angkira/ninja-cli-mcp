@@ -198,7 +198,7 @@ class NinjaConfigurator:
             print("✓ No changes made")
 
     def _configure_operators(self) -> None:
-        """Configure operator settings (NINJA_CODE_BIN, NINJA_MODEL)."""
+        """Configure operator settings with provider-first flow."""
         print("\n" + "=" * 70)
         print("  🎯 OPERATOR CONFIGURATION")
         print("=" * 70 + "\n")
@@ -206,17 +206,20 @@ class NinjaConfigurator:
         # Check installed operators
         operators = []
         if subprocess.run(["which", "opencode"], capture_output=True, check=False).returncode == 0:
-            operators.append(("opencode", "OpenCode", "Multi-provider CLI (75+ LLMs)"))
+            operators.append(("opencode", "OpenCode", "Multi-provider CLI (75+ LLMs)", ["anthropic", "google", "openai", "github", "zai"]))
         if subprocess.run(["which", "aider"], capture_output=True, check=False).returncode == 0:
-            operators.append(("aider", "Aider", "OpenRouter-based CLI"))
+            operators.append(("aider", "Aider", "OpenRouter-based CLI", ["openrouter"]))
         if subprocess.run(["which", "gemini"], capture_output=True, check=False).returncode == 0:
-            operators.append(("gemini", "Gemini CLI", "Google Gemini native CLI"))
+            operators.append(("gemini", "Gemini CLI", "Google Gemini native CLI", ["google"]))
+        if subprocess.run(["which", "claude"], capture_output=True, check=False).returncode == 0:
+            operators.append(("claude", "Claude Code", "Anthropic's official CLI", ["anthropic"]))
 
         if not operators:
             print("✗ No operators found!")
             print("\nInstall at least one operator:")
             print("  • OpenCode: https://opencode.dev")
             print("  • Aider: uv tool install aider-chat")
+            print("  • Claude Code: https://claude.ai/download")
             print("  • Gemini: npm install -g @google/generative-ai-cli")
             return
 
@@ -228,8 +231,11 @@ class NinjaConfigurator:
             print(f"Current model: {current_model}")
         print()
 
-        # Select operator
-        choices = [Choice(value=cmd, name=f"{name:20} • {desc}") for cmd, name, desc in operators]
+        # Select operator with provider info
+        choices = []
+        for cmd, name, desc, providers in operators:
+            provider_str = ", ".join(providers)
+            choices.append(Choice(value=cmd, name=f"{name:15} • {desc}  [Providers: {provider_str}]"))
         choices.append(Separator())
         choices.append(Choice(value=None, name="← Back"))
 
@@ -246,10 +252,25 @@ class NinjaConfigurator:
                 del self.config["NINJA_MODEL"]
             self._save_config()
             print(f"\n✓ Operator set to: {selected}")
-            print("\nRun 'ninja-config select-model' to choose a model")
+
+            # Show available providers for selected operator
+            selected_operator = next((op for op in operators if op[0] == selected), None)
+            if selected_operator:
+                _, name, _, providers = selected_operator
+                print(f"\n📋 Available providers for {name}:")
+                for provider in providers:
+                    print(f"   • {provider}")
+
+            # Prompt for authentication if needed
+            if selected == "opencode":
+                print("\n💡 Run 'ninja-config configure' → 'Manage Providers' to authenticate")
+            elif selected == "claude":
+                print("\n💡 Run 'claude auth' to authenticate with Anthropic")
+            elif selected == "aider":
+                print("\n💡 Set OPENROUTER_API_KEY in 'API Keys' menu")
 
     def _configure_providers(self) -> None:
-        """Configure OpenCode authentication."""
+        """Configure OpenCode authentication with z.ai support."""
         print("\n" + "=" * 70)
         print("  🌐 PROVIDER AUTHENTICATION (OpenCode)")
         print("=" * 70 + "\n")
@@ -264,6 +285,7 @@ class NinjaConfigurator:
             ("google", "Google/Gemini", "opencode auth google"),
             ("openai", "OpenAI/GPT", "opencode auth openai"),
             ("github", "GitHub Copilot", "opencode auth github"),
+            ("zai", "Z.ai / Zhipu AI", "opencode auth zai"),
         ]
 
         # Check current auth status
@@ -273,7 +295,7 @@ class NinjaConfigurator:
         )
         authenticated = []
         for provider, _, _ in providers:
-            if provider in result.stdout.lower():
+            if provider in result.stdout.lower() or (provider == "zai" and "zhipu" in result.stdout.lower()):
                 authenticated.append(provider)
                 print(f"  ✓ {provider}")
             else:
@@ -304,13 +326,17 @@ class NinjaConfigurator:
             print("\n✓ Authentication complete")
 
     def _configure_search(self) -> None:
-        """Configure search provider for ninja-researcher."""
+        """Configure search provider for ninja-researcher with Perplexity model selection."""
         print("\n" + "=" * 70)
         print("  🔍 SEARCH PROVIDER CONFIGURATION")
         print("=" * 70 + "\n")
 
         current = self.config.get("NINJA_SEARCH_PROVIDER", "duckduckgo")
-        print(f"Current provider: {current}\n")
+        current_model = self.config.get("NINJA_RESEARCHER_MODEL", "sonar")
+        print(f"Current provider: {current}")
+        if current == "perplexity":
+            print(f"Current model: {current_model}")
+        print()
 
         choices = [
             Choice(value="duckduckgo", name="DuckDuckGo  •  Free, no API key needed"),
@@ -331,12 +357,51 @@ class NinjaConfigurator:
             print(f"\n✓ Search provider set to: {selected}")
 
             # Check if API key needed
-            if selected == "perplexity" and not self.config.get("PERPLEXITY_API_KEY"):
-                print("\n⚠️  Perplexity API key required")
-                print("   Run 'ninja-config auth' to add it")
+            if selected == "perplexity":
+                if not self.config.get("PERPLEXITY_API_KEY"):
+                    print("\n⚠️  Perplexity API key required")
+                    print("   Go to 'Manage API Keys' to add it")
+                else:
+                    # Offer Perplexity model selection
+                    self._configure_perplexity_model()
             elif selected == "serper" and not self.config.get("SERPER_API_KEY"):
                 print("\n⚠️  Serper API key required")
-                print("   Run 'ninja-config auth' to add it")
+                print("   Go to 'Manage API Keys' to add it")
+
+    def _configure_perplexity_model(self) -> None:
+        """Configure Perplexity model for researcher."""
+        print("\n" + "-" * 50)
+        print("  📊 PERPLEXITY MODEL SELECTION")
+        print("-" * 50 + "\n")
+
+        # Perplexity models
+        perplexity_models = [
+            ("sonar", "Sonar", "Fast search-focused model"),
+            ("sonar-pro", "Sonar Pro", "Advanced search with better reasoning"),
+            ("sonar-reasoning", "Sonar Reasoning", "Complex reasoning with search"),
+        ]
+
+        current_model = self.config.get("NINJA_RESEARCHER_MODEL", "sonar")
+        print(f"Current model: {current_model}\n")
+
+        choices = [
+            Choice(value=model_id, name=f"{name:20} • {desc}")
+            for model_id, name, desc in perplexity_models
+        ]
+        choices.append(Separator())
+        choices.append(Choice(value=None, name="← Keep current"))
+
+        selected = inquirer.select(
+            message="Select Perplexity model:",
+            choices=choices,
+            pointer="►",
+            default=current_model,
+        ).execute()
+
+        if selected:
+            self.config["NINJA_RESEARCHER_MODEL"] = selected
+            self._save_config()
+            print(f"\n✓ Researcher model set to: {selected}")
 
     def _show_config(self) -> None:
         """Show current configuration."""

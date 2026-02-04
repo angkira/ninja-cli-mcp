@@ -171,6 +171,8 @@ class Operator:
             return self._load_aider_models()
         elif self.id == "gemini":
             return self._load_gemini_models()
+        elif self.id == "claude":
+            return self._load_claude_models()
 
         return False
 
@@ -358,6 +360,31 @@ class Operator:
 
             return True
 
+    def _load_claude_models(self) -> bool:
+        """Load models for Claude Code CLI.
+
+        Claude Code only supports Anthropic models natively.
+        """
+        # Claude Code uses Anthropic models directly
+        claude_models = [
+            ("claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced performance"),
+            ("claude-opus-4", "Claude Opus 4", "Most powerful Claude model"),
+            ("claude-haiku-4", "Claude Haiku 4", "Fast & cost-effective"),
+        ]
+
+        for model_id, name, desc in claude_models:
+            self.models.append(
+                Model(
+                    id=model_id,
+                    name=name,
+                    description=desc,
+                    provider="anthropic",
+                    recommended=(model_id == "claude-sonnet-4"),  # Sonnet is recommended
+                )
+            )
+
+        return True
+
     def _format_model_name(self, model_id: str) -> str:
         """Format a model ID into a human-readable name."""
         # Remove provider prefix
@@ -449,6 +476,36 @@ OPERATORS = [
         binary_name="gemini",
         description="Google Gemini native CLI",
     ),
+    Operator(
+        id="claude",
+        name="Claude Code",
+        binary_name="claude",
+        description="Anthropic's official CLI - native Claude integration",
+    ),
+]
+
+
+# Claude Code models (Anthropic only)
+CLAUDE_CODE_MODELS = [
+    ("claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced performance"),
+    ("claude-opus-4", "Claude Opus 4", "Most powerful Claude model"),
+    ("claude-haiku-4", "Claude Haiku 4", "Fast & cost-effective"),
+]
+
+
+# Perplexity models for researcher module
+PERPLEXITY_MODELS = [
+    ("sonar", "Sonar", "Fast search-focused model"),
+    ("sonar-pro", "Sonar Pro", "Advanced search with better reasoning"),
+    ("sonar-reasoning", "Sonar Reasoning", "Complex reasoning with search"),
+]
+
+
+# Z.ai / Zhipu models (via OpenCode)
+ZAI_MODELS = [
+    ("glm-4.7", "GLM-4.7", "Complex multi-step tasks - supports Coding Plan API"),
+    ("glm-4.6v", "GLM-4.6V", "High concurrency (20 parallel) - best for parallel tasks"),
+    ("glm-4.0", "GLM-4.0", "Fast and cost-effective - quick tasks"),
 ]
 
 
@@ -481,6 +538,7 @@ def check_operator_auth(operator: Operator) -> dict[str, bool]:
             auth_status["google"] = "google" in output
             auth_status["openai"] = "openai" in output
             auth_status["github"] = "github" in output or "copilot" in output
+            auth_status["zai"] = "zai" in output or "zhipu" in output
         except Exception:
             pass
 
@@ -493,6 +551,21 @@ def check_operator_auth(operator: Operator) -> dict[str, bool]:
     elif operator.id == "gemini":
         # Gemini uses Google API key
         auth_status["google"] = bool(os.getenv("GOOGLE_API_KEY"))
+
+    elif operator.id == "claude":
+        # Claude Code uses claude auth
+        try:
+            result = subprocess.run(
+                [operator.binary_path, "auth", "status"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            # Claude auth status returns 0 when authenticated
+            auth_status["anthropic"] = result.returncode == 0
+        except Exception:
+            auth_status["anthropic"] = False
 
     return auth_status
 

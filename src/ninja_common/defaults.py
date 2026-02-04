@@ -36,7 +36,53 @@ RECOMMENDED_MODELS = {
     "google/gemini-pro-1.5": "Gemini Pro 1.5 - Google's advanced model",
     # Meta models
     "meta-llama/llama-3.1-70b-instruct": "Llama 3.1 70B - Meta's open model",
+    # Z.ai models
+    "glm-4.7": "GLM-4.7 - complex multi-step tasks with Coding Plan API",
+    "glm-4.6v": "GLM-4.6V - high concurrency parallel tasks",
+    "glm-4.0": "GLM-4.0 - fast and cost-effective",
 }
+
+# =============================================================================
+# TASK-BASED MODEL DEFAULTS
+# =============================================================================
+
+# Default models for different task types
+DEFAULT_MODEL_QUICK = "anthropic/claude-haiku-4.5"  # Fast simple tasks
+DEFAULT_MODEL_SEQUENTIAL = "anthropic/claude-sonnet-4"  # Complex multi-step tasks
+DEFAULT_MODEL_PARALLEL = "anthropic/claude-haiku-4.5"  # High-concurrency parallel tasks
+
+# =============================================================================
+# CLAUDE CODE MODELS (Anthropic native)
+# =============================================================================
+
+CLAUDE_CODE_MODELS = [
+    ("claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced performance"),
+    ("claude-opus-4", "Claude Opus 4", "Most powerful Claude model"),
+    ("claude-haiku-4", "Claude Haiku 4", "Fast & cost-effective"),
+]
+
+# =============================================================================
+# PERPLEXITY MODELS (Researcher)
+# =============================================================================
+
+PERPLEXITY_MODELS = [
+    ("sonar", "Sonar", "Fast search-focused model"),
+    ("sonar-pro", "Sonar Pro", "Advanced search with better reasoning"),
+    ("sonar-reasoning", "Sonar Reasoning", "Complex reasoning with search"),
+]
+
+# Valid Perplexity model IDs for validation
+VALID_PERPLEXITY_MODELS = ["sonar", "sonar-pro", "sonar-reasoning"]
+
+# =============================================================================
+# Z.AI / ZHIPU MODELS
+# =============================================================================
+
+ZAI_MODELS = [
+    ("glm-4.7", "GLM-4.7", "Complex multi-step tasks - supports Coding Plan API"),
+    ("glm-4.6v", "GLM-4.6V", "High concurrency (20 parallel) - best for parallel tasks"),
+    ("glm-4.0", "GLM-4.0", "Fast and cost-effective - quick tasks"),
+]
 
 # =============================================================================
 # API DEFAULTS
@@ -132,4 +178,63 @@ MODEL_DATABASE = {
         "livebench_score": 91.0,
         "supports_coding_plan_api": False,
     },
+    # Claude Code models (native Anthropic via Claude CLI)
+    "claude-sonnet-4": {
+        "provider": "anthropic",
+        "best_for": ["sequential", "quick"],
+        "concurrent_limit": 5,
+        "cost": "high",
+        "livebench_score": 88.0,
+        "supports_coding_plan_api": False,
+        "operator": "claude",
+    },
+    "claude-opus-4": {
+        "provider": "anthropic",
+        "best_for": ["sequential"],
+        "concurrent_limit": 3,
+        "cost": "very_high",
+        "livebench_score": 91.0,
+        "supports_coding_plan_api": False,
+        "operator": "claude",
+    },
+    "claude-haiku-4": {
+        "provider": "anthropic",
+        "best_for": ["quick", "parallel"],
+        "concurrent_limit": 10,
+        "cost": "low",
+        "livebench_score": 82.0,
+        "supports_coding_plan_api": False,
+        "operator": "claude",
+    },
+    # Perplexity models (for researcher)
+    "sonar": {
+        "provider": "perplexity",
+        "best_for": ["search"],
+        "concurrent_limit": 10,
+        "cost": "low",
+        "supports_search": True,
+    },
+    "sonar-pro": {
+        "provider": "perplexity",
+        "best_for": ["search", "reasoning"],
+        "concurrent_limit": 5,
+        "cost": "medium",
+        "supports_search": True,
+    },
+    "sonar-reasoning": {
+        "provider": "perplexity",
+        "best_for": ["reasoning", "search"],
+        "concurrent_limit": 3,
+        "cost": "high",
+        "supports_search": True,
+    },
 }
+
+
+# =============================================================================
+# MODEL PREFERENCES
+# =============================================================================
+
+# Cost vs Quality preference (default: balanced)
+DEFAULT_PREFER_COST = False
+DEFAULT_PREFER_QUALITY = False
