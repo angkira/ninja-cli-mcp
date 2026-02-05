@@ -129,7 +129,6 @@ ignore = [
     "SIM102",  # nested if statements
     "SIM105",  # contextlib.suppress
     "SIM108",  # ternary operator
-    "SIM116",  # dictionary instead of if/elif
     "SIM117",  # nested with statements
     "SIM222",  # use true instead of ... or True
     "RUF015",  # prefer next(iter())
