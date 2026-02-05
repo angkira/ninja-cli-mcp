@@ -5,6 +5,7 @@ These tests are marked with @pytest.mark.integration and will be skipped
 unless explicitly run with: pytest -m integration
 """
 
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -12,8 +13,12 @@ import pytest
 
 from ninja_coder.daemon import get_daemon
 
+# Skip if opencode CLI is not installed
+OPENCODE_AVAILABLE = shutil.which("opencode") is not None
+
 
 @pytest.mark.integration
+@pytest.mark.skipif(not OPENCODE_AVAILABLE, reason="opencode CLI not installed")
 def test_daemon_real_server():
     """
     Test starting a real OpenCode server.
@@ -53,6 +58,7 @@ def test_daemon_real_server():
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(not OPENCODE_AVAILABLE, reason="opencode CLI not installed")
 def test_daemon_multiple_repos():
     """
     Test managing servers for multiple repositories.
