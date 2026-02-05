@@ -51,11 +51,6 @@ def update_mcp_config(config_path, server_name):
             "NINJA_SECRETARY_MODEL": "google/gemini-2.0-flash-exp",
             "NINJA_SECRETARY_MAX_FILE_SIZE": "1048576",
         }
-    elif server_name == "ninja-resources":
-        env_vars = {
-            "NINJA_RESOURCES_CACHE_TTL": "3600",
-            "NINJA_RESOURCES_MAX_FILES": "1000",
-        }
     elif server_name == "ninja-prompts":
         env_vars = {
             "NINJA_PROMPTS_MAX_SUGGESTIONS": "5",

@@ -246,7 +246,6 @@ def cmd_doctor(args: argparse.Namespace) -> None:
             "ninja-coder",
             "ninja-researcher",
             "ninja-secretary",
-            "ninja-resources",
             "ninja-prompts",
         ]
 
@@ -560,7 +559,6 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
         "ninja-coder",
         "ninja-researcher",
         "ninja-secretary",
-        "ninja-resources",
         "ninja-prompts",
     ]
 
@@ -569,7 +567,6 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
         not args.coder
         and not args.researcher
         and not args.secretary
-        and not args.resources
         and not args.prompts
     ):
         servers_to_install = servers
@@ -581,8 +578,6 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
             servers_to_install.append("ninja-researcher")
         if args.secretary:
             servers_to_install.append("ninja-secretary")
-        if args.resources:
-            servers_to_install.append("ninja-resources")
         if args.prompts:
             servers_to_install.append("ninja-prompts")
 
@@ -779,11 +774,6 @@ Examples:
         "--secretary",
         action="store_true",
         help="Register ninja-secretary server",
-    )
-    setup_claude_parser.add_argument(
-        "--resources",
-        action="store_true",
-        help="Register ninja-resources server",
     )
     setup_claude_parser.add_argument(
         "--prompts",

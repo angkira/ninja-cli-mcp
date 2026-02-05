@@ -74,7 +74,6 @@ all = [
 ninja-coder = "ninja_coder.server:run"
 ninja-researcher = "ninja_researcher.server:run"
 ninja-secretary = "ninja_secretary.server:run"
-ninja-resources = "ninja_resources.server:run"
 ninja-prompts = "ninja_prompts.server:run"
 
 # Daemon and Config
@@ -93,7 +92,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ninja_common", "src/ninja_coder", "src/ninja_researcher", "src/ninja_secretary", "src/ninja_resources", "src/ninja_prompts", "src/ninja_config"]
+packages = ["src/ninja_common", "src/ninja_coder", "src/ninja_researcher", "src/ninja_secretary", "src/ninja_prompts", "src/ninja_config"]
 
 [tool.ruff]
 line-length = 100
@@ -194,7 +193,6 @@ module = [
     "ninja_coder.daemon",
     "ninja_coder.model_selector",
     "ninja_prompts.*",
-    "ninja_resources.*",
     "ninja_config.*",
 ]
 ignore_errors = true
