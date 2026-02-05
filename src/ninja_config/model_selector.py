@@ -149,13 +149,20 @@ class Operator:
                 return False
             return bool("gemini-2" in model_id or "gemini-3" in model_id)
 
-        # DeepSeek: keep v3 and newer
+        # DeepSeek: keep v3, r1, coder, and recent models
         if "deepseek" in model_id:
-            return bool("v3" in model_id or "2025" in model_id or "2026" in model_id)
+            return bool(
+                "v3" in model_id
+                or "r1" in model_id
+                or "coder" in model_id
+                or "chat" in model_id
+                or "2025" in model_id
+                or "2026" in model_id
+            )
 
-        # Qwen: keep 2.5 and newer
+        # Qwen: keep 2.5 and Qwen3 (qwen3-*)
         if "qwen" in model_id:
-            return bool("2.5" in model_id or "3." in model_id)
+            return bool("2.5" in model_id or "qwen3" in model_id or "qwen-3" in model_id)
 
         # Default: if no rule matched, hide it (be conservative)
         return False
@@ -239,11 +246,11 @@ class Operator:
             return False
 
     def _load_aider_models(self) -> bool:
-        """Load models from Aider CLI via --list-models."""
+        """Load models from Aider CLI via --list-models (OpenRouter provider)."""
         try:
-            # Query a few major providers
+            # Query major providers available via OpenRouter
             all_models = []
-            for query in ["claude", "gpt", "gemini", "deepseek", "qwen"]:
+            for query in ["claude", "gpt", "gemini", "deepseek", "qwen", "llama", "o1", "o3"]:
                 result = subprocess.run(
                     [self.binary_path, "--list-models", query],
                     capture_output=True,
@@ -506,6 +513,33 @@ ZAI_MODELS = [
     ("glm-4.7", "GLM-4.7", "Complex multi-step tasks - supports Coding Plan API"),
     ("glm-4.6v", "GLM-4.6V", "High concurrency (20 parallel) - best for parallel tasks"),
     ("glm-4.0", "GLM-4.0", "Fast and cost-effective - quick tasks"),
+]
+
+
+# OpenRouter models (for Aider - uses OPENROUTER_API_KEY)
+OPENROUTER_MODELS = [
+    # Claude models (Anthropic)
+    ("anthropic/claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced"),
+    ("anthropic/claude-opus-4", "Claude Opus 4", "Most powerful Claude"),
+    ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast & cost-effective"),
+    # GPT models (OpenAI)
+    ("openai/gpt-4o", "GPT-4o", "OpenAI flagship multimodal"),
+    ("openai/gpt-4o-mini", "GPT-4o Mini", "Fast and cheap"),
+    ("openai/o1", "O1", "OpenAI reasoning model"),
+    ("openai/o3-mini", "O3 Mini", "Latest reasoning model"),
+    # Qwen 3 models (Latest generation)
+    ("qwen/qwen3-235b-a22b", "Qwen3 235B", "Most powerful Qwen"),
+    ("qwen/qwen3-32b", "Qwen3 32B", "Balanced performance"),
+    ("qwen/qwen3-14b", "Qwen3 14B", "Good speed/quality"),
+    ("qwen/qwen3-8b", "Qwen3 8B", "Fast and capable"),
+    # DeepSeek models
+    ("deepseek/deepseek-chat", "DeepSeek Chat", "General purpose"),
+    ("deepseek/deepseek-coder", "DeepSeek Coder", "Specialized for code"),
+    ("deepseek/deepseek-r1", "DeepSeek R1", "Reasoning model"),
+    # Google models
+    ("google/gemini-2.0-flash", "Gemini 2.0 Flash", "Latest fast model"),
+    # Meta Llama models
+    ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B", "Latest Llama"),
 ]
 
 

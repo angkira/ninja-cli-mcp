@@ -1441,11 +1441,15 @@ class NinjaDriver:
                                 task_logger.warning(
                                     f"No output for {inactivity_timeout}s, process may be hung"
                                 )
-                                raise TimeoutError(f"No output activity for {inactivity_timeout}s") from None
+                                raise TimeoutError(
+                                    f"No output activity for {inactivity_timeout}s"
+                                ) from None
 
                             if total_elapsed > max_timeout:
                                 task_logger.warning(f"Maximum timeout {max_timeout}s reached")
-                                raise TimeoutError(f"Maximum timeout {max_timeout}s reached") from None
+                                raise TimeoutError(
+                                    f"Maximum timeout {max_timeout}s reached"
+                                ) from None
 
                             continue
 

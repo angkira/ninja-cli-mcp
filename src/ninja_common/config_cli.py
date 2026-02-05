@@ -185,8 +185,6 @@ def cmd_set(args: argparse.Namespace) -> None:
     print_colored("  ninja-daemon restart all", "dim")
 
 
-
-
 def cmd_doctor(args: argparse.Namespace) -> None:
     """
     Diagnose and fix common configuration issues.
@@ -364,8 +362,6 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print()
 
 
-
-
 def cmd_configure(args: argparse.Namespace) -> None:
     """
     Run interactive configurator (MAIN ENTRY POINT).
@@ -488,7 +484,6 @@ def cmd_update(args: argparse.Namespace) -> None:
         args: Command arguments.
     """
     import subprocess
-    import sys
     from pathlib import Path
 
     # Find the update script
@@ -512,25 +507,25 @@ def cmd_update(args: argparse.Namespace) -> None:
         # Fallback to downloading from GitHub
         print_colored("🔄 Downloading update script from GitHub...", "cyan")
         try:
-            import urllib.request
             import tempfile
-            import os
+            import urllib.request
 
             update_url = "https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/update.sh"
 
             with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
                 temp_script = f.name
 
+            temp_path = Path(temp_script)
             try:
                 urllib.request.urlretrieve(update_url, temp_script)
-                os.chmod(temp_script, 0o755)
+                temp_path.chmod(0o755)
                 result = subprocess.run(["bash", temp_script], check=True)
                 if result.returncode == 0:
                     print_colored("✅ Update completed successfully", "green")
                 else:
                     print_colored("❌ Update failed", "red")
             finally:
-                os.unlink(temp_script)
+                temp_path.unlink()
 
         except Exception as e:
             print_colored(f"❌ Failed to download and run update: {e}", "red")
@@ -539,8 +534,6 @@ def cmd_update(args: argparse.Namespace) -> None:
                 "  curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/update.sh | bash",
                 "dim",
             )
-
-
 
 
 def cmd_setup_claude(args: argparse.Namespace) -> None:
@@ -835,15 +828,14 @@ Examples:
 
     if args.command in command_handlers:
         command_handlers[args.command](args)
+    # Default to configure if no command given
+    elif args.command is None:
+        args.quick = False
+        cmd_configure(args)
     else:
-        # Default to configure if no command given
-        if args.command is None:
-            args.quick = False
-            cmd_configure(args)
-        else:
-            print_colored(f"Unknown command: {args.command}", "red")
-            print_colored("Run 'ninja-config configure' for interactive configuration.", "dim")
-            parser.print_help()
+        print_colored(f"Unknown command: {args.command}", "red")
+        print_colored("Run 'ninja-config configure' for interactive configuration.", "dim")
+        parser.print_help()
 
 
 if __name__ == "__main__":
