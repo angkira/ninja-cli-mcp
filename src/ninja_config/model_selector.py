@@ -25,6 +25,98 @@ except ImportError:
     HAS_INQUIRERPY = False
 
 
+# OpenCode provider definitions
+OPENCODE_PROVIDERS = [
+    ("anthropic", "Anthropic", "Claude models - native API"),
+    ("google", "Google", "Gemini models - native API"),
+    ("openai", "OpenAI", "GPT models - native API"),
+    ("github-copilot", "GitHub Copilot", "Via GitHub OAuth"),
+    ("openrouter", "OpenRouter", "Multi-provider API - Qwen, DeepSeek, Llama, etc."),
+]
+
+
+def get_opencode_providers() -> list[tuple[str, str, str]]:
+    """Return list of available OpenCode providers.
+
+    Returns:
+        List of tuples: (provider_id, display_name, description)
+    """
+    return OPENCODE_PROVIDERS.copy()
+
+
+def _get_opencode_auth_file() -> Path:
+    """Get the path to OpenCode's auth.json file."""
+    return Path.home() / ".local" / "share" / "opencode" / "auth.json"
+
+
+def check_provider_auth(provider: str) -> bool:
+    """Check if a provider is already authenticated in OpenCode.
+
+    Args:
+        provider: The provider ID (e.g., 'anthropic', 'openrouter')
+
+    Returns:
+        True if the provider has credentials stored, False otherwise
+    """
+    auth_file = _get_opencode_auth_file()
+
+    if not auth_file.exists():
+        return False
+
+    try:
+        auth_data = json.loads(auth_file.read_text())
+        if provider in auth_data:
+            # Check if it has a valid key or token
+            provider_auth = auth_data[provider]
+            if isinstance(provider_auth, dict):
+                return bool(provider_auth.get("key") or provider_auth.get("token"))
+        return False
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+def configure_opencode_provider(provider_id: str, api_key: str) -> bool:
+    """Configure credentials for an OpenCode provider.
+
+    Reads ~/.local/share/opencode/auth.json, adds or updates the provider
+    credentials, and writes back.
+
+    Args:
+        provider_id: The provider ID (e.g., 'anthropic', 'openrouter')
+        api_key: The API key or token for the provider
+
+    Returns:
+        True if configuration was successful, False otherwise
+    """
+    auth_file = _get_opencode_auth_file()
+
+    # Ensure parent directory exists
+    auth_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Read existing auth data
+    auth_data = {}
+    if auth_file.exists():
+        try:
+            auth_data = json.loads(auth_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            auth_data = {}
+
+    # Configure provider credentials
+    if provider_id == "github-copilot":
+        # GitHub Copilot uses OAuth
+        auth_data[provider_id] = {"type": "oauth", "key": api_key}
+    else:
+        # All other providers use API keys
+        auth_data[provider_id] = {"type": "api", "key": api_key}
+
+    # Write back
+    try:
+        auth_file.write_text(json.dumps(auth_data, indent=2))
+        return True
+    except OSError:
+        return False
+
+
 @dataclass
 class Model:
     """A model available for a specific operator."""
@@ -46,6 +138,7 @@ class Operator:
     description: str
     binary_path: str | None = None
     models: list[Model] = field(default_factory=list)
+    selected_provider: str | None = None
 
     @property
     def is_installed(self) -> bool:
@@ -461,6 +554,88 @@ class Operator:
             return "Open source coding model"
 
         return "Available model"
+
+
+def get_provider_models(operator: str, provider: str) -> list[Model]:
+    """Get models for a specific provider from an operator.
+
+    For opencode: runs `opencode models {provider}` and parses output.
+    Filters to recent/relevant models using existing filtering logic.
+
+    Args:
+        operator: The operator ID (e.g., 'opencode')
+        provider: The provider ID (e.g., 'anthropic', 'openrouter')
+
+    Returns:
+        List of Model objects for the specified provider
+    """
+    models = []
+
+    if operator != "opencode":
+        return models
+
+    # Find opencode binary
+    opencode_path = shutil.which("opencode")
+    if not opencode_path:
+        return models
+
+    try:
+        # Run opencode models {provider} to get provider-specific models
+        result = subprocess.run(
+            [opencode_path, "models", provider],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+
+        if result.returncode != 0:
+            return models
+
+        # Create a temporary operator instance to use its helper methods
+        temp_operator = Operator(
+            id="opencode",
+            name="OpenCode",
+            binary_name="opencode",
+            description="temp",
+        )
+
+        # Parse model IDs from output
+        model_ids = []
+        for line in result.stdout.strip().split("\n"):
+            output_line = line.strip()
+            # Skip INFO lines and empty lines
+            if not output_line or output_line.startswith("INFO"):
+                continue
+            # Model ID format: provider/model-name
+            if "/" in output_line:
+                # Filter out ancient models using the same logic
+                if temp_operator._is_recent_model(output_line):
+                    model_ids.append(output_line)
+
+        # Sort models: latest first, then by date (newest first), then by version
+        sorted_ids = sorted(model_ids, key=temp_operator._get_model_sort_key)
+
+        # Convert to Model objects
+        for model_id in sorted_ids:
+            model_provider = model_id.split("/")[0]
+            name = temp_operator._format_model_name(model_id)
+            desc = temp_operator._get_model_description(model_id)
+
+            models.append(
+                Model(
+                    id=model_id,
+                    name=name,
+                    description=desc,
+                    provider=model_provider,
+                    recommended=False,
+                )
+            )
+
+    except (subprocess.TimeoutExpired, OSError) as e:
+        print(f"Error loading models for provider {provider}: {e}")
+
+    return models
 
 
 # Define available operators (models will be loaded dynamically)

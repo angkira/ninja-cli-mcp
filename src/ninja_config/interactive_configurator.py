@@ -28,6 +28,12 @@ except ImportError:
 
 from ninja_common.config_manager import ConfigManager
 from ninja_common.defaults import OPENROUTER_MODELS, PERPLEXITY_MODELS, ZAI_MODELS
+from ninja_config.model_selector import (
+    OPENCODE_PROVIDERS,
+    check_provider_auth,
+    configure_opencode_provider,
+    get_provider_models,
+)
 
 
 class PowerConfigurator:
@@ -124,6 +130,10 @@ class PowerConfigurator:
 
                 if action == "overview":
                     self._show_configuration_overview()
+                elif action == "coder_setup":
+                    self._coder_setup_flow()
+                elif action == "secretary_setup":
+                    self._configure_secretary()
                 elif action == "api_keys":
                     self._manage_api_keys()
                 elif action == "operators":
@@ -187,6 +197,15 @@ class PowerConfigurator:
         choices = [
             Choice(
                 value="overview", name="📋 Configuration Overview  •  See all settings at a glance"
+            ),
+            Separator(),
+            Choice(
+                value="coder_setup",
+                name="🎯 Coder Setup  •  Operator + Provider + Models flow",
+            ),
+            Choice(
+                value="secretary_setup",
+                name="📋 Secretary Setup  •  Configure secretary module",
             ),
             Separator(),
             Choice(value="api_keys", name="🔑 API Key Management  •  Add/update all service keys"),
@@ -425,7 +444,7 @@ class PowerConfigurator:
                 print("\n💡  No changes made")
 
     def _configure_operators(self) -> None:
-        """Configure operator settings with provider-first flow."""
+        """Configure operator settings with provider selection flow."""
         print("\n" + "=" * 80)
         print("  🎯 OPERATOR CONFIGURATION")
         print("=" * 80)
@@ -439,7 +458,7 @@ class PowerConfigurator:
             "opencode": (
                 "OpenCode",
                 "Multi-provider CLI (75+ LLMs)",
-                ["anthropic", "google", "openai", "github", "zai"],
+                ["anthropic", "google", "openai", "github", "openrouter"],
             ),
             "gemini": ("Gemini CLI", "Google native CLI", ["google"]),
             "claude": ("Claude Code", "Anthropic's official CLI", ["anthropic"]),
@@ -470,7 +489,7 @@ class PowerConfigurator:
             )
 
         choices.append(Separator())
-        choices.append(Choice(None, name="← Back"))
+        choices.append(Choice(None, name="<- Back"))
 
         selected = inquirer.select(
             message="Select operator:",
@@ -478,51 +497,552 @@ class PowerConfigurator:
             pointer="►",
         ).execute()
 
-        if selected:
-            self._save_config("NINJA_CODE_BIN", selected)
-            print(f"\n✅ Operator set to: {selected}")
+        if not selected:
+            return
 
-            # Show available providers for selected operator
-            info = operator_info.get(selected, (selected.title(), "Unknown", []))
-            _, _, providers = info
-            if providers:
-                print(f"\n📋 Available providers for {selected}:")
-                for provider in providers:
-                    print(f"   • {provider}")
+        self._save_config("NINJA_CODE_BIN", selected)
+        print(f"\n✅ Operator set to: {selected}")
 
-            # Prompt for authentication if needed
-            if selected == "opencode":
-                print("\n💡 Go to 'OpenCode Authentication' to authenticate with providers")
-            elif selected == "claude":
-                print("\n💡 Run 'claude auth' to authenticate with Anthropic")
-            elif selected == "aider":
-                print("\n💡 Set OPENROUTER_API_KEY in 'API Key Management'")
+        # If OpenCode selected, ask for provider selection
+        if selected == "opencode":
+            self._select_opencode_provider()
+        elif selected == "claude":
+            print("\n💡 Run 'claude auth' to authenticate with Anthropic")
+        elif selected == "aider":
+            print("\n💡 Set OPENROUTER_API_KEY in 'API Key Management'")
 
-            # Clear model selection when changing operator
-            model_keys = [
-                k
-                for k in self.config
-                if "MODEL" in k
-                and k != "NINJA_MODEL_QUICK"
-                and k != "NINJA_MODEL_SEQUENTIAL"
-                and k != "NINJA_MODEL_PARALLEL"
-            ]
-            for model_key in model_keys:
-                if model_key in self.config:
-                    del self.config[model_key]
-                    # Remove from config file
-                    config_file = self.config_manager.config_file
-                    if config_file.exists():
-                        lines = []
-                        with open(config_file) as f:
-                            for line in f:
-                                if not line.startswith(f"{model_key}="):
-                                    lines.append(line)
-                        with open(config_file, "w") as f:
-                            f.writelines(lines)
+        # Clear model selection when changing operator
+        model_keys = [
+            k
+            for k in self.config
+            if "MODEL" in k
+            and k != "NINJA_MODEL_QUICK"
+            and k != "NINJA_MODEL_SEQUENTIAL"
+            and k != "NINJA_MODEL_PARALLEL"
+        ]
+        for model_key in model_keys:
+            if model_key in self.config:
+                del self.config[model_key]
+                # Remove from config file
+                config_file = self.config_manager.config_file
+                if config_file.exists():
+                    lines = []
+                    with open(config_file) as f:
+                        for line in f:
+                            if not line.startswith(f"{model_key}="):
+                                lines.append(line)
+                    with open(config_file, "w") as f:
+                        f.writelines(lines)
 
-            print("\n💡  Module model selections cleared (task-based models preserved)")
-            print("   Go to 'Model Selection' to choose new models for modules")
+        print("\n💡  Module model selections cleared (task-based models preserved)")
+        print("   Go to 'Model Selection' or 'Coder Setup' to choose models")
+
+    def _select_opencode_provider(self) -> str | None:
+        """Select provider for OpenCode operator."""
+        print("\n" + "-" * 50)
+        print("  📡 PROVIDER SELECTION (OpenCode)")
+        print("-" * 50)
+
+        # OPENCODE_PROVIDERS is a list of tuples: (provider_id, display_name, description)
+        # Check authentication status for each provider
+        auth_status = {}
+        for provider_id, _, _ in OPENCODE_PROVIDERS:
+            auth_status[provider_id] = check_provider_auth(provider_id)
+
+        # Build choices
+        choices = []
+        for provider_id, display_name, desc in OPENCODE_PROVIDERS:
+            is_auth = auth_status.get(provider_id, False)
+            auth_symbol = "✓" if is_auth else "✗"
+            choices.append(
+                Choice(
+                    provider_id,
+                    name=f"{auth_symbol} {display_name:20} • {desc}",
+                )
+            )
+
+        choices.append(Separator())
+        choices.append(Choice(None, name="<- Skip provider selection"))
+
+        selected_provider = inquirer.select(
+            message="Select provider:",
+            choices=choices,
+            pointer="►",
+        ).execute()
+
+        if not selected_provider:
+            return None
+
+        # Check if provider needs authentication
+        is_authenticated = auth_status.get(selected_provider, False)
+
+        if not is_authenticated:
+            # Find provider display name
+            provider_display = selected_provider.title()
+            for pid, name, _ in OPENCODE_PROVIDERS:
+                if pid == selected_provider:
+                    provider_display = name
+                    break
+
+            print(f"\n⚠️  {provider_display} is not authenticated")
+
+            # API key URLs for each provider
+            api_key_urls = {
+                "anthropic": "https://console.anthropic.com/settings/keys",
+                "google": "https://aistudio.google.com/app/apikey",
+                "openai": "https://platform.openai.com/api-keys",
+                "openrouter": "https://openrouter.ai/keys",
+                "github-copilot": "https://github.com/settings/copilot",
+            }
+
+            api_key_url = api_key_urls.get(selected_provider, "")
+            if api_key_url:
+                print(f"   Get your API key from: {api_key_url}")
+
+            setup_now = inquirer.confirm(
+                message="Set up authentication now?",
+                default=True,
+            ).execute()
+
+            if setup_now:
+                api_key = inquirer.secret(
+                    message=f"Enter {provider_display} API key:",
+                ).execute()
+
+                if api_key:
+                    # Save credentials using model_selector function
+                    success = configure_opencode_provider(selected_provider, api_key)
+                    if success:
+                        print(f"\n✅ {provider_display} credentials saved")
+                        # Also save to ninja config for backup
+                        api_key_name = f"{selected_provider.upper().replace('-', '_')}_API_KEY"
+                        self._save_config(api_key_name, api_key)
+                    else:
+                        print(f"\n❌ Failed to configure {provider_display}")
+                        return None
+                else:
+                    print("\n💡 No API key provided, skipping authentication")
+
+        # Save selected provider
+        self._save_config("NINJA_CODER_PROVIDER", selected_provider)
+        print(f"\n✅ Provider set to: {selected_provider}")
+
+        return selected_provider
+
+    def _coder_setup_flow(self) -> None:
+        """Complete coder setup flow: operator -> provider -> models."""
+        print("\n" + "=" * 80)
+        print("  🎯 CODER SETUP")
+        print("=" * 80)
+        print("\n  This wizard will guide you through:")
+        print("    1. Operator selection (OpenCode, Aider, Claude Code, Gemini CLI)")
+        print("    2. Provider selection (for OpenCode)")
+        print("    3. Model configuration (regular, quick, heavy tasks)")
+
+        # Step 1: Operator Selection
+        print("\n" + "-" * 50)
+        print("  STEP 1: OPERATOR SELECTION")
+        print("-" * 50)
+
+        tools = self._detect_installed_tools()
+
+        operator_info = {
+            "opencode": ("OpenCode", "Multi-provider CLI (75+ LLMs)"),
+            "aider": ("Aider", "OpenRouter-based CLI"),
+            "claude": ("Claude Code", "Anthropic's official CLI"),
+            "gemini": ("Gemini CLI", "Google native CLI"),
+        }
+
+        if not tools:
+            print("\n⚠️  No operators detected!")
+            print("   Install at least one operator:")
+            print("     • OpenCode: https://opencode.dev/download")
+            print("     • Aider: uv tool install aider-chat")
+            print("     • Claude Code: https://claude.ai/download")
+            print("     • Gemini CLI: npm install -g @google/generative-ai-cli")
+            return
+
+        current_operator = self.config.get("NINJA_CODE_BIN", "Not set")
+        print(f"\n📋 Current operator: {current_operator}")
+
+        choices = []
+        for name, path in tools.items():
+            info = operator_info.get(name, (name.title(), "Unknown"))
+            display_name, desc = info
+            choices.append(Choice(name, name=f"{display_name:15} • {desc}"))
+
+        choices.append(Separator())
+        choices.append(Choice(None, name="<- Cancel setup"))
+
+        selected_operator = inquirer.select(
+            message="Select operator:",
+            choices=choices,
+            pointer="►",
+        ).execute()
+
+        if not selected_operator:
+            print("\n💡 Setup cancelled")
+            return
+
+        self._save_config("NINJA_CODE_BIN", selected_operator)
+        print(f"\n✅ Operator set to: {selected_operator}")
+
+        # Step 2: Provider Selection (for OpenCode)
+        selected_provider = None
+        if selected_operator == "opencode":
+            selected_provider = self._select_opencode_provider()
+            if not selected_provider:
+                print("\n💡 No provider selected, using default")
+        elif selected_operator == "claude":
+            selected_provider = "anthropic"
+            self._save_config("NINJA_CODER_PROVIDER", "anthropic")
+        elif selected_operator == "aider":
+            selected_provider = "openrouter"
+            self._save_config("NINJA_CODER_PROVIDER", "openrouter")
+        elif selected_operator == "gemini":
+            selected_provider = "google"
+            self._save_config("NINJA_CODER_PROVIDER", "google")
+
+        # Step 3: Model Configuration
+        self._configure_coder_models(selected_operator, selected_provider)
+
+        print("\n" + "=" * 80)
+        print("  ✅ CODER SETUP COMPLETE")
+        print("=" * 80)
+        print(f"\n   Operator:  {selected_operator}")
+        print(f"   Provider:  {selected_provider or 'default'}")
+        print(f"   Model:     {self.config.get('NINJA_CODER_MODEL', 'Not set')}")
+        print(f"   Quick:     {self.config.get('NINJA_MODEL_QUICK', 'Same as regular')}")
+        print(f"   Heavy:     {self.config.get('NINJA_MODEL_SEQUENTIAL', 'Not set')}")
+
+    def _configure_coder_models(
+        self, operator: str | None = None, provider: str | None = None
+    ) -> None:
+        """Configure coder models: regular, quick, and heavy task models."""
+        print("\n" + "-" * 50)
+        print("  STEP 3: MODEL CONFIGURATION")
+        print("-" * 50)
+
+        # Get operator and provider if not provided
+        if not operator:
+            operator = self.config.get("NINJA_CODE_BIN", "opencode")
+        if not provider:
+            provider = self.config.get("NINJA_CODER_PROVIDER", "anthropic")
+
+        # Fetch available models from the operator/provider
+        print(f"\n🔄 Loading models from {operator}/{provider}...")
+
+        try:
+            models = get_provider_models(operator, provider)
+        except Exception as e:
+            print(f"\n⚠️  Failed to load models: {e}")
+            print("   Using fallback model list")
+            models = self._get_fallback_models(provider)
+
+        if not models:
+            print("\n⚠️  No models available, using fallback list")
+            models = self._get_fallback_models(provider)
+
+        print(f"   Found {len(models)} models\n")
+
+        # Group models by provider with separators
+        model_choices = self._build_model_choices(models, provider)
+
+        # 3a: Regular model (NINJA_CODER_MODEL)
+        print("\n📦 Regular Model (NINJA_CODER_MODEL)")
+        print("   Main model for standard coding tasks")
+
+        current_model = self.config.get("NINJA_CODER_MODEL", "")
+
+        regular_choices = model_choices.copy()
+        regular_choices.append(Separator())
+        regular_choices.append(Choice("__custom__", name="📝 Enter custom model name"))
+        regular_choices.append(Choice(None, name="<- Skip"))
+
+        selected_model = inquirer.select(
+            message="Select regular model:",
+            choices=regular_choices,
+            pointer="►",
+        ).execute()
+
+        if selected_model == "__custom__":
+            selected_model = inquirer.text(
+                message="Enter custom model name:",
+                default=current_model,
+                instruction="e.g., anthropic/claude-sonnet-4, openai/gpt-4o",
+            ).execute()
+
+        if selected_model:
+            self._save_config("NINJA_CODER_MODEL", selected_model)
+            print(f"   ✅ Regular model: {selected_model}")
+        else:
+            selected_model = current_model
+
+        # 3b: Quick task model (NINJA_MODEL_QUICK)
+        print("\n⚡ Quick Task Model (NINJA_MODEL_QUICK)")
+        print("   For simple, fast tasks")
+
+        use_same_as_regular = inquirer.confirm(
+            message="Use same model as regular for quick tasks?",
+            default=True,
+        ).execute()
+
+        if use_same_as_regular:
+            if selected_model:
+                self._save_config("NINJA_MODEL_QUICK", selected_model)
+                print(f"   ✅ Quick model: {selected_model} (same as regular)")
+        else:
+            quick_choices = model_choices.copy()
+            quick_choices.append(Separator())
+            quick_choices.append(Choice("__custom__", name="📝 Enter custom model name"))
+            quick_choices.append(Choice(None, name="<- Skip"))
+
+            quick_model = inquirer.select(
+                message="Select quick task model:",
+                choices=quick_choices,
+                pointer="►",
+            ).execute()
+
+            if quick_model == "__custom__":
+                quick_model = inquirer.text(
+                    message="Enter custom model name:",
+                    instruction="e.g., anthropic/claude-haiku-4.5, openai/gpt-4o-mini",
+                ).execute()
+
+            if quick_model:
+                self._save_config("NINJA_MODEL_QUICK", quick_model)
+                print(f"   ✅ Quick model: {quick_model}")
+
+        # 3c: Heavy task model (NINJA_MODEL_SEQUENTIAL)
+        print("\n📊 Heavy Task Model (NINJA_MODEL_SEQUENTIAL)")
+        print("   For complex multi-step tasks")
+
+        heavy_choices = model_choices.copy()
+        heavy_choices.append(Separator())
+        heavy_choices.append(Choice("__custom__", name="📝 Enter custom model name"))
+        heavy_choices.append(Choice(None, name="<- Skip"))
+
+        heavy_model = inquirer.select(
+            message="Select heavy task model:",
+            choices=heavy_choices,
+            pointer="►",
+        ).execute()
+
+        if heavy_model == "__custom__":
+            heavy_model = inquirer.text(
+                message="Enter custom model name:",
+                instruction="e.g., anthropic/claude-opus-4, openai/o1",
+            ).execute()
+
+        if heavy_model:
+            self._save_config("NINJA_MODEL_SEQUENTIAL", heavy_model)
+            print(f"   ✅ Heavy model: {heavy_model}")
+
+    def _build_model_choices(self, models: list, current_provider: str | None = None) -> list:
+        """Build model choices grouped by provider with separators."""
+        # Group models by provider
+        by_provider = {}
+        for model in models:
+            # Handle Model dataclass objects (from get_provider_models)
+            if hasattr(model, "id") and hasattr(model, "name"):
+                model_id = model.id
+                model_name = model.name
+                model_desc = model.description if hasattr(model, "description") else ""
+                provider = model.provider if hasattr(model, "provider") else ""
+            # Handle dict format
+            elif isinstance(model, dict):
+                model_id = model.get("id", "")
+                model_name = model.get("name", model_id)
+                model_desc = model.get("description", "")
+                provider = model.get("provider", "")
+            # Handle tuple format (model_id, model_name, model_desc)
+            elif isinstance(model, tuple):
+                model_id, model_name, model_desc = model[:3]
+                provider = (
+                    model_id.split("/")[0] if "/" in model_id else current_provider or "unknown"
+                )
+            else:
+                continue
+
+            if not provider:
+                provider = (
+                    model_id.split("/")[0] if "/" in model_id else current_provider or "unknown"
+                )
+
+            if provider not in by_provider:
+                by_provider[provider] = []
+            by_provider[provider].append((model_id, model_name, model_desc))
+
+        # Build choices with separators
+        choices = []
+
+        # Put current provider first if specified
+        provider_order = sorted(by_provider.keys())
+        if current_provider and current_provider in provider_order:
+            provider_order.remove(current_provider)
+            provider_order.insert(0, current_provider)
+
+        for provider in provider_order:
+            models_list = by_provider[provider]
+            provider_display = provider.upper() if provider else "OTHER"
+            choices.append(Separator(f"── {provider_display} ({len(models_list)} models) ──"))
+
+            for model_id, model_name, model_desc in models_list:
+                display = f"{model_name}"
+                if model_desc:
+                    display += f"  •  {model_desc}"
+
+                # Add :free variant indicator for OpenRouter
+                if "openrouter" in provider.lower() or "/" in model_id:
+                    if ":free" in model_id:
+                        display += " [FREE]"
+
+                choices.append(Choice(model_id, name=display))
+
+        return choices
+
+    def _get_fallback_models(self, provider: str | None = None) -> list:
+        """Get fallback model list when dynamic loading fails."""
+        from ninja_common.defaults import PROVIDER_MODELS
+
+        if provider and provider in PROVIDER_MODELS:
+            return list(PROVIDER_MODELS[provider])
+
+        # Default fallback - mix of top models
+        return [
+            ("anthropic/claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced"),
+            ("openai/gpt-4o", "GPT-4o", "OpenAI flagship multimodal"),
+            ("google/gemini-2.0-flash", "Gemini 2.0 Flash", "Latest fast model"),
+        ]
+
+    def _configure_secretary(self) -> None:
+        """Configure secretary module with its own operator and model."""
+        print("\n" + "=" * 80)
+        print("  📋 SECRETARY SETUP")
+        print("=" * 80)
+        print("\n  Secretary module handles documentation and analysis tasks.")
+        print("  It can use a different operator/model than the coder module.")
+
+        # Current secretary config
+        current_operator = self.config.get("NINJA_SECRETARY_OPERATOR", "")
+        current_model = self.config.get("NINJA_SECRETARY_MODEL", "")
+        coder_operator = self.config.get("NINJA_CODE_BIN", "opencode")
+        coder_model = self.config.get("NINJA_CODER_MODEL", "")
+
+        print("\n📋 Current Configuration:")
+        print(f"   Coder Operator:     {coder_operator}")
+        print(f"   Coder Model:        {coder_model or 'Not set'}")
+        print(f"   Secretary Operator: {current_operator or 'Same as coder'}")
+        print(f"   Secretary Model:    {current_model or 'Not set'}")
+
+        # Ask if secretary should use same operator as coder
+        use_same_operator = inquirer.confirm(
+            message="Use same operator as coder for secretary?",
+            default=True,
+        ).execute()
+
+        if use_same_operator:
+            secretary_operator = coder_operator
+            self._save_config("NINJA_SECRETARY_OPERATOR", coder_operator)
+            print(f"\n✅ Secretary operator: {coder_operator} (same as coder)")
+        else:
+            # Select different operator for secretary
+            tools = self._detect_installed_tools()
+            operator_info = {
+                "opencode": ("OpenCode", "Multi-provider CLI"),
+                "aider": ("Aider", "OpenRouter-based CLI"),
+                "claude": ("Claude Code", "Anthropic's official CLI"),
+                "gemini": ("Gemini CLI", "Google native CLI"),
+            }
+
+            choices = []
+            for name, path in tools.items():
+                info = operator_info.get(name, (name.title(), "Unknown"))
+                display_name, desc = info
+                choices.append(Choice(name, name=f"{display_name:15} • {desc}"))
+
+            choices.append(Separator())
+            choices.append(Choice(None, name="<- Keep current"))
+
+            secretary_operator = inquirer.select(
+                message="Select secretary operator:",
+                choices=choices,
+                pointer="►",
+            ).execute()
+
+            if secretary_operator:
+                self._save_config("NINJA_SECRETARY_OPERATOR", secretary_operator)
+                print(f"\n✅ Secretary operator: {secretary_operator}")
+            else:
+                secretary_operator = current_operator or coder_operator
+
+        # Get provider for secretary operator
+        secretary_provider = None
+        if secretary_operator == "opencode":
+            secretary_provider = self.config.get("NINJA_CODER_PROVIDER", "anthropic")
+        elif secretary_operator == "claude":
+            secretary_provider = "anthropic"
+        elif secretary_operator == "aider":
+            secretary_provider = "openrouter"
+        elif secretary_operator == "gemini":
+            secretary_provider = "google"
+
+        # Select secretary model
+        print("\n" + "-" * 50)
+        print("  SECRETARY MODEL SELECTION")
+        print("-" * 50)
+
+        # Ask if secretary should use same model as coder
+        use_same_model = inquirer.confirm(
+            message="Use same model as coder for secretary?",
+            default=False,
+        ).execute()
+
+        if use_same_model and coder_model:
+            self._save_config("NINJA_SECRETARY_MODEL", coder_model)
+            print(f"\n✅ Secretary model: {coder_model} (same as coder)")
+        else:
+            # Fetch available models
+            print(f"\n🔄 Loading models from {secretary_operator}/{secretary_provider}...")
+
+            try:
+                models = get_provider_models(secretary_operator, secretary_provider)
+            except Exception as e:
+                print(f"\n⚠️  Failed to load models: {e}")
+                models = self._get_fallback_models(secretary_provider)
+
+            if not models:
+                models = self._get_fallback_models(secretary_provider)
+
+            print(f"   Found {len(models)} models\n")
+
+            model_choices = self._build_model_choices(models, secretary_provider)
+            model_choices.append(Separator())
+            model_choices.append(Choice("__custom__", name="📝 Enter custom model name"))
+            model_choices.append(Choice(None, name="<- Skip"))
+
+            secretary_model = inquirer.select(
+                message="Select secretary model:",
+                choices=model_choices,
+                pointer="►",
+            ).execute()
+
+            if secretary_model == "__custom__":
+                secretary_model = inquirer.text(
+                    message="Enter custom model name:",
+                    default=current_model,
+                    instruction="e.g., anthropic/claude-haiku-4.5",
+                ).execute()
+
+            if secretary_model:
+                self._save_config("NINJA_SECRETARY_MODEL", secretary_model)
+                print(f"\n✅ Secretary model: {secretary_model}")
+
+        print("\n" + "=" * 80)
+        print("  ✅ SECRETARY SETUP COMPLETE")
+        print("=" * 80)
+        print(f"\n   Operator: {self.config.get('NINJA_SECRETARY_OPERATOR', coder_operator)}")
+        print(f"   Model:    {self.config.get('NINJA_SECRETARY_MODEL', 'Not set')}")
 
     def _configure_models(self) -> None:
         """Configure models for each module with proper model picker."""
@@ -582,18 +1102,14 @@ class PowerConfigurator:
                 provider_name = provider.upper() if provider != "native" else "Z.AI / GLM"
                 model_choices.append(Separator(f"── {provider_name} ──"))
                 current_provider = provider
-            model_choices.append(
-                Choice(value=model_id, name=f"{model_name:25} • {model_desc}")
-            )
+            model_choices.append(Choice(value=model_id, name=f"{model_name:25} • {model_desc}"))
 
         # Add Z.ai models for coder
         if module == "coder":
             model_choices.append(Separator())
             model_choices.append(Separator("── Z.AI / GLM (OpenCode Native) ──"))
             for model_id, model_name, model_desc in ZAI_MODELS:
-                model_choices.append(
-                    Choice(value=model_id, name=f"{model_name:25} • {model_desc}")
-                )
+                model_choices.append(Choice(value=model_id, name=f"{model_name:25} • {model_desc}"))
 
         model_choices.append(Separator())
         model_choices.append(Choice(value="__custom__", name="📝 Enter custom model name"))
