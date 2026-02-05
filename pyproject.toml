@@ -63,6 +63,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.8.0",
     "types-requests>=2.31.0",
+    "types-PyYAML>=6.0.0",
 ]
 all = [
     "ninja-mcp[coder,researcher,secretary,notebooks,dev]",
@@ -155,6 +156,8 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.11"
+files = ["src"]
+exclude = ["tests", "notebooks", "scripts"]
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -177,6 +180,7 @@ module = [
     "ninja_common.rate_balancer",
     "ninja_common.daemon",
     "ninja_common.config_cli",
+    "ninja_common.structured_logger",
     "ninja_secretary.*",
     "ninja_researcher.server",
     "ninja_researcher.tools",
@@ -184,6 +188,14 @@ module = [
     "ninja_coder.server",
     "ninja_coder.driver",
     "ninja_coder.tools",
+    "ninja_coder.safety",
+    "ninja_coder.strategies.*",
+    "ninja_coder.benchmark.*",
+    "ninja_coder.daemon",
+    "ninja_coder.model_selector",
+    "ninja_prompts.*",
+    "ninja_resources.*",
+    "ninja_config.*",
 ]
 ignore_errors = true
 
