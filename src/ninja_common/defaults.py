@@ -42,8 +42,10 @@ RECOMMENDED_MODELS = {
     "deepseek/deepseek-chat": "DeepSeek Chat - general purpose",
     "deepseek/deepseek-coder": "DeepSeek Coder - specialized for code",
     # Google models (via OpenRouter)
-    "google/gemini-pro-1.5": "Gemini Pro 1.5 - Google's advanced model",
-    "google/gemini-2.0-flash": "Gemini 2.0 Flash - latest fast model",
+    "google/gemini-3-flash": "Gemini 3 Flash - latest fast model (78% SWE-bench)",
+    "google/gemini-3-pro": "Gemini 3 Pro - most capable Google model",
+    "google/gemini-2.5-flash": "Gemini 2.5 Flash - fast and efficient",
+    "google/gemini-2.5-pro": "Gemini 2.5 Pro - advanced reasoning",
     # Meta models (via OpenRouter)
     "meta-llama/llama-3.1-70b-instruct": "Llama 3.1 70B - Meta's open model",
     "meta-llama/llama-3.3-70b-instruct": "Llama 3.3 70B - latest Llama",
@@ -96,13 +98,14 @@ ANTHROPIC_MODELS = [
 ]
 
 # =============================================================================
-# GOOGLE MODELS (Native API)
+# GOOGLE MODELS (Native API via Gemini CLI)
 # =============================================================================
 
 GOOGLE_MODELS = [
-    ("google/gemini-2.0-flash", "Gemini 2.0 Flash", "Latest fast model"),
-    ("google/gemini-2.5-pro", "Gemini 2.5 Pro", "Advanced reasoning"),
-    ("google/gemini-1.5-pro", "Gemini 1.5 Pro", "Large context window"),
+    ("gemini-3-flash", "Gemini 3 Flash", "Latest fast model - 78% SWE-bench"),
+    ("gemini-3-pro", "Gemini 3 Pro", "Most capable - advanced math & coding"),
+    ("gemini-2.5-flash", "Gemini 2.5 Flash", "Fast and efficient"),
+    ("gemini-2.5-pro", "Gemini 2.5 Pro", "Advanced reasoning"),
 ]
 
 # =============================================================================
@@ -123,7 +126,7 @@ OPENAI_MODELS = [
 GITHUB_COPILOT_MODELS = [
     ("github-copilot/claude-sonnet-4.5", "Claude Sonnet 4.5", "Via Copilot"),
     ("github-copilot/gpt-4o", "GPT-4o", "Via Copilot"),
-    ("github-copilot/gemini-2.5-pro", "Gemini 2.5 Pro", "Via Copilot"),
+    ("github-copilot/gemini-3-pro", "Gemini 3 Pro", "Via Copilot"),
 ]
 
 # =============================================================================
@@ -208,9 +211,10 @@ OPENROUTER_MODELS = [
     ("deepseek/deepseek-r1", "DeepSeek R1", "Reasoning model"),
     ("deepseek/deepseek-r1:free", "DeepSeek R1 (Free)", "Reasoning - Free tier"),
     # Google models
-    ("google/gemini-2.0-flash", "Gemini 2.0 Flash", "Latest fast model"),
+    ("google/gemini-3-flash", "Gemini 3 Flash", "Latest fast model - 78% SWE-bench"),
+    ("google/gemini-3-pro", "Gemini 3 Pro", "Most capable Google model"),
+    ("google/gemini-2.5-flash", "Gemini 2.5 Flash", "Fast and efficient"),
     ("google/gemini-2.5-pro", "Gemini 2.5 Pro", "Advanced reasoning"),
-    ("google/gemini-pro-1.5", "Gemini Pro 1.5", "Large context window"),
     # Meta Llama models
     ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B", "Latest Llama"),
     ("meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B (Free)", "Latest Llama - Free tier"),
@@ -385,6 +389,44 @@ MODEL_DATABASE = {
         "cost": "low",
         "livebench_score": 80.0,
         "supports_coding_plan_api": False,
+    },
+    # Gemini models (via Gemini CLI or OpenRouter)
+    "gemini-3-flash": {
+        "provider": "google",
+        "best_for": ["quick", "parallel", "coding"],
+        "concurrent_limit": 10,
+        "cost": "low",
+        "livebench_score": 85.0,
+        "swe_bench_score": 78.0,
+        "supports_coding_plan_api": False,
+        "operator": "gemini",
+    },
+    "gemini-3-pro": {
+        "provider": "google",
+        "best_for": ["sequential", "coding", "math"],
+        "concurrent_limit": 5,
+        "cost": "high",
+        "livebench_score": 89.0,
+        "supports_coding_plan_api": False,
+        "operator": "gemini",
+    },
+    "gemini-2.5-flash": {
+        "provider": "google",
+        "best_for": ["quick", "parallel"],
+        "concurrent_limit": 15,
+        "cost": "very_low",
+        "livebench_score": 80.0,
+        "supports_coding_plan_api": False,
+        "operator": "gemini",
+    },
+    "gemini-2.5-pro": {
+        "provider": "google",
+        "best_for": ["sequential", "reasoning"],
+        "concurrent_limit": 5,
+        "cost": "medium",
+        "livebench_score": 86.0,
+        "supports_coding_plan_api": False,
+        "operator": "gemini",
     },
     # Claude Code models (native Anthropic via Claude CLI)
     "claude-sonnet-4": {
