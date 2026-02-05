@@ -25,7 +25,7 @@ class PromptTemplate(BaseModel):
     variables: list[PromptVariable] = Field(..., description="List of variables used in the prompt")
     tags: list[str] = Field(..., description="List of tags for categorization")
     scope: Literal["user", "global"] = Field(..., description="Scope of the prompt")
-    created: datetime = Field(..., description="Creation timestamp")
+    created: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
 
 
 class PromptRegistryRequest(BaseModel):
