@@ -27,6 +27,7 @@ except ImportError:
         sys.exit(1)
 
 from ninja_common.config_manager import ConfigManager
+from ninja_common.defaults import OPENROUTER_MODELS, PERPLEXITY_MODELS, ZAI_MODELS
 
 
 class PowerConfigurator:
@@ -524,22 +525,22 @@ class PowerConfigurator:
             print("   Go to 'Model Selection' to choose new models for modules")
 
     def _configure_models(self) -> None:
-        """Configure models for each module."""
+        """Configure models for each module with proper model picker."""
         print("\n" + "=" * 80)
         print("  🤖 MODEL CONFIGURATION")
         print("=" * 80)
 
         modules = [
-            ("coder", "AI Code Assistant"),
-            ("researcher", "Web Research Engine"),
-            ("secretary", "Documentation & Analysis"),
-            ("resources", "Resource Templates"),
-            ("prompts", "Prompt Management"),
+            ("coder", "AI Code Assistant", OPENROUTER_MODELS),
+            ("researcher", "Web Research Engine", PERPLEXITY_MODELS),
+            ("secretary", "Documentation & Analysis", OPENROUTER_MODELS),
+            ("resources", "Resource Templates", OPENROUTER_MODELS),
+            ("prompts", "Prompt Management", OPENROUTER_MODELS),
         ]
 
         # Show current models
         print("\n📋 Current Models:")
-        for module, desc in modules:
+        for module, desc, _ in modules:
             key = f"NINJA_{module.upper()}_MODEL"
             current = self.config.get(key, "Not set")
             print(f"  {desc:25} {current}")
@@ -547,10 +548,10 @@ class PowerConfigurator:
         # Select module to configure
         choices = [
             Choice(
-                value=(module, desc),
+                value=(module, desc, models),
                 name=f"{desc:25} [{self.config.get(f'NINJA_{module.upper()}_MODEL', 'Not set')}]",
             )
-            for module, desc in modules
+            for module, desc, models in modules
         ]
         choices.append(Separator())
         choices.append(Choice(value=None, name="← Back"))
@@ -564,24 +565,64 @@ class PowerConfigurator:
         if not selected:
             return
 
-        module, desc = selected
+        module, desc, available_models = selected
         key = f"NINJA_{module.upper()}_MODEL"
 
         print(f"\n🎯 {desc} Model Configuration")
 
-        # Get model name
+        # Build model choices grouped by provider
+        model_choices = []
+        current_provider = None
+
+        for model_id, model_name, model_desc in available_models:
+            provider = model_id.split("/")[0] if "/" in model_id else "native"
+            if provider != current_provider:
+                if current_provider is not None:
+                    model_choices.append(Separator())
+                provider_name = provider.upper() if provider != "native" else "Z.AI / GLM"
+                model_choices.append(Separator(f"── {provider_name} ──"))
+                current_provider = provider
+            model_choices.append(
+                Choice(value=model_id, name=f"{model_name:25} • {model_desc}")
+            )
+
+        # Add Z.ai models for coder
+        if module == "coder":
+            model_choices.append(Separator())
+            model_choices.append(Separator("── Z.AI / GLM (OpenCode Native) ──"))
+            for model_id, model_name, model_desc in ZAI_MODELS:
+                model_choices.append(
+                    Choice(value=model_id, name=f"{model_name:25} • {model_desc}")
+                )
+
+        model_choices.append(Separator())
+        model_choices.append(Choice(value="__custom__", name="📝 Enter custom model name"))
+        model_choices.append(Choice(value=None, name="← Back"))
+
         current_model = self.config.get(key, "")
-        model = inquirer.text(
-            message="Enter model name (or leave empty to keep current):",
-            default=current_model,
-            instruction="e.g., anthropic/claude-sonnet-4, openai/gpt-4o, google/gemini-2.0-flash-exp",
+        selected_model = inquirer.select(
+            message=f"Select model for {desc}:",
+            choices=model_choices,
+            pointer="►",
+            default=current_model if current_model in [m[0] for m in available_models] else None,
         ).execute()
 
-        if model:
-            self._save_config(key, model)
-            print(f"\n✅ {desc} model updated to: {model}")
-        elif model == "":
-            print("\n💡  No changes made")
+        if selected_model is None:
+            return
+
+        if selected_model == "__custom__":
+            # Allow custom model input
+            selected_model = inquirer.text(
+                message="Enter custom model name:",
+                default=current_model,
+                instruction="e.g., anthropic/claude-sonnet-4, qwen/qwen3-235b-a22b",
+            ).execute()
+
+        if selected_model:
+            self._save_config(key, selected_model)
+            print(f"\n✅ {desc} model updated to: {selected_model}")
+        else:
+            print("\n💡 No changes made")
 
     def _configure_task_based_models(self) -> None:
         """Configure task-based model selection."""
