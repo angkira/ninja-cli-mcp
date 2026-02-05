@@ -32,6 +32,7 @@ OPENCODE_PROVIDERS = [
     ("openai", "OpenAI", "GPT models - native API"),
     ("github-copilot", "GitHub Copilot", "Via GitHub OAuth"),
     ("openrouter", "OpenRouter", "Multi-provider API - Qwen, DeepSeek, Llama, etc."),
+    ("zai", "Z.ai / Zhipu AI", "GLM models - native Coding Plan API support"),
 ]
 
 

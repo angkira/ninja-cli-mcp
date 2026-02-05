@@ -15,7 +15,7 @@ DEFAULT_CODER_MODEL = "anthropic/claude-haiku-4.5"
 # Fallback models if primary is unavailable (in order of preference)
 FALLBACK_CODER_MODELS = [
     "anthropic/claude-3-5-haiku-20241022",
-    "anthropic/claude-sonnet-4",
+    "anthropic/claude-sonnet-4-20250514",
     "openai/gpt-4o-mini",
 ]
 
@@ -23,7 +23,7 @@ FALLBACK_CODER_MODELS = [
 RECOMMENDED_MODELS = {
     # Claude models (Anthropic via OpenRouter)
     "anthropic/claude-haiku-4.5": "Claude Haiku 4.5 - fast and capable",
-    "anthropic/claude-sonnet-4": "Claude Sonnet 4 - excellent for complex code",
+    "anthropic/claude-sonnet-4-20250514": "Claude Sonnet 4 - excellent for complex code",
     "anthropic/claude-opus-4": "Claude Opus 4 - most capable",
     # GPT models (OpenAI via OpenRouter)
     "openai/gpt-4o": "GPT-4o - OpenAI's flagship model",
@@ -61,7 +61,7 @@ RECOMMENDED_MODELS = {
 
 # Default models for different task types
 DEFAULT_MODEL_QUICK = "anthropic/claude-haiku-4.5"  # Fast simple tasks
-DEFAULT_MODEL_SEQUENTIAL = "anthropic/claude-sonnet-4"  # Complex multi-step tasks
+DEFAULT_MODEL_SEQUENTIAL = "anthropic/claude-sonnet-4-20250514"  # Complex multi-step tasks
 DEFAULT_MODEL_PARALLEL = "anthropic/claude-haiku-4.5"  # High-concurrency parallel tasks
 
 # =============================================================================
@@ -74,6 +74,7 @@ OPENCODE_PROVIDERS = [
     ("openai", "OpenAI", "GPT models - native API"),
     ("github-copilot", "GitHub Copilot", "Via GitHub OAuth"),
     ("openrouter", "OpenRouter", "Multi-provider API - Qwen3, DeepSeek, Llama, etc."),
+    ("zai", "Z.ai / Zhipu AI", "GLM models - native Coding Plan API support"),
 ]
 
 # =============================================================================
@@ -91,7 +92,7 @@ CLAUDE_CODE_MODELS = [
 # =============================================================================
 
 ANTHROPIC_MODELS = [
-    ("anthropic/claude-sonnet-4", "Claude Sonnet 4", "Latest balanced model"),
+    ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet 4", "Latest balanced model"),
     ("anthropic/claude-opus-4", "Claude Opus 4", "Most powerful"),
     ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast & cost-effective"),
     ("anthropic/claude-3-7-sonnet-latest", "Claude 3.7 Sonnet", "Previous gen balanced"),
@@ -158,7 +159,7 @@ ZAI_MODELS = [
 
 OPENROUTER_MODELS = [
     # Claude models (Anthropic)
-    ("anthropic/claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced performance"),
+    ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet 4", "Latest Claude - Balanced performance"),
     ("anthropic/claude-opus-4", "Claude Opus 4", "Most powerful Claude model"),
     ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast & cost-effective"),
     # GPT models (OpenAI)
@@ -308,7 +309,7 @@ MODEL_DATABASE = {
         "supports_coding_plan_api": False,
     },
     # OpenRouter models (via Aider)
-    "anthropic/claude-sonnet-4": {
+    "anthropic/claude-sonnet-4-20250514": {
         "provider": "openrouter",
         "best_for": ["sequential", "quick"],
         "concurrent_limit": 5,
@@ -500,4 +501,5 @@ PROVIDER_MODELS = {
     "openai": OPENAI_MODELS,
     "github-copilot": GITHUB_COPILOT_MODELS,
     "openrouter": OPENROUTER_MODELS,
+    "zai": ZAI_MODELS,
 }
