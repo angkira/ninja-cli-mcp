@@ -2,20 +2,16 @@
 Powerful interactive configurator for Ninja MCP with TUI interface.
 """
 
-import getpass
-import json
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+
 
 try:
-    import InquirerPy.inquirer as inquirer
+    from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
     from InquirerPy.separator import Separator
-    from InquirerPy.validator import PathValidator
 
     HAS_INQUIRERPY = True
 except ImportError:
@@ -23,12 +19,11 @@ except ImportError:
         from InquirerPy import inquirer
         from InquirerPy.base.control import Choice
         from InquirerPy.separator import Separator
-        from InquirerPy.validator import PathValidator
 
         HAS_INQUIRERPY = True
     except ImportError:
         HAS_INQUIRERPY = False
-        print("⚠️  InquirerPy not installed. Install with: pip install InquirerPy")
+        print("Warning: InquirerPy not installed. Install with: pip install InquirerPy")
         sys.exit(1)
 
 from ninja_common.config_manager import ConfigManager
@@ -37,12 +32,12 @@ from ninja_common.config_manager import ConfigManager
 class PowerConfigurator:
     """Powerful interactive configurator for Ninja MCP."""
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: str | None = None):
         """Initialize configurator."""
         self.config_manager = ConfigManager(config_path)
         self.config = self._load_current_config()
 
-    def _load_current_config(self) -> Dict[str, str]:
+    def _load_current_config(self) -> dict[str, str]:
         """Load current configuration."""
         return self.config_manager.list_all()
 
@@ -57,7 +52,7 @@ class PowerConfigurator:
             return "*** NOT SET ***"
         return f"{value[:4]}...{value[-4:]}"
 
-    def _detect_installed_tools(self) -> Dict[str, str]:
+    def _detect_installed_tools(self) -> dict[str, str]:
         """Detect installed AI coding tools."""
         tools = {}
 
@@ -83,7 +78,7 @@ class PowerConfigurator:
 
         return tools
 
-    def _check_opencode_auth(self) -> List[str]:
+    def _check_opencode_auth(self) -> list[str]:
         """Check OpenCode authentication status."""
         if not shutil.which("opencode"):
             return []
@@ -180,7 +175,7 @@ class PowerConfigurator:
         quick_model = self.config.get("NINJA_MODEL_QUICK", "Not set")
         sequential_model = self.config.get("NINJA_MODEL_SEQUENTIAL", "Not set")
 
-        print(f"\n📋 Current Status:")
+        print("\n📋 Current Status:")
         print(f"   🔑 API Keys:     {api_key_status}")
         print(f"   🎯 Operator:     {operator_status}")
         print(f"   🤖 Coder Model:  {model_status}")
@@ -199,7 +194,10 @@ class PowerConfigurator:
                 name="🎯 Operator Configuration  •  Choose your AI coding assistant",
             ),
             Choice(value="models", name="🤖 Model Selection  •  Set models for each module"),
-            Choice(value="task_models", name="📊 Task-Based Models  •  Configure models for different task types"),
+            Choice(
+                value="task_models",
+                name="📊 Task-Based Models  •  Configure models for different task types",
+            ),
             Choice(value="search", name="🔍 Search Provider  •  Configure web search capabilities"),
             Choice(
                 value="daemon", name="⚙️  Daemon Settings  •  Performance and port configuration"
@@ -279,12 +277,12 @@ class PowerConfigurator:
         print(f"\n📁 Configuration file: {self.config_manager.config_file}")
 
         # Show system status
-        print(f"\n📊 System Status:")
+        print("\n📊 System Status:")
         tools = self._detect_installed_tools()
         if tools:
             print(f"  🛠️  Installed Tools: {', '.join(tools.keys())}")
         else:
-            print(f"  🛠️  Installed Tools: None detected")
+            print("  🛠️  Installed Tools: None detected")
 
         # Check daemon status
         try:
@@ -292,13 +290,13 @@ class PowerConfigurator:
                 ["ninja-daemon", "status"], capture_output=True, text=True, check=False, timeout=3
             )
             if result.returncode == 0:
-                print(f"  🚀 Daemon Status: Running")
+                print("  🚀 Daemon Status: Running")
             else:
-                print(f"  🚀 Daemon Status: Stopped")
+                print("  🚀 Daemon Status: Stopped")
         except FileNotFoundError:
-            print(f"  🚀 Daemon Status: Not installed")
+            print("  🚀 Daemon Status: Not installed")
         except Exception:
-            print(f"  🚀 Daemon Status: Unknown")
+            print("  🚀 Daemon Status: Unknown")
 
     def _manage_api_keys(self) -> None:
         """Manage API keys interactively."""
@@ -398,7 +396,7 @@ class PowerConfigurator:
                 self._save_config(key, new_value)
                 print(f"\n✅ {name} API key updated successfully")
             else:
-                print("\nℹ️  No changes made")
+                print("\n💡  No changes made")
 
         elif action == "remove":
             confirm = inquirer.confirm(
@@ -421,9 +419,9 @@ class PowerConfigurator:
                             f.writelines(lines)
                     print(f"\n✅ {name} API key removed")
                 else:
-                    print(f"\nℹ️  {name} API key was not set")
+                    print(f"\n💡  {name} API key was not set")
             else:
-                print("\nℹ️  No changes made")
+                print("\n💡  No changes made")
 
     def _configure_operators(self) -> None:
         """Configure operator settings with provider-first flow."""
@@ -437,7 +435,11 @@ class PowerConfigurator:
         # Operator descriptions with provider info
         operator_info = {
             "aider": ("Aider", "OpenRouter-based CLI", ["openrouter"]),
-            "opencode": ("OpenCode", "Multi-provider CLI (75+ LLMs)", ["anthropic", "google", "openai", "github", "zai"]),
+            "opencode": (
+                "OpenCode",
+                "Multi-provider CLI (75+ LLMs)",
+                ["anthropic", "google", "openai", "github", "zai"],
+            ),
             "gemini": ("Gemini CLI", "Google native CLI", ["google"]),
             "claude": ("Claude Code", "Anthropic's official CLI", ["anthropic"]),
             "cursor": ("Cursor", "AI code editor", ["openai", "anthropic"]),
@@ -459,11 +461,12 @@ class PowerConfigurator:
         # Build choices with provider info
         choices = []
         for name, path in tools.items():
-            status = "✓ Current" if name == current_operator else "Available"
             info = operator_info.get(name, (name.title(), "Unknown", []))
             display_name, desc, providers = info
             provider_str = ", ".join(providers) if providers else "unknown"
-            choices.append(Choice(name, name=f"{display_name:15} • {desc:30} [Providers: {provider_str}]"))
+            choices.append(
+                Choice(name, name=f"{display_name:15} • {desc:30} [Providers: {provider_str}]")
+            )
 
         choices.append(Separator())
         choices.append(Choice(None, name="← Back"))
@@ -495,7 +498,14 @@ class PowerConfigurator:
                 print("\n💡 Set OPENROUTER_API_KEY in 'API Key Management'")
 
             # Clear model selection when changing operator
-            model_keys = [k for k in self.config.keys() if "MODEL" in k and k != "NINJA_MODEL_QUICK" and k != "NINJA_MODEL_SEQUENTIAL" and k != "NINJA_MODEL_PARALLEL"]
+            model_keys = [
+                k
+                for k in self.config
+                if "MODEL" in k
+                and k != "NINJA_MODEL_QUICK"
+                and k != "NINJA_MODEL_SEQUENTIAL"
+                and k != "NINJA_MODEL_PARALLEL"
+            ]
             for model_key in model_keys:
                 if model_key in self.config:
                     del self.config[model_key]
@@ -510,9 +520,7 @@ class PowerConfigurator:
                         with open(config_file, "w") as f:
                             f.writelines(lines)
 
-            print(
-                "\nℹ️  Module model selections cleared (task-based models preserved)"
-            )
+            print("\n💡  Module model selections cleared (task-based models preserved)")
             print("   Go to 'Model Selection' to choose new models for modules")
 
     def _configure_models(self) -> None:
@@ -573,7 +581,7 @@ class PowerConfigurator:
             self._save_config(key, model)
             print(f"\n✅ {desc} model updated to: {model}")
         elif model == "":
-            print("\nℹ️  No changes made")
+            print("\n💡  No changes made")
 
     def _configure_task_based_models(self) -> None:
         """Configure task-based model selection."""
@@ -584,8 +592,18 @@ class PowerConfigurator:
         # Show current task models
         task_models = [
             ("NINJA_MODEL_QUICK", "Quick Tasks", "Fast simple tasks", "anthropic/claude-haiku-4.5"),
-            ("NINJA_MODEL_SEQUENTIAL", "Sequential Tasks", "Complex multi-step tasks", "anthropic/claude-sonnet-4"),
-            ("NINJA_MODEL_PARALLEL", "Parallel Tasks", "High concurrency parallel tasks", "anthropic/claude-haiku-4.5"),
+            (
+                "NINJA_MODEL_SEQUENTIAL",
+                "Sequential Tasks",
+                "Complex multi-step tasks",
+                "anthropic/claude-sonnet-4",
+            ),
+            (
+                "NINJA_MODEL_PARALLEL",
+                "Parallel Tasks",
+                "High concurrency parallel tasks",
+                "anthropic/claude-haiku-4.5",
+            ),
         ]
 
         print("\n📋 Current Task Models:")
@@ -601,12 +619,23 @@ class PowerConfigurator:
 
         # Select what to configure
         choices = [
-            Choice(value="quick", name="⚡ Quick Tasks Model     • Fast simple tasks (default: Claude Haiku 4.5)"),
-            Choice(value="sequential", name="📊 Sequential Model     • Complex multi-step (default: Claude Sonnet 4)"),
-            Choice(value="parallel", name="🔀 Parallel Model       • High concurrency (default: Claude Haiku 4.5)"),
+            Choice(
+                value="quick",
+                name="⚡ Quick Tasks Model     • Fast simple tasks (default: Claude Haiku 4.5)",
+            ),
+            Choice(
+                value="sequential",
+                name="📊 Sequential Model     • Complex multi-step (default: Claude Sonnet 4)",
+            ),
+            Choice(
+                value="parallel",
+                name="🔀 Parallel Model       • High concurrency (default: Claude Haiku 4.5)",
+            ),
             Separator(),
             Choice(value="preferences", name="🎯 Model Preferences    • Cost vs Quality toggle"),
-            Choice(value="reset_task_models", name="🔄 Reset to Defaults    • Restore default models"),
+            Choice(
+                value="reset_task_models", name="🔄 Reset to Defaults    • Restore default models"
+            ),
             Separator(),
             Choice(value=None, name="← Back"),
         ]
@@ -649,7 +678,11 @@ class PowerConfigurator:
         # Recommended models based on task type
         if task_type == "quick":
             recommended = [
-                ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast and cost-effective (Recommended)"),
+                (
+                    "anthropic/claude-haiku-4.5",
+                    "Claude Haiku 4.5",
+                    "Fast and cost-effective (Recommended)",
+                ),
                 ("claude-haiku-4", "Claude Haiku 4 (Claude Code)", "Fast via Claude Code"),
                 ("glm-4.0", "GLM-4.0 (z.ai)", "Low cost, fast"),
                 ("openai/gpt-4o-mini", "GPT-4o Mini", "OpenAI's fast model"),
@@ -706,7 +739,10 @@ class PowerConfigurator:
         prefer_quality = self.config.get("NINJA_PREFER_QUALITY", "false").lower() == "true"
 
         choices = [
-            Choice(value="balanced", name="⚖️  Balanced       • Balance between cost and quality (Default)"),
+            Choice(
+                value="balanced",
+                name="⚖️  Balanced       • Balance between cost and quality (Default)",
+            ),
             Choice(value="cost", name="💰 Prefer Cost    • Use cheaper models when possible"),
             Choice(value="quality", name="🏆 Prefer Quality • Use best models for maximum quality"),
         ]
@@ -830,7 +866,7 @@ class PowerConfigurator:
 
         # Show current daemon status
         daemon_enabled = self.config.get("NINJA_ENABLE_DAEMON", "true").lower() == "true"
-        print(f"\n📊 Current Status:")
+        print("\n📊 Current Status:")
         print(f"   Daemon Enabled: {'✓ Yes' if daemon_enabled else '✗ No'}")
 
         daemon_ports = {
@@ -841,7 +877,7 @@ class PowerConfigurator:
             "NINJA_PROMPTS_PORT": 8107,
         }
 
-        print(f"\n🔌 Ports:")
+        print("\n🔌 Ports:")
         for key, default_port in daemon_ports.items():
             current_port = self.config.get(key, str(default_port))
             print(f"   {key.split('_')[1].title():12} {current_port}")
@@ -858,7 +894,7 @@ class PowerConfigurator:
             print(f"\n✅ Daemon {status}")
 
         # Configure ports
-        print(f"\n🔌 Port Configuration:")
+        print("\n🔌 Port Configuration:")
         for key, default_port in daemon_ports.items():
             current_port = int(self.config.get(key, str(default_port)))
             module_name = key.split("_")[1].title()
@@ -899,7 +935,7 @@ class PowerConfigurator:
         if zed_config.exists():
             ide_configs["zed"] = str(zed_config)
 
-        print(f"\n📋 Detected IDE Configurations:")
+        print("\n📋 Detected IDE Configurations:")
         if ide_configs:
             for ide, config_path in ide_configs.items():
                 print(f"   ✓ {ide.title():10} {config_path}")
@@ -930,7 +966,7 @@ class PowerConfigurator:
         elif selected == "opencode":
             self._setup_opencode_integration()
         else:
-            print(f"\nℹ️  {selected.title()} configuration requires manual setup")
+            print(f"\n💡  {selected.title()} configuration requires manual setup")
             print("   Refer to documentation for detailed instructions")
 
     def _setup_claude_integration(self) -> None:
@@ -986,7 +1022,7 @@ class PowerConfigurator:
                 print(f"   ✗ Failed to register {server_name}")
 
         if success_count == len(servers):
-            print(f"\n✅ Claude Code integration completed successfully")
+            print("\n✅ Claude Code integration completed successfully")
         else:
             print(
                 f"\n⚠️  Claude Code integration completed with {success_count}/{len(servers)} servers"
@@ -1170,7 +1206,7 @@ class PowerConfigurator:
             self._save_config(selected_key, new_value)
             print(f"\n✅ {selected_key} updated")
         else:
-            print("\nℹ️  No changes made")
+            print("\n💡  No changes made")
 
     def _reset_configuration(self) -> None:
         """Reset all configuration."""
@@ -1195,10 +1231,10 @@ class PowerConfigurator:
             print("\n✅ Configuration reset successfully")
             print("   Run 'ninja-config configure' to set up again")
         else:
-            print("\nℹ️  Reset cancelled")
+            print("\n💡  Reset cancelled")
 
 
-def run_power_configurator(config_path: Optional[str] = None) -> int:
+def run_power_configurator(config_path: str | None = None) -> int:
     """Run the power configurator."""
     try:
         configurator = PowerConfigurator(config_path)

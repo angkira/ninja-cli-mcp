@@ -206,7 +206,14 @@ class NinjaConfigurator:
         # Check installed operators
         operators = []
         if subprocess.run(["which", "opencode"], capture_output=True, check=False).returncode == 0:
-            operators.append(("opencode", "OpenCode", "Multi-provider CLI (75+ LLMs)", ["anthropic", "google", "openai", "github", "zai"]))
+            operators.append(
+                (
+                    "opencode",
+                    "OpenCode",
+                    "Multi-provider CLI (75+ LLMs)",
+                    ["anthropic", "google", "openai", "github", "zai"],
+                )
+            )
         if subprocess.run(["which", "aider"], capture_output=True, check=False).returncode == 0:
             operators.append(("aider", "Aider", "OpenRouter-based CLI", ["openrouter"]))
         if subprocess.run(["which", "gemini"], capture_output=True, check=False).returncode == 0:
@@ -235,7 +242,9 @@ class NinjaConfigurator:
         choices = []
         for cmd, name, desc, providers in operators:
             provider_str = ", ".join(providers)
-            choices.append(Choice(value=cmd, name=f"{name:15} • {desc}  [Providers: {provider_str}]"))
+            choices.append(
+                Choice(value=cmd, name=f"{name:15} • {desc}  [Providers: {provider_str}]")
+            )
         choices.append(Separator())
         choices.append(Choice(value=None, name="← Back"))
 
@@ -295,7 +304,9 @@ class NinjaConfigurator:
         )
         authenticated = []
         for provider, _, _ in providers:
-            if provider in result.stdout.lower() or (provider == "zai" and "zhipu" in result.stdout.lower()):
+            if provider in result.stdout.lower() or (
+                provider == "zai" and "zhipu" in result.stdout.lower()
+            ):
                 authenticated.append(provider)
                 print(f"  ✓ {provider}")
             else:
