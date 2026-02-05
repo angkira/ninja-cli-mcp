@@ -63,6 +63,18 @@ DEFAULT_MODEL_SEQUENTIAL = "anthropic/claude-sonnet-4"  # Complex multi-step tas
 DEFAULT_MODEL_PARALLEL = "anthropic/claude-haiku-4.5"  # High-concurrency parallel tasks
 
 # =============================================================================
+# OPENCODE PROVIDERS
+# =============================================================================
+
+OPENCODE_PROVIDERS = [
+    ("anthropic", "Anthropic", "Claude models - native API"),
+    ("google", "Google", "Gemini models - native API"),
+    ("openai", "OpenAI", "GPT models - native API"),
+    ("github-copilot", "GitHub Copilot", "Via GitHub OAuth"),
+    ("openrouter", "OpenRouter", "Multi-provider API - Qwen3, DeepSeek, Llama, etc."),
+]
+
+# =============================================================================
 # CLAUDE CODE MODELS (Anthropic native)
 # =============================================================================
 
@@ -70,6 +82,48 @@ CLAUDE_CODE_MODELS = [
     ("claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced performance"),
     ("claude-opus-4", "Claude Opus 4", "Most powerful Claude model"),
     ("claude-haiku-4", "Claude Haiku 4", "Fast & cost-effective"),
+]
+
+# =============================================================================
+# ANTHROPIC MODELS (Native API)
+# =============================================================================
+
+ANTHROPIC_MODELS = [
+    ("anthropic/claude-sonnet-4", "Claude Sonnet 4", "Latest balanced model"),
+    ("anthropic/claude-opus-4", "Claude Opus 4", "Most powerful"),
+    ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast & cost-effective"),
+    ("anthropic/claude-3-7-sonnet-latest", "Claude 3.7 Sonnet", "Previous gen balanced"),
+]
+
+# =============================================================================
+# GOOGLE MODELS (Native API)
+# =============================================================================
+
+GOOGLE_MODELS = [
+    ("google/gemini-2.0-flash", "Gemini 2.0 Flash", "Latest fast model"),
+    ("google/gemini-2.5-pro", "Gemini 2.5 Pro", "Advanced reasoning"),
+    ("google/gemini-1.5-pro", "Gemini 1.5 Pro", "Large context window"),
+]
+
+# =============================================================================
+# OPENAI MODELS (Native API)
+# =============================================================================
+
+OPENAI_MODELS = [
+    ("openai/gpt-4o", "GPT-4o", "Flagship multimodal"),
+    ("openai/gpt-4o-mini", "GPT-4o Mini", "Fast and cheap"),
+    ("openai/o1", "O1", "Reasoning model"),
+    ("openai/o3-mini", "O3 Mini", "Latest reasoning"),
+]
+
+# =============================================================================
+# GITHUB COPILOT MODELS (Via GitHub OAuth)
+# =============================================================================
+
+GITHUB_COPILOT_MODELS = [
+    ("github-copilot/claude-sonnet-4.5", "Claude Sonnet 4.5", "Via Copilot"),
+    ("github-copilot/gpt-4o", "GPT-4o", "Via Copilot"),
+    ("github-copilot/gemini-2.5-pro", "Gemini 2.5 Pro", "Via Copilot"),
 ]
 
 # =============================================================================
@@ -111,24 +165,61 @@ OPENROUTER_MODELS = [
     ("openai/o3-mini", "O3 Mini", "Latest OpenAI reasoning model"),
     # Qwen 3 models (Latest generation)
     ("qwen/qwen3-235b-a22b", "Qwen3 235B", "Most powerful Qwen - 235B MoE"),
+    ("qwen/qwen3-235b-a22b:free", "Qwen3 235B (Free)", "Most powerful Qwen - Free tier"),
+    ("qwen/qwen3-max", "Qwen3 Max", "Maximum capability Qwen3"),
     ("qwen/qwen3-32b", "Qwen3 32B", "Balanced performance"),
+    ("qwen/qwen3-32b:free", "Qwen3 32B (Free)", "Balanced performance - Free tier"),
     ("qwen/qwen3-30b-a3b", "Qwen3 30B A3B", "Efficient MoE model"),
+    ("qwen/qwen3-30b-a3b:free", "Qwen3 30B A3B (Free)", "Efficient MoE - Free tier"),
     ("qwen/qwen3-14b", "Qwen3 14B", "Good balance of speed/quality"),
+    ("qwen/qwen3-14b:free", "Qwen3 14B (Free)", "Good balance - Free tier"),
     ("qwen/qwen3-8b", "Qwen3 8B", "Fast and capable"),
+    ("qwen/qwen3-8b:free", "Qwen3 8B (Free)", "Fast and capable - Free tier"),
     ("qwen/qwen3-4b", "Qwen3 4B", "Lightweight and fast"),
+    ("qwen/qwen3-4b:free", "Qwen3 4B (Free)", "Lightweight - Free tier"),
+    ("qwen/qwen3-1.7b:free", "Qwen3 1.7B (Free)", "Ultra-fast - Free tier"),
+    # Qwen 3 Coder models (Specialized for code)
+    ("qwen/qwen3-coder-480b-a35b", "Qwen3 Coder 480B", "Most powerful coding model"),
+    (
+        "qwen/qwen3-coder-480b-a35b:free",
+        "Qwen3 Coder 480B (Free)",
+        "Most powerful coder - Free tier",
+    ),
+    ("qwen/qwen3-coder-32b", "Qwen3 Coder 32B", "Balanced coding model"),
+    ("qwen/qwen3-coder-32b:free", "Qwen3 Coder 32B (Free)", "Balanced coder - Free tier"),
+    ("qwen/qwen3-coder-14b", "Qwen3 Coder 14B", "Fast coding model"),
+    ("qwen/qwen3-coder-8b", "Qwen3 Coder 8B", "Lightweight coding model"),
+    # Qwen 3 Thinking/Reasoning models
+    ("qwen/qwen3-235b-a22b:thinking", "Qwen3 235B Thinking", "Deep reasoning mode"),
+    ("qwen/qwen3-32b:thinking", "Qwen3 32B Thinking", "Reasoning mode"),
     # Qwen 2.5 models
     ("qwen/qwen-2.5-coder-32b-instruct", "Qwen 2.5 Coder 32B", "Large coding model"),
+    (
+        "qwen/qwen-2.5-coder-32b-instruct:free",
+        "Qwen 2.5 Coder 32B (Free)",
+        "Large coding - Free tier",
+    ),
     ("qwen/qwen-2.5-72b-instruct", "Qwen 2.5 72B", "Large general model"),
+    ("qwen/qwen-2.5-72b-instruct:free", "Qwen 2.5 72B (Free)", "Large general - Free tier"),
     # DeepSeek models
     ("deepseek/deepseek-chat", "DeepSeek Chat", "General purpose chat"),
+    ("deepseek/deepseek-chat:free", "DeepSeek Chat (Free)", "General purpose - Free tier"),
     ("deepseek/deepseek-coder", "DeepSeek Coder", "Specialized for code"),
     ("deepseek/deepseek-r1", "DeepSeek R1", "Reasoning model"),
+    ("deepseek/deepseek-r1:free", "DeepSeek R1 (Free)", "Reasoning - Free tier"),
     # Google models
     ("google/gemini-2.0-flash", "Gemini 2.0 Flash", "Latest fast model"),
-    ("google/gemini-pro-1.5", "Gemini Pro 1.5", "Advanced model"),
+    ("google/gemini-2.5-pro", "Gemini 2.5 Pro", "Advanced reasoning"),
+    ("google/gemini-pro-1.5", "Gemini Pro 1.5", "Large context window"),
     # Meta Llama models
     ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B", "Latest Llama"),
+    ("meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B (Free)", "Latest Llama - Free tier"),
     ("meta-llama/llama-3.1-70b-instruct", "Llama 3.1 70B", "Proven open model"),
+    (
+        "meta-llama/llama-3.1-70b-instruct:free",
+        "Llama 3.1 70B (Free)",
+        "Proven open model - Free tier",
+    ),
 ]
 
 # Valid OpenRouter providers for model filtering
@@ -355,3 +446,16 @@ MODEL_DATABASE = {
 # Cost vs Quality preference (default: balanced)
 DEFAULT_PREFER_COST = False
 DEFAULT_PREFER_QUALITY = False
+
+# =============================================================================
+# PROVIDER TO MODEL LIST MAPPING
+# =============================================================================
+
+# Maps OpenCode provider names to their available model lists
+PROVIDER_MODELS = {
+    "anthropic": ANTHROPIC_MODELS,
+    "google": GOOGLE_MODELS,
+    "openai": OPENAI_MODELS,
+    "github-copilot": GITHUB_COPILOT_MODELS,
+    "openrouter": OPENROUTER_MODELS,
+}
