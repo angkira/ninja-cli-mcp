@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ninja_coder.daemon import get_daemon
+# Daemon removed - using simple subprocess mode for reliability
 from ninja_coder.strategies.base import (
     CLICapabilities,
     CLICommandResult,
@@ -84,22 +84,10 @@ class OpenCodeStrategy:
 
     Dialogue mode allows persistent conversation across multiple sequential steps.
 
-    Server Mode:
-        Set OPENCODE_SERVER_URL=http://localhost:4096 to connect to a specific
-        OpenCode server. This overrides daemon mode.
-
-        Start server: opencode serve --port 4096
-
-    Daemon Mode (Enabled by Default):
-        OpenCode automatically uses daemon mode with per-repository servers.
-        Benefits:
-        - 50x faster execution (2-8s vs 2-4min per task)
-        - Fixes OpenCode v0.15+ exit regression bug
-        - Automatic server lifecycle management
-        - One server per repo (correct working directory)
-
-        To disable daemon mode, set OPENCODE_DISABLE_DAEMON=true
-        To manually specify a server, set OPENCODE_SERVER_URL=http://localhost:PORT
+    Execution Mode:
+        Uses simple subprocess mode - spawns opencode run for each task.
+        No daemon, no server management, no session complexity.
+        Clean and reliable execution.
     """
 
     def __init__(self, bin_path: str, config: NinjaConfig):
@@ -114,9 +102,7 @@ class OpenCodeStrategy:
         self._session: DialogueSession | None = None
 
         # Check if OpenCode server is enabled via environment
-        self.server_url = os.environ.get("OPENCODE_SERVER_URL", "")
-        if self.server_url:
-            logger.info(f"OpenCode server mode enabled: {self.server_url}")
+        # Server mode removed - using simple subprocess execution
 
         self._capabilities = CLICapabilities(
             supports_streaming=True,
@@ -178,6 +164,8 @@ class OpenCodeStrategy:
         # Model format: provider/model (e.g., anthropic/claude-sonnet-4-5)
         # OpenCode will use native API if available, fallback to OpenRouter if not
 
+        # Simple command - no daemon, no session management, no broken --attach
+        # Just run opencode directly and let it handle everything
         cmd = [
             self.bin_path,
             "run",
@@ -185,33 +173,11 @@ class OpenCodeStrategy:
             model_name,
         ]
 
-        # Use OpenCode daemon for auto-managed servers (50x faster + fixes exit bug)
-        # Daemon mode is enabled by default for OpenCode
-        server_url = self.server_url
-        if not server_url and os.environ.get("OPENCODE_DISABLE_DAEMON", "").lower() not in (
-            "true",
-            "1",
-            "yes",
-        ):
-            try:
-                daemon = get_daemon()
-                server_url = daemon.get_or_start_server(repo_root)
-                logger.info(f"🚀 Using OpenCode daemon: {server_url}")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to start daemon server: {e}, falling back to subprocess mode"
-                )
-
-        # Connect to server if available
-        if server_url:
-            cmd.extend(["--attach", server_url])
-
-        # Session support (only without server mode - sessions don't work with --attach)
-        if not server_url:
-            if session_id:
-                cmd.extend(["--session", session_id])
-            elif continue_last:
-                cmd.append("--continue")
+        # Session support (if explicitly requested)
+        if session_id:
+            cmd.extend(["--session", session_id])
+        elif continue_last:
+            cmd.append("--continue")
 
         # Build enhanced prompt with file context
         # NOTE: We don't use --file flag because it causes OpenCode to interpret
@@ -250,8 +216,6 @@ class OpenCodeStrategy:
                 "timeout": timeout,
                 "session_id": session_id,
                 "continue_last": continue_last,
-                "server_mode": bool(server_url),
-                "server_url": server_url if server_url else None,
             },
         )
 
