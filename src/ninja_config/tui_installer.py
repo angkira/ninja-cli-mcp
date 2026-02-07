@@ -371,7 +371,7 @@ class TUIInstaller:
                     "speed": "⚡ Very Fast",
                 },
                 {
-                    "name": "anthropic/claude-sonnet-4-5",
+                    "name": "anthropic/claude-haiku-4.5",
                     "tier": "🎯 Quality",
                     "price": 3.0,
                     "speed": "⚖️ Balanced",
@@ -385,7 +385,7 @@ class TUIInstaller:
             ],
             "researcher": [
                 {
-                    "name": "anthropic/claude-sonnet-4-5",
+                    "name": "anthropic/claude-haiku-4.5",
                     "tier": "🏆 Recommended",
                     "price": 3.0,
                     "speed": "⚖️ Balanced",
