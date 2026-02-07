@@ -72,6 +72,8 @@ class NinjaConfigurator:
                 self._configure_providers()
             elif action == "search":
                 self._configure_search()
+            elif action == "delete_component":
+                self._delete_component()
             elif action == "show":
                 self._show_config()
             elif action == "reset":
@@ -96,8 +98,9 @@ class NinjaConfigurator:
             ),
             Choice(value="search", name="🔍 Search Settings  •  Configure research provider"),
             Separator(),
+            Choice(value="delete_component", name="🗑️  Delete Component  •  Remove module configuration"),
             Choice(value="show", name="📋 Show Configuration  •  View current settings"),
-            Choice(value="reset", name="🗑️  Reset Configuration  •  Clear all settings"),
+            Choice(value="reset", name="🗑️  Reset All  •  Clear all settings"),
             Separator(),
             Choice(value="exit", name="Exit"),
         ]
@@ -413,6 +416,57 @@ class NinjaConfigurator:
             self.config["NINJA_RESEARCHER_MODEL"] = selected
             self._save_config()
             print(f"\n✓ Researcher model set to: {selected}")
+
+    def _delete_component(self) -> None:
+        """Delete a component's configuration."""
+        from ninja_config.model_selector import delete_component, get_active_modules
+
+        print("\n" + "=" * 70)
+        print("  🗑️  DELETE COMPONENT CONFIGURATION")
+        print("=" * 70 + "\n")
+
+        # Get all known components
+        all_components = [
+            "ninja-coder",
+            "ninja-researcher",
+            "ninja-secretary",
+            "ninja-resources",
+            "ninja-prompts",
+        ]
+        active_modules = get_active_modules()
+
+        # Show which are active
+        print("Available components:\n")
+        choices = []
+        for component in all_components:
+            status = "✓ Active" if component in active_modules else "✗ Not installed"
+            choices.append(Choice(value=component, name=f"{component:20} • {status}"))
+
+        choices.append(Separator())
+        choices.append(Choice(value=None, name="← Back"))
+
+        selected = inquirer.select(
+            message="Select component to delete configuration:",
+            choices=choices,
+            pointer="►",
+        ).execute()
+
+        if not selected:
+            return
+
+        # Confirm deletion
+        confirm = inquirer.confirm(
+            message=f"⚠️  Delete all configuration for {selected}?",
+            default=False,
+        ).execute()
+
+        if confirm:
+            if delete_component(selected):
+                print(f"\n✓ Configuration for {selected} deleted successfully")
+            else:
+                print(f"\n✗ Failed to delete configuration for {selected}")
+        else:
+            print("\n✓ Cancelled")
 
     def _show_config(self) -> None:
         """Show current configuration."""
