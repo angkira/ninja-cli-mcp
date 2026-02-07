@@ -934,6 +934,111 @@ def _select_model_inquirerpy(
         return None
 
 
+def delete_component(component_name: str) -> bool:
+    """Delete a component's configuration.
+
+    Args:
+        component_name: Component name (e.g., 'ninja-resources', 'ninja-prompts').
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    print(f"\n🗑️  Deleting configuration for {component_name}...")
+
+    config_manager = ConfigManager()
+    config = config_manager.read_config()
+
+    # Module-specific environment variable patterns
+    module_patterns = {
+        "ninja-resources": ["NINJA_RESOURCES_"],
+        "ninja-prompts": ["NINJA_PROMPTS_"],
+        "ninja-coder": ["NINJA_CODER_", "NINJA_CODE_BIN", "NINJA_MODEL"],
+        "ninja-researcher": ["NINJA_RESEARCHER_"],
+        "ninja-secretary": ["NINJA_SECRETARY_"],
+    }
+
+    patterns = module_patterns.get(component_name, [])
+    if not patterns:
+        print(f"   ✗ Unknown component: {component_name}")
+        return False
+
+    deleted_keys = []
+    for key in list(config.keys()):
+        for pattern in patterns:
+            if key.startswith(pattern):
+                config_manager.delete(key)
+                deleted_keys.append(key)
+                break
+
+    if deleted_keys:
+        print(f"   ✓ Deleted {len(deleted_keys)} configuration keys:")
+        for key in deleted_keys:
+            print(f"      - {key}")
+        return True
+    else:
+        print(f"   ℹ️  No configuration found for {component_name}")
+        return True
+
+
+def get_active_modules() -> set[str]:
+    """Get list of active modules from mcp-modules.json.
+
+    Returns:
+        Set of module IDs (e.g., {'ninja-coder', 'ninja-researcher'}).
+    """
+    modules_file = Path(__file__).parent.parent.parent / "config" / "mcp-modules.json"
+    if not modules_file.exists():
+        return set()
+
+    try:
+        with modules_file.open() as f:
+            data = json.load(f)
+        return set(data.get("modules", {}).keys())
+    except Exception:
+        return set()
+
+
+def cleanup_removed_modules(config_manager: ConfigManager) -> list[str]:
+    """Remove configuration for modules that no longer exist.
+
+    Args:
+        config_manager: ConfigManager instance.
+
+    Returns:
+        List of removed module names.
+    """
+    active_modules = get_active_modules()
+    config = config_manager.read_config()
+
+    # Known module prefixes and their environment variable patterns
+    module_patterns = {
+        "ninja-resources": ["NINJA_RESOURCES_"],
+        "ninja-prompts": ["NINJA_PROMPTS_"],
+        "ninja-coder": ["NINJA_CODER_", "NINJA_CODE_BIN"],
+        "ninja-researcher": ["NINJA_RESEARCHER_"],
+        "ninja-secretary": ["NINJA_SECRETARY_"],
+    }
+
+    removed = []
+    keys_to_delete = []
+
+    for module_id, patterns in module_patterns.items():
+        if module_id not in active_modules:
+            # Module was removed - delete its config
+            for key in config.keys():
+                for pattern in patterns:
+                    if key.startswith(pattern):
+                        keys_to_delete.append(key)
+                        if module_id not in removed:
+                            removed.append(module_id)
+
+    # Delete the keys
+    for key in keys_to_delete:
+        config_manager.delete(key)
+
+    return removed
+
+
 def update_configuration(operator: Operator, model: Model) -> bool:
     """Update ninja-coder configuration with selected operator and model."""
     print("\n" + "=" * 70)
@@ -947,6 +1052,13 @@ def update_configuration(operator: Operator, model: Model) -> bool:
     try:
         # Use ConfigManager for clean config updates
         config_manager = ConfigManager()
+
+        # Clean up removed modules first
+        removed_modules = cleanup_removed_modules(config_manager)
+        if removed_modules:
+            print(f"   🗑️  Cleaned up removed modules: {', '.join(removed_modules)}")
+
+        # Read config after cleanup
         config = config_manager.read_config()
 
         # Update all model-related variables with the full model ID
