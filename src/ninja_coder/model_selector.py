@@ -171,10 +171,10 @@ class ModelSelector:
                 use_coding_plan_api=True,  # Use specialized endpoint
             )
 
-        # Fallback to Claude Sonnet 4 if quality preferred
-        if "anthropic/claude-sonnet-4" in models and prefer_quality:
+        # Fallback to Claude Sonnet 4.5 if quality preferred
+        if "anthropic/claude-sonnet-4-5" in models and prefer_quality:
             return ModelRecommendation(
-                model="anthropic/claude-sonnet-4",
+                model="anthropic/claude-sonnet-4-5",
                 provider="openrouter",
                 reason="Premium quality for complex sequential tasks (LiveBench 88.0)",
                 cost_estimate="$0.50-1.00 per task",
