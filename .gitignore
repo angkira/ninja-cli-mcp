@@ -160,3 +160,4 @@ secrets/
 *.key
 .aider*
 .opencode.json
+coverage.json
