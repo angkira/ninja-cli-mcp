@@ -28,7 +28,7 @@ MODEL_PRICING = {
     "qwen/qwen-2.5-coder-32b-instruct": {"input": 0.8, "output": 0.8},
     # Claude models
     "anthropic/claude-haiku-4.5-20250929": {"input": 1.0, "output": 5.0},
-    "anthropic/claude-sonnet-4": {"input": 3.0, "output": 15.0},
+    "anthropic/claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
     "anthropic/claude-3.5-sonnet": {"input": 3.0, "output": 15.0},
     "anthropic/claude-opus-4": {"input": 15.0, "output": 75.0},
     "anthropic/claude-3-opus": {"input": 15.0, "output": 75.0},

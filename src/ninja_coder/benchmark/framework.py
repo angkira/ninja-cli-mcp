@@ -270,7 +270,7 @@ class BenchmarkRunner:
             "glm-4.7": 0.0005,
             "glm-4.0": 0.0002,
             "anthropic/claude-haiku-4.5": 0.0003,
-            "anthropic/claude-sonnet-4": 0.0008,
+            "anthropic/claude-sonnet-4-5": 0.0008,
             "anthropic/claude-opus-4": 0.0015,
         }.get(model, 0.0002)
 
