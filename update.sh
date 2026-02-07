@@ -495,20 +495,52 @@ for key in OPENROUTER_API_KEY SERPER_API_KEY PERPLEXITY_API_KEY ANTHROPIC_API_KE
 done
 
 # ============================================================================
-# STEP 4: Start daemons
+# STEP 4: Restart HTTP MCP servers with new code
+# ============================================================================
+echo ""
+info "Restarting HTTP MCP servers with new code..."
+
+if [[ -f "$SCRIPT_DIR/scripts/post-install.sh" ]]; then
+    bash "$SCRIPT_DIR/scripts/post-install.sh"
+else
+    # Kill old servers
+    pkill -f "ninja_coder.server" 2>/dev/null || true
+    pkill -f "ninja_researcher.server" 2>/dev/null || true
+    pkill -f "ninja_secretary.server" 2>/dev/null || true
+    pkill -f "ninja_prompts.server" 2>/dev/null || true
+    sleep 2
+
+    # Start new servers (only if in dev directory)
+    if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+        cd "$SCRIPT_DIR"
+        nohup uv run python -m ninja_coder.server --http --port 8100 > /tmp/ninja-coder.log 2>&1 &
+        nohup uv run python -m ninja_researcher.server --http --port 8101 > /tmp/ninja-researcher.log 2>&1 &
+        nohup uv run python -m ninja_secretary.server --http --port 8102 > /tmp/ninja-secretary.log 2>&1 &
+        nohup uv run python -m ninja_prompts.server --http --port 8107 > /tmp/ninja-prompts.log 2>&1 &
+        sleep 3
+        success "HTTP MCP servers restarted from local code"
+    fi
+fi
+
+# ============================================================================
+# STEP 5: Start daemons (optional)
 # ============================================================================
 echo ""
 info "Starting ninja daemons..."
 
-if ninja-daemon start 2>&1 | grep -q "✓\|already running"; then
-    success "All daemons started"
+if command -v ninja-daemon &> /dev/null; then
+    if ninja-daemon start 2>&1 | grep -q "✓\|already running"; then
+        success "All daemons started"
+    else
+        warn "Some daemons may have failed to start"
+        info "Check daemon status with: ninja-daemon status"
+    fi
 else
-    warn "Some daemons may have failed to start"
-    info "Check daemon status with: ninja-daemon status"
+    info "Ninja daemons not available (using HTTP servers only)"
 fi
 
 # ============================================================================
-# STEP 5: Re-register Claude Code MCP servers
+# STEP 6: Re-register Claude Code MCP servers
 # ============================================================================
 echo ""
 info "Updating Claude Code MCP servers..."
@@ -558,7 +590,7 @@ else
 fi
 
 # ============================================================================
-# STEP 6: Verify installation
+# STEP 7: Verify installation
 # ============================================================================
 echo ""
 info "Verifying installation..."
