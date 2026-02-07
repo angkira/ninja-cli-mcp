@@ -910,7 +910,7 @@ class PowerConfigurator:
 
         # Default fallback - mix of top models
         return [
-            ("anthropic/claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced"),
+            ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5", "Latest Claude - Balanced"),
             ("openai/gpt-4o", "GPT-4o", "OpenAI flagship multimodal"),
             ("google/gemini-2.0-flash", "Gemini 2.0 Flash", "Latest fast model"),
         ]
@@ -1153,7 +1153,7 @@ class PowerConfigurator:
                 "NINJA_MODEL_SEQUENTIAL",
                 "Sequential Tasks",
                 "Complex multi-step tasks",
-                "anthropic/claude-sonnet-4",
+                "anthropic/claude-sonnet-4-5",
             ),
             (
                 "NINJA_MODEL_PARALLEL",
@@ -1246,8 +1246,8 @@ class PowerConfigurator:
             ]
         elif task_type == "sequential":
             recommended = [
-                ("anthropic/claude-sonnet-4", "Claude Sonnet 4", "High quality (Recommended)"),
-                ("claude-sonnet-4", "Claude Sonnet 4 (Claude Code)", "Via Claude Code"),
+                ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5", "High quality (Recommended)"),
+                ("claude-sonnet-4-5", "Claude Sonnet 4.5 (Claude Code)", "Via Claude Code"),
                 ("glm-4.7", "GLM-4.7 (z.ai)", "Supports Coding Plan API"),
                 ("anthropic/claude-opus-4", "Claude Opus 4", "Maximum quality"),
             ]

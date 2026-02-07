@@ -66,9 +66,10 @@ class NinjaConfig:
         """Create config from environment variables."""
         api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
 
-        # Model priority: NINJA_MODEL > OPENROUTER_MODEL > OPENAI_MODEL > default
+        # Model priority: NINJA_CODER_MODEL > NINJA_MODEL > OPENROUTER_MODEL > OPENAI_MODEL > default
         model = (
-            os.environ.get("NINJA_MODEL")
+            os.environ.get("NINJA_CODER_MODEL")
+            or os.environ.get("NINJA_MODEL")
             or os.environ.get("OPENROUTER_MODEL")
             or os.environ.get("OPENAI_MODEL")
             or DEFAULT_CODER_MODEL

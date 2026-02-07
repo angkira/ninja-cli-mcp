@@ -20,7 +20,7 @@ def opencode_strategy() -> OpenCodeStrategy:
         bin_path="opencode",
         openai_base_url="https://openrouter.ai/api/v1",
         openai_api_key="test-key",
-        model="anthropic/claude-sonnet-4",
+        model="anthropic/claude-sonnet-4-5",
         timeout_sec=300,
     )
     return OpenCodeStrategy(bin_path="opencode", config=config)

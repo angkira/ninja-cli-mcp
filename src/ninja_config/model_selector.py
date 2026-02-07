@@ -695,7 +695,7 @@ ZAI_MODELS = [
 # OpenRouter models (for Aider - uses OPENROUTER_API_KEY)
 OPENROUTER_MODELS = [
     # Claude models (Anthropic)
-    ("anthropic/claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced"),
+    ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5", "Latest Claude - Balanced"),
     ("anthropic/claude-opus-4", "Claude Opus 4", "Most powerful Claude"),
     ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast & cost-effective"),
     # GPT models (OpenAI)
