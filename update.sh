@@ -590,7 +590,62 @@ else
 fi
 
 # ============================================================================
-# STEP 7: Verify installation
+# STEP 7: Track version changes
+# ============================================================================
+echo ""
+info "Checking version changes..."
+
+# Use Python to track versions
+# If we're in dev directory, use source directly; otherwise use installed package
+if [[ -f "$SCRIPT_DIR/src/ninja_common/version_tracker.py" ]]; then
+    VERSION_CHANGES=$(python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+try:
+    from ninja_common.version_tracker import track_update
+    versions, changes = track_update()
+    if changes:
+        for change in changes:
+            print(change)
+    else:
+        print('✓ No version changes (all components up to date)')
+except Exception as e:
+    print(f'⚠ Could not track versions: {e}')
+" 2>/dev/null)
+else
+    # Use installed package
+    VERSION_CHANGES=$(python3 -c "
+import sys
+import glob
+import os
+
+# Find the actual site-packages directory
+site_packages_pattern = '$HOME/.local/share/uv/tools/ninja-mcp/lib/python*/site-packages'
+site_packages_dirs = glob.glob(os.path.expanduser(site_packages_pattern))
+if site_packages_dirs:
+    sys.path.insert(0, site_packages_dirs[0])
+
+try:
+    from ninja_common.version_tracker import track_update
+    versions, changes = track_update()
+    if changes:
+        for change in changes:
+            print(change)
+    else:
+        print('✓ No version changes (all components up to date)')
+except Exception as e:
+    print(f'⚠ Could not track versions: {e}')
+" 2>/dev/null)
+fi
+
+if [[ -n "$VERSION_CHANGES" ]]; then
+    echo "$VERSION_CHANGES"
+else
+    info "Version tracking not available"
+fi
+
+# ============================================================================
+# STEP 8: Verify installation
 # ============================================================================
 echo ""
 info "Verifying installation..."

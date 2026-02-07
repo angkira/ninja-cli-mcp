@@ -512,6 +512,9 @@ class DaemonManager:
         pid = self._read_pid(module)
         port = self._get_port(module)
 
+        # Get version
+        version = self._get_module_version(module)
+
         if not pid:
             return {
                 "running": False,
@@ -519,6 +522,7 @@ class DaemonManager:
                 "port": port,
                 "url": f"http://127.0.0.1:{port}/sse",
                 "log": str(self._get_log_file(module)),
+                "version": version,
             }
 
         running = self._is_running(pid)
@@ -528,7 +532,35 @@ class DaemonManager:
             "port": port,
             "url": f"http://127.0.0.1:{port}/sse" if running else None,
             "log": str(self._get_log_file(module)),
+            "version": version,
         }
+
+    def _get_module_version(self, module: str) -> str:
+        """Get version of a module.
+
+        Args:
+            module: Module name
+
+        Returns:
+            Version string or "unknown"
+        """
+        module_map = {
+            "coder": "ninja_coder",
+            "researcher": "ninja_researcher",
+            "secretary": "ninja_secretary",
+            "prompts": "ninja_prompts",
+            "resources": "ninja_resources",
+        }
+
+        module_name = module_map.get(module)
+        if not module_name:
+            return "unknown"
+
+        try:
+            mod = __import__(module_name)
+            return getattr(mod, "__version__", "unknown")
+        except (ImportError, AttributeError):
+            return "not installed"
 
     def restart(self, module: str) -> bool:
         """Restart daemon for module.
