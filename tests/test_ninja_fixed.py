@@ -6,6 +6,7 @@ after fixing the --attach bug in opencode_strategy.py.
 """
 
 import subprocess
+from pathlib import Path
 
 
 def test_servers_restarted():
@@ -60,4 +61,24 @@ def test_no_old_servers_running():
 
     assert len(old_servers) == 0, (
         f"Found {len(old_servers)} old servers still running from uv/tools: {old_servers}"
+    )
+
+
+def test_daemon_pid_files_exist():
+    """Test that daemon PID files exist so Claude Code can connect."""
+    daemon_dir = Path.home() / ".cache" / "ninja-mcp" / "daemons"
+
+    # Expected daemon modules
+    expected_daemons = ["coder", "researcher", "secretary", "prompts"]
+
+    missing_pids = []
+    for daemon in expected_daemons:
+        pid_file = daemon_dir / f"{daemon}.pid"
+        if not pid_file.exists():
+            missing_pids.append(daemon)
+
+    assert len(missing_pids) == 0, (
+        f"Missing PID files for daemons: {missing_pids}. "
+        f"Claude Code won't be able to connect without PID files. "
+        f"Run 'ninja-daemon start' to create them."
     )
