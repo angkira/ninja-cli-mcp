@@ -61,7 +61,7 @@ RECOMMENDED_MODELS = {
 
 # Default models for different task types
 DEFAULT_MODEL_QUICK = "anthropic/claude-haiku-4.5"  # Fast simple tasks
-DEFAULT_MODEL_SEQUENTIAL = "anthropic/claude-sonnet-4-20250514"  # Complex multi-step tasks
+DEFAULT_MODEL_SEQUENTIAL = "anthropic/claude-haiku-4.5"  # Complex multi-step tasks
 DEFAULT_MODEL_PARALLEL = "anthropic/claude-haiku-4.5"  # High-concurrency parallel tasks
 
 # =============================================================================
@@ -82,9 +82,9 @@ OPENCODE_PROVIDERS = [
 # =============================================================================
 
 CLAUDE_CODE_MODELS = [
-    ("claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced performance"),
-    ("claude-opus-4", "Claude Opus 4", "Most powerful Claude model"),
     ("claude-haiku-4", "Claude Haiku 4", "Fast & cost-effective"),
+    ("claude-opus-4", "Claude Opus 4", "Most powerful Claude model"),
+    ("claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced performance"),
 ]
 
 # =============================================================================
@@ -92,9 +92,9 @@ CLAUDE_CODE_MODELS = [
 # =============================================================================
 
 ANTHROPIC_MODELS = [
-    ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet 4", "Latest balanced model"),
-    ("anthropic/claude-opus-4", "Claude Opus 4", "Most powerful"),
     ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast & cost-effective"),
+    ("anthropic/claude-opus-4", "Claude Opus 4", "Most powerful"),
+    ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet 4", "Latest balanced model"),
     ("anthropic/claude-3-7-sonnet-latest", "Claude 3.7 Sonnet", "Previous gen balanced"),
 ]
 
@@ -159,9 +159,13 @@ ZAI_MODELS = [
 
 OPENROUTER_MODELS = [
     # Claude models (Anthropic)
-    ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet 4", "Latest Claude - Balanced performance"),
-    ("anthropic/claude-opus-4", "Claude Opus 4", "Most powerful Claude model"),
     ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast & cost-effective"),
+    ("anthropic/claude-opus-4", "Claude Opus 4", "Most powerful Claude model"),
+    (
+        "anthropic/claude-sonnet-4-20250514",
+        "Claude Sonnet 4",
+        "Latest Claude - Balanced performance",
+    ),
     # GPT models (OpenAI)
     ("openai/gpt-4o", "GPT-4o", "OpenAI's flagship multimodal model"),
     ("openai/gpt-4o-mini", "GPT-4o Mini", "Fast and cheap"),
