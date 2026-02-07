@@ -115,9 +115,9 @@ class ModelSelector:
         # For high fanout (>10), prioritize concurrent limit and cost
         if fanout > 10:
             # GLM-4.6V: 20 concurrent, cheaper on z.ai
-            if "glm-4.6v" in models:
+            if "zai-coding-plan/glm-4.6v" in models:
                 return ModelRecommendation(
-                    model="glm-4.6v",
+                    model="zai-coding-plan/glm-4.6v",
                     provider="z.ai",
                     reason=f"High fanout ({fanout}) tasks: GLM-4.6V supports 20 concurrent at low cost",
                     cost_estimate="$0.01-0.05 per task",
@@ -131,16 +131,6 @@ class ModelSelector:
                 provider="openrouter",
                 reason="Balanced performance and cost for parallel tasks (LiveBench 82.0)",
                 cost_estimate="$0.10-0.30 per task",
-                use_coding_plan_api=False,
-            )
-
-        # Default to GLM-4.0 for cost
-        if "zai/glm-4.0" in models:
-            return ModelRecommendation(
-                model="zai/glm-4.0",
-                provider="z.ai",
-                reason="Cost-effective option for parallel tasks",
-                cost_estimate="$0.01-0.03 per task",
                 use_coding_plan_api=False,
             )
 
@@ -162,7 +152,7 @@ class ModelSelector:
             ModelRecommendation for sequential tasks.
         """
         # GLM-4.7: Smartest on LiveBench (84.9), supports Coding Plan API
-        if "zai-coding-plan/glm-4.7" in models and not prefer_quality:
+        if "zai-coding-plan/glm-4.7" in models:
             return ModelRecommendation(
                 model="zai-coding-plan/glm-4.7",
                 provider="z.ai",
@@ -188,16 +178,6 @@ class ModelSelector:
                 provider="openrouter",
                 reason="Maximum quality for critical sequential tasks (LiveBench 91.0)",
                 cost_estimate="$1.00-2.00 per task",
-                use_coding_plan_api=False,
-            )
-
-        # Default to GLM-4.0 for cost
-        if "zai/glm-4.0" in models:
-            return ModelRecommendation(
-                model="zai/glm-4.0",
-                provider="z.ai",
-                reason="Balanced option for sequential tasks",
-                cost_estimate="$0.10-0.20 per task",
                 use_coding_plan_api=False,
             )
 
