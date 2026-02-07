@@ -1051,6 +1051,10 @@ class PowerConfigurator:
         print("  🤖 MODEL CONFIGURATION")
         print("=" * 80)
 
+        # NOTE: These hardcoded model lists are FALLBACKS ONLY for the legacy _configure_models() flow.
+        # The recommended flow (_configure_coder_models, _configure_secretary) uses get_provider_models()
+        # to dynamically load models from the actual operators. This method is kept for backwards
+        # compatibility and manual module-specific model configuration.
         modules = [
             ("coder", "AI Code Assistant", OPENROUTER_MODELS),
             ("researcher", "Web Research Engine", PERPLEXITY_MODELS),
@@ -1106,6 +1110,8 @@ class PowerConfigurator:
             model_choices.append(Choice(value=model_id, name=f"{model_name:25} • {model_desc}"))
 
         # Add Z.ai models for coder
+        # NOTE: ZAI_MODELS is a hardcoded FALLBACK list for the legacy _configure_models() flow.
+        # The recommended flow (_configure_coder_models) uses get_provider_models() for dynamic loading.
         if module == "coder":
             model_choices.append(Separator())
             model_choices.append(Separator("── Z.AI / GLM (OpenCode Native) ──"))
@@ -1252,7 +1258,7 @@ class PowerConfigurator:
                     "Claude Haiku 4.5",
                     "Fast & cost-effective (Recommended)",
                 ),
-                ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5", "High quality"),
+                ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5", "Higher quality (more expensive)"),
                 ("claude-sonnet-4-5", "Claude Sonnet 4.5 (Claude Code)", "Via Claude Code"),
                 ("glm-4.7", "GLM-4.7 (z.ai)", "Supports Coding Plan API"),
                 ("anthropic/claude-opus-4", "Claude Opus 4", "Maximum quality"),
@@ -1393,7 +1399,8 @@ class PowerConfigurator:
         print("  📊 PERPLEXITY MODEL SELECTION")
         print("-" * 50)
 
-        # Perplexity models
+        # NOTE: Perplexity models are hardcoded here since Perplexity API doesn't support
+        # dynamic model discovery. These are the official Perplexity Sonar models.
         perplexity_models = [
             ("sonar", "Sonar", "Fast search-focused model"),
             ("sonar-pro", "Sonar Pro", "Advanced search with better reasoning"),
