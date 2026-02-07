@@ -84,16 +84,27 @@ class ConfigManager:
                         lines.append(line)
                         continue
 
-                    # Update export statements
-                    match = re.match(r"export\s+(\w+)=", stripped)
-                    if match:
-                        key = match.group(1)
+                    # Update both export and non-export statements
+                    export_match = re.match(r"export\s+(\w+)=", stripped)
+                    regular_match = re.match(r"^(\w+)=", stripped) if not export_match else None
+
+                    if export_match:
+                        key = export_match.group(1)
                         if key in config:
-                            # Update the value
+                            # Update the export value
                             lines.append(f"export {key}='{config[key]}'\n")
                             # Remove from config dict (already processed)
                             del config[key]
                         # else: skip this line (key was deleted or not in config)
+                    elif regular_match:
+                        key = regular_match.group(1)
+                        if key in config:
+                            # Update the regular value (preserve non-export format)
+                            lines.append(f"{key}={config[key]}\n")
+                            # Don't delete from config - may also have export line
+                        else:
+                            # Keep line if key not in config
+                            lines.append(line)
                     else:
                         lines.append(line)
         else:

@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from ninja_common.config_manager import ConfigManager
+
 
 try:
     from InquirerPy import inquirer
@@ -943,30 +945,19 @@ def update_configuration(operator: Operator, model: Model) -> bool:
     print(f"\n1. Updating {env_file}...")
 
     try:
-        # Read existing config
-        lines = []
-        if env_file.exists():
-            lines = env_file.read_text().splitlines()
+        # Use ConfigManager for clean config updates
+        config_manager = ConfigManager()
+        config = config_manager.read_config()
 
-        # Update or add NINJA_CODE_BIN and NINJA_MODEL
-        updated_bin = False
-        updated_model = False
+        # Update all model-related variables with the full model ID
+        config["NINJA_CODE_BIN"] = operator.binary_path
+        config["NINJA_MODEL"] = model.id
+        config["NINJA_CODER_MODEL"] = model.id
+        config["NINJA_MODEL_QUICK"] = model.id
+        config["NINJA_MODEL_SEQUENTIAL"] = model.id
 
-        for i, line in enumerate(lines):
-            if line.startswith("NINJA_CODE_BIN="):
-                lines[i] = f"NINJA_CODE_BIN={operator.binary_path}"
-                updated_bin = True
-            elif line.startswith("NINJA_MODEL="):
-                lines[i] = f"NINJA_MODEL={model.id}"
-                updated_model = True
-
-        if not updated_bin:
-            lines.append(f"NINJA_CODE_BIN={operator.binary_path}")
-        if not updated_model:
-            lines.append(f"NINJA_MODEL={model.id}")
-
-        # Write back
-        env_file.write_text("\n".join(lines) + "\n")
+        # Write back (updates both regular and export lines)
+        config_manager.write_config(config)
         print("   ✓ Updated .ninja-mcp.env")
     except Exception as e:
         print(f"   ✗ Failed to update .ninja-mcp.env: {e}")
