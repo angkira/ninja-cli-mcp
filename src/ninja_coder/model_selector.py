@@ -125,9 +125,9 @@ class ModelSelector:
                 )
 
         # For medium fanout (5-10), balance quality and cost
-        if "anthropic/claude-haiku-4.5" in models and not prefer_cost:
+        if "openrouter/anthropic/claude-haiku-4.5" in models and not prefer_cost:
             return ModelRecommendation(
-                model="anthropic/claude-haiku-4.5",
+                model="openrouter/anthropic/claude-haiku-4.5",
                 provider="openrouter",
                 reason="Balanced performance and cost for parallel tasks (LiveBench 82.0)",
                 cost_estimate="$0.10-0.30 per task",
@@ -135,9 +135,9 @@ class ModelSelector:
             )
 
         # Default to GLM-4.0 for cost
-        if "glm-4.0" in models:
+        if "zai/glm-4.0" in models:
             return ModelRecommendation(
-                model="glm-4.0",
+                model="zai/glm-4.0",
                 provider="z.ai",
                 reason="Cost-effective option for parallel tasks",
                 cost_estimate="$0.01-0.03 per task",
@@ -162,9 +162,9 @@ class ModelSelector:
             ModelRecommendation for sequential tasks.
         """
         # GLM-4.7: Smartest on LiveBench (84.9), supports Coding Plan API
-        if "glm-4.7" in models and not prefer_quality:
+        if "zai-coding-plan/glm-4.7" in models and not prefer_quality:
             return ModelRecommendation(
-                model="glm-4.7",
+                model="zai-coding-plan/glm-4.7",
                 provider="z.ai",
                 reason="Highest quality for sequential tasks (LiveBench 84.9) with Coding Plan API",
                 cost_estimate="$0.20-0.50 per task",
@@ -172,9 +172,9 @@ class ModelSelector:
             )
 
         # Fallback to Claude Sonnet 4.5 if quality preferred
-        if "anthropic/claude-sonnet-4-5" in models and prefer_quality:
+        if "openrouter/anthropic/claude-sonnet-4-20250514" in models and prefer_quality:
             return ModelRecommendation(
-                model="anthropic/claude-sonnet-4-5",
+                model="openrouter/anthropic/claude-sonnet-4-20250514",
                 provider="openrouter",
                 reason="Premium quality for complex sequential tasks (LiveBench 88.0)",
                 cost_estimate="$0.50-1.00 per task",
@@ -182,9 +182,9 @@ class ModelSelector:
             )
 
         # Claude Opus 4 for maximum quality
-        if "anthropic/claude-opus-4" in models and prefer_quality:
+        if "openrouter/anthropic/claude-opus-4" in models and prefer_quality:
             return ModelRecommendation(
-                model="anthropic/claude-opus-4",
+                model="openrouter/anthropic/claude-opus-4",
                 provider="openrouter",
                 reason="Maximum quality for critical sequential tasks (LiveBench 91.0)",
                 cost_estimate="$1.00-2.00 per task",
@@ -192,9 +192,9 @@ class ModelSelector:
             )
 
         # Default to GLM-4.0 for cost
-        if "glm-4.0" in models:
+        if "zai/glm-4.0" in models:
             return ModelRecommendation(
-                model="glm-4.0",
+                model="zai/glm-4.0",
                 provider="z.ai",
                 reason="Balanced option for sequential tasks",
                 cost_estimate="$0.10-0.20 per task",
@@ -219,9 +219,9 @@ class ModelSelector:
             ModelRecommendation for quick tasks.
         """
         # For quick tasks, prefer speed and reasonable quality
-        if "anthropic/claude-haiku-4.5" in models and not prefer_cost:
+        if "openrouter/anthropic/claude-haiku-4.5" in models and not prefer_cost:
             return ModelRecommendation(
-                model="anthropic/claude-haiku-4.5",
+                model="openrouter/anthropic/claude-haiku-4.5",
                 provider="openrouter",
                 reason="Fast and capable for quick tasks (LiveBench 82.0)",
                 cost_estimate="$0.05-0.15 per task",
@@ -229,9 +229,9 @@ class ModelSelector:
             )
 
         # Fallback to GLM-4.0 for cost
-        if "glm-4.0" in models:
+        if "zai/glm-4.0" in models:
             return ModelRecommendation(
-                model="glm-4.0",
+                model="zai/glm-4.0",
                 provider="z.ai",
                 reason="Cost-effective for quick tasks",
                 cost_estimate="$0.02-0.05 per task",
@@ -247,7 +247,7 @@ class ModelSelector:
         Returns:
             ModelRecommendation for default model.
         """
-        model = self.default_model or "anthropic/claude-haiku-4.5"
+        model = self.default_model or "openrouter/anthropic/claude-haiku-4.5"
         info = self.model_db.get(model, {})
 
         return ModelRecommendation(
