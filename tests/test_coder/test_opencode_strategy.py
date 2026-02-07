@@ -19,7 +19,7 @@ from ninja_coder.strategies.opencode_strategy import OpenCodeStrategy
 def config():
     """Create test config."""
     config = Mock()
-    config.model = "anthropic/claude-sonnet-4-20250514"
+    config.model = "openrouter/anthropic/claude-sonnet-4-20250514"
     return config
 
 
@@ -43,10 +43,7 @@ class TestSimpleSubprocessMode:
 
     def test_no_attach_flag(self, strategy):
         """Test --attach is never used."""
-        result = strategy.build_command(
-            prompt="test task",
-            repo_root="/tmp/test-repo"
-        )
+        result = strategy.build_command(prompt="test task", repo_root="/tmp/test-repo")
 
         assert "--attach" not in result.command
         assert "/usr/local/bin/opencode" in result.command
@@ -54,10 +51,7 @@ class TestSimpleSubprocessMode:
 
     def test_basic_structure(self, strategy):
         """Test basic command structure."""
-        result = strategy.build_command(
-            prompt="test task",
-            repo_root="/tmp/test-repo"
-        )
+        result = strategy.build_command(prompt="test task", repo_root="/tmp/test-repo")
 
         cmd = result.command
         assert cmd[0] == "/usr/local/bin/opencode"
@@ -67,10 +61,7 @@ class TestSimpleSubprocessMode:
 
     def test_working_directory(self, strategy):
         """Test working directory is set correctly."""
-        result = strategy.build_command(
-            prompt="test",
-            repo_root="/tmp/test-repo"
-        )
+        result = strategy.build_command(prompt="test", repo_root="/tmp/test-repo")
 
         assert result.working_dir == Path("/tmp/test-repo")
 
@@ -80,23 +71,18 @@ class TestModelConfiguration:
 
     def test_uses_configured_model(self, strategy):
         """Test default model from config."""
-        result = strategy.build_command(
-            prompt="test",
-            repo_root="/tmp/test"
-        )
+        result = strategy.build_command(prompt="test", repo_root="/tmp/test")
 
-        assert "anthropic/claude-sonnet-4-20250514" in result.command
+        assert "openrouter/anthropic/claude-sonnet-4-20250514" in result.command
 
     def test_model_override(self, strategy):
         """Test model can be overridden."""
         result = strategy.build_command(
-            prompt="test",
-            repo_root="/tmp/test",
-            model="google/gemini-2.0-flash-exp"
+            prompt="test", repo_root="/tmp/test", model="google/gemini-2.0-flash-exp"
         )
 
         assert "google/gemini-2.0-flash-exp" in result.command
-        assert "anthropic/claude-sonnet-4-20250514" not in result.command
+        assert "openrouter/anthropic/claude-sonnet-4-20250514" not in result.command
 
 
 class TestSessionSupport:
@@ -104,11 +90,7 @@ class TestSessionSupport:
 
     def test_session_id(self, strategy):
         """Test session ID is added when provided."""
-        result = strategy.build_command(
-            prompt="test",
-            repo_root="/tmp/test",
-            session_id="abc123"
-        )
+        result = strategy.build_command(prompt="test", repo_root="/tmp/test", session_id="abc123")
 
         assert "--session" in result.command
         idx = result.command.index("--session")
@@ -116,11 +98,7 @@ class TestSessionSupport:
 
     def test_continue_last(self, strategy):
         """Test continue flag."""
-        result = strategy.build_command(
-            prompt="test",
-            repo_root="/tmp/test",
-            continue_last=True
-        )
+        result = strategy.build_command(prompt="test", repo_root="/tmp/test", continue_last=True)
 
         assert "--continue" in result.command
 
@@ -133,7 +111,7 @@ class TestFileContext:
         result = strategy.build_command(
             prompt="fix bug",
             repo_root="/tmp/test",
-            file_paths=["src/main.py", "tests/test_main.py"]
+            file_paths=["src/main.py", "tests/test_main.py"],
         )
 
         prompt = result.command[-1]

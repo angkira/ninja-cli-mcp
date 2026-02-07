@@ -13,7 +13,7 @@ class TestTUIInstallerModelPresets:
     """Tests for TUI installer model preset configuration."""
 
     def test_coder_quality_tier_uses_haiku(self):
-        """Test that coder Quality tier preset uses claude-haiku-4.5."""
+        """Test that coder Quality tier preset uses openrouter claude-haiku-4.5."""
         installer = TUIInstaller()
 
         # Get coder recommendations
@@ -28,13 +28,13 @@ class TestTUIInstallerModelPresets:
 
         # Verify Quality tier exists and uses claude-haiku-4.5
         assert quality_model is not None, "Quality tier not found in coder presets"
-        assert quality_model["name"] == "anthropic/claude-haiku-4.5", (
-            f"Expected 'anthropic/claude-haiku-4.5' for coder Quality tier, "
+        assert quality_model["name"] == "openrouter/anthropic/claude-haiku-4.5", (
+            f"Expected 'openrouter/anthropic/claude-haiku-4.5' for coder Quality tier, "
             f"got '{quality_model['name']}'"
         )
 
     def test_researcher_recommended_tier_uses_haiku(self):
-        """Test that researcher Recommended tier preset uses claude-haiku-4.5."""
+        """Test that researcher Recommended tier preset uses openrouter claude-haiku-4.5."""
         installer = TUIInstaller()
 
         # Get researcher recommendations
@@ -49,8 +49,8 @@ class TestTUIInstallerModelPresets:
 
         # Verify Recommended tier exists and uses claude-haiku-4.5
         assert recommended_model is not None, "Recommended tier not found in researcher presets"
-        assert recommended_model["name"] == "anthropic/claude-haiku-4.5", (
-            f"Expected 'anthropic/claude-haiku-4.5' for researcher Recommended tier, "
+        assert recommended_model["name"] == "openrouter/anthropic/claude-haiku-4.5", (
+            f"Expected 'openrouter/anthropic/claude-haiku-4.5' for researcher Recommended tier, "
             f"got '{recommended_model['name']}'"
         )
 
@@ -97,7 +97,7 @@ class TestTUIInstallerModelPresets:
 
         # Verify none of the secretary models use sonnet-4-5
         for model in secretary_models:
-            assert model["name"] != "anthropic/claude-sonnet-4-5", (
+            assert model["name"] != "openrouter/anthropic/claude-sonnet-4-5", (
                 "Secretary presets should not have been changed to use sonnet-4-5"
             )
 
