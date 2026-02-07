@@ -1,6 +1,6 @@
 """Ninja Coder - Code execution module for Ninja MCP."""
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 from ninja_coder.models import (
     ApplyPatchRequest,
