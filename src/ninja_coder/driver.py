@@ -565,18 +565,10 @@ class NinjaDriver:
         """
         prompt_parts = [
             instruction.get("instructions", ""),
-            "",
-            "=== FILE SCOPE ===",
-            f"Repository root: {instruction.get('repo_root', repo_root)}",
         ]
 
-        file_scope = instruction.get("file_scope", {})
-        if file_scope.get("context_paths"):
-            prompt_parts.append(f"Focus paths: {', '.join(file_scope['context_paths'])}")
-        if file_scope.get("allowed_globs"):
-            prompt_parts.append(f"Allowed patterns: {', '.join(file_scope['allowed_globs'])}")
-        if file_scope.get("deny_globs"):
-            prompt_parts.append(f"Denied patterns: {', '.join(file_scope['deny_globs'])}")
+        # NOTE: Removed verbose FILE SCOPE section as it causes OpenCode to scan entire repo
+        # which times out on large codebases. The instructions already contain task details.
 
         # Add test plan if present
         test_plan = instruction.get("test_plan", {})
