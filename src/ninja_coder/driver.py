@@ -366,11 +366,9 @@ class NinjaDriver:
         """
         Kill the entire process tree, not just the parent process.
 
-        CRITICAL: OpenCode and other CLI tools spawn child processes.
-        Using process.kill() only kills the parent, leaving orphaned children
-        that continue consuming RAM.
-
-        This method kills the entire process group to prevent memory leaks.
+        CRITICAL: OpenCode and other CLI tools spawn child processes that may
+        call setsid() and escape the process group. We must kill the ENTIRE
+        process tree recursively to prevent orphaned processes.
 
         Args:
             process: The asyncio subprocess to kill.
@@ -381,19 +379,49 @@ class NinjaDriver:
             return
 
         try:
-            # Since we use start_new_session=True, the process is a session leader
-            # Kill the entire process group (negative PID)
-            pgid = os.getpgid(process.pid)
-            task_logger.warning(f"Killing process group {pgid} (parent PID {process.pid})")
-            os.killpg(pgid, signal.SIGKILL)
+            import psutil
+
+            parent = psutil.Process(process.pid)
+            task_logger.warning(f"Killing process tree rooted at PID {process.pid}")
+
+            # Get all descendants (children, grandchildren, etc.)
+            children = parent.children(recursive=True)
+
+            # Kill all descendants first (bottom-up)
+            for child in children:
+                try:
+                    task_logger.debug(f"Killing child process {child.pid} ({child.name()})")
+                    child.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+            # Kill the parent process
+            parent.kill()
+
+            # Wait for parent to actually exit
             await process.wait()
-            task_logger.info(f"Process group {pgid} killed successfully")
+
+            task_logger.info(f"Process tree killed successfully ({len(children)} children + parent)")
+
+        except ImportError:
+            # Fallback to process group kill if psutil not available
+            task_logger.warning("psutil not available, falling back to process group kill")
+            try:
+                pgid = os.getpgid(process.pid)
+                task_logger.warning(f"Killing process group {pgid} (parent PID {process.pid})")
+                os.killpg(pgid, signal.SIGKILL)
+                await process.wait()
+            except Exception as e:
+                task_logger.warning(f"Process group kill failed: {e}")
+                process.kill()
+                await process.wait()
+
         except ProcessLookupError:
             # Process already gone
             task_logger.debug("Process already terminated")
         except Exception as e:
-            # Fallback to regular kill
-            task_logger.warning(f"Failed to kill process group: {e}, falling back to regular kill")
+            # Final fallback
+            task_logger.warning(f"Failed to kill process tree: {e}, using fallback")
             try:
                 process.kill()
                 await process.wait()
