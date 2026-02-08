@@ -1463,8 +1463,14 @@ class NinjaDriver:
                     read_stream(process.stderr, stderr_buffer, "stderr"),
                 )
 
-                # Wait for process to exit
-                await process.wait()
+                # Wait for process to exit with timeout
+                # After streams close, give process time to cleanup (30s should be enough)
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=30)
+                except asyncio.TimeoutError:
+                    task_logger.warning("Process did not exit after streams closed, killing")
+                    process.kill()
+                    await process.wait()
 
                 # Combine buffers
                 stdout_bytes = b"".join(stdout_buffer)
