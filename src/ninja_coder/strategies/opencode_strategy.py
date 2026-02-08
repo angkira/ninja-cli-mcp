@@ -367,6 +367,30 @@ class OpenCodeStrategy:
                 logger.debug(f"Extracted session ID: {session_id}")
                 break
 
+        # Git-based file change detection (more reliable than output parsing)
+        # This runs after regex-based detection to catch files that weren't mentioned in output
+        if success and repo_root:
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["git", "diff", "--name-only", "HEAD"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    git_files = [f.strip() for f in result.stdout.split('\n') if f.strip()]
+                    # Add git-detected files that weren't already found by regex
+                    for git_file in git_files:
+                        if git_file not in suspected_paths:
+                            suspected_paths.append(git_file)
+                    if git_files:
+                        logger.debug(f"Git detected {len(git_files)} modified files")
+            except Exception as e:
+                # Git detection failure is non-critical, just log it
+                logger.debug(f"Git-based file detection failed (non-critical): {e}")
+
         # Build summary
         if success:
             if suspected_paths:
@@ -413,15 +437,17 @@ class OpenCodeStrategy:
                     notes = error_lines[-1][:200]
 
         # Final validation: If we claim success but no files were touched, it's suspicious
+        # NOTE: Git-based detection above should catch most cases, so this is a backup check
         if success and not suspected_paths and len(combined_output) > 100:
-            # Check if output suggests files should have been created/modified
-            action_keywords = ["write", "creat", "modif", "updat", "edit", "add", "implement"]
-            has_action_intent = any(
-                keyword in combined_output.lower() for keyword in action_keywords
+            # Only check STDOUT (actual output), not combined_output which includes the prompt
+            # The prompt always contains action keywords, causing false positives
+            action_keywords = ["wrote", "created", "modified", "updated", "edited"]
+            has_action_in_output = any(
+                keyword in stdout.lower() for keyword in action_keywords
             )
 
-            # If there was intent to modify files but none were touched, mark as failure
-            if has_action_intent:
+            # If output explicitly mentions file operations but git found nothing, warn
+            if has_action_in_output:
                 success = False
                 summary = "⚠️ Task completed but no files were modified"
                 notes = (
