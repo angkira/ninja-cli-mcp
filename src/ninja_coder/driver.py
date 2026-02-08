@@ -291,7 +291,7 @@ Task: {step.task}
 Focus: {paths_text}
 {extra}
 
-Write clean code with type hints. Create or modify files as needed."""
+IMPORTANT: Keep it simple and minimal. Write only what's requested. No elaborate docstrings or examples unless explicitly asked."""
 
     def _build_test_instructions(self, commands: list[str]) -> str:
         """Build instruction text for test execution."""
