@@ -1392,7 +1392,7 @@ class NinjaDriver:
 
             # Get timeout from strategy
             max_timeout = timeout_sec or self._strategy.get_timeout(task_type)
-            inactivity_timeout = 20  # Timeout after 20s of no output
+            inactivity_timeout = 60  # Timeout after 60s of no output (increased for slow models/network)
 
             # Execute asynchronously using strategy-built command
             process = await asyncio.create_subprocess_exec(
