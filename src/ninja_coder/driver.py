@@ -260,7 +260,7 @@ class InstructionBuilder:
 
 Focus: {paths_text}
 
-Write clean code with type hints. Create or modify files as needed."""
+IMPORTANT: Keep it simple and minimal. Write only what's requested. No elaborate docstrings or examples unless explicitly asked."""
 
     def _build_step_instructions(self, step: PlanStep) -> str:
         """Build instruction text for plan step execution with reasoning."""
