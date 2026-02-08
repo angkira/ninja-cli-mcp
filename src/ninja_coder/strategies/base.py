@@ -128,6 +128,7 @@ class CLIStrategy(Protocol):
         stdout: str,
         stderr: str,
         exit_code: int,
+        repo_root: str | None = None,
     ) -> ParsedResult:
         """Parse CLI output to extract results.
 
@@ -135,6 +136,7 @@ class CLIStrategy(Protocol):
             stdout: Standard output from CLI execution.
             stderr: Standard error from CLI execution.
             exit_code: Exit code from CLI execution.
+            repo_root: Optional repository root for resolving file paths.
 
         Returns:
             ParsedResult with success status, summary, and file changes.
