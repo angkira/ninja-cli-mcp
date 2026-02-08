@@ -252,14 +252,19 @@ TOOLS: list[Tool] = [
     Tool(
         name="coder_execute_plan_parallel",
         description=(
-            "Execute CODE WRITING steps in parallel with configurable concurrency. "
+            "Execute SIMPLE, ATOMIC CODE WRITING steps in parallel with configurable concurrency. "
             "Each step delegates code writing to Ninja AI agent. "
             "\n\n"
-            "✅ USE FOR: Independent code writing tasks that can happen simultaneously "
-            "(e.g., creating separate modules, different feature implementations). "
+            "✅ USE FOR: Simple, independent, atomic code writing tasks that can happen simultaneously "
+            "(e.g., creating separate utility functions, small helper modules, individual test files). "
+            "Each step should be QUICK and MINIMAL - no elaborate implementations. "
             "\n\n"
-            "❌ NEVER USE FOR: Running tests, executing commands, tasks with dependencies. "
+            "❌ NEVER USE FOR: Running tests, executing commands, tasks with dependencies, "
+            "complex features requiring detailed implementations. "
             "Steps should have non-overlapping file scopes to avoid conflicts. "
+            "\n\n"
+            "⚡ IMPORTANT: Tasks should complete quickly (<90s). Keep tasks simple and focused. "
+            "For complex work, use sequential mode instead. "
             "\n\n"
             "Returns summary of each step plus merge report. "
             "NO source code is returned - Ninja writes directly to files."
@@ -306,7 +311,7 @@ TOOLS: list[Tool] = [
                             "title": {"type": "string"},
                             "task": {
                                 "type": "string",
-                                "description": "DETAILED specification of what code to write",
+                                "description": "SIMPLE, FOCUSED specification of what code to write. Keep it minimal and atomic.",
                             },
                             "context_paths": {
                                 "type": "array",
