@@ -82,3 +82,9 @@ class TestCounter:
         counter1.increment()
         assert counter1.count == 2
         assert counter2.count == 1
+
+    def test_counter_increment_simple(self):
+        """Test simple increment usage pattern."""
+        c = Counter()
+        c.increment()
+        assert c.count == 1
