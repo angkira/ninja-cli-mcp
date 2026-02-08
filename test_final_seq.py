@@ -26,6 +26,14 @@ class Counter:
         """
         self.count = 0
 
+    def increment(self) -> None:
+        """
+        Increment the counter by 1.
+
+        This method adds 1 to the current count value.
+        """
+        self.count += 1
+
 
 if __name__ == "__main__":
     import doctest
