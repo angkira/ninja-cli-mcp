@@ -73,6 +73,18 @@ class ModelSelector:
         Returns:
             ModelRecommendation with selected model and reasoning.
         """
+        # Check for task-specific model overrides first
+        task_specific_model = None
+        if complexity == TaskComplexity.PARALLEL:
+            task_specific_model = os.environ.get("NINJA_MODEL_PARALLEL")
+        elif complexity == TaskComplexity.SEQUENTIAL:
+            task_specific_model = os.environ.get("NINJA_MODEL_SEQUENTIAL")
+        elif complexity == TaskComplexity.QUICK:
+            task_specific_model = os.environ.get("NINJA_MODEL_QUICK")
+
+        if task_specific_model:
+            return self._recommend_specific_model(task_specific_model, f"task-specific env var for {complexity.value}")
+
         # If default model is set and no preference, use it
         if self.default_model and not (prefer_cost or prefer_quality):
             return self._recommend_default()
@@ -236,6 +248,35 @@ class ModelSelector:
             reason="User-configured default model",
             cost_estimate="Varies",
             use_coding_plan_api=False,
+        )
+
+    def _recommend_specific_model(self, model: str, reason: str) -> ModelRecommendation:
+        """Recommend a specific model by name.
+
+        Args:
+            model: Model name to recommend.
+            reason: Reason for this recommendation.
+
+        Returns:
+            ModelRecommendation for the specified model.
+        """
+        # Try to get info from database
+        info = self.model_db.get(model, {})
+        provider = info.get("provider", "unknown")
+
+        # If not in database, parse provider from model name
+        if not provider or provider == "unknown":
+            if "/" in model:
+                provider = model.split("/")[0]
+            else:
+                provider = "unknown"
+
+        return ModelRecommendation(
+            model=model,
+            provider=provider,
+            reason=reason,
+            cost_estimate=info.get("cost", "Unknown"),
+            use_coding_plan_api=info.get("supports_coding_plan_api", False),
         )
 
     def _fallback_recommendation(
