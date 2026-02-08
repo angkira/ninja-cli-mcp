@@ -555,6 +555,9 @@ class ToolExecutor:
             step_start_time = time.time()
 
             async with semaphore:
+                # Add small delay between parallel tasks to avoid API rate limits
+                await asyncio.sleep(2)
+
                 logger.info(
                     f"Starting parallel step {step.id}: {step.title} for client {client_id}"
                 )
