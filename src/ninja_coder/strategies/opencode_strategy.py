@@ -372,6 +372,11 @@ class OpenCodeStrategy:
         if success and repo_root:
             try:
                 import subprocess
+                git_files = []
+
+                logger.debug(f"Running git-based file detection in {repo_root}")
+
+                # Check for modified tracked files
                 result = subprocess.run(
                     ["git", "diff", "--name-only", "HEAD"],
                     cwd=repo_root,
@@ -379,17 +384,39 @@ class OpenCodeStrategy:
                     text=True,
                     timeout=5,
                 )
+                logger.debug(f"git diff returncode={result.returncode}, stdout_len={len(result.stdout)}")
                 if result.returncode == 0 and result.stdout.strip():
-                    git_files = [f.strip() for f in result.stdout.split('\n') if f.strip()]
-                    # Add git-detected files that weren't already found by regex
-                    for git_file in git_files:
-                        if git_file not in suspected_paths:
-                            suspected_paths.append(git_file)
-                    if git_files:
-                        logger.debug(f"Git detected {len(git_files)} modified files")
+                    modified_files = [f.strip() for f in result.stdout.split('\n') if f.strip()]
+                    git_files.extend(modified_files)
+                    logger.debug(f"Found {len(modified_files)} modified files: {modified_files}")
+
+                # Check for new untracked files (this is what was missing!)
+                result = subprocess.run(
+                    ["git", "ls-files", "--others", "--exclude-standard"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                logger.debug(f"git ls-files returncode={result.returncode}, stdout_len={len(result.stdout)}")
+                if result.returncode == 0 and result.stdout.strip():
+                    untracked_files = [f.strip() for f in result.stdout.split('\n') if f.strip()]
+                    git_files.extend(untracked_files)
+                    logger.debug(f"Found {len(untracked_files)} untracked files: {untracked_files}")
+
+                # Add git-detected files that weren't already found by regex
+                for git_file in git_files:
+                    if git_file not in suspected_paths:
+                        suspected_paths.append(git_file)
+                        logger.debug(f"Added git-detected file: {git_file}")
+
+                if git_files:
+                    logger.info(f"✓ Git detected {len(git_files)} modified/new files: {git_files}")
+                else:
+                    logger.warning(f"⚠️ Git detection found no files (repo_root={repo_root})")
             except Exception as e:
                 # Git detection failure is non-critical, just log it
-                logger.debug(f"Git-based file detection failed (non-critical): {e}")
+                logger.warning(f"Git-based file detection failed (non-critical): {e}")
 
         # Build summary
         if success:
