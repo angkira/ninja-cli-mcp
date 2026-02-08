@@ -21,6 +21,7 @@ import asyncio
 import json
 import os
 import re
+import signal
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -360,6 +361,44 @@ class NinjaDriver:
             cli_name=self._strategy.name,
             model=self.config.model,
         )
+
+    async def _kill_process_tree(self, process: asyncio.subprocess.Process, task_logger) -> None:
+        """
+        Kill the entire process tree, not just the parent process.
+
+        CRITICAL: OpenCode and other CLI tools spawn child processes.
+        Using process.kill() only kills the parent, leaving orphaned children
+        that continue consuming RAM.
+
+        This method kills the entire process group to prevent memory leaks.
+
+        Args:
+            process: The asyncio subprocess to kill.
+            task_logger: Logger for debugging.
+        """
+        if process.returncode is not None:
+            # Process already exited
+            return
+
+        try:
+            # Since we use start_new_session=True, the process is a session leader
+            # Kill the entire process group (negative PID)
+            pgid = os.getpgid(process.pid)
+            task_logger.warning(f"Killing process group {pgid} (parent PID {process.pid})")
+            os.killpg(pgid, signal.SIGKILL)
+            await process.wait()
+            task_logger.info(f"Process group {pgid} killed successfully")
+        except ProcessLookupError:
+            # Process already gone
+            task_logger.debug("Process already terminated")
+        except Exception as e:
+            # Fallback to regular kill
+            task_logger.warning(f"Failed to kill process group: {e}, falling back to regular kill")
+            try:
+                process.kill()
+                await process.wait()
+            except Exception as e2:
+                task_logger.error(f"Failed to kill process: {e2}")
 
     def _get_env(self) -> dict[str, str]:
         """Get environment variables for Ninja Code CLI subprocess with security filtering."""
@@ -1274,6 +1313,8 @@ class NinjaDriver:
             )
 
             # Execute asynchronously using strategy-built command
+            # CRITICAL: start_new_session=True creates a new process group
+            # so we can kill the entire process tree, not just the parent
             process = await asyncio.create_subprocess_exec(
                 *cli_result.command,
                 cwd=str(cli_result.working_dir),
@@ -1281,6 +1322,7 @@ class NinjaDriver:
                 stdin=asyncio.subprocess.DEVNULL,  # Prevent stdin blocking
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,  # Create new process group for proper cleanup
             )
 
             try:
@@ -1367,8 +1409,7 @@ class NinjaDriver:
                     await asyncio.wait_for(process.wait(), timeout=30)
                 except asyncio.TimeoutError:
                     task_logger.warning("Process did not exit after streams closed, killing")
-                    process.kill()
-                    await process.wait()
+                    await self._kill_process_tree(process, task_logger)
 
                 # Combine buffers
                 stdout_bytes = b"".join(stdout_buffer)
@@ -1381,8 +1422,7 @@ class NinjaDriver:
                 task_logger.info(f"Task completed in {total_time:.1f}s")
 
             except TimeoutError as e:
-                process.kill()
-                await process.wait()
+                await self._kill_process_tree(process, task_logger)
                 task_logger.error(f"Task timed out: {e}")
                 logs_path = task_logger.save()
                 return NinjaResult(
@@ -1393,6 +1433,16 @@ class NinjaDriver:
                     exit_code=-1,
                     model_used=model,
                 )
+            except Exception as e:
+                # Catch any other unexpected errors and ensure cleanup
+                task_logger.error(f"Unexpected error during execution: {e}")
+                await self._kill_process_tree(process, task_logger)
+                raise
+            finally:
+                # Final safety check: ensure process is dead
+                if process.returncode is None:
+                    task_logger.warning("Process still running in finally block, killing")
+                    await self._kill_process_tree(process, task_logger)
 
             task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
 
@@ -1644,6 +1694,8 @@ class NinjaDriver:
             timeout = timeout_sec or self._strategy.get_timeout(task_type)
 
             # Execute asynchronously using strategy-built command
+            # CRITICAL: start_new_session=True creates a new process group
+            # so we can kill the entire process tree, not just the parent
             process = await asyncio.create_subprocess_exec(
                 *cli_result.command,
                 cwd=str(cli_result.working_dir),
@@ -1651,6 +1703,7 @@ class NinjaDriver:
                 stdin=asyncio.subprocess.DEVNULL,  # Prevent stdin blocking
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,  # Create new process group for proper cleanup
             )
 
             try:
@@ -1663,8 +1716,7 @@ class NinjaDriver:
                 exit_code = process.returncode or 0
 
             except TimeoutError:
-                process.kill()
-                await process.wait()
+                await self._kill_process_tree(process, task_logger)
                 task_logger.error(f"Task timed out after {timeout}s")
                 logs_path = task_logger.save()
                 return NinjaResult(
@@ -1675,6 +1727,16 @@ class NinjaDriver:
                     exit_code=-1,
                     model_used=model,
                 )
+            except Exception as e:
+                # Catch any other unexpected errors and ensure cleanup
+                task_logger.error(f"Unexpected error during dialogue execution: {e}")
+                await self._kill_process_tree(process, task_logger)
+                raise
+            finally:
+                # Final safety check: ensure process is dead
+                if process.returncode is None:
+                    task_logger.warning("Dialogue process still running in finally block, killing")
+                    await self._kill_process_tree(process, task_logger)
 
             task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
 
