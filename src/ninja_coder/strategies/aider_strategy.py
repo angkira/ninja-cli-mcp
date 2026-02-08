@@ -194,6 +194,7 @@ class AiderStrategy:
         stdout: str,
         stderr: str,
         exit_code: int,
+        repo_root: str | None = None,
     ) -> ParsedResult:
         """Parse Aider output with comprehensive error detection.
 

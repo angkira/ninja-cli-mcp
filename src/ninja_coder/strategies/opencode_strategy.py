@@ -260,6 +260,7 @@ class OpenCodeStrategy:
         stdout: str,
         stderr: str,
         exit_code: int,
+        repo_root: str | None = None,
     ) -> ParsedResult:
         """Parse OpenCode output.
 
@@ -427,6 +428,75 @@ class OpenCodeStrategy:
                     "CLI exited successfully but no file changes detected. Check logs for details."
                 )
                 logger.warning("Suspicious success: exit_code=0 but no files touched")
+
+        # CRITICAL BUG DETECTION: Check for corrupted file content (Python list literals)
+        # OpenCode has a known bug where it sometimes writes list representations instead of actual content
+        # This happens during sequential/parallel execution when file content gets split into a list
+        # and that list representation is written to the file instead of joining the strings.
+        if success and suspected_paths:
+            import os
+            from pathlib import Path
+
+            corrupted_files = []
+            for file_path in suspected_paths:
+                try:
+                    # Convert to absolute path if relative
+                    if not os.path.isabs(file_path):
+                        # Try with repo_root
+                        if repo_root:
+                            path_obj = Path(repo_root) / file_path
+                        else:
+                            continue
+                    else:
+                        path_obj = Path(file_path)
+                    if not path_obj.exists() or not path_obj.is_file():
+                        continue
+
+                    # Read first few characters to detect corruption pattern
+                    with open(path_obj, 'r') as f:
+                        first_chars = f.read(100).strip()
+
+                    # Check for Python list literal at start of file (corruption pattern)
+                    # Pattern: starts with [ (could be on its own line)
+                    if first_chars.startswith('['):
+                        # Read full content to verify it's a list literal
+                        with open(path_obj, 'r') as f:
+                            content = f.read().strip()
+
+                        # Try to parse as Python literal
+                        try:
+                            import ast
+                            parsed = ast.literal_eval(content)
+
+                            # If it's a list of strings, it's corrupted
+                            if isinstance(parsed, list) and len(parsed) > 0:
+                                if all(isinstance(item, str) for item in parsed):
+                                    logger.error(
+                                        f"🐛 CORRUPTION DETECTED: {file_path} contains list literal instead of code"
+                                    )
+                                    corrupted_files.append(str(file_path))
+
+                                    # AUTO-FIX: Join the strings and rewrite the file
+                                    fixed_content = "".join(parsed)
+                                    with open(path_obj, 'w') as f:
+                                        f.write(fixed_content)
+                                    logger.info(f"✅ AUTO-FIXED: Joined {len(parsed)} strings and rewrote {file_path}")
+                        except (ValueError, SyntaxError):
+                            # Not a valid Python literal, probably fine
+                            pass
+                except Exception as e:
+                    # Don't fail the whole task due to corruption detection issues
+                    logger.warning(f"Failed to check {file_path} for corruption: {e}")
+
+            # If corruption was detected and fixed, update the notes
+            if corrupted_files:
+                corruption_note = (
+                    f"⚠️ CORRUPTION DETECTED & AUTO-FIXED: {len(corrupted_files)} file(s) contained "
+                    f"Python list literals instead of actual code. This is a known OpenCode bug. "
+                    f"Files have been automatically repaired by joining the string fragments."
+                )
+                notes = f"{notes}\n{corruption_note}" if notes else corruption_note
+                logger.warning(corruption_note)
 
         return ParsedResult(
             success=success,

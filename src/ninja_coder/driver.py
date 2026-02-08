@@ -1147,7 +1147,7 @@ class NinjaDriver:
             )
 
             # Parse output using strategy
-            parsed = self._strategy.parse_output(process.stdout, process.stderr, process.returncode)
+            parsed = self._strategy.parse_output(process.stdout, process.stderr, process.returncode, repo_root=repo_root)
 
             # Build result from parsed output
             result = NinjaResult(
@@ -1392,7 +1392,20 @@ class NinjaDriver:
 
             # Get timeout from strategy
             max_timeout = timeout_sec or self._strategy.get_timeout(task_type)
-            inactivity_timeout = 60  # Timeout after 60s of no output (increased for slow models/network)
+
+            # Inactivity timeout: longer for parallel/sequential tasks that may have long pauses
+            # during git operations, hooks, cleanup, etc.
+            # For parallel/sequential: 120s allows for git hooks, file syncing, cleanup
+            # For quick tasks: 60s is sufficient
+            # Can be overridden via environment variable for debugging/tuning
+            default_inactivity = 120 if task_type in ["parallel", "sequential"] else 60
+            inactivity_timeout = int(
+                os.environ.get("NINJA_INACTIVITY_TIMEOUT_SEC", str(default_inactivity))
+            )
+
+            task_logger.debug(
+                f"Timeouts configured: max={max_timeout}s, inactivity={inactivity_timeout}s (task_type={task_type})"
+            )
 
             # Execute asynchronously using strategy-built command
             process = await asyncio.create_subprocess_exec(
@@ -1420,13 +1433,17 @@ class NinjaDriver:
                         stream_name: Name of stream for logging ('stdout' or 'stderr').
                     """
                     nonlocal last_activity
+                    silence_warnings_logged = False  # Track if we've already warned about silence
+
                     while True:
                         try:
                             chunk = await asyncio.wait_for(stream.read(8192), timeout=0.1)
                             if not chunk:
+                                task_logger.debug(f"{stream_name}: Stream closed naturally")
                                 break
                             buffer_list.append(chunk)
                             last_activity = asyncio.get_event_loop().time()
+                            silence_warnings_logged = False  # Reset warning flag on new activity
 
                             # Log activity for debugging
                             if len(chunk) > 0:
@@ -1438,16 +1455,31 @@ class NinjaDriver:
                             elapsed = asyncio.get_event_loop().time() - last_activity
                             total_elapsed = asyncio.get_event_loop().time() - start_time
 
+                            # Log periodic updates during long silence (helps debug hangs vs normal cleanup)
+                            if elapsed > 30 and not silence_warnings_logged:
+                                task_logger.debug(
+                                    f"{stream_name}: No output for {elapsed:.1f}s "
+                                    f"(inactivity_timeout={inactivity_timeout}s, "
+                                    f"task_type={task_type})"
+                                )
+                                silence_warnings_logged = True
+
+                            # Check inactivity timeout
                             if elapsed > inactivity_timeout:
                                 task_logger.warning(
-                                    f"No output for {inactivity_timeout}s, process may be hung"
+                                    f"{stream_name}: No output for {inactivity_timeout}s, "
+                                    f"assuming process is hung (task_type={task_type})"
                                 )
                                 raise TimeoutError(
                                     f"No output activity for {inactivity_timeout}s"
                                 ) from None
 
+                            # Check max timeout
                             if total_elapsed > max_timeout:
-                                task_logger.warning(f"Maximum timeout {max_timeout}s reached")
+                                task_logger.warning(
+                                    f"{stream_name}: Maximum timeout {max_timeout}s reached "
+                                    f"(total elapsed: {total_elapsed:.1f}s)"
+                                )
                                 raise TimeoutError(
                                     f"Maximum timeout {max_timeout}s reached"
                                 ) from None
@@ -1499,7 +1531,7 @@ class NinjaDriver:
             task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
 
             # Parse output using strategy
-            parsed = self._strategy.parse_output(stdout, stderr, exit_code)
+            parsed = self._strategy.parse_output(stdout, stderr, exit_code, repo_root=repo_root)
 
             # Build result from parsed output
             result = NinjaResult(
@@ -1781,7 +1813,7 @@ class NinjaDriver:
             task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
 
             # Parse output using strategy (includes session_id extraction)
-            parsed = self._strategy.parse_output(stdout, stderr, exit_code)
+            parsed = self._strategy.parse_output(stdout, stderr, exit_code, repo_root=repo_root)
 
             # Build result from parsed output with session_id
             result = NinjaResult(

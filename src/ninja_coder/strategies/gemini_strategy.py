@@ -134,6 +134,7 @@ class GeminiStrategy:
         stdout: str,
         stderr: str,
         exit_code: int,
+        repo_root: str | None = None,
     ) -> ParsedResult:
         """Parse Gemini output to extract results.
 
