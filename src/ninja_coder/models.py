@@ -193,13 +193,15 @@ class StepResult(BaseModel):
     """Result of a single plan step execution."""
 
     id: str = Field(..., description="Step identifier")
-    status: Literal["ok", "fail", "error"] = Field(..., description="Execution status")
+    status: Literal["ok", "fail", "skipped"] = Field(..., description="Execution status")
     summary: str = Field(..., description="Brief summary of what was done")
-    notes: str = Field(default="", description="Additional notes or warnings")
-    logs_ref: str = Field(default="", description="Path to detailed logs")
-    suspected_touched_paths: list[str] = Field(
+    files_touched: list[str] = Field(
         default_factory=list,
-        description="Paths that were likely modified (best-effort)",
+        description="Files that were modified in this step",
+    )
+    error_message: str | None = Field(
+        None,
+        description="Error message if step failed",
     )
 
 
@@ -226,12 +228,18 @@ class SimpleTaskResult(BaseModel):
 class PlanExecutionResult(BaseModel):
     """Result of plan execution (sequential or parallel)."""
 
-    status: Literal["ok", "partial", "error"] = Field(..., description="Overall status")
-    results: list[StepResult] = Field(..., description="Per-step results")
-    overall_summary: str = Field(..., description="Summary of entire execution")
-    merge_report: MergeReport | None = Field(
-        default=None,
-        description="Merge report (for parallel execution)",
+    overall_status: Literal["success", "partial", "failed"] = Field(
+        ..., description="Overall execution status"
+    )
+    steps: list[StepResult] = Field(..., description="Per-step results")
+    files_modified: list[str] = Field(
+        default_factory=list,
+        description="All files modified across all steps",
+    )
+    notes: str = Field(default="", description="Additional notes or warnings")
+    execution_time: float | None = Field(
+        None,
+        description="Total execution time in seconds",
     )
 
 
@@ -247,121 +255,6 @@ class ApplyPatchResult(BaseModel):
     """Result of patch application."""
 
     status: Literal["ok", "not_supported", "error"] = Field(..., description="Status")
-
-
-# Session Management Models
-
-
-class CreateSessionRequest(BaseModel):
-    """Request to create a new conversation session."""
-
-    repo_root: str = Field(..., description="Absolute path to repository root")
-    initial_task: str = Field(..., description="Initial task to execute")
-    context_paths: list[str] = Field(
-        default_factory=list,
-        description="Files/directories to focus on",
-    )
-    allowed_globs: list[str] = Field(
-        default_factory=lambda: ["**/*"],
-        description="Allowed file patterns",
-    )
-    deny_globs: list[str] = Field(
-        default_factory=list,
-        description="Denied file patterns",
-    )
-
-
-class ContinueSessionRequest(BaseModel):
-    """Request to continue an existing session."""
-
-    session_id: str = Field(..., description="Session ID to continue")
-    task: str = Field(..., description="New task to execute")
-    repo_root: str = Field(..., description="Absolute path to repository root")
-    context_paths: list[str] = Field(
-        default_factory=list,
-        description="Files/directories to focus on",
-    )
-    allowed_globs: list[str] = Field(
-        default_factory=lambda: ["**/*"],
-        description="Allowed file patterns",
-    )
-    deny_globs: list[str] = Field(
-        default_factory=list,
-        description="Denied file patterns",
-    )
-
-
-class ListSessionsRequest(BaseModel):
-    """Request to list sessions."""
-
-    repo_root: str = Field(default="", description="Optional repository filter")
-
-
-class DeleteSessionRequest(BaseModel):
-    """Request to delete a session."""
-
-    session_id: str = Field(..., description="Session ID to delete")
-
-
-class SessionSummary(BaseModel):
-    """Summary of a conversation session."""
-
-    session_id: str = Field(..., description="Session identifier")
-    repo_root: str = Field(..., description="Repository root path")
-    model: str = Field(..., description="Model used in session")
-    created_at: str = Field(..., description="Creation timestamp (ISO format)")
-    updated_at: str = Field(..., description="Last update timestamp (ISO format)")
-    message_count: int = Field(..., description="Total message count")
-    user_message_count: int = Field(..., description="User message count")
-    assistant_message_count: int = Field(..., description="Assistant message count")
-    metadata: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Session metadata",
-    )
-
-
-class CreateSessionResult(BaseModel):
-    """Result of session creation."""
-
-    status: Literal["ok", "error"] = Field(..., description="Creation status")
-    session_id: str | None = Field(None, description="Created session ID")
-    summary: str = Field(..., description="Task execution summary")
-    notes: str = Field(default="", description="Additional notes")
-    suspected_touched_paths: list[str] = Field(
-        default_factory=list,
-        description="Files modified in initial task",
-    )
-
-
-class ContinueSessionResult(BaseModel):
-    """Result of session continuation."""
-
-    status: Literal["ok", "error"] = Field(..., description="Continuation status")
-    session_id: str = Field(..., description="Session ID")
-    summary: str = Field(..., description="Task execution summary")
-    notes: str = Field(default="", description="Additional notes")
-    suspected_touched_paths: list[str] = Field(
-        default_factory=list,
-        description="Files modified in this task",
-    )
-
-
-class ListSessionsResult(BaseModel):
-    """Result of listing sessions."""
-
-    status: Literal["ok", "error"] = Field(..., description="List status")
-    sessions: list[SessionSummary] = Field(
-        default_factory=list,
-        description="List of session summaries",
-    )
-    count: int = Field(..., description="Total session count")
-
-
-class DeleteSessionResult(BaseModel):
-    """Result of session deletion."""
-
-    status: Literal["ok", "error", "not_found"] = Field(..., description="Delete status")
-    message: str = Field(..., description="Result message")
 
 
 # Multi-Agent Models
@@ -405,10 +298,6 @@ class MultiAgentTaskRequest(BaseModel):
     deny_globs: list[str] = Field(
         default_factory=list,
         description="Denied file patterns",
-    )
-    session_id: str | None = Field(
-        None,
-        description="Optional session ID to continue (for persistent context)",
     )
 
 
