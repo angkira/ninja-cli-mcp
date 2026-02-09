@@ -341,8 +341,8 @@ class OpenCodeStrategy:
             r"(?:wrote|created|modified|updated|edited)\s+['\"]?([^\s'\"]+)['\"]?",
             r"(?:writing|creating|modifying|updating|editing)\s+['\"]?([^\s'\"]+)['\"]?",
             r"file:\s*['\"]?([^\s'\"]+)['\"]?",
-            # OpenCode-specific tool call format: "| Edit     filename.py"
-            r"\|\s+(?:Edit|Write|NotebookEdit)\s+([^\s]+)",
+            # OpenCode-specific tool call format: "← Write filename.py" or "| Edit filename.py"
+            r"[←\|]\s+(?:Edit|Write|NotebookEdit)\s+([^\s]+)",
         ]
         for pattern in file_patterns:
             matches = re.findall(pattern, clean_output, re.IGNORECASE)
