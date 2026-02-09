@@ -36,7 +36,6 @@ from ninja_coder.models import (
     TaskComplexity,
 )
 from ninja_coder.safety import validate_task_safety
-from ninja_coder.sessions import SessionManager
 from ninja_coder.strategies import CLIStrategyRegistry
 from ninja_common.defaults import (
     DEFAULT_CODE_BIN,
@@ -343,13 +342,10 @@ class NinjaDriver:
         # Get strategy based on binary path
         self._strategy = CLIStrategyRegistry.get_strategy(self.config.bin_path, self.config)
 
-        # Initialize session manager
+        # Initialize structured logger
         from ninja_common.path_utils import get_cache_dir
 
         cache_dir = get_cache_dir()
-        self.session_manager = SessionManager(cache_dir)
-
-        # Initialize structured logger
         from ninja_common.structured_logger import StructuredLogger
 
         log_dir = cache_dir / "logs"
@@ -1206,7 +1202,8 @@ class NinjaDriver:
             # Select model intelligently based on task type
             model, use_coding_plan = self._select_model_for_task(instruction, task_type)
 
-            task_logger.info(f"Starting async task execution with model: {model}")
+            task_logger.info(f"Starting async task execution with model: {model} (task_type: {task_type})")
+            logger.info(f"Executing {task_type} task with {self._strategy.name}")
             task_logger.set_metadata("instruction", instruction)
             task_logger.set_metadata("model", model)
             task_logger.set_metadata("task_type", task_type)
@@ -1296,6 +1293,7 @@ class NinjaDriver:
                     file_paths=context_paths,
                     model=model,
                     additional_flags=additional_flags,
+                    task_type=task_type,  # Pass task_type to strategy
                 )
 
             # Log command (redact sensitive data)
@@ -1565,7 +1563,6 @@ class NinjaDriver:
         """Execute task with OpenCode native session support.
 
         This method is specifically for OpenCode CLI's --session and --continue flags.
-        For Python-based session management, use execute_with_session().
 
         Args:
             repo_root: Repository root path.
@@ -1689,6 +1686,7 @@ class NinjaDriver:
                 file_paths=context_paths,
                 model=model,
                 additional_flags=additional_flags,
+                task_type=task_type,  # Pass task_type to strategy
                 session_id=opencode_session_id,
                 continue_last=(not is_initial and not opencode_session_id),
             )
@@ -1855,140 +1853,6 @@ class NinjaDriver:
                 exit_code=-1,
                 model_used=model_used,
             )
-
-    async def execute_with_session(
-        self,
-        task: str,
-        repo_root: str,
-        step_id: str,
-        session_id: str | None = None,
-        create_session: bool = False,
-        context_paths: list[str] | None = None,
-        allowed_globs: list[str] | None = None,
-        deny_globs: list[str] | None = None,
-        timeout_sec: int | None = None,
-        task_type: str = "quick",
-    ) -> NinjaResult:
-        """Execute task with session management.
-
-        Args:
-            task: Task description.
-            repo_root: Repository root path.
-            step_id: Step identifier.
-            session_id: Optional session ID to continue.
-            create_session: If True, create new session for conversation.
-            context_paths: Files to include in context.
-            allowed_globs: Allowed file patterns.
-            deny_globs: Denied file patterns.
-            timeout_sec: Timeout in seconds.
-            task_type: Type of task ('quick', 'sequential', 'parallel').
-
-        Returns:
-            NinjaResult with session_id if session was used.
-        """
-        # Load or create session
-        session = None
-        if session_id:
-            session = self.session_manager.load_session(session_id)
-            if not session:
-                # Structured logging: Session load failed
-                self.structured_logger.error(
-                    f"Session not found: {session_id}",
-                    session_id=session_id,
-                    cli_name=self._strategy.name,
-                )
-
-                return NinjaResult(
-                    success=False,
-                    summary=f"❌ Session {session_id} not found",
-                    notes="Session may have been deleted or expired",
-                    model_used=self.config.model,
-                )
-
-            # Structured logging: Session loaded
-            self.structured_logger.log_session(
-                action="loaded",
-                session_id=session.session_id,
-                cli_name=self._strategy.name,
-                model=session.model,
-                message_count=len(session.messages),
-            )
-        elif create_session:
-            session = self.session_manager.create_session(
-                repo_root=repo_root,
-                model=self.config.model,
-                metadata={"context_paths": context_paths or []},
-            )
-
-            # Structured logging: Session created
-            self.structured_logger.log_session(
-                action="created",
-                session_id=session.session_id,
-                cli_name=self._strategy.name,
-                model=self.config.model,
-                repo_root=repo_root,
-            )
-
-        # Add user message to session
-        if session:
-            session.add_message("user", task)
-            self.session_manager.save_session(session)
-            logger.info(f"📝 Added user message to session {session.session_id}")
-
-            # Structured logging: Session updated
-            self.structured_logger.log_session(
-                action="updated",
-                session_id=session.session_id,
-                cli_name=self._strategy.name,
-                message_count=len(session.messages),
-            )
-
-        # Build instruction
-        builder = InstructionBuilder(repo_root, mode=ExecutionMode.QUICK)
-        instruction = builder.build_quick_task(
-            task=task,
-            context_paths=context_paths or [],
-            allowed_globs=allowed_globs or ["**/*"],
-            deny_globs=deny_globs or [],
-        )
-
-        # Execute task
-        result = await self.execute_async(
-            repo_root=repo_root,
-            step_id=step_id,
-            instruction=instruction,
-            timeout_sec=timeout_sec,
-            task_type=task_type,
-            session_id=session.session_id if session else None,
-        )
-
-        # Add assistant response to session
-        if session:
-            session.add_message(
-                "assistant",
-                result.summary,
-                metadata={
-                    "touched_paths": result.suspected_touched_paths,
-                    "success": result.success,
-                    "model": result.model_used,
-                },
-            )
-            self.session_manager.save_session(session)
-            result.session_id = session.session_id
-            logger.info(f"💾 Saved assistant response to session {session.session_id}")
-
-            # Structured logging: Session saved
-            self.structured_logger.log_session(
-                action="saved",
-                session_id=session.session_id,
-                cli_name=self._strategy.name,
-                model=result.model_used,
-                message_count=len(session.messages),
-                success=result.success,
-            )
-
-        return result
-
 
 # Backwards compatibility aliases
 QwenConfig = NinjaConfig

@@ -133,6 +133,7 @@ class OpenCodeStrategy:
         additional_flags: dict[str, Any] | None = None,
         session_id: str | None = None,
         continue_last: bool = False,
+        task_type: str = "quick",
     ) -> CLICommandResult:
         """Build OpenCode command with z.ai endpoint support.
 
@@ -146,6 +147,7 @@ class OpenCodeStrategy:
                 - enable_multi_agent: Whether to add ultrawork keyword (bool)
             session_id: OpenCode session ID to continue (optional).
             continue_last: Continue last session (optional).
+            task_type: Type of task ('quick', 'sequential_plan', 'parallel_plan').
 
         Returns:
             CLICommandResult with command, env, and metadata.
@@ -157,6 +159,10 @@ class OpenCodeStrategy:
         enable_multi_agent = (
             additional_flags.get("enable_multi_agent", False) if additional_flags else False
         )
+
+        # Detect if task needs multi-agent mode based on task_type
+        if task_type in ("sequential_plan", "parallel_plan"):
+            enable_multi_agent = True
 
         # OpenCode supports direct provider access (anthropic/, openai/, google/)
         # and also supports openrouter/ prefix for OpenRouter models

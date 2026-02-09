@@ -31,11 +31,7 @@ from mcp.types import (
 
 from ninja_coder.models import (
     ApplyPatchRequest,
-    ContinueSessionRequest,
-    CreateSessionRequest,
-    DeleteSessionRequest,
     GetAgentsRequest,
-    ListSessionsRequest,
     MultiAgentTaskRequest,
     ParallelPlanRequest,
     QueryLogsRequest,
@@ -396,115 +392,6 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="coder_create_session",
-        description=(
-            "Create a new conversation session for persistent context across multiple tasks. "
-            "Sessions maintain conversation history and allow continuing previous work. "
-            "\n\n"
-            "✅ USE FOR: Starting a new multi-step coding workflow, complex features requiring "
-            "multiple iterations, maintaining context across related tasks. "
-            "\n\n"
-            "Returns: session_id for use in coder_continue_session"
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Absolute path to the repository root",
-                },
-                "initial_task": {
-                    "type": "string",
-                    "description": "Initial task to execute in this session",
-                },
-                "context_paths": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Files/directories to focus on",
-                    "default": [],
-                },
-            },
-            "required": ["repo_root", "initial_task"],
-        },
-    ),
-    Tool(
-        name="coder_continue_session",
-        description=(
-            "Continue an existing conversation session with a new task. "
-            "Maintains full conversation history from previous interactions. "
-            "\n\n"
-            "✅ USE FOR: Continuing previous work, iterating on code from earlier tasks, "
-            "building on previous context. "
-            "\n\n"
-            "Requires: session_id from coder_create_session or coder_list_sessions"
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "session_id": {
-                    "type": "string",
-                    "description": "Session ID to continue (from coder_create_session or coder_list_sessions)",
-                },
-                "task": {
-                    "type": "string",
-                    "description": "New task to execute in this session",
-                },
-                "repo_root": {
-                    "type": "string",
-                    "description": "Absolute path to the repository root (must match session)",
-                },
-                "context_paths": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Files/directories to focus on",
-                    "default": [],
-                },
-            },
-            "required": ["session_id", "task", "repo_root"],
-        },
-    ),
-    Tool(
-        name="coder_list_sessions",
-        description=(
-            "List all conversation sessions, optionally filtered by repository. "
-            "Returns session summaries with metadata. "
-            "\n\n"
-            "✅ USE FOR: Finding existing sessions to continue, viewing session history, "
-            "managing active conversations."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Optional repository filter - only show sessions for this repo",
-                    "default": "",
-                },
-            },
-            "required": [],
-        },
-    ),
-    Tool(
-        name="coder_delete_session",
-        description=(
-            "Delete a conversation session and its history. "
-            "\n\n"
-            "⚠️ WARNING: This permanently deletes the session. "
-            "\n\n"
-            "✅ USE FOR: Cleaning up completed or abandoned sessions."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "session_id": {
-                    "type": "string",
-                    "description": "Session ID to delete",
-                },
-            },
-            "required": ["session_id"],
-        },
-    ),
-    Tool(
         name="coder_get_agents",
         description=(
             "Get information about available specialized agents for multi-agent orchestration. "
@@ -538,9 +425,7 @@ TOOLS: list[Tool] = [
             "🤖 AGENTS: Chief Architect, Frontend Engineer, Backend Engineer, DevOps, Oracle, "
             "Librarian, Explorer work in parallel with shared context. "
             "\n\n"
-            "⏱️ NOTE: Multi-agent tasks take longer but provide comprehensive solutions. "
-            "\n\n"
-            "💡 TIP: Use sessions for persistent context across multi-agent iterations."
+            "⏱️ NOTE: Multi-agent tasks take longer but provide comprehensive solutions."
         ),
         inputSchema={
             "type": "object",
@@ -562,11 +447,6 @@ TOOLS: list[Tool] = [
                     "items": {"type": "string"},
                     "description": "Files/directories for context",
                     "default": [],
-                },
-                "session_id": {
-                    "type": "string",
-                    "description": "Optional session ID to continue (for persistent multi-agent context)",
-                    "default": "",
                 },
             },
             "required": ["task", "repo_root"],
@@ -779,22 +659,6 @@ You:
             elif name == "coder_apply_patch":
                 request = ApplyPatchRequest(**arguments)
                 result = await executor.apply_patch(request, client_id=client_id)
-
-            elif name == "coder_create_session":
-                request = CreateSessionRequest(**arguments)
-                result = await executor.create_session(request, client_id=client_id)
-
-            elif name == "coder_continue_session":
-                request = ContinueSessionRequest(**arguments)
-                result = await executor.continue_session(request, client_id=client_id)
-
-            elif name == "coder_list_sessions":
-                request = ListSessionsRequest(**arguments)
-                result = await executor.list_sessions(request, client_id=client_id)
-
-            elif name == "coder_delete_session":
-                request = DeleteSessionRequest(**arguments)
-                result = await executor.delete_session(request, client_id=client_id)
 
             elif name == "coder_get_agents":
                 request = GetAgentsRequest(**arguments)

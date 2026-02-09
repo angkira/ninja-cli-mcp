@@ -21,9 +21,17 @@ from ninja_coder.models import (
     AgentInfo,
     ApplyPatchRequest,
     ApplyPatchResult,
+    ContinueSessionRequest,
+    ContinueSessionResult,
+    CreateSessionRequest,
+    CreateSessionResult,
+    DeleteSessionRequest,
+    DeleteSessionResult,
     ExecutionMode,
     GetAgentsRequest,
     GetAgentsResult,
+    ListSessionsRequest,
+    ListSessionsResult,
     MergeReport,
     MultiAgentTaskRequest,
     MultiAgentTaskResult,
@@ -422,15 +430,33 @@ class ToolExecutor:
     async def execute_plan_parallel(
         self, request: ParallelPlanRequest, client_id: str = "default"
     ) -> PlanExecutionResult:
-        """Execute CODE WRITING plan steps in ONE subprocess with parallelization instructions."""
+        """
+        Execute CODE WRITING plan steps in parallel.
 
+        Steps are executed concurrently up to the fanout limit. Each step
+        runs in its own subprocess calling the AI code CLI.
+
+        Returns ONLY concise summaries per step - NO source code.
+
+        Note: For stronger isolation, consider using git worktrees for each
+        parallel execution. This implementation runs against the same repo
+        with instructions to respect scope.
+
+        Args:
+            request: Parallel plan request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            Plan execution result with per-step CONCISE summaries and merge report.
+        """
         logger.info(
-            f"Executing {len(request.steps)} steps in parallel (single-process, fanout={request.fanout}) for {client_id}"
+            f"Executing {len(request.steps)} steps in parallel "
+            f"(fanout={request.fanout}) in {request.repo_root} for client {client_id}"
         )
 
         # Generate task ID and start timer
         plan_task_id = str(uuid.uuid4())
-        start_time = time.time()
+        plan_start_time = time.time()
 
         # Validate repo root
         try:
@@ -443,95 +469,157 @@ class ToolExecutor:
                 notes=f"❌ {e!s}",
             )
 
-        # 1. Build rich prompt with all tasks using PromptBuilder
-        from ninja_coder.prompt_builder import PromptBuilder
-        from ninja_coder.result_parser import ResultParser
+        builder = InstructionBuilder(request.repo_root, request.mode)
 
-        builder_prompt = PromptBuilder(request.repo_root)
-        prompt = builder_prompt.build_parallel_plan(
-            tasks=request.steps,
-            fanout=request.fanout,
-            mode=request.mode,
-        )
+        # Create semaphore to limit concurrency
+        semaphore = asyncio.Semaphore(request.fanout)
 
-        # 2. Build instruction
-        instruction_builder = InstructionBuilder(request.repo_root, request.mode)
-        instruction = instruction_builder.build_quick_task(
-            task=prompt,
-            context_paths=[],  # Already included in prompt
-            allowed_globs=request.global_allowed_globs,
-            deny_globs=request.global_deny_globs,
-        )
+        async def execute_step(step: PlanStep) -> tuple[str, NinjaResult, float, str]:
+            """Execute a single step with semaphore control."""
+            step_task_id = str(uuid.uuid4())
+            step_start_time = time.time()
 
-        # 3. Execute ONCE
-        try:
-            result = await self.driver.execute_async(
-                repo_root=request.repo_root,
-                step_id=f"parallel_plan_{plan_task_id[:8]}",
-                instruction=instruction,
-                timeout_sec=self._estimate_parallel_timeout(request),
-                task_type="parallel_plan",
-            )
-        except Exception as e:
-            logger.error(f"Parallel plan execution failed: {e}")
-            return PlanExecutionResult(
-                overall_status="failed",
-                steps=[],
-                files_modified=[],
-                notes=f"❌ Execution error: {e!s}",
-            )
+            async with semaphore:
+                # Add small delay between parallel tasks to avoid API rate limits
+                await asyncio.sleep(2)
 
-        # 4. Parse structured result
-        if result.success:
-            try:
-                parser = ResultParser()
-                plan_result = parser.parse_plan_result(result.stdout)
-            except Exception as e:
-                logger.warning(f"Failed to parse structured result: {e}")
-                # Fallback: create basic result
-                plan_result = PlanExecutionResult(
-                    overall_status="success" if result.success else "failed",
-                    steps=[
-                        StepResult(
-                            id=step.id,
-                            status="ok",
-                            summary="Completed (details in output)",
-                            files_touched=[],
-                        )
-                        for step in request.steps
-                    ],
-                    files_modified=result.suspected_touched_paths,
-                    notes=result.summary[:500],
+                logger.info(
+                    f"Starting parallel step {step.id}: {step.title} for client {client_id}"
                 )
-        else:
-            plan_result = PlanExecutionResult(
-                overall_status="failed",
-                steps=[],
-                files_modified=[],
-                notes=result.summary[:500],
-            )
 
-        # 5. Record metrics
-        duration = time.time() - start_time
+                # Build instruction with parallel execution hint
+                instruction = builder.build_plan_step(
+                    step=step,
+                    global_allowed_globs=request.global_allowed_globs,
+                    global_deny_globs=request.global_deny_globs,
+                )
+
+                # Add parallel execution context
+                instruction["parallel_context"] = {
+                    "is_parallel": True,
+                    "total_steps": len(request.steps),
+                    "isolation_note": (
+                        "This step is running in parallel with other steps. "
+                        "Strictly respect the allowed_globs to avoid conflicts. "
+                        "Only modify files within your designated scope."
+                    ),
+                }
+
+                timeout = (
+                    step.constraints.time_budget_sec
+                    if step.constraints.time_budget_sec > 0
+                    else None
+                )
+
+                result = await self.driver.execute_async(
+                    repo_root=request.repo_root,
+                    step_id=step.id,
+                    instruction=instruction,
+                    timeout_sec=timeout,
+                    task_type="parallel",  # Parallel execution
+                )
+
+                step_duration = time.time() - step_start_time
+                return step.id, result, step_duration, step_task_id
+
+        # Execute all steps in parallel
+        tasks = [execute_step(step) for step in request.steps]
+        completed = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results
+        results: list[StepResult] = []
+        all_success = True
+        any_success = False
+
+        for idx, item in enumerate(completed):
+            if isinstance(item, Exception):
+                # Handle exceptions
+                results.append(
+                    StepResult(
+                        id="unknown",
+                        status="error",
+                        summary=f"❌ Exception: {item!s}"[:200],
+                        notes=str(item)[:200],
+                    )
+                )
+                all_success = False
+            else:
+                step_id, result, step_duration, step_task_id = item
+                step_result = self._result_to_step_result(step_id, result)
+                results.append(step_result)
+
+                # Record metrics for this step
+                step = request.steps[idx]
+                file_scope = ",".join(step.allowed_globs) if step.allowed_globs else None
+                self._record_metrics(
+                    task_id=step_task_id,
+                    tool_name="coder_plan_step_parallel",
+                    task_description=f"{step.title}: {step.task}",
+                    output=result.stdout,
+                    duration_sec=step_duration,
+                    success=result.success,
+                    execution_mode=request.mode.value,
+                    repo_root=request.repo_root,
+                    file_scope=file_scope,
+                    error_message=result.summary if not result.success else None,
+                    client_id=client_id,
+                )
+
+                if result.success:
+                    any_success = True
+                else:
+                    all_success = False
+
+        # Determine overall status
+        if all_success:
+            overall_status = "success"
+        elif any_success:
+            overall_status = "partial"
+        else:
+            overall_status = "failed"
+
+        # Build CONCISE overall summary
+        ok_count = sum(1 for r in results if r.status == "ok")
+        fail_count = sum(1 for r in results if r.status == "fail")
+        skipped_count = sum(1 for r in results if r.status == "skipped")
+
+        notes = (
+            f"{'✅' if all_success else '⚠️' if any_success else '❌'} "
+            f"Completed {len(results)} parallel steps: "
+            f"{ok_count} ok, {fail_count} failed, {skipped_count} skipped. "
+            f"Steps executed in parallel with scope isolation. "
+            f"Manual review recommended if steps had overlapping scopes."
+        )
+
+        # Collect all modified files
+        all_files_modified = []
+        for r in results:
+            all_files_modified.extend(r.files_touched)
+        # Remove duplicates
+        files_modified = list(dict.fromkeys(all_files_modified))
+
+        # Record overall plan metrics
+        plan_duration = time.time() - plan_start_time
         self._record_metrics(
             task_id=plan_task_id,
             tool_name="coder_execute_plan_parallel",
-            task_description=f"Parallel plan ({len(request.steps)} tasks)",
-            output=result.stdout,
-            duration_sec=duration,
-            success=result.success,
+            task_description=f"Parallel plan with {len(request.steps)} steps (fanout={request.fanout})",
+            output=notes,
+            duration_sec=plan_duration,
+            success=all_success,
             execution_mode=request.mode.value,
             repo_root=request.repo_root,
+            error_message=notes if not all_success else None,
             client_id=client_id,
         )
 
-        return plan_result
-
-    def _estimate_parallel_timeout(self, request: ParallelPlanRequest) -> int:
-        """Estimate timeout for parallel plan."""
-        base = 300
-        per_task = 30  # Parallel is faster
-        return base + (per_task * max(1, len(request.steps) // request.fanout))
+        return PlanExecutionResult(
+            overall_status=overall_status,
+            steps=results,
+            files_modified=files_modified,
+            notes=notes,
+            execution_time=plan_duration,
+        )
 
     async def run_tests(self, request: RunTestsRequest, client_id: str = "default") -> TestResult:
         """
@@ -587,6 +675,211 @@ class ToolExecutor:
                 "To apply changes, describe what code to write in coder_simple_task."
             ),
         )
+
+    async def create_session(
+        self,
+        request: CreateSessionRequest,
+        client_id: str = "default",
+    ) -> CreateSessionResult:
+        """Create a new conversation session and execute the initial task.
+
+        Args:
+            request: Create session request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            Create session result with session_id.
+        """
+        logger.info(f"[{client_id}] Creating session for {request.repo_root}")
+
+        step_id = f"session_create_{int(datetime.utcnow().timestamp())}"
+
+        try:
+            # Execute with session using the driver's execute_with_session method
+            result = await self.driver.execute_with_session(
+                task=request.initial_task,
+                repo_root=request.repo_root,
+                step_id=step_id,
+                create_session=True,
+                context_paths=request.context_paths,
+                allowed_globs=request.allowed_globs,
+                deny_globs=request.deny_globs,
+            )
+
+            if result.success:
+                return CreateSessionResult(
+                    status="ok",
+                    session_id=result.session_id,
+                    summary=result.summary,
+                    notes=result.notes,
+                    suspected_touched_paths=result.suspected_touched_paths,
+                )
+            else:
+                return CreateSessionResult(
+                    status="error",
+                    session_id=result.session_id,
+                    summary=result.summary,
+                    notes=result.notes,
+                    suspected_touched_paths=result.suspected_touched_paths,
+                )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] Session creation failed: {e}", exc_info=True)
+            return CreateSessionResult(
+                status="error",
+                summary=f"❌ Failed to create session: {str(e)[:100]}",
+                notes=str(e),
+            )
+
+    async def continue_session(
+        self,
+        request: ContinueSessionRequest,
+        client_id: str = "default",
+    ) -> ContinueSessionResult:
+        """Continue an existing session with a new task.
+
+        Args:
+            request: Continue session request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            Continue session result.
+        """
+        logger.info(f"[{client_id}] Continuing session {request.session_id}")
+
+        step_id = f"session_continue_{int(datetime.utcnow().timestamp())}"
+
+        try:
+            # Execute with existing session
+            result = await self.driver.execute_with_session(
+                task=request.task,
+                repo_root=request.repo_root,
+                step_id=step_id,
+                session_id=request.session_id,
+                context_paths=request.context_paths,
+                allowed_globs=request.allowed_globs,
+                deny_globs=request.deny_globs,
+            )
+
+            if result.success:
+                return ContinueSessionResult(
+                    status="ok",
+                    session_id=request.session_id,
+                    summary=result.summary,
+                    notes=result.notes,
+                    suspected_touched_paths=result.suspected_touched_paths,
+                )
+            else:
+                return ContinueSessionResult(
+                    status="error",
+                    session_id=request.session_id,
+                    summary=result.summary,
+                    notes=result.notes,
+                    suspected_touched_paths=result.suspected_touched_paths,
+                )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] Session continuation failed: {e}", exc_info=True)
+            return ContinueSessionResult(
+                status="error",
+                session_id=request.session_id,
+                summary=f"❌ Failed to continue session: {str(e)[:100]}",
+                notes=str(e),
+            )
+
+    async def list_sessions(
+        self,
+        request: ListSessionsRequest,
+        client_id: str = "default",
+    ) -> ListSessionsResult:
+        """List all conversation sessions, optionally filtered by repository.
+
+        Args:
+            request: List sessions request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            List sessions result with session summaries.
+        """
+        logger.info(f"[{client_id}] Listing sessions for {request.repo_root or 'all repos'}")
+
+        try:
+            # Get sessions from driver's session manager
+            repo_filter = request.repo_root if request.repo_root else None
+            sessions = self.driver.session_manager.list_sessions(repo_root=repo_filter)
+
+            # Convert to summaries
+            from ninja_coder.models import SessionSummary
+
+            session_summaries = []
+            for session in sessions:
+                summary_dict = self.driver.session_manager.get_session_summary(session.session_id)
+                if summary_dict:
+                    session_summaries.append(SessionSummary(**summary_dict))
+
+            return ListSessionsResult(
+                status="ok",
+                sessions=session_summaries,
+                count=len(session_summaries),
+            )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] List sessions failed: {e}", exc_info=True)
+            return ListSessionsResult(
+                status="error",
+                sessions=[],
+                count=0,
+            )
+
+    async def delete_session(
+        self,
+        request: DeleteSessionRequest,
+        client_id: str = "default",
+    ) -> DeleteSessionResult:
+        """Delete a conversation session.
+
+        Args:
+            request: Delete session request parameters.
+            client_id: Client identifier for isolation and rate limiting.
+
+        Returns:
+            Delete session result.
+        """
+        logger.info(f"[{client_id}] Deleting session {request.session_id}")
+
+        try:
+            # Delete session using driver's session manager
+            deleted = self.driver.session_manager.delete_session(request.session_id)
+
+            if deleted:
+                # Structured logging: Session deleted
+                self.driver.structured_logger.log_session(
+                    action="deleted",
+                    session_id=request.session_id,
+                )
+
+                return DeleteSessionResult(
+                    status="ok",
+                    message=f"✅ Session {request.session_id} deleted successfully",
+                )
+            else:
+                # Structured logging: Session not found
+                self.driver.structured_logger.warning(
+                    f"Session not found for deletion: {request.session_id}",
+                    session_id=request.session_id,
+                )
+
+                return DeleteSessionResult(
+                    status="not_found",
+                    message=f"⚠️ Session {request.session_id} not found",
+                )
+
+        except Exception as e:
+            logger.error(f"[{client_id}] Delete session failed: {e}", exc_info=True)
+            return DeleteSessionResult(
+                status="error",
+                message=f"❌ Failed to delete session: {str(e)[:100]}",
+            )
 
     async def get_agents(
         self,
@@ -699,13 +992,26 @@ class ToolExecutor:
                 deny_globs=request.deny_globs,
             )
 
-            # Execute task
-            result = await self.driver.execute_async(
-                repo_root=request.repo_root,
-                step_id=step_id,
-                instruction=instruction,
-                task_type="parallel",  # Multi-agent is like parallel execution
-            )
+            # Execute with or without session
+            if request.session_id:
+                # Continue existing session
+                result = await self.driver.execute_with_session(
+                    task=enhanced_prompt,
+                    repo_root=request.repo_root,
+                    step_id=step_id,
+                    session_id=request.session_id,
+                    context_paths=request.context_paths,
+                    allowed_globs=request.allowed_globs,
+                    deny_globs=request.deny_globs,
+                )
+            else:
+                # Execute without session
+                result = await self.driver.execute_async(
+                    repo_root=request.repo_root,
+                    step_id=step_id,
+                    instruction=instruction,
+                    task_type="parallel",  # Multi-agent is like parallel execution
+                )
 
             if result.success:
                 return MultiAgentTaskResult(
@@ -714,7 +1020,7 @@ class ToolExecutor:
                     notes=result.notes,
                     agents_used=agents,
                     suspected_touched_paths=result.suspected_touched_paths,
-                    session_id=None,  # Session support removed
+                    session_id=result.session_id,
                 )
             else:
                 return MultiAgentTaskResult(
@@ -723,7 +1029,7 @@ class ToolExecutor:
                     notes=result.notes,
                     agents_used=agents,
                     suspected_touched_paths=result.suspected_touched_paths,
-                    session_id=None,  # Session support removed
+                    session_id=result.session_id,
                 )
 
         except Exception as e:

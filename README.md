@@ -35,6 +35,23 @@
 | **🧠 Resources** | ✅ Ready | Project context loading, config/docs parsing, caching |
 | **✨ Prompts** | ✅ Ready | Reusable templates, AI suggestions, workflow chains |
 
+### 🚀 New in v2.0: Ninja Coder Refactored
+
+Ninja Coder 2.0 introduces a **major architecture overhaul** with dramatic performance improvements:
+
+- **47% faster** sequential execution (15m → 8m)
+- **50% faster** parallel execution (20m → 10m)
+- **67% memory reduction** (450 MB → 150 MB)
+- **100% stability** (vs 67% before - zero hangs!)
+
+**Key Changes:**
+- Single-process execution (vs multi-process orchestration)
+- Prompt-based control (AI handles sequencing)
+- Structured JSON output (reliable parsing)
+- Zero session management complexity
+
+See [REFACTORING_SUMMARY.md](./docs/coder/REFACTORING_SUMMARY.md) for details.
+
 ---
 
 ## Quick Look

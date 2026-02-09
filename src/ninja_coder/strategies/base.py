@@ -106,6 +106,7 @@ class CLIStrategy(Protocol):
         additional_flags: dict[str, Any] | None = None,
         session_id: str | None = None,
         continue_last: bool = False,
+        task_type: str = "quick",
     ) -> CLICommandResult:
         """Build command for executing this CLI.
 
@@ -117,6 +118,7 @@ class CLIStrategy(Protocol):
             additional_flags: CLI-specific flags and options.
             session_id: Session ID to continue (OpenCode-specific).
             continue_last: Continue last session (OpenCode-specific).
+            task_type: Type of task ('quick', 'sequential_plan', 'parallel_plan').
 
         Returns:
             CLICommandResult with command, env, and metadata.
