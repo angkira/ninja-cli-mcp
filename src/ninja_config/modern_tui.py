@@ -30,24 +30,12 @@ from pathlib import Path
 from ninja_common.config_manager import ConfigManager
 
 
-# Mock model data (in real implementation, fetch from APIs)
-AVAILABLE_MODELS = {
-    "openrouter": [
-        ("anthropic/claude-4", "Claude 4", "Most capable model"),
-        ("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet", "Fast and intelligent"),
-        ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast and affordable"),
-        ("openai/gpt-4-turbo", "GPT-4 Turbo", "OpenAI's latest"),
-        ("openai/gpt-4", "GPT-4", "Powerful reasoning"),
-        ("google/gemini-2.0-flash-exp", "Gemini 2.0 Flash", "Fast and multimodal"),
-        ("google/gemini-pro", "Gemini Pro", "Google's best"),
-        ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B", "Open source"),
-        ("qwen/qwen-2.5-72b-instruct", "Qwen 2.5 72B", "Multilingual"),
-    ],
-    "perplexity": [
-        ("sonar", "Sonar", "Online model with search"),
-        ("sonar-pro", "Sonar Pro", "Advanced online model"),
-    ],
-}
+# Import model fetching from model_selector
+try:
+    from ninja_config.model_selector import get_provider_models
+    HAS_MODEL_FETCHER = True
+except ImportError:
+    HAS_MODEL_FETCHER = False
 
 
 class ModelSearchPanel(Widget):
@@ -97,9 +85,37 @@ class ModelSearchPanel(Widget):
 
     def _update_model_list(self, query: str) -> None:
         """Update model list based on search query."""
-        # Get models from appropriate provider
+        # Get models from appropriate provider using real API
         provider = self.context.get("provider", "openrouter")
-        all_models = AVAILABLE_MODELS.get(provider, [])
+
+        # Fetch real models from API
+        if HAS_MODEL_FETCHER:
+            try:
+                # Determine operator based on component config
+                operator = "aider"  # Default
+                if self.config_manager:
+                    component = self.context.get("component", "")
+                    config = self.config_manager.list_all()
+                    operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "aider")
+
+                # Fetch models
+                models_data = get_provider_models(operator, provider)
+                # Convert to (model_id, name, description) format
+                all_models = [
+                    (model_id, name, desc)
+                    for model_id, name, desc in models_data
+                ]
+            except Exception as e:
+                # Fallback to empty list if fetch fails
+                all_models = []
+                # Show error in UI
+                list_view = self.query_one("#model-list", ListView)
+                list_view.clear()
+                error_item = ListItem(Static(f"[red]Failed to fetch models: {e}[/red]"))
+                list_view.append(error_item)
+                return
+        else:
+            all_models = []
 
         # Filter models
         query_lower = query.lower()
