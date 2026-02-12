@@ -9,6 +9,7 @@ Features:
 
 from __future__ import annotations
 
+import os
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
 from textual.widgets import (
@@ -21,6 +22,7 @@ from textual.widgets import (
     Label,
     ListView,
     ListItem,
+    Checkbox,
 )
 from textual.binding import Binding
 from textual.widget import Widget
@@ -215,55 +217,67 @@ class SettingsPanel(Widget):
             # OpenCode uses provider-specific keys
             if provider == "openrouter":
                 api_key_env_var = "OPENROUTER_API_KEY"
-                api_key = config.get(api_key_env_var, "")
+                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
                 api_key_label = "OpenRouter API Key"
             elif provider == "anthropic":
                 api_key_env_var = "ANTHROPIC_API_KEY"
-                api_key = config.get(api_key_env_var, "")
+                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
                 api_key_label = "Anthropic API Key"
             elif provider == "openai":
                 api_key_env_var = "OPENAI_API_KEY"
-                api_key = config.get(api_key_env_var, "")
+                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
                 api_key_label = "OpenAI API Key"
             elif provider == "google":
                 api_key_env_var = "GOOGLE_API_KEY"
-                api_key = config.get(api_key_env_var, "")
+                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
                 api_key_label = "Google API Key"
             elif provider == "azure":
                 api_key_env_var = "AZURE_OPENAI_API_KEY"
-                api_key = config.get(api_key_env_var, "")
+                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
                 api_key_label = "Azure OpenAI API Key"
             elif provider == "ollama":
                 api_key_env_var = "OLLAMA_API_KEY"
-                api_key = config.get(api_key_env_var, "")
+                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
                 api_key_label = "Ollama API Key (optional)"
             elif provider == "lmstudio":
                 api_key_env_var = "LMSTUDIO_API_KEY"
-                api_key = config.get(api_key_env_var, "")
+                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
                 api_key_label = "LM Studio API Key (optional)"
             elif provider == "zai":
                 api_key_env_var = "ZAI_API_KEY"
-                api_key = config.get(api_key_env_var, "")
+                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
                 api_key_label = "Z.ai API Key"
         elif component == "coder":
             api_key_env_var = "OPENROUTER_API_KEY"
-            api_key = config.get(api_key_env_var, "")
+            api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
         elif component == "researcher":
             api_key_env_var = "PERPLEXITY_API_KEY"
-            api_key = config.get(api_key_env_var, "") or config.get("SERPER_API_KEY", "")
+            api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "") or config.get("SERPER_API_KEY", "") or os.environ.get("SERPER_API_KEY", "")
 
-        # Show masked current value
-        if api_key:
-            masked = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
-            yield Label(f"Current: {masked}", classes="field-label")
-
-        # Store env var for save method
+        # Store env var and current key for save method
         self.api_key_env_var = api_key_env_var
+        self.current_api_key = api_key
 
-        # API Key input
-        yield Label(f"{api_key_label}:", classes="field-label")
+        # Show current value with show/hide toggle
+        if api_key:
+            yield Label(f"{api_key_label}:", classes="field-label")
+
+            # Create horizontal container for key display and show button
+            with Horizontal(classes="key-display-container"):
+                yield Input(
+                    value=api_key,
+                    password=True,
+                    id="current-key-display",
+                    disabled=True,
+                )
+                yield Checkbox("Show", id="show-key-checkbox")
+        else:
+            yield Label(f"{api_key_label}: [dim]Not set[/dim]", classes="field-label")
+
+        # New API Key input (for updating)
+        yield Label("Update API Key (leave blank to keep current):", classes="field-label")
         yield Input(
-            placeholder="Enter new API key or leave blank to keep current...",
+            placeholder="Enter new API key...",
             password=True,
             id="api-key-input",
         )
@@ -285,6 +299,15 @@ class SettingsPanel(Widget):
         """Handle save button press."""
         if event.button.id == "save-settings-btn":
             self._save_settings()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Handle show/hide checkbox toggle."""
+        if event.checkbox.id == "show-key-checkbox":
+            try:
+                key_input = self.query_one("#current-key-display", Input)
+                key_input.password = not event.value
+            except Exception:
+                pass
 
     def _save_settings(self) -> None:
         """Save settings to config."""
@@ -563,6 +586,20 @@ class ModernConfigApp(App):
         margin-bottom: 1;
     }
 
+    .key-display-container {
+        height: auto;
+        margin-bottom: 1;
+    }
+
+    #current-key-display {
+        width: 80%;
+    }
+
+    #show-key-checkbox {
+        width: 20%;
+        margin-left: 1;
+    }
+
     #model-search-input, #api-key-input, #base-url-input {
         margin-bottom: 1;
     }
@@ -606,33 +643,11 @@ class ModernConfigApp(App):
         self.title = "Ninja MCP Configurator"
         self.sub_title = "Modern Tree-Based Configuration"
 
-    def _create_logo(self) -> Text:
+    def _create_logo(self) -> str:
         """Create gradient logo text."""
-        # NINJA-MCP with gradient from turquoise to lilac
-        logo_text = Text()
-        logo_str = "NINJA-MCP"
-
-        # Create gradient colors from turquoise (#40E0D0) to lilac (#C8A2C8)
-        # Using intermediate colors for smooth gradient
-        colors = [
-            "#40E0D0",  # Turquoise
-            "#5DD5DB",
-            "#79CAE6",
-            "#96BFF1",
-            "#B2B4DC",
-            "#CFA9C7",  # Lilac
-        ]
-
-        chars_per_color = len(logo_str) / (len(colors) - 1)
-
-        for i, char in enumerate(logo_str):
-            # Calculate which color to use
-            color_index = min(int(i / chars_per_color), len(colors) - 1)
-            logo_text.append(char, style=f"bold {colors[color_index]}")
-
-        # Center the logo
-        logo_text.justify = "center"
-        return logo_text
+        # NINJA-MCP with gradient from turquoise to lilac using Rich markup
+        # Using color codes that work well in terminals
+        return "[bold cyan]N[/bold cyan][bold bright_cyan]I[/bold bright_cyan][bold blue]N[/bold blue][bold bright_blue]J[/bold bright_blue][bold magenta]A[/bold magenta][bold bright_magenta]-[/bold bright_magenta][bold magenta]M[/bold magenta][bold bright_magenta]C[/bold bright_magenta][bold magenta]P[/bold magenta]"
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
