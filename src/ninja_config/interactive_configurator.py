@@ -1846,7 +1846,7 @@ def run_power_configurator(config_path: str | None = None) -> int:
 
             if choice == "overview":
                 from ninja_config.ui.main_menu import show_configuration_overview
-                show_configuration_overview(config)
+                show_configuration_overview(config, config_mgr.config_file)
             elif choice == "coder_setup":
                 run_coder_setup_flow(config_mgr, config)
             elif choice == "secretary_setup":
