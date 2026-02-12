@@ -279,8 +279,8 @@ class ConfigTree(Tree):
         aider_label = "[*] Aider" if current_op == "aider" else "[ ] Aider"
         opencode_label = "[*] OpenCode" if current_op == "opencode" else "[ ] OpenCode"
 
-        op_branch.add(aider_label, data={"type": "operator", "component": "coder", "operator": "aider"})
-        op_branch.add(opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode"})
+        op_branch.add(aider_label, data={"type": "operator", "component": "coder", "operator": "aider"}, allow_expand=False, allow_expand=False)
+        op_branch.add(opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode"}, allow_expand=False, allow_expand=False)
 
         # Settings branch (for default operator)
         coder.add("Settings", data={"type": "settings", "component": "coder"})
@@ -291,58 +291,58 @@ class ConfigTree(Tree):
         # Quick Tasks
         quick = models.add("Quick Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "quick"})
         quick_op = quick.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "quick"})
-        quick_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "quick"})
-        quick_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "quick"})
-        quick_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "quick"})
-        quick.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "quick"})
+        quick_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "quick"}, allow_expand=False)
+        quick_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "quick"}, allow_expand=False)
+        quick_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "quick"}, allow_expand=False)
+        quick.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "quick"}, allow_expand=False)
 
         # Sequential Tasks
         seq = models.add("Sequential Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "sequential"})
         seq_op = seq.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "sequential"})
-        seq_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "sequential"})
-        seq_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "sequential"})
-        seq_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "sequential"})
-        seq.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "sequential"})
+        seq_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "sequential"}, allow_expand=False)
+        seq_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "sequential"}, allow_expand=False)
+        seq_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "sequential"}, allow_expand=False)
+        seq.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "sequential"}, allow_expand=False)
 
         # Parallel Tasks
         par = models.add("Parallel Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "parallel"})
         par_op = par.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "parallel"})
-        par_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "parallel"})
-        par_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "parallel"})
-        par_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "parallel"})
-        par.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "parallel"})
+        par_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "parallel"}, allow_expand=False)
+        par_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "parallel"}, allow_expand=False)
+        par_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "parallel"}, allow_expand=False)
+        par.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "parallel"}, allow_expand=False)
 
         # Researcher component
         researcher = self.root.add("Researcher", expand=False, data={"type": "component", "id": "researcher"})
 
         op_branch = researcher.add("Default Operator", expand=False, data={"type": "operator_branch", "component": "researcher"})
-        op_branch.add("Perplexity", data={"type": "operator", "component": "researcher", "operator": "perplexity"})
-        op_branch.add("Serper", data={"type": "operator", "component": "researcher", "operator": "serper"})
-        op_branch.add("DuckDuckGo", data={"type": "operator", "component": "researcher", "operator": "duckduckgo"})
+        op_branch.add("Perplexity", data={"type": "operator", "component": "researcher", "operator": "perplexity"}, allow_expand=False)
+        op_branch.add("Serper", data={"type": "operator", "component": "researcher", "operator": "serper"}, allow_expand=False)
+        op_branch.add("DuckDuckGo", data={"type": "operator", "component": "researcher", "operator": "duckduckgo"}, allow_expand=False)
 
         researcher.add("Settings", data={"type": "settings", "component": "researcher"})
 
         models = researcher.add("Models", expand=False, data={"type": "models_branch", "component": "researcher"})
         research = models.add("Research Model", expand=False, data={"type": "model_group", "component": "researcher", "model_type": "research"})
         research_op = research.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "researcher", "model_type": "research"})
-        research_op.add("Use Default", data={"type": "operator", "component": "researcher", "operator": "default", "model_type": "research"})
-        research_op.add("Perplexity", data={"type": "operator", "component": "researcher", "operator": "perplexity", "model_type": "research"})
-        research_op.add("Serper", data={"type": "operator", "component": "researcher", "operator": "serper", "model_type": "research"})
-        research.add("Model Selection", data={"type": "model", "component": "researcher", "model_type": "research"})
+        research_op.add("Use Default", data={"type": "operator", "component": "researcher", "operator": "default", "model_type": "research"}, allow_expand=False)
+        research_op.add("Perplexity", data={"type": "operator", "component": "researcher", "operator": "perplexity", "model_type": "research"}, allow_expand=False)
+        research_op.add("Serper", data={"type": "operator", "component": "researcher", "operator": "serper", "model_type": "research"}, allow_expand=False)
+        research.add("Model Selection", data={"type": "model", "component": "researcher", "model_type": "research"}, allow_expand=False)
 
         # Secretary component
         secretary = self.root.add("Secretary", expand=False, data={"type": "component", "id": "secretary"})
         secretary.add("Settings", data={"type": "settings", "component": "secretary"})
         models = secretary.add("Models", expand=False, data={"type": "models_branch", "component": "secretary"})
         analysis = models.add("Analysis Model", expand=False, data={"type": "model_group", "component": "secretary", "model_type": "analysis"})
-        analysis.add("Model Selection", data={"type": "model", "component": "secretary", "model_type": "analysis"})
+        analysis.add("Model Selection", data={"type": "model", "component": "secretary", "model_type": "analysis"}, allow_expand=False)
 
         # Prompts component
         prompts = self.root.add("Prompts", expand=False, data={"type": "component", "id": "prompts"})
         prompts.add("Settings", data={"type": "settings", "component": "prompts"})
         models = prompts.add("Models", expand=False, data={"type": "models_branch", "component": "prompts"})
         generation = models.add("Generation Model", expand=False, data={"type": "model_group", "component": "prompts", "model_type": "generation"})
-        generation.add("Model Selection", data={"type": "model", "component": "prompts", "model_type": "generation"})
+        generation.add("Model Selection", data={"type": "model", "component": "prompts", "model_type": "generation"}, allow_expand=False)
 
 
 class RightPanel(Container):
@@ -483,7 +483,7 @@ class ModernConfigApp(App):
         right_panel.show_info("[dim]Select an item from the tree to configure[/dim]")
 
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
-        """Handle tree node selection."""
+        """Handle tree node highlighting (navigation with arrows)."""
         if not event.node.data:
             return
 
@@ -525,6 +525,54 @@ class ModernConfigApp(App):
         else:
             # Show generic info
             right_panel.show_info(f"[dim]{node_type}[/dim]")
+
+    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+        """Handle tree node selection (Enter key press)."""
+        if not event.node.data:
+            return
+
+        node_type = event.node.data.get("type")
+
+        if node_type == "operator":
+            # Save operator selection
+            component = event.node.data.get("component")
+            operator = event.node.data.get("operator")
+            model_type = event.node.data.get("model_type")  # Optional, for per-model operators
+
+            if operator == "default":
+                # Clear per-model operator override
+                if model_type:
+                    key = f"NINJA_{component.upper()}_OPERATOR_{model_type.upper()}"
+                    # Remove the override key
+                    config = self.config_manager.list_all()
+                    if key in config:
+                        # TODO: Add delete method to ConfigManager
+                        pass
+            else:
+                # Save operator selection
+                if model_type:
+                    # Per-model operator
+                    key = f"NINJA_{component.upper()}_OPERATOR_{model_type.upper()}"
+                else:
+                    # Default operator
+                    key = f"NINJA_{component.upper()}_OPERATOR"
+
+                self.config_manager.set(key, operator)
+
+            # Refresh tree to show new selection
+            self._refresh_tree()
+            self.bell()
+
+        elif node_type == "model":
+            # For model selection, the right panel already handles it
+            pass
+
+    def _refresh_tree(self) -> None:
+        """Refresh tree to show updated selections."""
+        tree = self.query_one(ConfigTree)
+        # TODO: Implement tree refresh without rebuilding
+        # For now, just ring bell to indicate success
+        pass
 
     def action_refresh(self) -> None:
         """Refresh configuration."""
