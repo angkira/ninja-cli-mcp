@@ -482,57 +482,45 @@ def cmd_update(args: argparse.Namespace) -> None:
     Args:
         args: Command arguments.
     """
-    import subprocess
-    from pathlib import Path
+    try:
+        from ninja_config.auto_updater import AutoUpdater
 
-    # Find the update script
-    script_dir = Path(__file__).parent.parent.parent
-    update_script = script_dir / "update.sh"
+        print_colored("🔄 Starting ninja-mcp auto-updater...", "cyan")
+        print()
 
-    # If update.sh exists in the current directory, use it
-    if update_script.exists():
-        print_colored("🔄 Running update from local source...", "cyan")
-        try:
-            result = subprocess.run(["bash", str(update_script)], check=True)
-            if result.returncode == 0:
-                print_colored("✅ Update completed successfully", "green")
-            else:
-                print_colored("❌ Update failed", "red")
-        except subprocess.CalledProcessError as e:
-            print_colored(f"❌ Update failed: {e}", "red")
-        except FileNotFoundError:
-            print_colored("❌ Update script not found", "red")
-    else:
-        # Fallback to downloading from GitHub
-        print_colored("🔄 Downloading update script from GitHub...", "cyan")
-        try:
-            import tempfile
-            import urllib.request
+        updater = AutoUpdater()
+        result = updater.update()
 
-            update_url = "https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/update.sh"
+        if result.get("verified"):
+            print()
+            print_colored("✅ Update completed successfully!", "green")
+            print()
+            print_colored("You can now use:", "dim")
+            print_colored("  - ninja-config configure", "dim")
+            print_colored("  - ninja-daemon status", "dim")
+            print_colored("  - ninja-coder (via MCP)", "dim")
+        else:
+            print()
+            print_colored("⚠️  Update completed but verification failed", "yellow")
+            print_colored("Please check the verification results above", "dim")
+            sys.exit(1)
 
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
-                temp_script = f.name
-
-            temp_path = Path(temp_script)
-            try:
-                urllib.request.urlretrieve(update_url, temp_script)
-                temp_path.chmod(0o755)
-                result = subprocess.run(["bash", temp_script], check=True)
-                if result.returncode == 0:
-                    print_colored("✅ Update completed successfully", "green")
-                else:
-                    print_colored("❌ Update failed", "red")
-            finally:
-                temp_path.unlink()
-
-        except Exception as e:
-            print_colored(f"❌ Failed to download and run update: {e}", "red")
-            print_colored("Please try running the update script manually:", "dim")
-            print_colored(
-                "  curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/update.sh | bash",
-                "dim",
-            )
+    except ImportError:
+        print_colored("❌ Auto-updater not available in this installation", "red")
+        print_colored("Please update manually:", "dim")
+        print_colored("  cd /path/to/ninja-cli-mcp", "dim")
+        print_colored("  git pull", "dim")
+        print_colored("  uv tool install --reinstall --force .", "dim")
+        print_colored("  ninja-daemon restart", "dim")
+        sys.exit(1)
+    except Exception as e:
+        print_colored(f"❌ Update failed: {e}", "red")
+        print_colored("Please update manually:", "dim")
+        print_colored("  cd /path/to/ninja-cli-mcp", "dim")
+        print_colored("  git pull", "dim")
+        print_colored("  uv tool install --reinstall --force .", "dim")
+        print_colored("  ninja-daemon restart", "dim")
+        sys.exit(1)
 
 
 def cmd_setup_claude(args: argparse.Namespace) -> None:
