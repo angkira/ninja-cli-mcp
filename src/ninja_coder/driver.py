@@ -1147,7 +1147,9 @@ class NinjaDriver:
             )
 
             # Parse output using strategy
-            parsed = self._strategy.parse_output(process.stdout, process.stderr, process.returncode)
+            parsed = self._strategy.parse_output(
+                process.stdout, process.stderr, process.returncode, repo_root=repo_root
+            )
 
             # Build result from parsed output
             result = NinjaResult(
@@ -1493,7 +1495,7 @@ class NinjaDriver:
             task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
 
             # Parse output using strategy
-            parsed = self._strategy.parse_output(stdout, stderr, exit_code)
+            parsed = self._strategy.parse_output(stdout, stderr, exit_code, repo_root=repo_root)
 
             # Build result from parsed output
             result = NinjaResult(
@@ -1775,7 +1777,7 @@ class NinjaDriver:
             task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
 
             # Parse output using strategy (includes session_id extraction)
-            parsed = self._strategy.parse_output(stdout, stderr, exit_code)
+            parsed = self._strategy.parse_output(stdout, stderr, exit_code, repo_root=repo_root)
 
             # Build result from parsed output with session_id
             result = NinjaResult(

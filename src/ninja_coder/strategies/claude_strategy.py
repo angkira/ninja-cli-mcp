@@ -188,6 +188,7 @@ class ClaudeStrategy:
         stdout: str,
         stderr: str,
         exit_code: int,
+        repo_root: str | None = None,
     ) -> ParsedResult:
         """Parse Claude Code output.
 
@@ -195,6 +196,7 @@ class ClaudeStrategy:
             stdout: Standard output from Claude Code execution.
             stderr: Standard error from Claude Code execution.
             exit_code: Exit code from Claude Code execution.
+            repo_root: Repository root path (optional, used for file verification).
 
         Returns:
             ParsedResult with success status, summary, and file changes.
@@ -315,7 +317,7 @@ class ClaudeStrategy:
         Returns:
             True if the error is retryable, False otherwise.
         """
-        result = self.parse_output(stdout, stderr, exit_code)
+        result = self.parse_output(stdout, stderr, exit_code, repo_root=None)
         return result.retryable_error
 
     def get_timeout(self, task_type: str) -> int:

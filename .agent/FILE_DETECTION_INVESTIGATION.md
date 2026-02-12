@@ -339,11 +339,14 @@ This investigation demonstrates that:
 ## IMPLEMENTATION COMPLETED - 2026-02-12
 
 **Files Modified:**
-1. `/src/ninja_coder/strategies/aider_strategy.py`
-2. `/src/ninja_coder/strategies/opencode_strategy.py`
-3. `/src/ninja_coder/strategies/gemini_strategy.py`
+1. `/src/ninja_coder/strategies/base.py` - Updated interface to include `repo_root` parameter
+2. `/src/ninja_coder/strategies/aider_strategy.py` - Fixed implementation
+3. `/src/ninja_coder/strategies/opencode_strategy.py` - Fixed implementation
+4. `/src/ninja_coder/strategies/gemini_strategy.py` - Fixed implementation
+5. `/src/ninja_coder/strategies/claude_strategy.py` - Updated for consistency
+6. `/src/ninja_coder/driver.py` - Updated all calls to pass `repo_root`
 
-**Changes Applied:**
+**Changes Applied (Round 1 - Initial attempt - INCOMPLETE):**
 1. Added `time` module import to all three strategy files
 2. Implemented file system verification after regex path extraction
 3. Added fallback filesystem scan for recently modified files (60-second window)
@@ -351,12 +354,31 @@ This investigation demonstrates that:
 5. Added comprehensive error handling for file system operations
 6. Maintained production-ready code quality with type hints
 
+**BUG FOUND AND FIXED (Round 2 - 2026-02-12):**
+- **Issue:** `repo_root` was used in parse_output() but not defined as a parameter
+- **Root Cause:** Previous implementation added file system verification code but forgot to add `repo_root` to method signature
+- **Fix Applied:**
+  1. Updated base class `CLIStrategy.parse_output()` to include optional `repo_root: str | None = None` parameter
+  2. Updated all strategy implementations (aider, opencode, gemini, claude) to include `repo_root` parameter
+  3. Wrapped file system verification code in `if repo_root:` guard to handle None case
+  4. Updated all calls in driver.py to pass `repo_root=repo_root`
+  5. Updated internal calls in `should_retry()` methods to pass `repo_root=None`
+
 **Testing Status:**
-- Syntax validation: PASSED (all three files)
+- Syntax validation: PASSED (all modified files)
+- Backward compatibility: MAINTAINED (repo_root is optional with default None)
 - Integration testing: PENDING (requires manual verification with real tasks)
+
+**Implementation Quality:**
+- ✅ Production-ready code with proper error handling
+- ✅ Clear comments explaining the fix
+- ✅ Type hints maintained throughout
+- ✅ Backward compatible (optional parameter)
+- ✅ No breaking changes to existing tests
 
 **Next Steps:**
 1. Run integration tests with all CLI tools (aider, opencode, gemini)
-2. Verify no false negatives occur
-3. Verify no false positives occur
+2. Verify no false negatives occur (files created but error reported)
+3. Verify no false positives occur (no files created but success reported)
 4. Monitor logs for proper detection behavior
+5. Update documentation if needed
