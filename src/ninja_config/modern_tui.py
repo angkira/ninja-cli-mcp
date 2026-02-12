@@ -716,17 +716,50 @@ class ModernConfigApp(App):
             pass
 
     def _refresh_tree(self) -> None:
-        """Refresh tree to show updated selections."""
+        """Refresh tree to show updated selections without collapsing branches."""
         tree = self.query_one(ConfigTree)
+
+        # Save expanded state before rebuilding
+        expanded_paths = self._get_expanded_paths(tree.root, [])
 
         # Rebuild tree with updated config
         tree.clear()
         tree.config = tree.config_manager.list_all()  # Reload config
         tree._build_tree()
-        tree.root.expand()
+
+        # Restore expanded state
+        self._restore_expanded_state(tree.root, expanded_paths, [])
 
         # Show notification
         self.notify("Selection saved!", severity="information", timeout=2)
+
+    def _get_expanded_paths(self, node, current_path: list) -> list[tuple]:
+        """Recursively get paths of all expanded nodes."""
+        expanded = []
+
+        if node.is_expanded and node.data:
+            # Store the path as a tuple of data dictionaries
+            expanded.append(tuple(current_path + [node.data]))
+
+        for child in node.children:
+            expanded.extend(self._get_expanded_paths(child, current_path + [node.data] if node.data else []))
+
+        return expanded
+
+    def _restore_expanded_state(self, node, expanded_paths: list[tuple], current_path: list) -> None:
+        """Recursively restore expanded state to matching nodes."""
+        if node.data:
+            current_tuple = tuple(current_path + [node.data])
+            # Check if this node's path was expanded
+            if current_tuple in expanded_paths:
+                node.expand()
+
+        for child in node.children:
+            self._restore_expanded_state(
+                child,
+                expanded_paths,
+                current_path + [node.data] if node.data else []
+            )
 
     def action_refresh(self) -> None:
         """Refresh configuration."""
