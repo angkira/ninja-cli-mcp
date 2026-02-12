@@ -380,12 +380,25 @@ def cmd_configure(args: argparse.Namespace) -> None:
     # Check for mode flags
     quick_mode = getattr(args, "quick", False)
     modern_mode = getattr(args, "modern", False)
+    menuconfig_mode = getattr(args, "menuconfig", False)
 
     if quick_mode:
         # Quick mode: simple API key + operator selection
         print_colored("Quick Configuration Mode", "cyan")
         print_colored("─" * 40, "dim")
         _run_quick_configure(args.config)
+    elif menuconfig_mode:
+        # MenuConfig mode: hierarchical menu navigation
+        try:
+            from ninja_config.menuconfig_tui import run_menuconfig_tui
+            sys.exit(run_menuconfig_tui(args.config))
+        except ImportError as e:
+            print_colored(f"MenuConfig TUI not available: {e}", "red")
+            print_colored("Install with: pip install textual rich", "dim")
+            sys.exit(1)
+        except KeyboardInterrupt:
+            print("\nCancelled.")
+            sys.exit(1)
     elif modern_mode:
         # Modern TUI mode: tree-based navigation with textual
         try:
@@ -719,6 +732,11 @@ Examples:
         "--modern",
         action="store_true",
         help="Modern TUI with tree navigation (EXPERIMENTAL)",
+    )
+    configure_parser.add_argument(
+        "--menuconfig",
+        action="store_true",
+        help="MenuConfig-style TUI (like kernel menuconfig)",
     )
 
     # List command
