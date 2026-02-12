@@ -67,7 +67,9 @@ class ModelSearchPanel(Widget):
             key = f"NINJA_{component.upper()}_MODEL_{model_type.upper()}"
             current_model = config.get(key, "")
             if current_model:
-                yield Label(f"Current: {current_model}", id="current-model")
+                yield Label(f"[green]Current: {current_model}[/green]", id="current-model")
+            else:
+                yield Label("[dim]Current: Not set[/dim]", id="current-model")
 
         yield Input(placeholder="Search models...", id="model-search-input")
 
@@ -160,16 +162,17 @@ class ModelSearchPanel(Widget):
             key = f"NINJA_{component.upper()}_MODEL_{model_type.upper()}"
             self.config_manager.set(key, model_id)
 
-            # Show success
-            self.app.bell()
-
             # Update current model display
             if self.is_mounted:
                 try:
                     current_label = self.query_one("#current-model", Label)
-                    current_label.update(f"Current: {model_id}")
+                    current_label.update(f"[green]Current: {model_id}[/green]")
                 except Exception:
                     pass
+
+            # Show success notification
+            self.app.notify(f"Model saved: {model_id}", severity="information", timeout=2)
+            self.app.bell()
 
 
 class SettingsPanel(Widget):
@@ -179,6 +182,7 @@ class SettingsPanel(Widget):
         super().__init__()
         self.context = context
         self.config_manager = config_manager
+        self.api_key_env_var = ""  # Will be set during compose
 
     def compose(self) -> ComposeResult:
         """Compose the settings panel."""
@@ -205,30 +209,56 @@ class SettingsPanel(Widget):
         # Get current API key based on operator/provider
         api_key = ""
         api_key_label = "API Key"
+        api_key_env_var = ""
 
         if component == "coder" and operator == "opencode":
             # OpenCode uses provider-specific keys
             if provider == "openrouter":
-                api_key = config.get("OPENROUTER_API_KEY", "")
+                api_key_env_var = "OPENROUTER_API_KEY"
+                api_key = config.get(api_key_env_var, "")
                 api_key_label = "OpenRouter API Key"
             elif provider == "anthropic":
-                api_key = config.get("ANTHROPIC_API_KEY", "")
+                api_key_env_var = "ANTHROPIC_API_KEY"
+                api_key = config.get(api_key_env_var, "")
                 api_key_label = "Anthropic API Key"
             elif provider == "openai":
-                api_key = config.get("OPENAI_API_KEY", "")
+                api_key_env_var = "OPENAI_API_KEY"
+                api_key = config.get(api_key_env_var, "")
                 api_key_label = "OpenAI API Key"
             elif provider == "google":
-                api_key = config.get("GOOGLE_API_KEY", "")
+                api_key_env_var = "GOOGLE_API_KEY"
+                api_key = config.get(api_key_env_var, "")
                 api_key_label = "Google API Key"
+            elif provider == "azure":
+                api_key_env_var = "AZURE_OPENAI_API_KEY"
+                api_key = config.get(api_key_env_var, "")
+                api_key_label = "Azure OpenAI API Key"
+            elif provider == "ollama":
+                api_key_env_var = "OLLAMA_API_KEY"
+                api_key = config.get(api_key_env_var, "")
+                api_key_label = "Ollama API Key (optional)"
+            elif provider == "lmstudio":
+                api_key_env_var = "LMSTUDIO_API_KEY"
+                api_key = config.get(api_key_env_var, "")
+                api_key_label = "LM Studio API Key (optional)"
+            elif provider == "zai":
+                api_key_env_var = "ZAI_API_KEY"
+                api_key = config.get(api_key_env_var, "")
+                api_key_label = "Z.ai API Key"
         elif component == "coder":
-            api_key = config.get("OPENROUTER_API_KEY", "")
+            api_key_env_var = "OPENROUTER_API_KEY"
+            api_key = config.get(api_key_env_var, "")
         elif component == "researcher":
-            api_key = config.get("PERPLEXITY_API_KEY", "") or config.get("SERPER_API_KEY", "")
+            api_key_env_var = "PERPLEXITY_API_KEY"
+            api_key = config.get(api_key_env_var, "") or config.get("SERPER_API_KEY", "")
 
         # Show masked current value
         if api_key:
             masked = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
             yield Label(f"Current: {masked}", classes="field-label")
+
+        # Store env var for save method
+        self.api_key_env_var = api_key_env_var
 
         # API Key input
         yield Label(f"{api_key_label}:", classes="field-label")
@@ -260,22 +290,23 @@ class SettingsPanel(Widget):
         """Save settings to config."""
         component = self.context.get("component", "")
         api_key_input = self.query_one("#api-key-input", Input)
-        base_url_input = self.query_one("#base-url-input", Input)
+
+        # Try to get base URL input (only exists for OpenCode)
+        try:
+            base_url_input = self.query_one("#base-url-input", Input)
+            # Save base URL if provided
+            if base_url_input.value:
+                self.config_manager.set(f"NINJA_{component.upper()}_BASE_URL", base_url_input.value)
+        except Exception:
+            pass  # Base URL input not present
 
         # Save API key if provided
-        if api_key_input.value:
-            if component == "coder":
-                self.config_manager.set("OPENROUTER_API_KEY", api_key_input.value)
-            elif component == "researcher":
-                self.config_manager.set("PERPLEXITY_API_KEY", api_key_input.value)
-
-        # Save base URL
-        if base_url_input.value:
-            self.config_manager.set(f"NINJA_{component.upper()}_BASE_URL", base_url_input.value)
+        if api_key_input.value and self.api_key_env_var:
+            self.config_manager.set(self.api_key_env_var, api_key_input.value)
 
         # Show success message
         self.app.bell()
-        # TODO: Show notification
+        self.app.notify("Settings saved!", severity="information", timeout=2)
 
 
 class InfoPanel(Widget):
@@ -353,6 +384,7 @@ class ConfigTree(Tree):
                 ("azure", "Azure OpenAI"),
                 ("ollama", "Ollama"),
                 ("lmstudio", "LM Studio"),
+                ("zai", "Z.ai Coding Plan"),
             ]
 
             for provider_id, provider_name in providers:
