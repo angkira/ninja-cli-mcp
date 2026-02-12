@@ -1,262 +1,261 @@
-"""Modern TUI configurator using Textual framework.
+"""Modern TUI configurator with collapsible tree and model search.
 
-Provides tree-based navigation:
-- Component selection (coder, researcher, secretary, prompts)
-- Per-component operator configuration
-- Per-operator model selection
-- Hierarchical settings management
+Features:
+- Collapsible tree navigation (expand/collapse branches)
+- Right panel for model search with autocomplete
+- Input fields for API keys and settings
+- Dynamic panels based on selection
 """
 
 from __future__ import annotations
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
-from textual.widgets import Header, Footer, Static, Tree, Button, Input, Select, Label
+from textual.widgets import (
+    Header,
+    Footer,
+    Static,
+    Tree,
+    Button,
+    Input,
+    Label,
+    ListView,
+    ListItem,
+)
 from textual.binding import Binding
-from textual.screen import Screen
-from rich.panel import Panel
+from textual.widget import Widget
 from rich.text import Text
-from rich.style import Style
 from pathlib import Path
-import json
 
 from ninja_common.config_manager import ConfigManager
 
 
-# Component configuration structure
-COMPONENTS = {
-    "coder": {
-        "display_name": "Coder",
-        "description": "AI-powered code generation and modification",
-        "operators": {
-            "aider": {
-                "display_name": "Aider",
-                "requires_api_key": True,
-                "models": ["quick", "sequential", "parallel"],
-            },
-            "opencode": {
-                "display_name": "OpenCode",
-                "requires_api_key": True,
-                "models": ["default"],
-            },
-        },
-        "model_types": {
-            "quick": "Fast operations (syntax fixes, simple changes)",
-            "sequential": "Complex multi-step tasks",
-            "parallel": "Independent parallel operations",
-        },
-    },
-    "researcher": {
-        "display_name": "Researcher",
-        "description": "Web search and research capabilities",
-        "operators": {
-            "perplexity": {
-                "display_name": "Perplexity AI",
-                "requires_api_key": True,
-                "models": ["research"],
-            },
-            "serper": {
-                "display_name": "Serper (Google)",
-                "requires_api_key": True,
-                "models": ["research"],
-            },
-            "duckduckgo": {
-                "display_name": "DuckDuckGo",
-                "requires_api_key": False,
-                "models": ["research"],
-            },
-        },
-        "model_types": {
-            "research": "Research and web search model",
-        },
-    },
-    "secretary": {
-        "display_name": "Secretary",
-        "description": "File operations and codebase analysis",
-        "operators": {
-            "default": {
-                "display_name": "Default",
-                "requires_api_key": False,
-                "models": ["analysis"],
-            },
-        },
-        "model_types": {
-            "analysis": "Code analysis and file operations",
-        },
-    },
-    "prompts": {
-        "display_name": "Prompts",
-        "description": "Prompt templates and management",
-        "operators": {
-            "default": {
-                "display_name": "Default",
-                "requires_api_key": False,
-                "models": ["generation"],
-            },
-        },
-        "model_types": {
-            "generation": "Prompt generation model",
-        },
-    },
+# Mock model data (in real implementation, fetch from APIs)
+AVAILABLE_MODELS = {
+    "openrouter": [
+        ("anthropic/claude-4", "Claude 4", "Most capable model"),
+        ("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet", "Fast and intelligent"),
+        ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast and affordable"),
+        ("openai/gpt-4-turbo", "GPT-4 Turbo", "OpenAI's latest"),
+        ("openai/gpt-4", "GPT-4", "Powerful reasoning"),
+        ("google/gemini-2.0-flash-exp", "Gemini 2.0 Flash", "Fast and multimodal"),
+        ("google/gemini-pro", "Gemini Pro", "Google's best"),
+        ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B", "Open source"),
+        ("qwen/qwen-2.5-72b-instruct", "Qwen 2.5 72B", "Multilingual"),
+    ],
+    "perplexity": [
+        ("sonar", "Sonar", "Online model with search"),
+        ("sonar-pro", "Sonar Pro", "Advanced online model"),
+    ],
 }
 
 
-class ConfigPanel(Static):
-    """Panel showing current configuration status."""
+class ModelSearchPanel(Widget):
+    """Panel for searching and selecting models."""
 
-    def __init__(self, config_manager: ConfigManager) -> None:
+    def __init__(self, context: dict) -> None:
         super().__init__()
-        self.config_manager = config_manager
+        self.context = context
+        self.filtered_models = []
 
     def compose(self) -> ComposeResult:
-        config = self.config_manager.list_all()
+        """Compose the search panel."""
+        yield Label("[bold cyan]Model Search[/bold cyan]", id="search-title")
+        yield Label(
+            f"[dim]Component: {self.context.get('component', 'N/A')}[/dim]",
+            id="search-context",
+        )
+        yield Label(
+            f"[dim]Type: {self.context.get('model_type', 'N/A')}[/dim]",
+            id="search-type",
+        )
+        yield Input(placeholder="Search models...", id="model-search-input")
 
-        status_lines = []
-        status_lines.append("[bold cyan]Current Configuration[/bold cyan]")
-        status_lines.append("")
+        with ScrollableContainer(id="model-results"):
+            yield ListView(id="model-list")
 
-        # API Keys status
-        api_keys = {k: v for k, v in config.items() if "API_KEY" in k}
-        if api_keys:
-            status_lines.append("[bold]API Keys:[/bold]")
-            for key in api_keys:
-                status_lines.append(f"  {key}: [green]Set[/green]")
+    def on_mount(self) -> None:
+        """Initialize with all models."""
+        self._update_model_list("")
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Handle search input changes."""
+        if event.input.id == "model-search-input":
+            self._update_model_list(event.value)
+
+    def _update_model_list(self, query: str) -> None:
+        """Update model list based on search query."""
+        # Get models from appropriate provider
+        provider = self.context.get("provider", "openrouter")
+        all_models = AVAILABLE_MODELS.get(provider, [])
+
+        # Filter models
+        query_lower = query.lower()
+        if query:
+            self.filtered_models = [
+                (model_id, name, desc)
+                for model_id, name, desc in all_models
+                if query_lower in model_id.lower()
+                or query_lower in name.lower()
+                or query_lower in desc.lower()
+            ]
         else:
-            status_lines.append("[bold]API Keys:[/bold] [yellow]Not configured[/yellow]")
+            self.filtered_models = all_models
 
-        status_lines.append("")
+        # Update list view
+        list_view = self.query_one("#model-list", ListView)
+        list_view.clear()
 
-        # Component status
-        for comp_id, comp_data in COMPONENTS.items():
-            status_lines.append(f"[bold]{comp_data['display_name']}:[/bold]")
-            operator = config.get(f"NINJA_{comp_id.upper()}_OPERATOR", "Not set")
-            status_lines.append(f"  Operator: {operator}")
+        for model_id, name, desc in self.filtered_models:
+            content = f"[bold]{name}[/bold]\n[dim]{model_id}[/dim]\n[dim italic]{desc}[/dim]"
+            item = ListItem(Static(content))
+            item.model_id = model_id
+            list_view.append(item)
 
-        yield Static("\n".join(status_lines))
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Handle model selection."""
+        if hasattr(event.item, "model_id"):
+            # TODO: Save selected model to config
+            self.app.bell()
 
 
-class ComponentTree(Tree):
-    """Tree widget for hierarchical component navigation."""
+class SettingsPanel(Widget):
+    """Panel for configuring settings and API keys."""
+
+    def __init__(self, context: dict) -> None:
+        super().__init__()
+        self.context = context
+
+    def compose(self) -> ComposeResult:
+        """Compose the settings panel."""
+        component = self.context.get("component", "")
+        operator = self.context.get("operator", "")
+
+        yield Label("[bold cyan]Settings & Credentials[/bold cyan]", id="settings-title")
+        yield Label(
+            f"[dim]Component: {component.title() if component else 'N/A'}[/dim]",
+            id="settings-context",
+        )
+
+        # API Key input
+        yield Label("API Key:", classes="field-label")
+        yield Input(
+            placeholder="Enter API key...",
+            password=True,
+            id="api-key-input",
+        )
+
+        # Operator-specific settings
+        yield Label("Operator Settings:", classes="field-label")
+        yield Input(
+            placeholder="Base URL (optional)...",
+            id="base-url-input",
+        )
+
+        # Save button
+        yield Button("Save Settings", variant="primary", id="save-settings-btn")
+
+
+class InfoPanel(Widget):
+    """Panel showing information about selected item."""
 
     def __init__(self) -> None:
-        super().__init__("Ninja Components")
+        super().__init__()
+        self.current_info = ""
+
+    def compose(self) -> ComposeResult:
+        """Compose the info panel."""
+        yield Static(
+            "[dim]Select an item from the tree[/dim]",
+            id="info-content",
+        )
+
+    def update_info(self, info: str) -> None:
+        """Update panel content."""
+        self.current_info = info
+        self.query_one("#info-content", Static).update(info)
+
+
+class ConfigTree(Tree):
+    """Configuration tree with collapsible branches."""
+
+    def __init__(self) -> None:
+        super().__init__("Ninja MCP Configuration")
         self.root.expand()
         self._build_tree()
 
     def _build_tree(self) -> None:
-        """Build component tree structure."""
-        for comp_id, comp_data in COMPONENTS.items():
-            # Add component node
-            comp_node = self.root.add(
-                f"[bold cyan]{comp_data['display_name']}[/bold cyan]",
-                data={"type": "component", "id": comp_id},
-            )
-            comp_node.expand()
+        """Build the configuration tree."""
+        # Coder component
+        coder = self.root.add("Coder", expand=False, data={"type": "component", "id": "coder"})
 
-            # Add operator selection node
-            op_node = comp_node.add(
-                "[bold]Operator Selection[/bold]",
-                data={"type": "operator_select", "component": comp_id},
-            )
+        # Operator branch
+        op_branch = coder.add("Operator", expand=False, data={"type": "operator_branch", "component": "coder"})
+        op_branch.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider"})
+        op_branch.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode"})
 
-            # Add operators
-            for op_id, op_data in comp_data["operators"].items():
-                op_node.add(
-                    f"{op_data['display_name']}",
-                    data={
-                        "type": "operator",
-                        "component": comp_id,
-                        "operator": op_id,
-                    },
-                )
+        # Settings branch
+        coder.add("Settings", data={"type": "settings", "component": "coder"})
 
-            # Add settings node
-            comp_node.add(
-                "[bold]Settings & Credentials[/bold]",
-                data={"type": "settings", "component": comp_id},
-            )
+        # Models branch
+        models = coder.add("Models", expand=False, data={"type": "models_branch", "component": "coder"})
+        models.add("Quick Tasks", data={"type": "model", "component": "coder", "model_type": "quick"})
+        models.add("Sequential Tasks", data={"type": "model", "component": "coder", "model_type": "sequential"})
+        models.add("Parallel Tasks", data={"type": "model", "component": "coder", "model_type": "parallel"})
 
-            # Add models node
-            models_node = comp_node.add(
-                "[bold]Model Configuration[/bold]",
-                data={"type": "models", "component": comp_id},
-            )
+        # Researcher component
+        researcher = self.root.add("Researcher", expand=False, data={"type": "component", "id": "researcher"})
 
-            # Add model types
-            for model_type, description in comp_data["model_types"].items():
-                models_node.add(
-                    f"{model_type.replace('_', ' ').title()}: {description}",
-                    data={
-                        "type": "model_type",
-                        "component": comp_id,
-                        "model_type": model_type,
-                    },
-                )
+        op_branch = researcher.add("Operator", expand=False, data={"type": "operator_branch", "component": "researcher"})
+        op_branch.add("Perplexity", data={"type": "operator", "component": "researcher", "operator": "perplexity"})
+        op_branch.add("Serper", data={"type": "operator", "component": "researcher", "operator": "serper"})
+        op_branch.add("DuckDuckGo", data={"type": "operator", "component": "researcher", "operator": "duckduckgo"})
+
+        researcher.add("Settings", data={"type": "settings", "component": "researcher"})
+
+        models = researcher.add("Models", expand=False, data={"type": "models_branch", "component": "researcher"})
+        models.add("Research Model", data={"type": "model", "component": "researcher", "model_type": "research"})
+
+        # Secretary component
+        secretary = self.root.add("Secretary", expand=False, data={"type": "component", "id": "secretary"})
+        secretary.add("Settings", data={"type": "settings", "component": "secretary"})
+        models = secretary.add("Models", expand=False, data={"type": "models_branch", "component": "secretary"})
+        models.add("Analysis Model", data={"type": "model", "component": "secretary", "model_type": "analysis"})
+
+        # Prompts component
+        prompts = self.root.add("Prompts", expand=False, data={"type": "component", "id": "prompts"})
+        prompts.add("Settings", data={"type": "settings", "component": "prompts"})
+        models = prompts.add("Models", expand=False, data={"type": "models_branch", "component": "prompts"})
+        models.add("Generation Model", data={"type": "model", "component": "prompts", "model_type": "generation"})
 
 
-class DetailPanel(Static):
-    """Panel showing details for selected tree item."""
+class RightPanel(Container):
+    """Dynamic right panel that changes based on tree selection."""
 
     def __init__(self) -> None:
-        super().__init__()
-        self.current_selection = None
+        super().__init__(id="right-panel")
+        self.current_panel = None
 
-    def update_selection(self, node_data: dict | None) -> None:
-        """Update panel content based on selected node."""
-        if not node_data:
-            self.update("[dim]Select an item from the tree[/dim]")
-            return
+    def show_model_search(self, context: dict) -> None:
+        """Show model search panel."""
+        self.remove_children()
+        self.mount(ModelSearchPanel(context))
 
-        self.current_selection = node_data
+    def show_settings(self, context: dict) -> None:
+        """Show settings panel."""
+        self.remove_children()
+        self.mount(SettingsPanel(context))
 
-        if node_data["type"] == "component":
-            comp_data = COMPONENTS[node_data["id"]]
-            content = f"""[bold cyan]{comp_data['display_name']}[/bold cyan]
-
-{comp_data['description']}
-
-[bold]Available Operators:[/bold]
-{chr(10).join(f"  - {op['display_name']}" for op in comp_data['operators'].values())}
-
-[bold]Model Types:[/bold]
-{chr(10).join(f"  - {name.replace('_', ' ').title()}: {desc}" for name, desc in comp_data['model_types'].items())}
-"""
-            self.update(content)
-
-        elif node_data["type"] == "operator":
-            comp_data = COMPONENTS[node_data["component"]]
-            op_data = comp_data["operators"][node_data["operator"]]
-            content = f"""[bold]{op_data['display_name']}[/bold]
-
-Component: {comp_data['display_name']}
-
-API Key Required: {'Yes' if op_data['requires_api_key'] else 'No'}
-
-Available Models:
-{chr(10).join(f"  - {m.replace('_', ' ').title()}" for m in op_data['models'])}
-
-[dim]Press Enter to configure[/dim]
-"""
-            self.update(content)
-
-        elif node_data["type"] == "model_type":
-            comp_data = COMPONENTS[node_data["component"]]
-            model_desc = comp_data["model_types"][node_data["model_type"]]
-            content = f"""[bold]{node_data['model_type'].replace('_', ' ').title()} Model[/bold]
-
-Component: {comp_data['display_name']}
-Purpose: {model_desc}
-
-[dim]Press Enter to select model[/dim]
-"""
-            self.update(content)
-
-        else:
-            self.update(f"[dim]{node_data['type']}[/dim]")
+    def show_info(self, info: str) -> None:
+        """Show info panel."""
+        self.remove_children()
+        panel = InfoPanel()
+        panel.update_info(info)
+        self.mount(panel)
 
 
-class NinjaConfigApp(App):
-    """Modern TUI configurator for Ninja MCP."""
+class ModernConfigApp(App):
+    """Modern TUI configurator."""
 
     CSS = """
     Screen {
@@ -269,89 +268,153 @@ class NinjaConfigApp(App):
     }
 
     #left-panel {
-        width: 40%;
+        width: 50%;
         height: 100%;
         border: solid cyan;
         padding: 1;
     }
 
     #right-panel {
-        width: 60%;
+        width: 50%;
         height: 100%;
-        layout: vertical;
-    }
-
-    #status-panel {
-        height: 12;
         border: solid green;
-        padding: 1;
-        margin-bottom: 1;
-    }
-
-    #detail-panel {
-        height: 1fr;
-        border: solid blue;
         padding: 1;
     }
 
     Tree {
         background: $surface;
-        color: $text;
     }
 
     Tree:focus {
         border: solid yellow;
+    }
+
+    #search-title, #settings-title {
+        height: 1;
+        margin-bottom: 1;
+    }
+
+    #search-context, #search-type, #settings-context {
+        height: 1;
+        margin-bottom: 1;
+    }
+
+    .field-label {
+        height: 1;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+
+    #model-search-input, #api-key-input, #base-url-input {
+        margin-bottom: 1;
+    }
+
+    #model-results {
+        height: 1fr;
+        border: solid $primary;
+        padding: 1;
+    }
+
+    #model-list {
+        background: $surface;
+    }
+
+    ListView > ListItem {
+        padding: 1;
+        height: auto;
+    }
+
+    ListView > ListItem:hover {
+        background: $boost;
+    }
+
+    ListView > ListItem.-active {
+        background: $primary;
+    }
+
+    #save-settings-btn {
+        margin-top: 1;
     }
     """
 
     BINDINGS = [
         Binding("q", "quit", "Quit", priority=True),
         Binding("r", "refresh", "Refresh"),
-        ("enter", "select", "Select"),
     ]
 
     def __init__(self, config_path: str | None = None):
         super().__init__()
         self.config_manager = ConfigManager(config_path)
         self.title = "Ninja MCP Configurator"
-        self.sub_title = "Modern TUI Configuration Interface"
+        self.sub_title = "Modern Tree-Based Configuration"
 
     def compose(self) -> ComposeResult:
-        """Create child widgets for the app."""
+        """Create child widgets."""
         yield Header()
 
-        with Container(id="main-container"):
-            # Left panel: Tree navigation
-            with Vertical(id="left-panel"):
-                yield ComponentTree()
+        with Horizontal(id="main-container"):
+            # Left: Collapsible tree
+            with Container(id="left-panel"):
+                yield ConfigTree()
 
-            # Right panel: Status + Details
-            with Vertical(id="right-panel"):
-                with Container(id="status-panel"):
-                    yield ConfigPanel(self.config_manager)
-
-                with Container(id="detail-panel"):
-                    yield DetailPanel()
+            # Right: Dynamic panel
+            yield RightPanel()
 
         yield Footer()
 
+    def on_mount(self) -> None:
+        """Initialize right panel."""
+        right_panel = self.query_one(RightPanel)
+        right_panel.show_info("[dim]Select an item from the tree to configure[/dim]")
+
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
         """Handle tree node selection."""
-        detail_panel = self.query_one(DetailPanel)
-        if event.node.data:
-            detail_panel.update_selection(event.node.data)
+        if not event.node.data:
+            return
 
-    def action_select(self) -> None:
-        """Handle Enter key on selected node."""
-        tree = self.query_one(ComponentTree)
-        if tree.cursor_node and tree.cursor_node.data:
-            # TODO: Open configuration dialog based on node type
-            pass
+        right_panel = self.query_one(RightPanel)
+        node_type = event.node.data.get("type")
+
+        if node_type == "model":
+            # Show model search panel
+            context = {
+                "component": event.node.data.get("component"),
+                "model_type": event.node.data.get("model_type"),
+                "provider": "openrouter",  # TODO: Get from config
+            }
+            right_panel.show_model_search(context)
+
+        elif node_type == "settings":
+            # Show settings panel
+            context = {
+                "component": event.node.data.get("component"),
+            }
+            right_panel.show_settings(context)
+
+        elif node_type == "operator":
+            # Show operator info
+            comp = event.node.data.get("component", "").title()
+            op = event.node.data.get("operator", "").title()
+            info = f"[bold cyan]{op} Operator[/bold cyan]\n\n"
+            info += f"Component: {comp}\n\n"
+            info += "[dim]Press Enter to select this operator[/dim]"
+            right_panel.show_info(info)
+
+        elif node_type == "component":
+            # Show component info
+            comp_id = event.node.data.get("id", "")
+            info = f"[bold cyan]{comp_id.title()} Component[/bold cyan]\n\n"
+            info += "[dim]Expand to configure operator, settings, and models[/dim]"
+            right_panel.show_info(info)
+
+        else:
+            # Show generic info
+            right_panel.show_info(f"[dim]{node_type}[/dim]")
 
     def action_refresh(self) -> None:
-        """Refresh configuration display."""
-        config_panel = self.query_one(ConfigPanel)
-        config_panel.refresh()
+        """Refresh configuration."""
+        # TODO: Reload config from file
+        pass
 
 
 def run_modern_tui(config_path: str | None = None) -> int:
@@ -363,6 +426,6 @@ def run_modern_tui(config_path: str | None = None) -> int:
     Returns:
         Exit code
     """
-    app = NinjaConfigApp(config_path)
+    app = ModernConfigApp(config_path)
     app.run()
     return 0
