@@ -107,7 +107,7 @@ class ModelSearchPanel(Widget):
         list_view.clear()
 
         for model_id, name, desc in self.filtered_models:
-            content = f"[bold]{name}[/bold]\n[dim]{model_id}[/dim]\n[dim italic]{desc}[/dim]"
+            content = f"[bold]{name}[/bold]\n[dim]{model_id}\n{desc}[/dim]"
             item = ListItem(Static(content))
             item.model_id = model_id
             list_view.append(item)
@@ -190,24 +190,45 @@ class ConfigTree(Tree):
         # Coder component
         coder = self.root.add("Coder", expand=False, data={"type": "component", "id": "coder"})
 
-        # Operator branch
-        op_branch = coder.add("Operator", expand=False, data={"type": "operator_branch", "component": "coder"})
+        # Default Operator branch
+        op_branch = coder.add("Default Operator", expand=False, data={"type": "operator_branch", "component": "coder"})
         op_branch.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider"})
         op_branch.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode"})
 
-        # Settings branch
+        # Settings branch (for default operator)
         coder.add("Settings", data={"type": "settings", "component": "coder"})
 
-        # Models branch
+        # Models branch - each model type can have its own operator
         models = coder.add("Models", expand=False, data={"type": "models_branch", "component": "coder"})
-        models.add("Quick Tasks", data={"type": "model", "component": "coder", "model_type": "quick"})
-        models.add("Sequential Tasks", data={"type": "model", "component": "coder", "model_type": "sequential"})
-        models.add("Parallel Tasks", data={"type": "model", "component": "coder", "model_type": "parallel"})
+
+        # Quick Tasks
+        quick = models.add("Quick Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "quick"})
+        quick_op = quick.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "quick"})
+        quick_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "quick"})
+        quick_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "quick"})
+        quick_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "quick"})
+        quick.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "quick"})
+
+        # Sequential Tasks
+        seq = models.add("Sequential Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "sequential"})
+        seq_op = seq.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "sequential"})
+        seq_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "sequential"})
+        seq_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "sequential"})
+        seq_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "sequential"})
+        seq.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "sequential"})
+
+        # Parallel Tasks
+        par = models.add("Parallel Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "parallel"})
+        par_op = par.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "parallel"})
+        par_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "parallel"})
+        par_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "parallel"})
+        par_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "parallel"})
+        par.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "parallel"})
 
         # Researcher component
         researcher = self.root.add("Researcher", expand=False, data={"type": "component", "id": "researcher"})
 
-        op_branch = researcher.add("Operator", expand=False, data={"type": "operator_branch", "component": "researcher"})
+        op_branch = researcher.add("Default Operator", expand=False, data={"type": "operator_branch", "component": "researcher"})
         op_branch.add("Perplexity", data={"type": "operator", "component": "researcher", "operator": "perplexity"})
         op_branch.add("Serper", data={"type": "operator", "component": "researcher", "operator": "serper"})
         op_branch.add("DuckDuckGo", data={"type": "operator", "component": "researcher", "operator": "duckduckgo"})
@@ -215,19 +236,26 @@ class ConfigTree(Tree):
         researcher.add("Settings", data={"type": "settings", "component": "researcher"})
 
         models = researcher.add("Models", expand=False, data={"type": "models_branch", "component": "researcher"})
-        models.add("Research Model", data={"type": "model", "component": "researcher", "model_type": "research"})
+        research = models.add("Research Model", expand=False, data={"type": "model_group", "component": "researcher", "model_type": "research"})
+        research_op = research.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "researcher", "model_type": "research"})
+        research_op.add("Use Default", data={"type": "operator", "component": "researcher", "operator": "default", "model_type": "research"})
+        research_op.add("Perplexity", data={"type": "operator", "component": "researcher", "operator": "perplexity", "model_type": "research"})
+        research_op.add("Serper", data={"type": "operator", "component": "researcher", "operator": "serper", "model_type": "research"})
+        research.add("Model Selection", data={"type": "model", "component": "researcher", "model_type": "research"})
 
         # Secretary component
         secretary = self.root.add("Secretary", expand=False, data={"type": "component", "id": "secretary"})
         secretary.add("Settings", data={"type": "settings", "component": "secretary"})
         models = secretary.add("Models", expand=False, data={"type": "models_branch", "component": "secretary"})
-        models.add("Analysis Model", data={"type": "model", "component": "secretary", "model_type": "analysis"})
+        analysis = models.add("Analysis Model", expand=False, data={"type": "model_group", "component": "secretary", "model_type": "analysis"})
+        analysis.add("Model Selection", data={"type": "model", "component": "secretary", "model_type": "analysis"})
 
         # Prompts component
         prompts = self.root.add("Prompts", expand=False, data={"type": "component", "id": "prompts"})
         prompts.add("Settings", data={"type": "settings", "component": "prompts"})
         models = prompts.add("Models", expand=False, data={"type": "models_branch", "component": "prompts"})
-        models.add("Generation Model", data={"type": "model", "component": "prompts", "model_type": "generation"})
+        generation = models.add("Generation Model", expand=False, data={"type": "model_group", "component": "prompts", "model_type": "generation"})
+        generation.add("Model Selection", data={"type": "model", "component": "prompts", "model_type": "generation"})
 
 
 class RightPanel(Container):
