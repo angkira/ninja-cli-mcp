@@ -30,6 +30,7 @@ dependencies = [
     "aiohttp>=3.9.0",
     "InquirerPy>=0.3.4",
     "psutil>=5.9.0",
+    "cryptography>=41.0.0",
 ]
 
 [project.optional-dependencies]
