@@ -511,6 +511,13 @@ class ModernConfigApp(App):
         background: $surface;
     }
 
+    #logo {
+        height: 3;
+        content-align: center middle;
+        margin-bottom: 1;
+        text-style: bold;
+    }
+
     #main-container {
         layout: horizontal;
         height: 100%;
@@ -597,9 +604,40 @@ class ModernConfigApp(App):
         self.title = "Ninja MCP Configurator"
         self.sub_title = "Modern Tree-Based Configuration"
 
+    def _create_logo(self) -> Text:
+        """Create gradient logo text."""
+        # NINJA-MCP with gradient from turquoise to lilac
+        logo_text = Text()
+        logo_str = "NINJA-MCP"
+
+        # Create gradient colors from turquoise (#40E0D0) to lilac (#C8A2C8)
+        # Using intermediate colors for smooth gradient
+        colors = [
+            "#40E0D0",  # Turquoise
+            "#5DD5DB",
+            "#79CAE6",
+            "#96BFF1",
+            "#B2B4DC",
+            "#CFA9C7",  # Lilac
+        ]
+
+        chars_per_color = len(logo_str) / (len(colors) - 1)
+
+        for i, char in enumerate(logo_str):
+            # Calculate which color to use
+            color_index = min(int(i / chars_per_color), len(colors) - 1)
+            logo_text.append(char, style=f"bold {colors[color_index]}")
+
+        # Center the logo
+        logo_text.justify = "center"
+        return logo_text
+
     def compose(self) -> ComposeResult:
         """Create child widgets."""
         yield Header()
+
+        # Logo with gradient
+        yield Static(self._create_logo(), id="logo")
 
         with Horizontal(id="main-container"):
             # Left: Collapsible tree
