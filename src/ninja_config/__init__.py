@@ -12,6 +12,7 @@ from ninja_config.model_selector import (
     select_model_interactive,
     select_operator_interactive,
 )
+from ninja_config.opencode_integration import OpenCodeIntegration
 
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "run_interactive_selector",
     "select_model_interactive",
     "select_operator_interactive",
+    "OpenCodeIntegration",
 ]

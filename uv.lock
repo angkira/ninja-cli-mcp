@@ -2133,6 +2133,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "anyio" },
+    { name = "cryptography" },
     { name = "ddgs" },
     { name = "httpx" },
     { name = "inquirerpy" },
@@ -2209,6 +2210,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "anyio", specifier = ">=4.0.0" },
     { name = "beautifulsoup4", marker = "extra == 'researcher'", specifier = ">=4.12.0" },
+    { name = "cryptography", specifier = ">=41.0.0" },
     { name = "ddgs", specifier = ">=9.10.0" },
     { name = "ddgs", marker = "extra == 'researcher'", specifier = ">=9.0.0" },
     { name = "fastapi", marker = "extra == 'secretary'", specifier = ">=0.23.0" },

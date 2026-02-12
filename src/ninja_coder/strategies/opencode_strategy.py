@@ -261,6 +261,7 @@ class OpenCodeStrategy:
         stdout: str,
         stderr: str,
         exit_code: int,
+        repo_root: str | None = None,
     ) -> ParsedResult:
         """Parse OpenCode output.
 
@@ -271,6 +272,7 @@ class OpenCodeStrategy:
             stdout: Standard output from OpenCode execution.
             stderr: Standard error from OpenCode execution.
             exit_code: Exit code from OpenCode execution.
+            repo_root: Repository root path (optional, used for file verification).
 
         Returns:
             ParsedResult with success status, summary, and file changes.
@@ -356,44 +358,46 @@ class OpenCodeStrategy:
         # FIX: File system verification to prevent false negatives
         # Regex patterns can fail to match all CLI output formats, so we verify
         # files actually exist on disk and fall back to filesystem scanning
-        verified_paths: list[str] = []
-        for path in suspected_paths:
-            full_path = Path(repo_root) / path
-            try:
-                if full_path.exists():
-                    verified_paths.append(path)
-                else:
-                    logger.warning(f"Path mentioned in output but not found: {path}")
-            except (OSError, ValueError) as e:
-                logger.warning(f"Error checking path {path}: {e}")
+        # Only perform verification if repo_root is provided
+        if repo_root:
+            verified_paths: list[str] = []
+            for path in suspected_paths:
+                full_path = Path(repo_root) / path
+                try:
+                    if full_path.exists():
+                        verified_paths.append(path)
+                    else:
+                        logger.warning(f"Path mentioned in output but not found: {path}")
+                except (OSError, ValueError) as e:
+                    logger.warning(f"Error checking path {path}: {e}")
 
-        suspected_paths = verified_paths
+            suspected_paths = verified_paths
 
-        # If regex found nothing and task succeeded, scan for recent file changes
-        # This fallback catches files when regex pattern matching fails
-        if not suspected_paths and success:
-            cutoff_time = time.time() - 60  # Files modified in last 60 seconds
-            recent_files: list[str] = []
-            try:
-                for root, dirs, files in os.walk(repo_root):
-                    # Skip hidden directories (including .git, .cache, etc.)
-                    dirs[:] = [d for d in dirs if not d.startswith('.')]
-                    for file in files:
-                        file_path = Path(root) / file
-                        try:
-                            if file_path.stat().st_mtime > cutoff_time:
-                                recent_files.append(str(file_path.relative_to(repo_root)))
-                        except (OSError, ValueError):
-                            # Skip files we can't stat (permission errors, etc.)
-                            continue
+            # If regex found nothing and task succeeded, scan for recent file changes
+            # This fallback catches files when regex pattern matching fails
+            if not suspected_paths and success:
+                cutoff_time = time.time() - 60  # Files modified in last 60 seconds
+                recent_files: list[str] = []
+                try:
+                    for root, dirs, files in os.walk(repo_root):
+                        # Skip hidden directories (including .git, .cache, etc.)
+                        dirs[:] = [d for d in dirs if not d.startswith('.')]
+                        for file in files:
+                            file_path = Path(root) / file
+                            try:
+                                if file_path.stat().st_mtime > cutoff_time:
+                                    recent_files.append(str(file_path.relative_to(repo_root)))
+                            except (OSError, ValueError):
+                                # Skip files we can't stat (permission errors, etc.)
+                                continue
 
-                if recent_files:
-                    suspected_paths = recent_files[:10]  # Limit to 10 most recent
-                    logger.info(
-                        f"Detected {len(recent_files)} recently modified files via filesystem scan"
-                    )
-            except Exception as e:
-                logger.warning(f"Filesystem scan failed: {e}")
+                    if recent_files:
+                        suspected_paths = recent_files[:10]  # Limit to 10 most recent
+                        logger.info(
+                            f"Detected {len(recent_files)} recently modified files via filesystem scan"
+                        )
+                except Exception as e:
+                    logger.warning(f"Filesystem scan failed: {e}")
 
         # Extract session ID from output
         session_id = None
@@ -455,6 +459,7 @@ class OpenCodeStrategy:
                     notes = error_lines[-1][:200]
 
         # Final validation: If we claim success but no files were touched, it's suspicious
+        # NOTE: This only triggers if BOTH regex pattern matching AND filesystem scan found nothing
         if success and not suspected_paths and len(combined_output) > 100:
             # Check if output suggests files should have been created/modified
             action_keywords = ["write", "creat", "modif", "updat", "edit", "add", "implement"]
@@ -462,7 +467,8 @@ class OpenCodeStrategy:
                 keyword in combined_output.lower() for keyword in action_keywords
             )
 
-            # If there was intent to modify files but none were touched, mark as failure
+            # If there was intent to modify files but none were touched (neither via
+            # regex patterns nor filesystem scan), mark as failure
             if has_action_intent:
                 success = False
                 summary = "⚠️ Task completed but no files were modified"
@@ -496,7 +502,7 @@ class OpenCodeStrategy:
         Returns:
             True if the error is retryable, False otherwise.
         """
-        result = self.parse_output(stdout, stderr, exit_code)
+        result = self.parse_output(stdout, stderr, exit_code, repo_root=None)
         return result.retryable_error
 
     def start_dialogue_session(self, system_prompt: str = "") -> DialogueSession:
