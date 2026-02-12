@@ -1,0 +1,114 @@
+id: architect-review-v1
+name: Architectural Code Review
+description: Review code for architectural compliance with Hexagonal Architecture, Dependency Injection, and Type Safety standards
+scope: global
+tags:
+  - architecture
+  - review
+  - code-quality
+  - hexagonal-architecture
+variables:
+  - name: file_path
+    required: true
+    description: Path to the file being reviewed
+  - name: file_content
+    required: true
+    description: Full content of the file being reviewed
+  - name: context
+    required: false
+    description: Additional context about the file's purpose and dependencies
+  - name: strict_mode
+    required: false
+    default: "true"
+    description: If true, enforce strict compliance. If false, provide recommendations.
+
+template: |
+  I need you to perform an architectural code review of this file.
+
+  **File Path:** {{file_path}}
+
+  **Context:**
+  {{context}}
+
+  **File Content:**
+  ```python
+  {{file_content}}
+  ```
+
+  **Review Mode:** {{strict_mode}}
+
+  Please review this code against the following architectural principles:
+
+  ## 1. ISOLATION (Hexagonal Architecture)
+  - Domain logic must be independent of external concerns (databases, APIs, frameworks)
+  - Clear separation between domain, application, and infrastructure layers
+  - No infrastructure code in domain layer
+  - No business logic in infrastructure layer
+
+  **Check:**
+  - Does the file mix domain logic with infrastructure concerns?
+  - Are external dependencies (databases, HTTP clients, file I/O) properly isolated?
+  - Is the layer boundary clear and respected?
+
+  ## 2. DEPENDENCY INJECTION (DI)
+  - All dependencies must be injected via constructor
+  - No direct instantiation of dependencies
+  - Dependencies should be interfaces/abstract base classes, not concretions
+  - No Service Locator pattern
+  - No Singleton pattern
+
+  **Check:**
+  - Are all dependencies passed via __init__?
+  - Are there any direct instantiations (e.g., `Service()`, `Repository()`)?
+  - Do dependencies use interfaces/protocols?
+  - Is there tight coupling to concrete implementations?
+
+  ## 3. TYPE SAFETY
+  - Full type coverage on all functions and methods
+  - No `Any` types allowed
+  - No `# type: ignore` comments allowed
+  - Use Pydantic models for data structures
+  - Proper use of type hints for parameters and return types
+
+  **Check:**
+  - Are all functions fully typed?
+  - Are there any `Any` types?
+  - Are there any `type: ignore` comments?
+  - Are Pydantic models used appropriately?
+  - Are types specific (not generic `dict`, `list`)?
+
+  ## OUTPUT FORMAT
+
+  Provide your review in the following format:
+
+  ### OVERALL VERDICT
+  **PASS** or **FAIL**
+
+  ### CRITICAL ISSUES (Must Fix)
+  - [ ] Issue 1 - Explanation - Line number
+  - [ ] Issue 2 - Explanation - Line number
+
+  ### WARNINGS (Should Fix)
+  - [ ] Warning 1 - Explanation - Line number
+  - [ ] Warning 2 - Explanation - Line number
+
+  ### PASSED CRITERIA
+  - [x] Isolation: Domain logic properly separated
+  - [x] Dependency Injection: All dependencies injected
+  - [x] Type Safety: Full type coverage, no Any/ignore
+
+  ### DETAILED ANALYSIS
+
+  **Isolation Score:** [1-10]
+  [Detailed explanation of isolation compliance or violations]
+
+  **Dependency Injection Score:** [1-10]
+  [Detailed explanation of DI compliance or violations]
+
+  **Type Safety Score:** [1-10]
+  [Detailed explanation of type safety compliance or violations]
+
+  ### RECOMMENDATIONS
+  [Specific, actionable recommendations to improve the code]
+
+  **Note:** If strict_mode is "true", only PASS or FAIL is acceptable. Any violations result in FAIL. If strict_mode is "false", provide recommendations for improvement.
