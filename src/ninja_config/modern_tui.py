@@ -159,21 +159,22 @@ class SettingsPanel(Widget):
 class InfoPanel(Widget):
     """Panel showing information about selected item."""
 
-    def __init__(self) -> None:
+    def __init__(self, info: str = "[dim]Select an item from the tree[/dim]") -> None:
         super().__init__()
-        self.current_info = ""
+        self.current_info = info
 
     def compose(self) -> ComposeResult:
         """Compose the info panel."""
         yield Static(
-            "[dim]Select an item from the tree[/dim]",
+            self.current_info,
             id="info-content",
         )
 
     def update_info(self, info: str) -> None:
         """Update panel content."""
         self.current_info = info
-        self.query_one("#info-content", Static).update(info)
+        if self.is_mounted:
+            self.query_one("#info-content", Static).update(info)
 
 
 class ConfigTree(Tree):
@@ -249,9 +250,7 @@ class RightPanel(Container):
     def show_info(self, info: str) -> None:
         """Show info panel."""
         self.remove_children()
-        panel = InfoPanel()
-        panel.update_info(info)
-        self.mount(panel)
+        self.mount(InfoPanel(info))
 
 
 class ModernConfigApp(App):
