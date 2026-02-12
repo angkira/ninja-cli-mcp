@@ -76,6 +76,7 @@ class AiderStrategy:
         additional_flags: dict[str, Any] | None = None,
         session_id: str | None = None,
         continue_last: bool = False,
+        task_type: str = "quick",
     ) -> CLICommandResult:
         """Build Aider command with OpenRouter integration.
 
@@ -87,6 +88,7 @@ class AiderStrategy:
             additional_flags: Additional CLI-specific flags (unused for Aider).
             session_id: Session ID to continue (unused for Aider).
             continue_last: Continue last session (unused for Aider).
+            task_type: Type of task ('quick', 'sequential_plan', 'parallel_plan').
 
         Returns:
             CLICommandResult with command, env, and metadata.
@@ -108,6 +110,10 @@ class AiderStrategy:
             "--model",
             f"openrouter/{model_name}",  # OpenRouter model
         ]
+
+        # For plan execution tasks, add architect mode
+        if task_type in ("sequential_plan", "parallel_plan"):
+            cmd.append("--architect")
 
         # Add OpenRouter provider preferences if configured
         provider_order = os.environ.get("NINJA_OPENROUTER_PROVIDERS")
