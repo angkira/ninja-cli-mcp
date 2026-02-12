@@ -160,15 +160,42 @@ class SettingsPanel(Widget):
         component = self.context.get("component", "")
         config = self.config_manager.list_all()
 
+        # Check operator and provider
+        operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "")
+        provider = config.get(f"NINJA_{component.upper()}_{operator.upper()}_PROVIDER", "") if operator == "opencode" else ""
+
         yield Label("[bold cyan]Settings & Credentials[/bold cyan]", id="settings-title")
         yield Label(
             f"[dim]Component: {component.title() if component else 'N/A'}[/dim]",
             id="settings-context",
         )
 
-        # Get current API key
+        # Show operator and provider
+        if operator:
+            operator_text = f"Operator: {operator.title()}"
+            if provider:
+                operator_text += f" ({provider.title()})"
+            yield Label(operator_text, classes="field-label")
+
+        # Get current API key based on operator/provider
         api_key = ""
-        if component == "coder":
+        api_key_label = "API Key"
+
+        if component == "coder" and operator == "opencode":
+            # OpenCode uses provider-specific keys
+            if provider == "openrouter":
+                api_key = config.get("OPENROUTER_API_KEY", "")
+                api_key_label = "OpenRouter API Key"
+            elif provider == "anthropic":
+                api_key = config.get("ANTHROPIC_API_KEY", "")
+                api_key_label = "Anthropic API Key"
+            elif provider == "openai":
+                api_key = config.get("OPENAI_API_KEY", "")
+                api_key_label = "OpenAI API Key"
+            elif provider == "google":
+                api_key = config.get("GOOGLE_API_KEY", "")
+                api_key_label = "Google API Key"
+        elif component == "coder":
             api_key = config.get("OPENROUTER_API_KEY", "")
         elif component == "researcher":
             api_key = config.get("PERPLEXITY_API_KEY", "") or config.get("SERPER_API_KEY", "")
@@ -179,21 +206,22 @@ class SettingsPanel(Widget):
             yield Label(f"Current: {masked}", classes="field-label")
 
         # API Key input
-        yield Label("API Key:", classes="field-label")
+        yield Label(f"{api_key_label}:", classes="field-label")
         yield Input(
             placeholder="Enter new API key or leave blank to keep current...",
             password=True,
             id="api-key-input",
         )
 
-        # Operator-specific settings
-        yield Label("Operator Settings:", classes="field-label")
-        base_url = config.get(f"NINJA_{component.upper()}_BASE_URL", "")
-        yield Input(
-            placeholder="Base URL (optional)...",
-            value=base_url,
-            id="base-url-input",
-        )
+        # Base URL (for OpenCode providers)
+        if operator == "opencode":
+            yield Label("Base URL (optional):", classes="field-label")
+            base_url = config.get(f"NINJA_{component.upper()}_{operator.upper()}_BASE_URL", "")
+            yield Input(
+                placeholder="Custom base URL...",
+                value=base_url,
+                id="base-url-input",
+            )
 
         # Save button
         yield Button("Save Settings", variant="primary", id="save-settings-btn")
@@ -283,7 +311,31 @@ class ConfigTree(Tree):
         op_branch.add(opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode"}, allow_expand=False)
 
         # Settings branch (for default operator)
-        coder.add("Settings", data={"type": "settings", "component": "coder"})
+        settings = coder.add("Settings", expand=False, data={"type": "settings_branch", "component": "coder"})
+
+        # If OpenCode is selected, show provider selection
+        if current_op == "opencode":
+            provider_branch = settings.add("OpenCode Provider", expand=False, data={"type": "provider_branch", "component": "coder"})
+
+            current_provider = self.config.get("NINJA_CODER_OPENCODE_PROVIDER", "")
+
+            # OpenCode providers from https://opencode.ai/docs/providers/
+            providers = [
+                ("openrouter", "OpenRouter"),
+                ("anthropic", "Anthropic"),
+                ("openai", "OpenAI"),
+                ("google", "Google (Gemini)"),
+                ("azure", "Azure OpenAI"),
+                ("ollama", "Ollama"),
+                ("lmstudio", "LM Studio"),
+            ]
+
+            for provider_id, provider_name in providers:
+                label = f"[*] {provider_name}" if current_provider == provider_id else f"[ ] {provider_name}"
+                provider_branch.add(label, data={"type": "provider", "component": "coder", "operator": "opencode", "provider": provider_id}, allow_expand=False)
+
+        # General settings (API keys, etc)
+        settings.add("Credentials", data={"type": "settings", "component": "coder"}, allow_expand=False)
 
         # Models branch - each model type can have its own operator
         models = coder.add("Models", expand=False, data={"type": "models_branch", "component": "coder"})
@@ -583,6 +635,20 @@ class ModernConfigApp(App):
                     key = f"NINJA_{component.upper()}_OPERATOR"
 
                 self.config_manager.set(key, operator)
+
+            # Refresh tree to show new selection
+            self._refresh_tree()
+            self.bell()
+
+        elif node_type == "provider":
+            # Save OpenCode provider selection
+            component = event.node.data.get("component")
+            operator = event.node.data.get("operator")
+            provider = event.node.data.get("provider")
+
+            # Save provider
+            key = f"NINJA_{component.upper()}_{operator.upper()}_PROVIDER"
+            self.config_manager.set(key, provider)
 
             # Refresh tree to show new selection
             self._refresh_tree()
