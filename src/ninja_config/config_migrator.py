@@ -47,6 +47,7 @@ from ninja_config.config_schema import (
 )
 from ninja_config.credentials import CredentialManager
 
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -189,7 +190,7 @@ class ConfigMigrator:
             # Step 7: Mark old config as migrated
             logger.info("Marking old config as migrated...")
             self._mark_migrated()
-            print(f"✓ Marked old config as migrated\n")
+            print("✓ Marked old config as migrated\n")
 
             # Step 8: Create migration log
             migration_result = {
@@ -293,9 +294,7 @@ class ConfigMigrator:
                     value = value.strip()
 
                     # Remove quotes from value
-                    if value.startswith('"') and value.endswith('"'):
-                        value = value[1:-1]
-                    elif value.startswith("'") and value.endswith("'"):
+                    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
                         value = value[1:-1]
 
                     config[key] = value

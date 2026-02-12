@@ -13,7 +13,6 @@ import json
 import tempfile
 from pathlib import Path
 
-from ninja_config.config_loader import ConfigLoader
 from ninja_config.config_schema import (
     ComponentConfig,
     ModelConfiguration,

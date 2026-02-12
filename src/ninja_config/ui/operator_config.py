@@ -5,7 +5,7 @@ and OpenCode authentication flows.
 """
 
 import subprocess
-from pathlib import Path
+
 
 try:
     from InquirerPy import inquirer

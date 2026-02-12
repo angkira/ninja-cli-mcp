@@ -7,8 +7,6 @@ edge cases, negative numbers, zero, and floating point numbers.
 
 from __future__ import annotations
 
-import pytest
-
 from test_validator import is_even, is_positive
 
 

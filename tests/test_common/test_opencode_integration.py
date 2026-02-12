@@ -12,10 +12,7 @@ Tests cover:
 
 import json
 import os
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from ninja_config.config_schema import (
     ComponentConfig,
@@ -27,8 +24,6 @@ from ninja_config.config_schema import (
 )
 from ninja_config.opencode_integration import (
     OpenCodeIntegration,
-    OpenCodeConfigError,
-    OpenCodeSyncError,
 )
 
 

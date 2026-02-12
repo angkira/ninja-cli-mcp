@@ -110,15 +110,15 @@ def test_list_sessions():
         manager = SessionManager(cache_dir)
 
         # Create multiple sessions
-        session1 = manager.create_session(
+        _session1 = manager.create_session(
             repo_root="/tmp/repo1",
             model="anthropic/claude-sonnet-4-5",
         )
-        session2 = manager.create_session(
+        _session2 = manager.create_session(
             repo_root="/tmp/repo2",
             model="anthropic/claude-sonnet-4-5",
         )
-        session3 = manager.create_session(
+        _session3 = manager.create_session(
             repo_root="/tmp/repo1",
             model="anthropic/claude-sonnet-4-5",
         )

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -571,7 +571,7 @@ class NinjaConfig(BaseModel):
 
         # Validate known component names
         valid_components = {"coder", "researcher", "secretary"}
-        for component_name in v.keys():
+        for component_name in v:
             if component_name not in valid_components:
                 raise ValueError(
                     f"Unknown component: {component_name}. "

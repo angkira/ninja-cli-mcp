@@ -559,23 +559,152 @@ class Operator:
         return "Available model"
 
 
+def _get_aider_models(provider: str) -> list[Model]:
+    """Get models from Aider CLI.
+
+    Args:
+        provider: Provider ID (e.g., 'openrouter', 'openai', 'anthropic')
+
+    Returns:
+        List of Model objects
+    """
+    models = []
+    aider_path = shutil.which("aider")
+    if not aider_path:
+        return models
+
+    try:
+        # Aider uses --list-models with provider name
+        result = subprocess.run(
+            [aider_path, "--list-models", provider],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+
+        if result.returncode != 0:
+            return models
+
+        # Parse model IDs from Aider output
+        for line in result.stdout.strip().split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("Models"):
+                continue
+            # Aider typically shows: model-id  (description)
+            if "/" in line:
+                model_id = line.split()[0] if " " in line else line
+                models.append(
+                    Model(
+                        id=model_id,
+                        name=model_id.split("/")[-1].replace("-", " ").title(),
+                        description="Via Aider",
+                        provider=provider,
+                        recommended=False,
+                    )
+                )
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+    return models
+
+
+def _get_claude_models() -> list[Model]:
+    """Get models from Claude CLI.
+
+    Returns:
+        List of Model objects (Claude models)
+    """
+    # Claude CLI uses specific model aliases
+    return [
+        Model(
+            id="claude-sonnet-4-5",
+            name="Claude Sonnet 4.5",
+            description="Latest Sonnet (via Claude CLI)",
+            provider="anthropic",
+            recommended=True,
+        ),
+        Model(
+            id="claude-opus-4",
+            name="Claude Opus 4",
+            description="Most capable (via Claude CLI)",
+            provider="anthropic",
+            recommended=False,
+        ),
+        Model(
+            id="claude-haiku-4",
+            name="Claude Haiku 4",
+            description="Fast and efficient (via Claude CLI)",
+            provider="anthropic",
+            recommended=False,
+        ),
+    ]
+
+
+def _get_gemini_models() -> list[Model]:
+    """Get models from Gemini CLI.
+
+    Returns:
+        List of Model objects (Gemini models)
+    """
+    # Gemini CLI supported models
+    return [
+        Model(
+            id="gemini-2.0-flash-exp",
+            name="Gemini 2.0 Flash",
+            description="Latest fast model (experimental)",
+            provider="google",
+            recommended=True,
+        ),
+        Model(
+            id="gemini-1.5-pro",
+            name="Gemini 1.5 Pro",
+            description="Production-ready capable model",
+            provider="google",
+            recommended=False,
+        ),
+        Model(
+            id="gemini-1.5-flash",
+            name="Gemini 1.5 Flash",
+            description="Fast and efficient",
+            provider="google",
+            recommended=False,
+        ),
+    ]
+
+
 def get_provider_models(operator: str, provider: str) -> list[Model]:
     """Get models for a specific provider from an operator.
 
-    For opencode: runs `opencode models {provider}` and parses output.
-    Filters to recent/relevant models using existing filtering logic.
+    Supports multiple operators with dynamic model loading:
+    - opencode: runs `opencode models {provider}` and parses output
+    - aider: runs `aider --list-models {provider}`
+    - claude: returns Claude-specific models
+    - gemini: returns Gemini-specific models
 
     Args:
-        operator: The operator ID (e.g., 'opencode')
+        operator: The operator ID (e.g., 'opencode', 'aider', 'claude', 'gemini')
         provider: The provider ID (e.g., 'anthropic', 'openrouter')
 
     Returns:
         List of Model objects for the specified provider
     """
-    models = []
+    # Map operators to their model fetching functions
+    operator_handlers = {
+        "aider": lambda p: _get_aider_models(p),
+        "claude": lambda _p: _get_claude_models(),
+        "gemini": lambda _p: _get_gemini_models(),
+    }
 
+    # Check if operator has a dedicated handler
+    if operator in operator_handlers:
+        return operator_handlers[operator](provider)
+
+    # OpenCode requires special handling below
     if operator != "opencode":
-        return models
+        return []
+
+    models = []
 
     # Find opencode binary
     opencode_path = shutil.which("opencode")
@@ -1025,7 +1154,7 @@ def cleanup_removed_modules(config_manager: ConfigManager) -> list[str]:
     for module_id, patterns in module_patterns.items():
         if module_id not in active_modules:
             # Module was removed - delete its config
-            for key in config.keys():
+            for key in config:
                 for pattern in patterns:
                     if key.startswith(pattern):
                         keys_to_delete.append(key)

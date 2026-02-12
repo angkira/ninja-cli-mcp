@@ -6,7 +6,7 @@ the interactive configurator. All functions are stateless and use dependency inj
 
 import shutil
 import subprocess
-from pathlib import Path
+
 
 try:
     from InquirerPy import inquirer

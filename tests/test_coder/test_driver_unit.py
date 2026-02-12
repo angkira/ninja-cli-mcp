@@ -7,13 +7,10 @@ Tests configuration, instruction building, and result parsing.
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-from ninja_coder.driver import InstructionBuilder, NinjaConfig, NinjaDriver
-from ninja_coder.models import ExecutionMode, PlanStep
+from ninja_coder.driver import NinjaConfig, NinjaDriver
 
 
 class TestNinjaConfig:
