@@ -291,34 +291,59 @@ class ConfigTree(Tree):
         # Quick Tasks
         quick = models.add("Quick Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "quick"})
         quick_op = quick.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "quick"})
-        quick_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "quick"}, allow_expand=False)
-        quick_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "quick"}, allow_expand=False)
-        quick_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "quick"}, allow_expand=False)
+
+        # Check if there's a per-model override
+        quick_override = self.config.get("NINJA_CODER_OPERATOR_QUICK", "")
+        default_label = "[*] Use Default" if not quick_override else "[ ] Use Default"
+        aider_label = "[*] Aider" if quick_override == "aider" else "[ ] Aider"
+        opencode_label = "[*] OpenCode" if quick_override == "opencode" else "[ ] OpenCode"
+
+        quick_op.add(default_label, data={"type": "operator", "component": "coder", "operator": "default", "model_type": "quick"}, allow_expand=False)
+        quick_op.add(aider_label, data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "quick"}, allow_expand=False)
+        quick_op.add(opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "quick"}, allow_expand=False)
         quick.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "quick"}, allow_expand=False)
 
         # Sequential Tasks
         seq = models.add("Sequential Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "sequential"})
         seq_op = seq.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "sequential"})
-        seq_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "sequential"}, allow_expand=False)
-        seq_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "sequential"}, allow_expand=False)
-        seq_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "sequential"}, allow_expand=False)
+
+        seq_override = self.config.get("NINJA_CODER_OPERATOR_SEQUENTIAL", "")
+        seq_default_label = "[*] Use Default" if not seq_override else "[ ] Use Default"
+        seq_aider_label = "[*] Aider" if seq_override == "aider" else "[ ] Aider"
+        seq_opencode_label = "[*] OpenCode" if seq_override == "opencode" else "[ ] OpenCode"
+
+        seq_op.add(seq_default_label, data={"type": "operator", "component": "coder", "operator": "default", "model_type": "sequential"}, allow_expand=False)
+        seq_op.add(seq_aider_label, data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "sequential"}, allow_expand=False)
+        seq_op.add(seq_opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "sequential"}, allow_expand=False)
         seq.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "sequential"}, allow_expand=False)
 
         # Parallel Tasks
         par = models.add("Parallel Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "parallel"})
         par_op = par.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "parallel"})
-        par_op.add("Use Default", data={"type": "operator", "component": "coder", "operator": "default", "model_type": "parallel"}, allow_expand=False)
-        par_op.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "parallel"}, allow_expand=False)
-        par_op.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "parallel"}, allow_expand=False)
+
+        par_override = self.config.get("NINJA_CODER_OPERATOR_PARALLEL", "")
+        par_default_label = "[*] Use Default" if not par_override else "[ ] Use Default"
+        par_aider_label = "[*] Aider" if par_override == "aider" else "[ ] Aider"
+        par_opencode_label = "[*] OpenCode" if par_override == "opencode" else "[ ] OpenCode"
+
+        par_op.add(par_default_label, data={"type": "operator", "component": "coder", "operator": "default", "model_type": "parallel"}, allow_expand=False)
+        par_op.add(par_aider_label, data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "parallel"}, allow_expand=False)
+        par_op.add(par_opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "parallel"}, allow_expand=False)
         par.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "parallel"}, allow_expand=False)
 
         # Researcher component
         researcher = self.root.add("Researcher", expand=False, data={"type": "component", "id": "researcher"})
 
+        current_op = self._get_current_operator("researcher")
         op_branch = researcher.add("Default Operator", expand=False, data={"type": "operator_branch", "component": "researcher"})
-        op_branch.add("Perplexity", data={"type": "operator", "component": "researcher", "operator": "perplexity"}, allow_expand=False)
-        op_branch.add("Serper", data={"type": "operator", "component": "researcher", "operator": "serper"}, allow_expand=False)
-        op_branch.add("DuckDuckGo", data={"type": "operator", "component": "researcher", "operator": "duckduckgo"}, allow_expand=False)
+
+        perplexity_label = "[*] Perplexity" if current_op == "perplexity" else "[ ] Perplexity"
+        serper_label = "[*] Serper" if current_op == "serper" else "[ ] Serper"
+        duckduckgo_label = "[*] DuckDuckGo" if current_op == "duckduckgo" else "[ ] DuckDuckGo"
+
+        op_branch.add(perplexity_label, data={"type": "operator", "component": "researcher", "operator": "perplexity"}, allow_expand=False)
+        op_branch.add(serper_label, data={"type": "operator", "component": "researcher", "operator": "serper"}, allow_expand=False)
+        op_branch.add(duckduckgo_label, data={"type": "operator", "component": "researcher", "operator": "duckduckgo"}, allow_expand=False)
 
         researcher.add("Settings", data={"type": "settings", "component": "researcher"})
 
@@ -570,9 +595,15 @@ class ModernConfigApp(App):
     def _refresh_tree(self) -> None:
         """Refresh tree to show updated selections."""
         tree = self.query_one(ConfigTree)
-        # TODO: Implement tree refresh without rebuilding
-        # For now, just ring bell to indicate success
-        pass
+
+        # Rebuild tree with updated config
+        tree.clear()
+        tree.config = tree.config_manager.list_all()  # Reload config
+        tree._build_tree()
+        tree.root.expand()
+
+        # Show notification
+        self.notify("Selection saved!", severity="information", timeout=2)
 
     def action_refresh(self) -> None:
         """Refresh configuration."""
