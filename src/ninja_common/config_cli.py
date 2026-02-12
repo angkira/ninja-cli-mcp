@@ -377,14 +377,27 @@ def cmd_configure(args: argparse.Namespace) -> None:
         print_colored("Install with: pip install InquirerPy", "dim")
         return
 
-    # Check for quick mode
+    # Check for mode flags
     quick_mode = getattr(args, "quick", False)
+    modern_mode = getattr(args, "modern", False)
 
     if quick_mode:
         # Quick mode: simple API key + operator selection
         print_colored("Quick Configuration Mode", "cyan")
         print_colored("─" * 40, "dim")
         _run_quick_configure(args.config)
+    elif modern_mode:
+        # Modern TUI mode: tree-based navigation with textual
+        try:
+            from ninja_config.modern_tui import run_modern_tui
+            sys.exit(run_modern_tui(args.config))
+        except ImportError as e:
+            print_colored(f"Modern TUI not available: {e}", "red")
+            print_colored("Install with: pip install textual rich", "dim")
+            sys.exit(1)
+        except KeyboardInterrupt:
+            print("\nCancelled.")
+            sys.exit(1)
     else:
         # Full mode: comprehensive TUI configurator
         try:
@@ -701,6 +714,11 @@ Examples:
         "--full",
         action="store_true",
         help="Full TUI configurator (default)",
+    )
+    configure_parser.add_argument(
+        "--modern",
+        action="store_true",
+        help="Modern TUI with tree navigation (EXPERIMENTAL)",
     )
 
     # List command
