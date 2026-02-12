@@ -21,6 +21,7 @@ import asyncio
 import json
 import os
 import re
+import signal
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -1394,7 +1395,6 @@ class NinjaDriver:
 
             # Get timeout from strategy
             max_timeout = timeout_sec or self._strategy.get_timeout(task_type)
-            inactivity_timeout = 20  # Timeout after 20s of no output
 
             # Execute asynchronously using strategy-built command
             process = await asyncio.create_subprocess_exec(
@@ -1407,70 +1407,19 @@ class NinjaDriver:
             )
 
             try:
-                # Activity-based timeout: monitor stdout/stderr for activity
-                stdout_bytes = b""
-                stderr_bytes = b""
-                last_activity = asyncio.get_event_loop().time()
-                start_time = last_activity
+                # Use communicate() with timeout for proper process lifecycle management
+                # This ensures both stream reading AND process exit are within timeout
+                start_time = asyncio.get_event_loop().time()
 
-                async def read_stream(stream, buffer_list, stream_name):
-                    """Read from stream and track activity.
+                task_logger.debug(f"Starting subprocess with {max_timeout}s timeout")
 
-                    Args:
-                        stream: The asyncio stream to read from.
-                        buffer_list: List to append chunks to.
-                        stream_name: Name of stream for logging ('stdout' or 'stderr').
-                    """
-                    nonlocal last_activity
-                    while True:
-                        try:
-                            chunk = await asyncio.wait_for(stream.read(8192), timeout=0.1)
-                            if not chunk:
-                                break
-                            buffer_list.append(chunk)
-                            last_activity = asyncio.get_event_loop().time()
-
-                            # Log activity for debugging
-                            if len(chunk) > 0:
-                                task_logger.debug(
-                                    f"Activity: {stream_name} received {len(chunk)} bytes"
-                                )
-                        except TimeoutError:
-                            # No data yet, check inactivity timeout
-                            elapsed = asyncio.get_event_loop().time() - last_activity
-                            total_elapsed = asyncio.get_event_loop().time() - start_time
-
-                            if elapsed > inactivity_timeout:
-                                task_logger.warning(
-                                    f"No output for {inactivity_timeout}s, process may be hung"
-                                )
-                                raise TimeoutError(
-                                    f"No output activity for {inactivity_timeout}s"
-                                ) from None
-
-                            if total_elapsed > max_timeout:
-                                task_logger.warning(f"Maximum timeout {max_timeout}s reached")
-                                raise TimeoutError(
-                                    f"Maximum timeout {max_timeout}s reached"
-                                ) from None
-
-                            continue
-
-                # Read stdout and stderr concurrently
-                stdout_buffer = []
-                stderr_buffer = []
-
-                await asyncio.gather(
-                    read_stream(process.stdout, stdout_buffer, "stdout"),
-                    read_stream(process.stderr, stderr_buffer, "stderr"),
+                # communicate() reads all output AND waits for process exit
+                # Single timeout for entire operation prevents hanging
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=max_timeout,
                 )
 
-                # Wait for process to exit
-                await process.wait()
-
-                # Combine buffers
-                stdout_bytes = b"".join(stdout_buffer)
-                stderr_bytes = b"".join(stderr_buffer)
                 stdout = stdout_bytes.decode(errors="replace") if stdout_bytes else ""
                 stderr = stderr_bytes.decode(errors="replace") if stderr_bytes else ""
                 exit_code = process.returncode or 0
@@ -1479,8 +1428,18 @@ class NinjaDriver:
                 task_logger.info(f"Task completed in {total_time:.1f}s")
 
             except TimeoutError as e:
+                task_logger.warning(f"Task timed out after {max_timeout}s, killing process")
                 process.kill()
-                await process.wait()
+                # Give process 5 seconds to die gracefully after kill signal
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=5)
+                except TimeoutError:
+                    task_logger.error("Process did not die after kill(), forcing with SIGKILL")
+                    try:
+                        process.send_signal(signal.SIGKILL)
+                        await asyncio.wait_for(process.wait(), timeout=2)
+                    except Exception as kill_error:
+                        task_logger.error(f"Failed to force-kill process: {kill_error}")
                 task_logger.error(f"Task timed out: {e}")
                 logs_path = task_logger.save()
                 return NinjaResult(

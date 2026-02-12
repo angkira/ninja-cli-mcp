@@ -16,11 +16,11 @@ from ninja_config.opencode_integration import OpenCodeIntegration
 
 
 __all__ = [
+    "OpenCodeIntegration",
     "detect_operators",
     "run_configurator",
     "run_installer",
     "run_interactive_selector",
     "select_model_interactive",
     "select_operator_interactive",
-    "OpenCodeIntegration",
 ]

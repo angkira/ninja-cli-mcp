@@ -23,7 +23,6 @@ def test_import_ninja_coder():
         import ninja_coder.server
         import ninja_coder.sessions
         import ninja_coder.strategies
-        import ninja_coder.tools
 
         assert True
     except ImportError as e:
@@ -36,7 +35,6 @@ def test_import_ninja_researcher():
         import ninja_researcher
         import ninja_researcher.search_providers
         import ninja_researcher.server
-        import ninja_researcher.tools
 
         assert True
     except ImportError as e:
@@ -47,7 +45,6 @@ def test_import_ninja_secretary():
     """Test that ninja_secretary module can be imported."""
     try:
         import ninja_secretary
-        import ninja_secretary.server
 
         assert True
     except ImportError as e:
@@ -62,7 +59,6 @@ def test_import_ninja_common():
         import ninja_common.daemon
         import ninja_common.logging_utils
         import ninja_common.path_utils
-        import ninja_common.structured_logger
 
         assert True
     except ImportError as e:

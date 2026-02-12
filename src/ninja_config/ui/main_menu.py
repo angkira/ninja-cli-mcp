@@ -7,6 +7,7 @@ All functions are stateless and accept configuration as parameters.
 import subprocess
 from pathlib import Path
 
+
 try:
     from InquirerPy import inquirer
     from InquirerPy.base.control import Choice

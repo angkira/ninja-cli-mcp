@@ -5,11 +5,11 @@ This module provides validation functions for numbers, using the calculator modu
 for mathematical operations. Includes type hints and comprehensive docstrings.
 """
 
-from typing import Union
+
 from test_calculator import add, multiply
 
 
-def is_positive(n: Union[int, float]) -> bool:
+def is_positive(n: int | float) -> bool:
     """
     Check if a number is positive (greater than zero).
 
@@ -40,7 +40,7 @@ def is_positive(n: Union[int, float]) -> bool:
     return add(n, n) > 0
 
 
-def is_even(n: Union[int, float]) -> bool:
+def is_even(n: int | float) -> bool:
     """
     Check if a number is even.
 

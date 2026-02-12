@@ -13,6 +13,7 @@ import pytest
 
 from ninja_coder.daemon import get_daemon
 
+
 # Skip if opencode CLI is not installed
 OPENCODE_AVAILABLE = shutil.which("opencode") is not None
 

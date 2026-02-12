@@ -2,6 +2,7 @@
 
 import pytest
 
+
 # Skip all tests in this directory - they reference the old ninja_cli_mcp package
 # which was refactored into separate modules (ninja_coder, ninja_researcher, etc.)
 collect_ignore_glob = ["test_*.py"]

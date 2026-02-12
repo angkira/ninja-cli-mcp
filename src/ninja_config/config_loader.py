@@ -17,7 +17,6 @@ import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from ninja_config.config_schema import NinjaConfig
 
@@ -52,7 +51,7 @@ class ConfigLoader:
         ...     print("No config found, running setup...")
     """
 
-    def __init__(self, config_dir: Optional[Path] = None) -> None:
+    def __init__(self, config_dir: Path | None = None) -> None:
         """
         Initialize the configuration loader.
 
@@ -180,7 +179,7 @@ class ConfigLoader:
         """
         return self._config_path
 
-    def backup(self, tag: Optional[str] = None) -> Path:
+    def backup(self, tag: str | None = None) -> Path:
         """
         Create a timestamped backup of the current configuration.
 

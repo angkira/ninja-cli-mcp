@@ -25,7 +25,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
@@ -171,7 +170,7 @@ class KeyDerivation:
         node = uuid.getnode()
 
         # Create a stable identifier
-        machine_data = f"{node}".encode("utf-8")
+        machine_data = f"{node}".encode()
         return hashlib.sha256(machine_data).hexdigest()
 
     @staticmethod
@@ -193,7 +192,7 @@ class KeyDerivation:
             raise ValueError("Salt cannot be empty")
 
         machine_id = KeyDerivation.get_machine_id()
-        key_material = f"{machine_id}:{password}".encode("utf-8")
+        key_material = f"{machine_id}:{password}".encode()
 
         return hashlib.pbkdf2_hmac(
             "sha256",
@@ -238,7 +237,7 @@ class CredentialDatabase:
 
         # Set secure file permissions (600)
         try:
-            os.chmod(db_path, 0o600)
+            Path(db_path).chmod(0o600)
         except OSError as e:
             raise DatabaseError(f"Failed to set secure permissions on database: {e}") from e
 

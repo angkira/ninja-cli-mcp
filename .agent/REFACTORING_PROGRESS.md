@@ -191,39 +191,39 @@ class PowerConfigurator:
 
 ## Implementation Checklist
 
-### Phase 1: Create model_selector.py ⚠️
-- [ ] Create `src/ninja_config/ui/model_selector.py`
-- [ ] Extract `configure_models()` function
-- [ ] Extract `configure_task_based_models()` function
-- [ ] Extract `configure_single_task_model()` function
-- [ ] Extract `configure_model_preferences()` function
-- [ ] Extract `reset_task_models()` function
-- [ ] Add comprehensive docstrings (Google style)
-- [ ] Add full type hints
-- [ ] Test imports and functionality
+### Phase 1: Create model_selector.py ✅ COMPLETE
+- [x] Create `src/ninja_config/ui/model_selector.py`
+- [x] Extract `configure_models()` function
+- [x] Extract `configure_task_based_models()` function
+- [x] Extract `configure_single_task_model()` function
+- [x] Extract `configure_model_preferences()` function
+- [x] Extract `reset_task_models()` function
+- [x] Add comprehensive docstrings (Google style)
+- [x] Add full type hints
+- [x] Test imports and functionality
 
-### Phase 2: Create settings.py ⚠️
-- [ ] Create `src/ninja_config/ui/settings.py`
-- [ ] Extract `configure_search()` function
-- [ ] Extract `configure_perplexity_model()` function
-- [ ] Extract `configure_daemon()` function
-- [ ] Extract `configure_ide()` function
-- [ ] Extract `setup_claude_integration()` function
-- [ ] Extract `setup_opencode_integration()` function
-- [ ] Extract `advanced_settings()` function
-- [ ] Extract `edit_setting()` function
-- [ ] Extract `reset_configuration()` function
-- [ ] Add comprehensive docstrings (Google style)
-- [ ] Add full type hints
-- [ ] Test imports and functionality
+### Phase 2: Create settings.py ✅ COMPLETE
+- [x] Create `src/ninja_config/ui/settings.py`
+- [x] Extract `configure_search()` function
+- [x] Extract `configure_perplexity_model()` function
+- [x] Extract `configure_daemon()` function
+- [x] Extract `configure_ide()` function
+- [x] Extract `setup_claude_integration()` function
+- [x] Extract `setup_opencode_integration()` function
+- [x] Extract `advanced_settings()` function
+- [x] Extract `edit_setting()` function
+- [x] Extract `reset_configuration()` function
+- [x] Add comprehensive docstrings (Google style)
+- [x] Add full type hints
+- [x] Test imports and functionality
 
-### Phase 3: Update ui/__init__.py ⚠️
-- [ ] Import model_selector module
-- [ ] Import settings module
-- [ ] Export all public functions from model_selector
-- [ ] Export all public functions from settings
-- [ ] Update __all__ list
-- [ ] Verify no circular imports
+### Phase 3: Update ui/__init__.py ✅ COMPLETE
+- [x] Import model_selector module
+- [x] Import settings module
+- [x] Export all public functions from model_selector
+- [x] Export all public functions from settings
+- [x] Update __all__ list
+- [x] Verify no circular imports
 
 ### Phase 4: Refactor interactive_configurator.py ⚠️
 - [ ] Update imports to use ui modules
