@@ -98,12 +98,21 @@ class ModelSearchPanel(Widget):
                     config = self.config_manager.list_all()
                     operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "aider")
 
-                # Fetch models
+                # Fetch models (returns list of Model objects)
                 models_data = get_provider_models(operator, provider)
-                # Convert to (model_id, name, description) format
+
+                if not models_data:
+                    # Show info message if no models available
+                    list_view = self.query_one("#model-list", ListView)
+                    list_view.clear()
+                    info_item = ListItem(Static(f"[yellow]No models available for {operator}/{provider}[/yellow]\n[dim]Try configuring operator first[/dim]"))
+                    list_view.append(info_item)
+                    return
+
+                # Convert Model objects to (model_id, name, description) tuples
                 all_models = [
-                    (model_id, name, desc)
-                    for model_id, name, desc in models_data
+                    (model.id, model.name, model.description)
+                    for model in models_data
                 ]
             except Exception as e:
                 # Fallback to empty list if fetch fails
