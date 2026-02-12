@@ -279,8 +279,8 @@ class ConfigTree(Tree):
         aider_label = "[*] Aider" if current_op == "aider" else "[ ] Aider"
         opencode_label = "[*] OpenCode" if current_op == "opencode" else "[ ] OpenCode"
 
-        op_branch.add(aider_label, data={"type": "operator", "component": "coder", "operator": "aider"}, allow_expand=False, allow_expand=False)
-        op_branch.add(opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode"}, allow_expand=False, allow_expand=False)
+        op_branch.add(aider_label, data={"type": "operator", "component": "coder", "operator": "aider"}, allow_expand=False)
+        op_branch.add(opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode"}, allow_expand=False)
 
         # Settings branch (for default operator)
         coder.add("Settings", data={"type": "settings", "component": "coder"})
