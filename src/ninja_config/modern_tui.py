@@ -53,9 +53,10 @@ AVAILABLE_MODELS = {
 class ModelSearchPanel(Widget):
     """Panel for searching and selecting models."""
 
-    def __init__(self, context: dict) -> None:
+    def __init__(self, context: dict, config_manager: ConfigManager | None = None) -> None:
         super().__init__()
         self.context = context
+        self.config_manager = config_manager
         self.filtered_models = []
 
     def compose(self) -> ComposeResult:
@@ -69,6 +70,17 @@ class ModelSearchPanel(Widget):
             f"[dim]Type: {self.context.get('model_type', 'N/A')}[/dim]",
             id="search-type",
         )
+
+        # Show current model if config_manager available
+        if self.config_manager:
+            component = self.context.get('component', '')
+            model_type = self.context.get('model_type', '')
+            config = self.config_manager.list_all()
+            key = f"NINJA_{component.upper()}_MODEL_{model_type.upper()}"
+            current_model = config.get(key, "")
+            if current_model:
+                yield Label(f"Current: {current_model}", id="current-model")
+
         yield Input(placeholder="Search models...", id="model-search-input")
 
         with ScrollableContainer(id="model-results"):
@@ -114,22 +126,39 @@ class ModelSearchPanel(Widget):
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle model selection."""
-        if hasattr(event.item, "model_id"):
-            # TODO: Save selected model to config
+        if hasattr(event.item, "model_id") and self.config_manager:
+            model_id = event.item.model_id
+            component = self.context.get('component', '')
+            model_type = self.context.get('model_type', '')
+
+            # Save to config
+            key = f"NINJA_{component.upper()}_MODEL_{model_type.upper()}"
+            self.config_manager.set(key, model_id)
+
+            # Show success
             self.app.bell()
+
+            # Update current model display
+            if self.is_mounted:
+                try:
+                    current_label = self.query_one("#current-model", Label)
+                    current_label.update(f"Current: {model_id}")
+                except Exception:
+                    pass
 
 
 class SettingsPanel(Widget):
     """Panel for configuring settings and API keys."""
 
-    def __init__(self, context: dict) -> None:
+    def __init__(self, context: dict, config_manager: ConfigManager) -> None:
         super().__init__()
         self.context = context
+        self.config_manager = config_manager
 
     def compose(self) -> ComposeResult:
         """Compose the settings panel."""
         component = self.context.get("component", "")
-        operator = self.context.get("operator", "")
+        config = self.config_manager.list_all()
 
         yield Label("[bold cyan]Settings & Credentials[/bold cyan]", id="settings-title")
         yield Label(
@@ -137,23 +166,63 @@ class SettingsPanel(Widget):
             id="settings-context",
         )
 
+        # Get current API key
+        api_key = ""
+        if component == "coder":
+            api_key = config.get("OPENROUTER_API_KEY", "")
+        elif component == "researcher":
+            api_key = config.get("PERPLEXITY_API_KEY", "") or config.get("SERPER_API_KEY", "")
+
+        # Show masked current value
+        if api_key:
+            masked = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
+            yield Label(f"Current: {masked}", classes="field-label")
+
         # API Key input
         yield Label("API Key:", classes="field-label")
         yield Input(
-            placeholder="Enter API key...",
+            placeholder="Enter new API key or leave blank to keep current...",
             password=True,
             id="api-key-input",
         )
 
         # Operator-specific settings
         yield Label("Operator Settings:", classes="field-label")
+        base_url = config.get(f"NINJA_{component.upper()}_BASE_URL", "")
         yield Input(
             placeholder="Base URL (optional)...",
+            value=base_url,
             id="base-url-input",
         )
 
         # Save button
         yield Button("Save Settings", variant="primary", id="save-settings-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle save button press."""
+        if event.button.id == "save-settings-btn":
+            self._save_settings()
+
+    def _save_settings(self) -> None:
+        """Save settings to config."""
+        component = self.context.get("component", "")
+        api_key_input = self.query_one("#api-key-input", Input)
+        base_url_input = self.query_one("#base-url-input", Input)
+
+        # Save API key if provided
+        if api_key_input.value:
+            if component == "coder":
+                self.config_manager.set("OPENROUTER_API_KEY", api_key_input.value)
+            elif component == "researcher":
+                self.config_manager.set("PERPLEXITY_API_KEY", api_key_input.value)
+
+        # Save base URL
+        if base_url_input.value:
+            self.config_manager.set(f"NINJA_{component.upper()}_BASE_URL", base_url_input.value)
+
+        # Show success message
+        self.app.bell()
+        # TODO: Show notification
 
 
 class InfoPanel(Widget):
@@ -180,10 +249,22 @@ class InfoPanel(Widget):
 class ConfigTree(Tree):
     """Configuration tree with collapsible branches."""
 
-    def __init__(self) -> None:
+    def __init__(self, config_manager: ConfigManager) -> None:
         super().__init__("Ninja MCP Configuration")
+        self.config_manager = config_manager
+        self.config = config_manager.list_all()
         self.root.expand()
         self._build_tree()
+
+    def _get_current_operator(self, component: str) -> str:
+        """Get currently selected operator for component."""
+        key = f"NINJA_{component.upper()}_OPERATOR"
+        return self.config.get(key, "")
+
+    def _get_current_model(self, component: str, model_type: str) -> str:
+        """Get currently selected model for component/type."""
+        key = f"NINJA_{component.upper()}_MODEL_{model_type.upper()}"
+        return self.config.get(key, "")
 
     def _build_tree(self) -> None:
         """Build the configuration tree."""
@@ -191,9 +272,15 @@ class ConfigTree(Tree):
         coder = self.root.add("Coder", expand=False, data={"type": "component", "id": "coder"})
 
         # Default Operator branch
+        current_op = self._get_current_operator("coder")
         op_branch = coder.add("Default Operator", expand=False, data={"type": "operator_branch", "component": "coder"})
-        op_branch.add("Aider", data={"type": "operator", "component": "coder", "operator": "aider"})
-        op_branch.add("OpenCode", data={"type": "operator", "component": "coder", "operator": "opencode"})
+
+        # Show current selection with [*]
+        aider_label = "[*] Aider" if current_op == "aider" else "[ ] Aider"
+        opencode_label = "[*] OpenCode" if current_op == "opencode" else "[ ] OpenCode"
+
+        op_branch.add(aider_label, data={"type": "operator", "component": "coder", "operator": "aider"})
+        op_branch.add(opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode"})
 
         # Settings branch (for default operator)
         coder.add("Settings", data={"type": "settings", "component": "coder"})
@@ -261,19 +348,20 @@ class ConfigTree(Tree):
 class RightPanel(Container):
     """Dynamic right panel that changes based on tree selection."""
 
-    def __init__(self) -> None:
+    def __init__(self, config_manager: ConfigManager) -> None:
         super().__init__(id="right-panel")
+        self.config_manager = config_manager
         self.current_panel = None
 
     def show_model_search(self, context: dict) -> None:
         """Show model search panel."""
         self.remove_children()
-        self.mount(ModelSearchPanel(context))
+        self.mount(ModelSearchPanel(context, self.config_manager))
 
     def show_settings(self, context: dict) -> None:
         """Show settings panel."""
         self.remove_children()
-        self.mount(SettingsPanel(context))
+        self.mount(SettingsPanel(context, self.config_manager))
 
     def show_info(self, info: str) -> None:
         """Show info panel."""
@@ -382,10 +470,10 @@ class ModernConfigApp(App):
         with Horizontal(id="main-container"):
             # Left: Collapsible tree
             with Container(id="left-panel"):
-                yield ConfigTree()
+                yield ConfigTree(self.config_manager)
 
             # Right: Dynamic panel
-            yield RightPanel()
+            yield RightPanel(self.config_manager)
 
         yield Footer()
 
