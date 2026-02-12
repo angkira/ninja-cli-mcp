@@ -1804,16 +1804,87 @@ class PowerConfigurator:
 
 
 def run_power_configurator(config_path: str | None = None) -> int:
-    """Run the power configurator."""
+    """Run the power configurator (now uses modular UI)."""
     try:
-        configurator = PowerConfigurator(config_path)
-        configurator.run()
+        # Use the new modular UI instead of the old monolithic one
+        from ninja_config.ui.main_menu import show_welcome, show_main_menu
+        from ninja_config.ui.component_setup import run_coder_setup_flow, configure_secretary
+        from ninja_config.ui.operator_config import (
+            manage_api_keys,
+            configure_operators,
+            select_opencode_provider,
+            configure_opencode_auth,
+        )
+        from ninja_config.ui.model_selector import (
+            configure_models,
+            configure_task_based_models,
+            configure_model_preferences,
+            configure_single_task_model,
+            reset_task_models,
+        )
+        from ninja_config.ui.settings import (
+            configure_search,
+            configure_daemon,
+            configure_ide,
+            advanced_settings,
+            reset_configuration,
+            setup_claude_integration,
+            setup_opencode_integration,
+            configure_perplexity_model,
+            edit_setting,
+        )
+
+        config_mgr = ConfigManager(config_path)
+
+        # Show welcome
+        show_welcome()
+
+        # Main loop
+        while True:
+            config = config_mgr.list_all()
+            choice = show_main_menu(config)
+
+            if choice == "overview":
+                from ninja_config.ui.main_menu import show_configuration_overview
+                show_configuration_overview(config)
+            elif choice == "coder_setup":
+                run_coder_setup_flow(config_mgr, config)
+            elif choice == "secretary_setup":
+                configure_secretary(config_mgr, config)
+            elif choice == "api_keys":
+                manage_api_keys(config_mgr, config)
+            elif choice == "operator":
+                configure_operators(config_mgr, config)
+            elif choice == "models":
+                configure_models(config_mgr, config)
+            elif choice == "task_models":
+                configure_task_based_models(config_mgr, config)
+            elif choice == "search":
+                configure_search(config_mgr, config)
+            elif choice == "daemon":
+                configure_daemon(config_mgr, config)
+            elif choice == "ide":
+                configure_ide(config_mgr, config)
+            elif choice == "opencode_auth":
+                configure_opencode_auth(config_mgr, config)
+            elif choice == "advanced":
+                advanced_settings(config_mgr, config)
+            elif choice == "reset":
+                reset_configuration(config_mgr)
+            elif choice == "exit":
+                print("\n👋 Configuration saved. Goodbye!")
+                break
+            else:
+                print(f"\n⚠️  Unknown choice: {choice}")
+
         return 0
     except KeyboardInterrupt:
         print("\n\n👋 Configuration session ended")
         return 0
     except Exception as e:
         print(f"\n❌ Configuration error: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
 
 
