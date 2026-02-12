@@ -512,10 +512,12 @@ class ModernConfigApp(App):
     }
 
     #logo {
-        height: 3;
+        height: 2;
         content-align: center middle;
         margin-bottom: 1;
         text-style: bold;
+        border-bottom: solid cyan;
+        padding-bottom: 1;
     }
 
     #main-container {
@@ -636,12 +638,11 @@ class ModernConfigApp(App):
         """Create child widgets."""
         yield Header()
 
-        # Logo with gradient
-        yield Static(self._create_logo(), id="logo")
-
         with Horizontal(id="main-container"):
-            # Left: Collapsible tree
+            # Left: Collapsible tree with logo
             with Container(id="left-panel"):
+                # Logo with gradient
+                yield Static(self._create_logo(), id="logo")
                 yield ConfigTree(self.config_manager)
 
             # Right: Dynamic panel
