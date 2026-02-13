@@ -203,84 +203,93 @@ class SettingsPanel(Widget):
 
         # Show operator and provider
         if operator:
-            operator_text = f"Operator: {operator.title()}"
+            operator_text = f"Current Operator: {operator.title()}"
             if provider:
                 operator_text += f" ({provider.title()})"
             yield Label(operator_text, classes="field-label")
+            yield Label("[dim]All provider credentials shown below[/dim]", classes="field-label")
 
-        # Get current API key based on operator/provider
-        api_key = ""
-        api_key_label = "API Key"
-        api_key_env_var = ""
-
+        # Show all provider credentials for OpenCode
         if component == "coder" and operator == "opencode":
-            # OpenCode uses provider-specific keys
-            if provider == "openrouter":
-                api_key_env_var = "OPENROUTER_API_KEY"
-                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
-                api_key_label = "OpenRouter API Key"
-            elif provider == "anthropic":
-                api_key_env_var = "ANTHROPIC_API_KEY"
-                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
-                api_key_label = "Anthropic API Key"
-            elif provider == "openai":
-                api_key_env_var = "OPENAI_API_KEY"
-                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
-                api_key_label = "OpenAI API Key"
-            elif provider == "google":
-                api_key_env_var = "GOOGLE_API_KEY"
-                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
-                api_key_label = "Google API Key"
-            elif provider == "azure":
-                api_key_env_var = "AZURE_OPENAI_API_KEY"
-                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
-                api_key_label = "Azure OpenAI API Key"
-            elif provider == "ollama":
-                api_key_env_var = "OLLAMA_API_KEY"
-                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
-                api_key_label = "Ollama API Key (optional)"
-            elif provider == "lmstudio":
-                api_key_env_var = "LMSTUDIO_API_KEY"
-                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
-                api_key_label = "LM Studio API Key (optional)"
-            elif provider == "zai":
-                api_key_env_var = "ZAI_API_KEY"
-                api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
-                api_key_label = "Z.ai API Key"
+            # Define all OpenCode providers and their keys
+            all_providers = [
+                ("openrouter", "OpenRouter API Key", "OPENROUTER_API_KEY"),
+                ("anthropic", "Anthropic API Key", "ANTHROPIC_API_KEY"),
+                ("openai", "OpenAI API Key", "OPENAI_API_KEY"),
+                ("google", "Google API Key", "GOOGLE_API_KEY"),
+                ("azure", "Azure OpenAI API Key", "AZURE_OPENAI_API_KEY"),
+                ("ollama", "Ollama API Key (optional)", "OLLAMA_API_KEY"),
+                ("lmstudio", "LM Studio API Key (optional)", "LMSTUDIO_API_KEY"),
+                ("zai", "Z.ai API Key", "ZAI_API_KEY"),
+            ]
+
+            for provider_id, label, env_var in all_providers:
+                api_key = config.get(env_var, "") or os.environ.get(env_var, "")
+                is_current = provider_id == provider
+
+                # Header for this provider
+                provider_header = f"{label}"
+                if is_current:
+                    provider_header = f"[bold green]{label} (ACTIVE)[/bold green]"
+                yield Label(provider_header, classes="field-label")
+
+                # Show current value with show/hide toggle
+                if api_key:
+                    with Horizontal(classes="key-display-container"):
+                        yield Input(
+                            value=api_key,
+                            password=True,
+                            id=f"current-key-{provider_id}",
+                            disabled=True,
+                        )
+                        yield Checkbox("Show", id=f"show-key-{provider_id}")
+                else:
+                    yield Label("[dim]Not set[/dim]", classes="field-label")
+
+                # Update input for this provider
+                yield Input(
+                    placeholder=f"Update {label}...",
+                    password=True,
+                    id=f"update-key-{provider_id}",
+                )
+
         elif component == "coder":
+            # Non-OpenCode coder (e.g., Aider)
             api_key_env_var = "OPENROUTER_API_KEY"
             api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
+
+            yield Label("OpenRouter API Key:", classes="field-label")
+            if api_key:
+                with Horizontal(classes="key-display-container"):
+                    yield Input(value=api_key, password=True, id="current-key-display", disabled=True)
+                    yield Checkbox("Show", id="show-key-checkbox")
+            else:
+                yield Label("[dim]Not set[/dim]", classes="field-label")
+
+            yield Input(placeholder="Update OpenRouter API Key...", password=True, id="api-key-input")
+
         elif component == "researcher":
-            api_key_env_var = "PERPLEXITY_API_KEY"
-            api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "") or config.get("SERPER_API_KEY", "") or os.environ.get("SERPER_API_KEY", "")
+            # Researcher keys
+            perplexity_key = config.get("PERPLEXITY_API_KEY", "") or os.environ.get("PERPLEXITY_API_KEY", "")
+            serper_key = config.get("SERPER_API_KEY", "") or os.environ.get("SERPER_API_KEY", "")
 
-        # Store env var and current key for save method
-        self.api_key_env_var = api_key_env_var
-        self.current_api_key = api_key
+            yield Label("Perplexity API Key:", classes="field-label")
+            if perplexity_key:
+                with Horizontal(classes="key-display-container"):
+                    yield Input(value=perplexity_key, password=True, id="current-key-perplexity", disabled=True)
+                    yield Checkbox("Show", id="show-key-perplexity")
+            else:
+                yield Label("[dim]Not set[/dim]", classes="field-label")
+            yield Input(placeholder="Update Perplexity API Key...", password=True, id="update-key-perplexity")
 
-        # Show current value with show/hide toggle
-        if api_key:
-            yield Label(f"{api_key_label}:", classes="field-label")
-
-            # Create horizontal container for key display and show button
-            with Horizontal(classes="key-display-container"):
-                yield Input(
-                    value=api_key,
-                    password=True,
-                    id="current-key-display",
-                    disabled=True,
-                )
-                yield Checkbox("Show", id="show-key-checkbox")
-        else:
-            yield Label(f"{api_key_label}: [dim]Not set[/dim]", classes="field-label")
-
-        # New API Key input (for updating)
-        yield Label("Update API Key (leave blank to keep current):", classes="field-label")
-        yield Input(
-            placeholder="Enter new API key...",
-            password=True,
-            id="api-key-input",
-        )
+            yield Label("Serper API Key:", classes="field-label")
+            if serper_key:
+                with Horizontal(classes="key-display-container"):
+                    yield Input(value=serper_key, password=True, id="current-key-serper", disabled=True)
+                    yield Checkbox("Show", id="show-key-serper")
+            else:
+                yield Label("[dim]Not set[/dim]", classes="field-label")
+            yield Input(placeholder="Update Serper API Key...", password=True, id="update-key-serper")
 
         # Base URL (for OpenCode providers)
         if operator == "opencode":
@@ -302,9 +311,12 @@ class SettingsPanel(Widget):
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Handle show/hide checkbox toggle."""
-        if event.checkbox.id == "show-key-checkbox":
+        checkbox_id = event.checkbox.id
+        if checkbox_id and checkbox_id.startswith("show-key-"):
+            # Extract provider ID from checkbox ID
+            provider_id = checkbox_id.replace("show-key-", "")
             try:
-                key_input = self.query_one("#current-key-display", Input)
+                key_input = self.query_one(f"#current-key-{provider_id}", Input)
                 key_input.password = not event.value
             except Exception:
                 pass
@@ -312,24 +324,76 @@ class SettingsPanel(Widget):
     def _save_settings(self) -> None:
         """Save settings to config."""
         component = self.context.get("component", "")
-        api_key_input = self.query_one("#api-key-input", Input)
+        config = self.config_manager.list_all()
+        operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "")
+
+        saved_count = 0
+
+        # Save all OpenCode provider keys if applicable
+        if component == "coder" and operator == "opencode":
+            provider_keys = [
+                ("openrouter", "OPENROUTER_API_KEY"),
+                ("anthropic", "ANTHROPIC_API_KEY"),
+                ("openai", "OPENAI_API_KEY"),
+                ("google", "GOOGLE_API_KEY"),
+                ("azure", "AZURE_OPENAI_API_KEY"),
+                ("ollama", "OLLAMA_API_KEY"),
+                ("lmstudio", "LMSTUDIO_API_KEY"),
+                ("zai", "ZAI_API_KEY"),
+            ]
+
+            for provider_id, env_var in provider_keys:
+                try:
+                    update_input = self.query_one(f"#update-key-{provider_id}", Input)
+                    if update_input.value:
+                        self.config_manager.set(env_var, update_input.value)
+                        saved_count += 1
+                except Exception:
+                    pass
+
+        elif component == "coder":
+            # Non-OpenCode coder
+            try:
+                api_key_input = self.query_one("#api-key-input", Input)
+                if api_key_input.value:
+                    self.config_manager.set("OPENROUTER_API_KEY", api_key_input.value)
+                    saved_count += 1
+            except Exception:
+                pass
+
+        elif component == "researcher":
+            # Researcher keys
+            try:
+                perplexity_input = self.query_one("#update-key-perplexity", Input)
+                if perplexity_input.value:
+                    self.config_manager.set("PERPLEXITY_API_KEY", perplexity_input.value)
+                    saved_count += 1
+            except Exception:
+                pass
+
+            try:
+                serper_input = self.query_one("#update-key-serper", Input)
+                if serper_input.value:
+                    self.config_manager.set("SERPER_API_KEY", serper_input.value)
+                    saved_count += 1
+            except Exception:
+                pass
 
         # Try to get base URL input (only exists for OpenCode)
         try:
             base_url_input = self.query_one("#base-url-input", Input)
-            # Save base URL if provided
             if base_url_input.value:
                 self.config_manager.set(f"NINJA_{component.upper()}_BASE_URL", base_url_input.value)
+                saved_count += 1
         except Exception:
-            pass  # Base URL input not present
-
-        # Save API key if provided
-        if api_key_input.value and self.api_key_env_var:
-            self.config_manager.set(self.api_key_env_var, api_key_input.value)
+            pass
 
         # Show success message
         self.app.bell()
-        self.app.notify("Settings saved!", severity="information", timeout=2)
+        if saved_count > 0:
+            self.app.notify(f"Saved {saved_count} credential(s)!", severity="information", timeout=2)
+        else:
+            self.app.notify("No changes to save", severity="warning", timeout=2)
 
 
 class InfoPanel(Widget):
