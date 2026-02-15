@@ -291,6 +291,32 @@ class SettingsPanel(Widget):
                 yield Label("[dim]Not set[/dim]", classes="field-label")
             yield Input(placeholder="Update Serper API Key...", password=True, id="update-key-serper")
 
+        elif component == "secretary":
+            # Secretary - no specific API keys needed (uses global OpenRouter key)
+            openrouter_key = config.get("OPENROUTER_API_KEY", "") or os.environ.get("OPENROUTER_API_KEY", "")
+
+            yield Label("OpenRouter API Key (for analysis):", classes="field-label")
+            if openrouter_key:
+                with Horizontal(classes="key-display-container"):
+                    yield Input(value=openrouter_key, password=True, id="current-key-openrouter", disabled=True)
+                    yield Checkbox("Show", id="show-key-openrouter")
+            else:
+                yield Label("[dim]Not set[/dim]", classes="field-label")
+            yield Input(placeholder="Update OpenRouter API Key...", password=True, id="update-key-openrouter")
+
+        elif component == "prompts":
+            # Prompts - uses global OpenRouter key for generation
+            openrouter_key = config.get("OPENROUTER_API_KEY", "") or os.environ.get("OPENROUTER_API_KEY", "")
+
+            yield Label("OpenRouter API Key (for prompt generation):", classes="field-label")
+            if openrouter_key:
+                with Horizontal(classes="key-display-container"):
+                    yield Input(value=openrouter_key, password=True, id="current-key-openrouter-prompts", disabled=True)
+                    yield Checkbox("Show", id="show-key-openrouter-prompts")
+            else:
+                yield Label("[dim]Not set[/dim]", classes="field-label")
+            yield Input(placeholder="Update OpenRouter API Key...", password=True, id="update-key-openrouter-prompts")
+
         # Base URL (for OpenCode providers)
         if operator == "opencode":
             yield Label("Base URL (optional):", classes="field-label")
@@ -320,6 +346,12 @@ class SettingsPanel(Widget):
                 key_input.password = not event.value
             except Exception:
                 pass
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Auto-save on Enter key."""
+        input_id = event.input.id
+        if input_id and (input_id.startswith("update-key-") or input_id == "api-key-input"):
+            self._save_settings()
 
     def _save_settings(self) -> None:
         """Save settings to config."""
@@ -379,6 +411,26 @@ class SettingsPanel(Widget):
             except Exception:
                 pass
 
+        elif component == "secretary":
+            # Secretary OpenRouter key
+            try:
+                openrouter_input = self.query_one("#update-key-openrouter", Input)
+                if openrouter_input.value:
+                    self.config_manager.set("OPENROUTER_API_KEY", openrouter_input.value)
+                    saved_count += 1
+            except Exception:
+                pass
+
+        elif component == "prompts":
+            # Prompts OpenRouter key
+            try:
+                openrouter_input = self.query_one("#update-key-openrouter-prompts", Input)
+                if openrouter_input.value:
+                    self.config_manager.set("OPENROUTER_API_KEY", openrouter_input.value)
+                    saved_count += 1
+            except Exception:
+                pass
+
         # Try to get base URL input (only exists for OpenCode)
         try:
             base_url_input = self.query_one("#base-url-input", Input)
@@ -388,10 +440,17 @@ class SettingsPanel(Widget):
         except Exception:
             pass
 
+        # Clear all update input fields after saving
+        if saved_count > 0:
+            # Find all update-key inputs and clear them
+            for widget in self.query("Input"):
+                if widget.id and widget.id.startswith("update-key-"):
+                    widget.value = ""
+
         # Show success message
         self.app.bell()
         if saved_count > 0:
-            self.app.notify(f"Saved {saved_count} credential(s)!", severity="information", timeout=2)
+            self.app.notify(f"✓ Saved {saved_count} credential(s)!", severity="information", timeout=2)
         else:
             self.app.notify("No changes to save", severity="warning", timeout=2)
 
@@ -546,9 +605,18 @@ class ConfigTree(Tree):
         models = researcher.add("Models", expand=False, data={"type": "models_branch", "component": "researcher"})
         research = models.add("Research Model", expand=False, data={"type": "model_group", "component": "researcher", "model_type": "research"})
         research_op = research.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "researcher", "model_type": "research"})
-        research_op.add("Use Default", data={"type": "operator", "component": "researcher", "operator": "default", "model_type": "research"}, allow_expand=False)
-        research_op.add("Perplexity", data={"type": "operator", "component": "researcher", "operator": "perplexity", "model_type": "research"}, allow_expand=False)
-        research_op.add("Serper", data={"type": "operator", "component": "researcher", "operator": "serper", "model_type": "research"}, allow_expand=False)
+
+        # Check for research model operator override
+        research_override = self.config.get("NINJA_RESEARCHER_OPERATOR_RESEARCH", "")
+        research_default_label = "[*] Use Default" if not research_override else "[ ] Use Default"
+        research_perplexity_label = "[*] Perplexity" if research_override == "perplexity" else "[ ] Perplexity"
+        research_serper_label = "[*] Serper" if research_override == "serper" else "[ ] Serper"
+        research_duckduckgo_label = "[*] DuckDuckGo" if research_override == "duckduckgo" else "[ ] DuckDuckGo"
+
+        research_op.add(research_default_label, data={"type": "operator", "component": "researcher", "operator": "default", "model_type": "research"}, allow_expand=False)
+        research_op.add(research_perplexity_label, data={"type": "operator", "component": "researcher", "operator": "perplexity", "model_type": "research"}, allow_expand=False)
+        research_op.add(research_serper_label, data={"type": "operator", "component": "researcher", "operator": "serper", "model_type": "research"}, allow_expand=False)
+        research_op.add(research_duckduckgo_label, data={"type": "operator", "component": "researcher", "operator": "duckduckgo", "model_type": "research"}, allow_expand=False)
         research.add("Model Selection", data={"type": "model", "component": "researcher", "model_type": "research"}, allow_expand=False)
 
         # Secretary component
