@@ -161,9 +161,19 @@ class OpenCodeStrategy:
 
         # OpenCode supports direct provider access (anthropic/, openai/, google/)
         # and also supports openrouter/ prefix for OpenRouter models
-        # Do NOT add openrouter/ prefix if model already has a provider prefix
-        # Model format: provider/model (e.g., anthropic/claude-sonnet-4-5)
-        # OpenCode will use native API if available, fallback to OpenRouter if not
+        # Model format: provider/model (e.g., anthropic/claude-sonnet-4-5, openrouter/qwen/qwen3-coder)
+
+        # Add provider prefix if not already present
+        opencode_provider = os.environ.get("NINJA_CODER_OPENCODE_PROVIDER", "openrouter")
+
+        # Check if model already has a known provider prefix
+        known_providers = ["openrouter", "anthropic", "openai", "google", "zhipu", "zai", "deepseek", "cohere", "mistral"]
+        has_provider = any(model_name.startswith(f"{p}/") for p in known_providers)
+
+        if not has_provider and opencode_provider:
+            # Model doesn't have provider prefix, add it
+            model_name = f"{opencode_provider}/{model_name}"
+            logger.info(f"Added provider prefix: {model_name}")
 
         # Simple command - no daemon, no session management, no broken --attach
         # Just run opencode directly and let it handle everything
