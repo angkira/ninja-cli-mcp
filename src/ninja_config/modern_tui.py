@@ -75,6 +75,11 @@ class ModelSearchPanel(Widget):
 
         yield Input(placeholder="Search models...", id="model-search-input")
 
+        # Custom model ID input
+        yield Label("[dim]Or enter custom model ID (e.g., openrouter/qwen/qwen3-coder-next):[/dim]", classes="field-label")
+        yield Input(placeholder="Custom model ID...", id="custom-model-input")
+        yield Button("Use Custom Model", variant="primary", id="use-custom-model-btn")
+
         with ScrollableContainer(id="model-results"):
             yield ListView(id="model-list")
 
@@ -86,6 +91,12 @@ class ModelSearchPanel(Widget):
         """Handle search input changes."""
         if event.input.id == "model-search-input":
             self._update_model_list(event.value)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key on custom model input."""
+        if event.input.id == "custom-model-input" and event.value:
+            self._save_model(event.value)
+            event.input.value = ""  # Clear input
 
     def _update_model_list(self, query: str) -> None:
         """Update model list based on search query."""
@@ -153,28 +164,45 @@ class ModelSearchPanel(Widget):
             item.model_id = model_id
             list_view.append(item)
 
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle custom model button."""
+        if event.button.id == "use-custom-model-btn":
+            try:
+                custom_input = self.query_one("#custom-model-input", Input)
+                if custom_input.value:
+                    self._save_model(custom_input.value)
+                    custom_input.value = ""  # Clear input
+            except Exception:
+                pass
+
     def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Handle model selection."""
+        """Handle model selection from list."""
         if hasattr(event.item, "model_id") and self.config_manager:
-            model_id = event.item.model_id
-            component = self.context.get('component', '')
-            model_type = self.context.get('model_type', '')
+            self._save_model(event.item.model_id)
 
-            # Save to config
-            key = f"NINJA_{component.upper()}_MODEL_{model_type.upper()}"
-            self.config_manager.set(key, model_id)
+    def _save_model(self, model_id: str) -> None:
+        """Save selected model to config."""
+        if not self.config_manager:
+            return
 
-            # Update current model display
-            if self.is_mounted:
-                try:
-                    current_label = self.query_one("#current-model", Label)
-                    current_label.update(f"[green]Current: {model_id}[/green]")
-                except Exception:
-                    pass
+        component = self.context.get('component', '')
+        model_type = self.context.get('model_type', '')
 
-            # Show success notification
-            self.app.notify(f"Model saved: {model_id}", severity="information", timeout=2)
-            self.app.bell()
+        # Save to config
+        key = f"NINJA_{component.upper()}_MODEL_{model_type.upper()}"
+        self.config_manager.set(key, model_id)
+
+        # Update current model display
+        if self.is_mounted:
+            try:
+                current_label = self.query_one("#current-model", Label)
+                current_label.update(f"[green]Current: {model_id}[/green]")
+            except Exception:
+                pass
+
+        # Show success notification
+        self.app.notify(f"✓ Model saved: {model_id}", severity="information", timeout=2)
+        self.app.bell()
 
 
 class SettingsPanel(Widget):
