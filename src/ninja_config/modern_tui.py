@@ -191,134 +191,116 @@ class SettingsPanel(Widget):
         component = self.context.get("component", "")
         config = self.config_manager.list_all()
 
-        # Check operator and provider
-        operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "")
-        provider = config.get(f"NINJA_{component.upper()}_{operator.upper()}_PROVIDER", "") if operator == "opencode" else ""
-
         yield Label("[bold cyan]Settings & Credentials[/bold cyan]", id="settings-title")
-        yield Label(
-            f"[dim]Component: {component.title() if component else 'N/A'}[/dim]",
-            id="settings-context",
-        )
 
-        # Show operator and provider
-        if operator:
-            operator_text = f"Current Operator: {operator.title()}"
-            if provider:
-                operator_text += f" ({provider.title()})"
-            yield Label(operator_text, classes="field-label")
-            yield Label("[dim]All provider credentials shown below[/dim]", classes="field-label")
+        # Global credentials panel - show ALL API keys
+        if component == "global":
+            yield Label(
+                "[dim]Global API Keys (shared across all components)[/dim]",
+                id="settings-context",
+            )
 
-        # Show all provider credentials for OpenCode
-        if component == "coder" and operator == "opencode":
-            # Define all OpenCode providers and their keys
-            all_providers = [
-                ("openrouter", "OpenRouter API Key", "OPENROUTER_API_KEY"),
-                ("anthropic", "Anthropic API Key", "ANTHROPIC_API_KEY"),
-                ("openai", "OpenAI API Key", "OPENAI_API_KEY"),
-                ("google", "Google API Key", "GOOGLE_API_KEY"),
-                ("azure", "Azure OpenAI API Key", "AZURE_OPENAI_API_KEY"),
-                ("ollama", "Ollama API Key (optional)", "OLLAMA_API_KEY"),
-                ("lmstudio", "LM Studio API Key (optional)", "LMSTUDIO_API_KEY"),
-                ("zai", "Z.ai API Key", "ZAI_API_KEY"),
+            # All possible API keys grouped by category
+            yield Label("[bold yellow]AI Providers[/bold yellow]", classes="field-label")
+
+            all_keys = [
+                ("OpenRouter", "OPENROUTER_API_KEY", "Used by: Coder, Secretary, Prompts"),
+                ("Anthropic", "ANTHROPIC_API_KEY", "Used by: Coder (OpenCode)"),
+                ("OpenAI", "OPENAI_API_KEY", "Used by: Coder (OpenCode)"),
+                ("Google", "GOOGLE_API_KEY", "Used by: Coder (OpenCode)"),
+                ("Azure OpenAI", "AZURE_OPENAI_API_KEY", "Used by: Coder (OpenCode)"),
+                ("Ollama", "OLLAMA_API_KEY", "Used by: Coder (OpenCode, optional)"),
+                ("LM Studio", "LMSTUDIO_API_KEY", "Used by: Coder (OpenCode, optional)"),
+                ("Z.ai", "ZAI_API_KEY", "Used by: Coder (OpenCode)"),
             ]
 
-            for provider_id, label, env_var in all_providers:
+            for label, env_var, usage in all_keys:
                 api_key = config.get(env_var, "") or os.environ.get(env_var, "")
-                is_current = provider_id == provider
 
-                # Header for this provider
-                provider_header = f"{label}"
-                if is_current:
-                    provider_header = f"[bold green]{label} (ACTIVE)[/bold green]"
-                yield Label(provider_header, classes="field-label")
+                yield Label(f"[bold]{label}[/bold] [dim]{usage}[/dim]", classes="field-label")
 
-                # Show current value with show/hide toggle
                 if api_key:
                     with Horizontal(classes="key-display-container"):
                         yield Input(
                             value=api_key,
                             password=True,
-                            id=f"current-key-{provider_id}",
+                            id=f"current-{env_var.lower()}",
                             disabled=True,
                         )
-                        yield Checkbox("Show", id=f"show-key-{provider_id}")
+                        yield Checkbox("Show", id=f"show-{env_var.lower()}")
                 else:
                     yield Label("[dim]Not set[/dim]", classes="field-label")
 
-                # Update input for this provider
                 yield Input(
                     placeholder=f"Update {label}...",
                     password=True,
-                    id=f"update-key-{provider_id}",
+                    id=f"update-{env_var.lower()}",
                 )
 
-        elif component == "coder":
-            # Non-OpenCode coder (e.g., Aider)
-            api_key_env_var = "OPENROUTER_API_KEY"
-            api_key = config.get(api_key_env_var, "") or os.environ.get(api_key_env_var, "")
+            yield Label("[bold yellow]Research Providers[/bold yellow]", classes="field-label")
 
-            yield Label("OpenRouter API Key:", classes="field-label")
-            if api_key:
-                with Horizontal(classes="key-display-container"):
-                    yield Input(value=api_key, password=True, id="current-key-display", disabled=True)
-                    yield Checkbox("Show", id="show-key-checkbox")
-            else:
-                yield Label("[dim]Not set[/dim]", classes="field-label")
+            research_keys = [
+                ("Perplexity", "PERPLEXITY_API_KEY", "Used by: Researcher"),
+                ("Serper", "SERPER_API_KEY", "Used by: Researcher"),
+            ]
 
-            yield Input(placeholder="Update OpenRouter API Key...", password=True, id="api-key-input")
+            for label, env_var, usage in research_keys:
+                api_key = config.get(env_var, "") or os.environ.get(env_var, "")
 
-        elif component == "researcher":
-            # Researcher keys
-            perplexity_key = config.get("PERPLEXITY_API_KEY", "") or os.environ.get("PERPLEXITY_API_KEY", "")
-            serper_key = config.get("SERPER_API_KEY", "") or os.environ.get("SERPER_API_KEY", "")
+                yield Label(f"[bold]{label}[/bold] [dim]{usage}[/dim]", classes="field-label")
 
-            yield Label("Perplexity API Key:", classes="field-label")
-            if perplexity_key:
-                with Horizontal(classes="key-display-container"):
-                    yield Input(value=perplexity_key, password=True, id="current-key-perplexity", disabled=True)
-                    yield Checkbox("Show", id="show-key-perplexity")
-            else:
-                yield Label("[dim]Not set[/dim]", classes="field-label")
-            yield Input(placeholder="Update Perplexity API Key...", password=True, id="update-key-perplexity")
+                if api_key:
+                    with Horizontal(classes="key-display-container"):
+                        yield Input(
+                            value=api_key,
+                            password=True,
+                            id=f"current-{env_var.lower()}",
+                            disabled=True,
+                        )
+                        yield Checkbox("Show", id=f"show-{env_var.lower()}")
+                else:
+                    yield Label("[dim]Not set[/dim]", classes="field-label")
 
-            yield Label("Serper API Key:", classes="field-label")
-            if serper_key:
-                with Horizontal(classes="key-display-container"):
-                    yield Input(value=serper_key, password=True, id="current-key-serper", disabled=True)
-                    yield Checkbox("Show", id="show-key-serper")
-            else:
-                yield Label("[dim]Not set[/dim]", classes="field-label")
-            yield Input(placeholder="Update Serper API Key...", password=True, id="update-key-serper")
+                yield Input(
+                    placeholder=f"Update {label}...",
+                    password=True,
+                    id=f"update-{env_var.lower()}",
+                )
 
-        elif component == "secretary":
-            # Secretary - no specific API keys needed (uses global OpenRouter key)
-            openrouter_key = config.get("OPENROUTER_API_KEY", "") or os.environ.get("OPENROUTER_API_KEY", "")
+        else:
+            # Component-specific settings
+            yield Label(
+                f"[dim]Component: {component.title() if component else 'N/A'}[/dim]",
+                id="settings-context",
+            )
 
-            yield Label("OpenRouter API Key (for analysis):", classes="field-label")
-            if openrouter_key:
-                with Horizontal(classes="key-display-container"):
-                    yield Input(value=openrouter_key, password=True, id="current-key-openrouter", disabled=True)
-                    yield Checkbox("Show", id="show-key-openrouter")
-            else:
-                yield Label("[dim]Not set[/dim]", classes="field-label")
-            yield Input(placeholder="Update OpenRouter API Key...", password=True, id="update-key-openrouter")
+            # Check operator and provider
+            operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "")
+            provider = config.get(f"NINJA_{component.upper()}_{operator.upper()}_PROVIDER", "") if operator == "opencode" else ""
 
-        elif component == "prompts":
-            # Prompts - uses global OpenRouter key for generation
-            openrouter_key = config.get("OPENROUTER_API_KEY", "") or os.environ.get("OPENROUTER_API_KEY", "")
+            # Show operator and provider
+            if operator:
+                operator_text = f"Current Operator: {operator.title()}"
+                if provider:
+                    operator_text += f" ({provider.title()})"
+                yield Label(operator_text, classes="field-label")
 
-            yield Label("OpenRouter API Key (for prompt generation):", classes="field-label")
-            if openrouter_key:
-                with Horizontal(classes="key-display-container"):
-                    yield Input(value=openrouter_key, password=True, id="current-key-openrouter-prompts", disabled=True)
-                    yield Checkbox("Show", id="show-key-openrouter-prompts")
-            else:
-                yield Label("[dim]Not set[/dim]", classes="field-label")
-            yield Input(placeholder="Update OpenRouter API Key...", password=True, id="update-key-openrouter-prompts")
+            # Show which keys this component uses
+            if component == "coder":
+                if operator == "opencode" and provider:
+                    yield Label(f"[dim]Uses: {provider.upper()}_API_KEY (see Global Settings)[/dim]", classes="field-label")
+                else:
+                    yield Label("[dim]Uses: OPENROUTER_API_KEY (see Global Settings)[/dim]", classes="field-label")
+            elif component == "researcher":
+                if operator:
+                    yield Label(f"[dim]Uses: {operator.upper()}_API_KEY (see Global Settings)[/dim]", classes="field-label")
+            elif component in ["secretary", "prompts"]:
+                yield Label("[dim]Uses: OPENROUTER_API_KEY (see Global Settings)[/dim]", classes="field-label")
 
-        # Base URL (for OpenCode providers)
-        if operator == "opencode":
+            yield Label("[dim]→ Manage all API keys in [bold cyan]Global Settings → API Keys[/bold cyan][/dim]", classes="field-label")
+
+        # Base URL (for OpenCode providers) - optional component-specific setting
+        if component == "coder" and operator == "opencode":
             yield Label("Base URL (optional):", classes="field-label")
             base_url = config.get(f"NINJA_{component.upper()}_{operator.upper()}_BASE_URL", "")
             yield Input(
@@ -338,14 +320,18 @@ class SettingsPanel(Widget):
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Handle show/hide checkbox toggle."""
         checkbox_id = event.checkbox.id
-        if checkbox_id and checkbox_id.startswith("show-key-"):
-            # Extract provider ID from checkbox ID
-            provider_id = checkbox_id.replace("show-key-", "")
-            try:
-                key_input = self.query_one(f"#current-key-{provider_id}", Input)
-                key_input.password = not event.value
-            except Exception:
-                pass
+        if checkbox_id and checkbox_id.startswith("show-"):
+            # Extract the key identifier from checkbox ID
+            key_id = checkbox_id.replace("show-", "")
+
+            # Try different ID formats (component-specific and global)
+            for prefix in ["current-key-", "current-"]:
+                try:
+                    key_input = self.query_one(f"#{prefix}{key_id}", Input)
+                    key_input.password = not event.value
+                    break
+                except Exception:
+                    continue
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Auto-save on Enter key."""
@@ -357,81 +343,35 @@ class SettingsPanel(Widget):
         """Save settings to config."""
         component = self.context.get("component", "")
         config = self.config_manager.list_all()
-        operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "")
+        operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "") if component != "global" else ""
 
         saved_count = 0
 
-        # Save all OpenCode provider keys if applicable
-        if component == "coder" and operator == "opencode":
-            provider_keys = [
-                ("openrouter", "OPENROUTER_API_KEY"),
-                ("anthropic", "ANTHROPIC_API_KEY"),
-                ("openai", "OPENAI_API_KEY"),
-                ("google", "GOOGLE_API_KEY"),
-                ("azure", "AZURE_OPENAI_API_KEY"),
-                ("ollama", "OLLAMA_API_KEY"),
-                ("lmstudio", "LMSTUDIO_API_KEY"),
-                ("zai", "ZAI_API_KEY"),
+        # Global settings - save all API keys
+        if component == "global":
+            all_env_vars = [
+                "OPENROUTER_API_KEY",
+                "ANTHROPIC_API_KEY",
+                "OPENAI_API_KEY",
+                "GOOGLE_API_KEY",
+                "AZURE_OPENAI_API_KEY",
+                "OLLAMA_API_KEY",
+                "LMSTUDIO_API_KEY",
+                "ZAI_API_KEY",
+                "PERPLEXITY_API_KEY",
+                "SERPER_API_KEY",
             ]
 
-            for provider_id, env_var in provider_keys:
+            for env_var in all_env_vars:
                 try:
-                    update_input = self.query_one(f"#update-key-{provider_id}", Input)
+                    update_input = self.query_one(f"#update-{env_var.lower()}", Input)
                     if update_input.value:
                         self.config_manager.set(env_var, update_input.value)
                         saved_count += 1
                 except Exception:
                     pass
 
-        elif component == "coder":
-            # Non-OpenCode coder
-            try:
-                api_key_input = self.query_one("#api-key-input", Input)
-                if api_key_input.value:
-                    self.config_manager.set("OPENROUTER_API_KEY", api_key_input.value)
-                    saved_count += 1
-            except Exception:
-                pass
-
-        elif component == "researcher":
-            # Researcher keys
-            try:
-                perplexity_input = self.query_one("#update-key-perplexity", Input)
-                if perplexity_input.value:
-                    self.config_manager.set("PERPLEXITY_API_KEY", perplexity_input.value)
-                    saved_count += 1
-            except Exception:
-                pass
-
-            try:
-                serper_input = self.query_one("#update-key-serper", Input)
-                if serper_input.value:
-                    self.config_manager.set("SERPER_API_KEY", serper_input.value)
-                    saved_count += 1
-            except Exception:
-                pass
-
-        elif component == "secretary":
-            # Secretary OpenRouter key
-            try:
-                openrouter_input = self.query_one("#update-key-openrouter", Input)
-                if openrouter_input.value:
-                    self.config_manager.set("OPENROUTER_API_KEY", openrouter_input.value)
-                    saved_count += 1
-            except Exception:
-                pass
-
-        elif component == "prompts":
-            # Prompts OpenRouter key
-            try:
-                openrouter_input = self.query_one("#update-key-openrouter-prompts", Input)
-                if openrouter_input.value:
-                    self.config_manager.set("OPENROUTER_API_KEY", openrouter_input.value)
-                    saved_count += 1
-            except Exception:
-                pass
-
-        # Try to get base URL input (only exists for OpenCode)
+        # Try to get base URL input (only exists for OpenCode in component settings)
         try:
             base_url_input = self.query_one("#base-url-input", Input)
             if base_url_input.value:
@@ -498,6 +438,10 @@ class ConfigTree(Tree):
 
     def _build_tree(self) -> None:
         """Build the configuration tree."""
+        # Global Settings at the top
+        global_settings = self.root.add("🌐 Global Settings", expand=False, data={"type": "global_settings", "id": "global"})
+        global_settings.add("API Keys", data={"type": "global_credentials"}, allow_expand=False)
+
         # Coder component
         coder = self.root.add("Coder", expand=False, data={"type": "component", "id": "coder"})
 
@@ -823,6 +767,13 @@ class ModernConfigApp(App):
             # Show settings panel
             context = {
                 "component": event.node.data.get("component"),
+            }
+            right_panel.show_settings(context)
+
+        elif node_type == "global_credentials":
+            # Show global credentials panel
+            context = {
+                "component": "global",
             }
             right_panel.show_settings(context)
 
