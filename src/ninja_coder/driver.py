@@ -21,6 +21,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -64,7 +65,7 @@ class NinjaConfig:
 
     @classmethod
     def from_env(cls) -> NinjaConfig:
-        """Create config from environment variables."""
+        """Create config from environment variables with auto-detection fallback."""
         api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
 
         # Model priority: NINJA_CODER_MODEL > NINJA_MODEL > OPENROUTER_MODEL > OPENAI_MODEL > default
@@ -76,8 +77,33 @@ class NinjaConfig:
             or DEFAULT_CODER_MODEL
         )
 
+        # Binary path with auto-detection fallback
+        bin_path = os.environ.get("NINJA_CODE_BIN", DEFAULT_CODE_BIN)
+
+        # If configured path doesn't exist, try to auto-detect using which
+        if not Path(bin_path).exists():
+            # Extract binary name (handle both full paths and binary names)
+            bin_name = Path(bin_path).name if "/" in bin_path else bin_path
+            detected_path = shutil.which(bin_name)
+
+            if detected_path:
+                logger.info(
+                    f"Configured binary path '{bin_path}' not found. "
+                    f"Auto-detected: {detected_path}"
+                )
+                bin_path = detected_path
+            elif bin_name != DEFAULT_CODE_BIN:
+                # Try fallback to default binary
+                default_path = shutil.which(DEFAULT_CODE_BIN)
+                if default_path:
+                    logger.warning(
+                        f"Configured binary '{bin_name}' not found. "
+                        f"Falling back to default: {default_path}"
+                    )
+                    bin_path = default_path
+
         return cls(
-            bin_path=os.environ.get("NINJA_CODE_BIN", DEFAULT_CODE_BIN),
+            bin_path=bin_path,
             openai_base_url=os.environ.get("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL),
             openai_api_key=api_key,
             model=model,
