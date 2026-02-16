@@ -160,6 +160,12 @@ class AutoUpdater:
 
     def _git_pull(self) -> None:
         """Pull latest code from git."""
+        # Check if this is a git repository
+        git_dir = self.repo_path / ".git"
+        if not git_dir.exists():
+            print("   ℹ️  Not a git repository, skipping pull")
+            return
+
         try:
             result = subprocess.run(
                 ["git", "pull"],
@@ -251,12 +257,28 @@ class AutoUpdater:
         with open(config_path) as f:
             config = json.load(f)
 
-        # Get credentials
-        manager = CredentialManager()
-        openrouter_key = manager.get("OPENROUTER_API_KEY")
+        # Get credentials - try encrypted DB first, fallback to .env file
+        openrouter_key = None
+        try:
+            manager = CredentialManager()
+            openrouter_key = manager.get("OPENROUTER_API_KEY")
+        except Exception as e:
+            print(f"   ⚠️  Could not read from credentials DB: {e}")
+            print("   ℹ️  Trying to read from .ninja-mcp.env file...")
+
+            # Fallback: read from .env file
+            env_file = Path.home() / ".ninja-mcp.env"
+            if env_file.exists():
+                import re
+                with open(env_file) as f:
+                    for line in f:
+                        match = re.match(r'^OPENROUTER_API_KEY=(.+)$', line.strip())
+                        if match:
+                            openrouter_key = match.group(1).strip('"\'')
+                            break
 
         if not openrouter_key:
-            print("   ⚠️  No OPENROUTER_API_KEY found in credentials")
+            print("   ⚠️  No OPENROUTER_API_KEY found in credentials or .env file")
             return
 
         # Update all ninja servers
