@@ -379,7 +379,7 @@ def cmd_configure(args: argparse.Namespace) -> None:
 
     # Check for mode flags
     quick_mode = getattr(args, "quick", False)
-    modern_mode = getattr(args, "modern", False)
+    full_mode = getattr(args, "full", False)
     menuconfig_mode = getattr(args, "menuconfig", False)
 
     if quick_mode:
@@ -391,6 +391,7 @@ def cmd_configure(args: argparse.Namespace) -> None:
         # MenuConfig mode: hierarchical menu navigation
         try:
             from ninja_config.menuconfig_tui import run_menuconfig_tui
+
             sys.exit(run_menuconfig_tui(args.config))
         except ImportError as e:
             print_colored(f"MenuConfig TUI not available: {e}", "red")
@@ -399,22 +400,23 @@ def cmd_configure(args: argparse.Namespace) -> None:
         except KeyboardInterrupt:
             print("\nCancelled.")
             sys.exit(1)
-    elif modern_mode:
-        # Modern TUI mode: tree-based navigation with textual
+    elif full_mode:
+        # Full mode: comprehensive TUI configurator (legacy)
+        try:
+            sys.exit(run_power_configurator(args.config))
+        except KeyboardInterrupt:
+            print("\nCancelled.")
+            sys.exit(1)
+    else:
+        # Default: Modern TUI mode - tree-based navigation with textual
         try:
             from ninja_config.modern_tui import run_modern_tui
+
             sys.exit(run_modern_tui(args.config))
         except ImportError as e:
             print_colored(f"Modern TUI not available: {e}", "red")
             print_colored("Install with: pip install textual rich", "dim")
             sys.exit(1)
-        except KeyboardInterrupt:
-            print("\nCancelled.")
-            sys.exit(1)
-    else:
-        # Full mode: comprehensive TUI configurator
-        try:
-            sys.exit(run_power_configurator(args.config))
         except KeyboardInterrupt:
             print("\nCancelled.")
             sys.exit(1)
@@ -578,10 +580,7 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
 
     # Determine which servers to install
     if args.all or (
-        not args.coder
-        and not args.researcher
-        and not args.secretary
-        and not args.prompts
+        not args.coder and not args.researcher and not args.secretary and not args.prompts
     ):
         servers_to_install = servers
     else:
@@ -726,12 +725,7 @@ Examples:
     configure_parser.add_argument(
         "--full",
         action="store_true",
-        help="Full TUI configurator (default)",
-    )
-    configure_parser.add_argument(
-        "--modern",
-        action="store_true",
-        help="Modern TUI with tree navigation (EXPERIMENTAL)",
+        help="Legacy full TUI configurator (power user mode)",
     )
     configure_parser.add_argument(
         "--menuconfig",

@@ -35,6 +35,7 @@ from ninja_common.config_manager import ConfigManager
 # Import model fetching from model_selector
 try:
     from ninja_config.model_selector import get_provider_models
+
     HAS_MODEL_FETCHER = True
 except ImportError:
     HAS_MODEL_FETCHER = False
@@ -63,8 +64,8 @@ class ModelSearchPanel(Widget):
 
         # Show current model if config_manager available
         if self.config_manager:
-            component = self.context.get('component', '')
-            model_type = self.context.get('model_type', '')
+            component = self.context.get("component", "")
+            model_type = self.context.get("model_type", "")
             config = self.config_manager.list_all()
             key = f"NINJA_{component.upper()}_MODEL_{model_type.upper()}"
             current_model = config.get(key, "")
@@ -76,7 +77,10 @@ class ModelSearchPanel(Widget):
         yield Input(placeholder="Search models...", id="model-search-input")
 
         # Custom model ID input
-        yield Label("[dim]Or enter custom model ID (e.g., openrouter/qwen/qwen3-coder-next):[/dim]", classes="field-label")
+        yield Label(
+            "[dim]Or enter custom model ID (e.g., openrouter/qwen/qwen3-coder-next):[/dim]",
+            classes="field-label",
+        )
         yield Input(placeholder="Custom model ID...", id="custom-model-input")
         yield Button("Use Custom Model", variant="primary", id="use-custom-model-btn")
 
@@ -120,15 +124,16 @@ class ModelSearchPanel(Widget):
                     # Show info message if no models available
                     list_view = self.query_one("#model-list", ListView)
                     list_view.clear()
-                    info_item = ListItem(Static(f"[yellow]No models available for {operator}/{provider}[/yellow]\n[dim]Try configuring operator first[/dim]"))
+                    info_item = ListItem(
+                        Static(
+                            f"[yellow]No models available for {operator}/{provider}[/yellow]\n[dim]Try configuring operator first[/dim]"
+                        )
+                    )
                     list_view.append(info_item)
                     return
 
                 # Convert Model objects to (model_id, name, description) tuples
-                all_models = [
-                    (model.id, model.name, model.description)
-                    for model in models_data
-                ]
+                all_models = [(model.id, model.name, model.description) for model in models_data]
             except Exception as e:
                 # Fallback to empty list if fetch fails
                 all_models = []
@@ -185,8 +190,8 @@ class ModelSearchPanel(Widget):
         if not self.config_manager:
             return
 
-        component = self.context.get('component', '')
-        model_type = self.context.get('model_type', '')
+        component = self.context.get("component", "")
+        model_type = self.context.get("model_type", "")
 
         # Save to config
         key = f"NINJA_{component.upper()}_MODEL_{model_type.upper()}"
@@ -205,14 +210,98 @@ class ModelSearchPanel(Widget):
         self.app.bell()
 
 
+class APIKeyPanel(Widget):
+    """Panel for configuring a single API key."""
+
+    API_KEY_INFO = {
+        "OPENROUTER_API_KEY": ("OpenRouter", "Used by: Coder, Secretary, Prompts"),
+        "ANTHROPIC_API_KEY": ("Anthropic", "Used by: Coder (OpenCode)"),
+        "OPENAI_API_KEY": ("OpenAI", "Used by: Coder (OpenCode)"),
+        "GOOGLE_API_KEY": ("Google", "Used by: Coder (OpenCode)"),
+        "AZURE_OPENAI_API_KEY": ("Azure OpenAI", "Used by: Coder (OpenCode)"),
+        "OLLAMA_API_KEY": ("Ollama", "Used by: Coder (OpenCode, optional)"),
+        "LMSTUDIO_API_KEY": ("LM Studio", "Used by: Coder (OpenCode, optional)"),
+        "ZAI_API_KEY": ("Z.ai", "Used by: Coder (OpenCode)"),
+        "PERPLEXITY_API_KEY": ("Perplexity", "Used by: Researcher"),
+        "SERPER_API_KEY": ("Serper", "Used by: Researcher"),
+    }
+
+    def __init__(self, env_var: str, config_manager: ConfigManager) -> None:
+        super().__init__()
+        self.env_var = env_var
+        self.config_manager = config_manager
+
+    def compose(self) -> ComposeResult:
+        """Compose the API key panel."""
+        config = self.config_manager.list_all()
+        name, usage = self.API_KEY_INFO.get(self.env_var, (self.env_var, ""))
+        api_key = config.get(self.env_var, "") or os.environ.get(self.env_var, "")
+
+        yield Label(f"[bold cyan]🔑 {name}[/bold cyan]", id="settings-title")
+        yield Label(f"[dim]{usage}[/dim]", id="settings-context")
+        yield Label(f"[dim]Environment Variable: {self.env_var}[/dim]", classes="field-label")
+
+        if api_key:
+            yield Label("[green]Current Key:[/green]", classes="field-label")
+            with Horizontal(classes="key-display-container"):
+                yield Input(
+                    value=api_key,
+                    password=True,
+                    id="current-key-display",
+                    disabled=True,
+                )
+                yield Checkbox("Show", id="show-key-checkbox")
+        else:
+            yield Label("[yellow]No key configured[/yellow]", classes="field-label")
+
+        yield Label("[bold]Update Key:[/bold]", classes="field-label")
+        yield Input(
+            placeholder=f"Enter new {name} API key...",
+            password=True,
+            id="api-key-input",
+        )
+        yield Button("Save Key", variant="primary", id="save-key-btn")
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Handle show/hide checkbox toggle."""
+        try:
+            key_input = self.query_one("#current-key-display", Input)
+            key_input.password = not event.value
+        except Exception:
+            pass
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Auto-save on Enter key."""
+        if event.input.id == "api-key-input" and event.value:
+            self._save_key()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle save button press."""
+        if event.button.id == "save-key-btn":
+            self._save_key()
+
+    def _save_key(self) -> None:
+        """Save the API key."""
+        try:
+            key_input = self.query_one("#api-key-input", Input)
+            if key_input.value:
+                self.config_manager.set(self.env_var, key_input.value)
+                key_input.value = ""
+                self.app.notify(f"✓ {self.env_var} saved!", severity="information", timeout=2)
+                self.app.bell()
+                # Refresh to show new key
+                self.app.query_one(RightPanel).show_api_key(self.env_var, self.config_manager)
+        except Exception:
+            pass
+
+
 class SettingsPanel(Widget):
-    """Panel for configuring settings and API keys."""
+    """Panel for configuring component-specific settings."""
 
     def __init__(self, context: dict, config_manager: ConfigManager) -> None:
         super().__init__()
         self.context = context
         self.config_manager = config_manager
-        self.api_key_env_var = ""  # Will be set during compose
 
     def compose(self) -> ComposeResult:
         """Compose the settings panel."""
@@ -221,111 +310,55 @@ class SettingsPanel(Widget):
 
         yield Label("[bold cyan]Settings & Credentials[/bold cyan]", id="settings-title")
 
-        # Global credentials panel - show ALL API keys
-        if component == "global":
-            yield Label(
-                "[dim]Global API Keys (shared across all components)[/dim]",
-                id="settings-context",
-            )
+        # Component-specific settings
+        yield Label(
+            f"[dim]Component: {component.title() if component else 'N/A'}[/dim]",
+            id="settings-context",
+        )
 
-            # All possible API keys grouped by category
-            yield Label("[bold yellow]AI Providers[/bold yellow]", classes="field-label")
+        # Check operator and provider
+        operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "")
+        provider = (
+            config.get(f"NINJA_{component.upper()}_{operator.upper()}_PROVIDER", "")
+            if operator == "opencode"
+            else ""
+        )
 
-            all_keys = [
-                ("OpenRouter", "OPENROUTER_API_KEY", "Used by: Coder, Secretary, Prompts"),
-                ("Anthropic", "ANTHROPIC_API_KEY", "Used by: Coder (OpenCode)"),
-                ("OpenAI", "OPENAI_API_KEY", "Used by: Coder (OpenCode)"),
-                ("Google", "GOOGLE_API_KEY", "Used by: Coder (OpenCode)"),
-                ("Azure OpenAI", "AZURE_OPENAI_API_KEY", "Used by: Coder (OpenCode)"),
-                ("Ollama", "OLLAMA_API_KEY", "Used by: Coder (OpenCode, optional)"),
-                ("LM Studio", "LMSTUDIO_API_KEY", "Used by: Coder (OpenCode, optional)"),
-                ("Z.ai", "ZAI_API_KEY", "Used by: Coder (OpenCode)"),
-            ]
-
-            for label, env_var, usage in all_keys:
-                api_key = config.get(env_var, "") or os.environ.get(env_var, "")
-
-                yield Label(f"[bold]{label}[/bold] [dim]{usage}[/dim]", classes="field-label")
-
-                if api_key:
-                    with Horizontal(classes="key-display-container"):
-                        yield Input(
-                            value=api_key,
-                            password=True,
-                            id=f"current-{env_var.lower()}",
-                            disabled=True,
-                        )
-                        yield Checkbox("Show", id=f"show-{env_var.lower()}")
-                else:
-                    yield Label("[dim]Not set[/dim]", classes="field-label")
-
-                yield Input(
-                    placeholder=f"Update {label}...",
-                    password=True,
-                    id=f"update-{env_var.lower()}",
-                )
-
-            yield Label("[bold yellow]Research Providers[/bold yellow]", classes="field-label")
-
-            research_keys = [
-                ("Perplexity", "PERPLEXITY_API_KEY", "Used by: Researcher"),
-                ("Serper", "SERPER_API_KEY", "Used by: Researcher"),
-            ]
-
-            for label, env_var, usage in research_keys:
-                api_key = config.get(env_var, "") or os.environ.get(env_var, "")
-
-                yield Label(f"[bold]{label}[/bold] [dim]{usage}[/dim]", classes="field-label")
-
-                if api_key:
-                    with Horizontal(classes="key-display-container"):
-                        yield Input(
-                            value=api_key,
-                            password=True,
-                            id=f"current-{env_var.lower()}",
-                            disabled=True,
-                        )
-                        yield Checkbox("Show", id=f"show-{env_var.lower()}")
-                else:
-                    yield Label("[dim]Not set[/dim]", classes="field-label")
-
-                yield Input(
-                    placeholder=f"Update {label}...",
-                    password=True,
-                    id=f"update-{env_var.lower()}",
-                )
-
-        else:
-            # Component-specific settings
-            yield Label(
-                f"[dim]Component: {component.title() if component else 'N/A'}[/dim]",
-                id="settings-context",
-            )
-
-            # Check operator and provider
-            operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "")
-            provider = config.get(f"NINJA_{component.upper()}_{operator.upper()}_PROVIDER", "") if operator == "opencode" else ""
-
-            # Show operator and provider
-            if operator:
-                operator_text = f"Current Operator: {operator.title()}"
-                if provider:
-                    operator_text += f" ({provider.title()})"
-                yield Label(operator_text, classes="field-label")
+        # Show operator and provider
+        if operator:
+            operator_text = f"Current Operator: {operator.title()}"
+            if provider:
+                operator_text += f" ({provider.title()})"
+            yield Label(operator_text, classes="field-label")
 
             # Show which keys this component uses
             if component == "coder":
                 if operator == "opencode" and provider:
-                    yield Label(f"[dim]Uses: {provider.upper()}_API_KEY (see Global Settings)[/dim]", classes="field-label")
+                    yield Label(
+                        f"[dim]Uses: {provider.upper()}_API_KEY (see Global Settings)[/dim]",
+                        classes="field-label",
+                    )
                 else:
-                    yield Label("[dim]Uses: OPENROUTER_API_KEY (see Global Settings)[/dim]", classes="field-label")
+                    yield Label(
+                        "[dim]Uses: OPENROUTER_API_KEY (see Global Settings)[/dim]",
+                        classes="field-label",
+                    )
             elif component == "researcher":
                 if operator:
-                    yield Label(f"[dim]Uses: {operator.upper()}_API_KEY (see Global Settings)[/dim]", classes="field-label")
+                    yield Label(
+                        f"[dim]Uses: {operator.upper()}_API_KEY (see Global Settings)[/dim]",
+                        classes="field-label",
+                    )
             elif component in ["secretary", "prompts"]:
-                yield Label("[dim]Uses: OPENROUTER_API_KEY (see Global Settings)[/dim]", classes="field-label")
+                yield Label(
+                    "[dim]Uses: OPENROUTER_API_KEY (see Global Settings)[/dim]",
+                    classes="field-label",
+                )
 
-            yield Label("[dim]→ Manage all API keys in [bold cyan]Global Settings → API Keys[/bold cyan][/dim]", classes="field-label")
+            yield Label(
+                "[dim]→ Manage all API keys in [bold cyan]Global Settings → API Keys[/bold cyan][/dim]",
+                classes="field-label",
+            )
 
         # Base URL (for OpenCode providers) - optional component-specific setting
         if component == "coder" and operator == "opencode":
@@ -345,59 +378,16 @@ class SettingsPanel(Widget):
         if event.button.id == "save-settings-btn":
             self._save_settings()
 
-    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
-        """Handle show/hide checkbox toggle."""
-        checkbox_id = event.checkbox.id
-        if checkbox_id and checkbox_id.startswith("show-"):
-            # Extract the key identifier from checkbox ID
-            key_id = checkbox_id.replace("show-", "")
-
-            # Try different ID formats (component-specific and global)
-            for prefix in ["current-key-", "current-"]:
-                try:
-                    key_input = self.query_one(f"#{prefix}{key_id}", Input)
-                    key_input.password = not event.value
-                    break
-                except Exception:
-                    continue
-
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Auto-save on Enter key."""
         input_id = event.input.id
-        if input_id and (input_id.startswith("update-key-") or input_id == "api-key-input"):
+        if input_id == "base-url-input":
             self._save_settings()
 
     def _save_settings(self) -> None:
         """Save settings to config."""
         component = self.context.get("component", "")
-        config = self.config_manager.list_all()
-        operator = config.get(f"NINJA_{component.upper()}_OPERATOR", "") if component != "global" else ""
-
         saved_count = 0
-
-        # Global settings - save all API keys
-        if component == "global":
-            all_env_vars = [
-                "OPENROUTER_API_KEY",
-                "ANTHROPIC_API_KEY",
-                "OPENAI_API_KEY",
-                "GOOGLE_API_KEY",
-                "AZURE_OPENAI_API_KEY",
-                "OLLAMA_API_KEY",
-                "LMSTUDIO_API_KEY",
-                "ZAI_API_KEY",
-                "PERPLEXITY_API_KEY",
-                "SERPER_API_KEY",
-            ]
-
-            for env_var in all_env_vars:
-                try:
-                    update_input = self.query_one(f"#update-{env_var.lower()}", Input)
-                    if update_input.value:
-                        self.config_manager.set(env_var, update_input.value)
-                        saved_count += 1
-                except Exception:
-                    pass
 
         # Try to get base URL input (only exists for OpenCode in component settings)
         try:
@@ -408,17 +398,10 @@ class SettingsPanel(Widget):
         except Exception:
             pass
 
-        # Clear all update input fields after saving
-        if saved_count > 0:
-            # Find all update-key inputs and clear them
-            for widget in self.query("Input"):
-                if widget.id and widget.id.startswith("update-key-"):
-                    widget.value = ""
-
         # Show success message
         self.app.bell()
         if saved_count > 0:
-            self.app.notify(f"✓ Saved {saved_count} credential(s)!", severity="information", timeout=2)
+            self.app.notify(f"✓ Saved {saved_count} setting(s)!", severity="information", timeout=2)
         else:
             self.app.notify("No changes to save", severity="warning", timeout=2)
 
@@ -467,29 +450,85 @@ class ConfigTree(Tree):
     def _build_tree(self) -> None:
         """Build the configuration tree."""
         # Global Settings at the top
-        global_settings = self.root.add("🌐 Global Settings", expand=False, data={"type": "global_settings", "id": "global"})
-        global_settings.add("API Keys", data={"type": "global_credentials"}, allow_expand=False)
+        global_settings = self.root.add(
+            "🌐 Global Settings", expand=False, data={"type": "global_settings", "id": "global"}
+        )
+
+        # API Keys sub-branch with individual keys
+        api_keys_branch = global_settings.add(
+            "🔑 API Keys", expand=False, data={"type": "api_keys_branch"}
+        )
+
+        # AI Providers
+        ai_keys = [
+            ("OpenRouter", "OPENROUTER_API_KEY"),
+            ("Anthropic", "ANTHROPIC_API_KEY"),
+            ("OpenAI", "OPENAI_API_KEY"),
+            ("Google", "GOOGLE_API_KEY"),
+            ("Azure OpenAI", "AZURE_OPENAI_API_KEY"),
+            ("Ollama", "OLLAMA_API_KEY"),
+            ("LM Studio", "LMSTUDIO_API_KEY"),
+            ("Z.ai", "ZAI_API_KEY"),
+        ]
+        for name, env_var in ai_keys:
+            key_value = self.config.get(env_var, "") or os.environ.get(env_var, "")
+            status = "✓" if key_value else "○"
+            api_keys_branch.add(
+                f"{status} {name}",
+                data={"type": "api_key", "env_var": env_var, "name": name},
+                allow_expand=False,
+            )
+
+        # Research Providers
+        research_keys = [
+            ("Perplexity", "PERPLEXITY_API_KEY"),
+            ("Serper", "SERPER_API_KEY"),
+        ]
+        for name, env_var in research_keys:
+            key_value = self.config.get(env_var, "") or os.environ.get(env_var, "")
+            status = "✓" if key_value else "○"
+            api_keys_branch.add(
+                f"{status} {name}",
+                data={"type": "api_key", "env_var": env_var, "name": name},
+                allow_expand=False,
+            )
 
         # Coder component
         coder = self.root.add("Coder", expand=False, data={"type": "component", "id": "coder"})
 
         # Default Operator branch
         current_op = self._get_current_operator("coder")
-        op_branch = coder.add("Default Operator", expand=False, data={"type": "operator_branch", "component": "coder"})
+        op_branch = coder.add(
+            "Default Operator", expand=False, data={"type": "operator_branch", "component": "coder"}
+        )
 
         # Show current selection with [*]
         aider_label = "[*] Aider" if current_op == "aider" else "[ ] Aider"
         opencode_label = "[*] OpenCode" if current_op == "opencode" else "[ ] OpenCode"
 
-        op_branch.add(aider_label, data={"type": "operator", "component": "coder", "operator": "aider"}, allow_expand=False)
-        op_branch.add(opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode"}, allow_expand=False)
+        op_branch.add(
+            aider_label,
+            data={"type": "operator", "component": "coder", "operator": "aider"},
+            allow_expand=False,
+        )
+        op_branch.add(
+            opencode_label,
+            data={"type": "operator", "component": "coder", "operator": "opencode"},
+            allow_expand=False,
+        )
 
         # Settings branch (for default operator)
-        settings = coder.add("Settings", expand=False, data={"type": "settings_branch", "component": "coder"})
+        settings = coder.add(
+            "Settings", expand=False, data={"type": "settings_branch", "component": "coder"}
+        )
 
         # If OpenCode is selected, show provider selection
         if current_op == "opencode":
-            provider_branch = settings.add("OpenCode Provider", expand=False, data={"type": "provider_branch", "component": "coder"})
+            provider_branch = settings.add(
+                "OpenCode Provider",
+                expand=False,
+                data={"type": "provider_branch", "component": "coder"},
+            )
 
             current_provider = self.config.get("NINJA_CODER_OPENCODE_PROVIDER", "")
 
@@ -506,18 +545,43 @@ class ConfigTree(Tree):
             ]
 
             for provider_id, provider_name in providers:
-                label = f"[*] {provider_name}" if current_provider == provider_id else f"[ ] {provider_name}"
-                provider_branch.add(label, data={"type": "provider", "component": "coder", "operator": "opencode", "provider": provider_id}, allow_expand=False)
+                label = (
+                    f"[*] {provider_name}"
+                    if current_provider == provider_id
+                    else f"[ ] {provider_name}"
+                )
+                provider_branch.add(
+                    label,
+                    data={
+                        "type": "provider",
+                        "component": "coder",
+                        "operator": "opencode",
+                        "provider": provider_id,
+                    },
+                    allow_expand=False,
+                )
 
         # General settings (API keys, etc)
-        settings.add("Credentials", data={"type": "settings", "component": "coder"}, allow_expand=False)
+        settings.add(
+            "Credentials", data={"type": "settings", "component": "coder"}, allow_expand=False
+        )
 
         # Models branch - each model type can have its own operator
-        models = coder.add("Models", expand=False, data={"type": "models_branch", "component": "coder"})
+        models = coder.add(
+            "Models", expand=False, data={"type": "models_branch", "component": "coder"}
+        )
 
         # Quick Tasks
-        quick = models.add("Quick Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "quick"})
-        quick_op = quick.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "quick"})
+        quick = models.add(
+            "Quick Tasks",
+            expand=False,
+            data={"type": "model_group", "component": "coder", "model_type": "quick"},
+        )
+        quick_op = quick.add(
+            "Operator Override",
+            expand=False,
+            data={"type": "operator_branch", "component": "coder", "model_type": "quick"},
+        )
 
         # Check if there's a per-model override
         quick_override = self.config.get("NINJA_CODER_OPERATOR_QUICK", "")
@@ -525,85 +589,290 @@ class ConfigTree(Tree):
         aider_label = "[*] Aider" if quick_override == "aider" else "[ ] Aider"
         opencode_label = "[*] OpenCode" if quick_override == "opencode" else "[ ] OpenCode"
 
-        quick_op.add(default_label, data={"type": "operator", "component": "coder", "operator": "default", "model_type": "quick"}, allow_expand=False)
-        quick_op.add(aider_label, data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "quick"}, allow_expand=False)
-        quick_op.add(opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "quick"}, allow_expand=False)
-        quick.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "quick"}, allow_expand=False)
+        quick_op.add(
+            default_label,
+            data={
+                "type": "operator",
+                "component": "coder",
+                "operator": "default",
+                "model_type": "quick",
+            },
+            allow_expand=False,
+        )
+        quick_op.add(
+            aider_label,
+            data={
+                "type": "operator",
+                "component": "coder",
+                "operator": "aider",
+                "model_type": "quick",
+            },
+            allow_expand=False,
+        )
+        quick_op.add(
+            opencode_label,
+            data={
+                "type": "operator",
+                "component": "coder",
+                "operator": "opencode",
+                "model_type": "quick",
+            },
+            allow_expand=False,
+        )
+        quick.add(
+            "Model Selection",
+            data={"type": "model", "component": "coder", "model_type": "quick"},
+            allow_expand=False,
+        )
 
         # Sequential Tasks
-        seq = models.add("Sequential Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "sequential"})
-        seq_op = seq.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "sequential"})
+        seq = models.add(
+            "Sequential Tasks",
+            expand=False,
+            data={"type": "model_group", "component": "coder", "model_type": "sequential"},
+        )
+        seq_op = seq.add(
+            "Operator Override",
+            expand=False,
+            data={"type": "operator_branch", "component": "coder", "model_type": "sequential"},
+        )
 
         seq_override = self.config.get("NINJA_CODER_OPERATOR_SEQUENTIAL", "")
         seq_default_label = "[*] Use Default" if not seq_override else "[ ] Use Default"
         seq_aider_label = "[*] Aider" if seq_override == "aider" else "[ ] Aider"
         seq_opencode_label = "[*] OpenCode" if seq_override == "opencode" else "[ ] OpenCode"
 
-        seq_op.add(seq_default_label, data={"type": "operator", "component": "coder", "operator": "default", "model_type": "sequential"}, allow_expand=False)
-        seq_op.add(seq_aider_label, data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "sequential"}, allow_expand=False)
-        seq_op.add(seq_opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "sequential"}, allow_expand=False)
-        seq.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "sequential"}, allow_expand=False)
+        seq_op.add(
+            seq_default_label,
+            data={
+                "type": "operator",
+                "component": "coder",
+                "operator": "default",
+                "model_type": "sequential",
+            },
+            allow_expand=False,
+        )
+        seq_op.add(
+            seq_aider_label,
+            data={
+                "type": "operator",
+                "component": "coder",
+                "operator": "aider",
+                "model_type": "sequential",
+            },
+            allow_expand=False,
+        )
+        seq_op.add(
+            seq_opencode_label,
+            data={
+                "type": "operator",
+                "component": "coder",
+                "operator": "opencode",
+                "model_type": "sequential",
+            },
+            allow_expand=False,
+        )
+        seq.add(
+            "Model Selection",
+            data={"type": "model", "component": "coder", "model_type": "sequential"},
+            allow_expand=False,
+        )
 
         # Parallel Tasks
-        par = models.add("Parallel Tasks", expand=False, data={"type": "model_group", "component": "coder", "model_type": "parallel"})
-        par_op = par.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "coder", "model_type": "parallel"})
+        par = models.add(
+            "Parallel Tasks",
+            expand=False,
+            data={"type": "model_group", "component": "coder", "model_type": "parallel"},
+        )
+        par_op = par.add(
+            "Operator Override",
+            expand=False,
+            data={"type": "operator_branch", "component": "coder", "model_type": "parallel"},
+        )
 
         par_override = self.config.get("NINJA_CODER_OPERATOR_PARALLEL", "")
         par_default_label = "[*] Use Default" if not par_override else "[ ] Use Default"
         par_aider_label = "[*] Aider" if par_override == "aider" else "[ ] Aider"
         par_opencode_label = "[*] OpenCode" if par_override == "opencode" else "[ ] OpenCode"
 
-        par_op.add(par_default_label, data={"type": "operator", "component": "coder", "operator": "default", "model_type": "parallel"}, allow_expand=False)
-        par_op.add(par_aider_label, data={"type": "operator", "component": "coder", "operator": "aider", "model_type": "parallel"}, allow_expand=False)
-        par_op.add(par_opencode_label, data={"type": "operator", "component": "coder", "operator": "opencode", "model_type": "parallel"}, allow_expand=False)
-        par.add("Model Selection", data={"type": "model", "component": "coder", "model_type": "parallel"}, allow_expand=False)
+        par_op.add(
+            par_default_label,
+            data={
+                "type": "operator",
+                "component": "coder",
+                "operator": "default",
+                "model_type": "parallel",
+            },
+            allow_expand=False,
+        )
+        par_op.add(
+            par_aider_label,
+            data={
+                "type": "operator",
+                "component": "coder",
+                "operator": "aider",
+                "model_type": "parallel",
+            },
+            allow_expand=False,
+        )
+        par_op.add(
+            par_opencode_label,
+            data={
+                "type": "operator",
+                "component": "coder",
+                "operator": "opencode",
+                "model_type": "parallel",
+            },
+            allow_expand=False,
+        )
+        par.add(
+            "Model Selection",
+            data={"type": "model", "component": "coder", "model_type": "parallel"},
+            allow_expand=False,
+        )
 
         # Researcher component
-        researcher = self.root.add("Researcher", expand=False, data={"type": "component", "id": "researcher"})
+        researcher = self.root.add(
+            "Researcher", expand=False, data={"type": "component", "id": "researcher"}
+        )
 
         current_op = self._get_current_operator("researcher")
-        op_branch = researcher.add("Default Operator", expand=False, data={"type": "operator_branch", "component": "researcher"})
+        op_branch = researcher.add(
+            "Default Operator",
+            expand=False,
+            data={"type": "operator_branch", "component": "researcher"},
+        )
 
         perplexity_label = "[*] Perplexity" if current_op == "perplexity" else "[ ] Perplexity"
         serper_label = "[*] Serper" if current_op == "serper" else "[ ] Serper"
         duckduckgo_label = "[*] DuckDuckGo" if current_op == "duckduckgo" else "[ ] DuckDuckGo"
 
-        op_branch.add(perplexity_label, data={"type": "operator", "component": "researcher", "operator": "perplexity"}, allow_expand=False)
-        op_branch.add(serper_label, data={"type": "operator", "component": "researcher", "operator": "serper"}, allow_expand=False)
-        op_branch.add(duckduckgo_label, data={"type": "operator", "component": "researcher", "operator": "duckduckgo"}, allow_expand=False)
+        op_branch.add(
+            perplexity_label,
+            data={"type": "operator", "component": "researcher", "operator": "perplexity"},
+            allow_expand=False,
+        )
+        op_branch.add(
+            serper_label,
+            data={"type": "operator", "component": "researcher", "operator": "serper"},
+            allow_expand=False,
+        )
+        op_branch.add(
+            duckduckgo_label,
+            data={"type": "operator", "component": "researcher", "operator": "duckduckgo"},
+            allow_expand=False,
+        )
 
         researcher.add("Settings", data={"type": "settings", "component": "researcher"})
 
-        models = researcher.add("Models", expand=False, data={"type": "models_branch", "component": "researcher"})
-        research = models.add("Research Model", expand=False, data={"type": "model_group", "component": "researcher", "model_type": "research"})
-        research_op = research.add("Operator Override", expand=False, data={"type": "operator_branch", "component": "researcher", "model_type": "research"})
+        models = researcher.add(
+            "Models", expand=False, data={"type": "models_branch", "component": "researcher"}
+        )
+        research = models.add(
+            "Research Model",
+            expand=False,
+            data={"type": "model_group", "component": "researcher", "model_type": "research"},
+        )
+        research_op = research.add(
+            "Operator Override",
+            expand=False,
+            data={"type": "operator_branch", "component": "researcher", "model_type": "research"},
+        )
 
         # Check for research model operator override
         research_override = self.config.get("NINJA_RESEARCHER_OPERATOR_RESEARCH", "")
         research_default_label = "[*] Use Default" if not research_override else "[ ] Use Default"
-        research_perplexity_label = "[*] Perplexity" if research_override == "perplexity" else "[ ] Perplexity"
+        research_perplexity_label = (
+            "[*] Perplexity" if research_override == "perplexity" else "[ ] Perplexity"
+        )
         research_serper_label = "[*] Serper" if research_override == "serper" else "[ ] Serper"
-        research_duckduckgo_label = "[*] DuckDuckGo" if research_override == "duckduckgo" else "[ ] DuckDuckGo"
+        research_duckduckgo_label = (
+            "[*] DuckDuckGo" if research_override == "duckduckgo" else "[ ] DuckDuckGo"
+        )
 
-        research_op.add(research_default_label, data={"type": "operator", "component": "researcher", "operator": "default", "model_type": "research"}, allow_expand=False)
-        research_op.add(research_perplexity_label, data={"type": "operator", "component": "researcher", "operator": "perplexity", "model_type": "research"}, allow_expand=False)
-        research_op.add(research_serper_label, data={"type": "operator", "component": "researcher", "operator": "serper", "model_type": "research"}, allow_expand=False)
-        research_op.add(research_duckduckgo_label, data={"type": "operator", "component": "researcher", "operator": "duckduckgo", "model_type": "research"}, allow_expand=False)
-        research.add("Model Selection", data={"type": "model", "component": "researcher", "model_type": "research"}, allow_expand=False)
+        research_op.add(
+            research_default_label,
+            data={
+                "type": "operator",
+                "component": "researcher",
+                "operator": "default",
+                "model_type": "research",
+            },
+            allow_expand=False,
+        )
+        research_op.add(
+            research_perplexity_label,
+            data={
+                "type": "operator",
+                "component": "researcher",
+                "operator": "perplexity",
+                "model_type": "research",
+            },
+            allow_expand=False,
+        )
+        research_op.add(
+            research_serper_label,
+            data={
+                "type": "operator",
+                "component": "researcher",
+                "operator": "serper",
+                "model_type": "research",
+            },
+            allow_expand=False,
+        )
+        research_op.add(
+            research_duckduckgo_label,
+            data={
+                "type": "operator",
+                "component": "researcher",
+                "operator": "duckduckgo",
+                "model_type": "research",
+            },
+            allow_expand=False,
+        )
+        research.add(
+            "Model Selection",
+            data={"type": "model", "component": "researcher", "model_type": "research"},
+            allow_expand=False,
+        )
 
         # Secretary component
-        secretary = self.root.add("Secretary", expand=False, data={"type": "component", "id": "secretary"})
+        secretary = self.root.add(
+            "Secretary", expand=False, data={"type": "component", "id": "secretary"}
+        )
         secretary.add("Settings", data={"type": "settings", "component": "secretary"})
-        models = secretary.add("Models", expand=False, data={"type": "models_branch", "component": "secretary"})
-        analysis = models.add("Analysis Model", expand=False, data={"type": "model_group", "component": "secretary", "model_type": "analysis"})
-        analysis.add("Model Selection", data={"type": "model", "component": "secretary", "model_type": "analysis"}, allow_expand=False)
+        models = secretary.add(
+            "Models", expand=False, data={"type": "models_branch", "component": "secretary"}
+        )
+        analysis = models.add(
+            "Analysis Model",
+            expand=False,
+            data={"type": "model_group", "component": "secretary", "model_type": "analysis"},
+        )
+        analysis.add(
+            "Model Selection",
+            data={"type": "model", "component": "secretary", "model_type": "analysis"},
+            allow_expand=False,
+        )
 
         # Prompts component
-        prompts = self.root.add("Prompts", expand=False, data={"type": "component", "id": "prompts"})
+        prompts = self.root.add(
+            "Prompts", expand=False, data={"type": "component", "id": "prompts"}
+        )
         prompts.add("Settings", data={"type": "settings", "component": "prompts"})
-        models = prompts.add("Models", expand=False, data={"type": "models_branch", "component": "prompts"})
-        generation = models.add("Generation Model", expand=False, data={"type": "model_group", "component": "prompts", "model_type": "generation"})
-        generation.add("Model Selection", data={"type": "model", "component": "prompts", "model_type": "generation"}, allow_expand=False)
+        models = prompts.add(
+            "Models", expand=False, data={"type": "models_branch", "component": "prompts"}
+        )
+        generation = models.add(
+            "Generation Model",
+            expand=False,
+            data={"type": "model_group", "component": "prompts", "model_type": "generation"},
+        )
+        generation.add(
+            "Model Selection",
+            data={"type": "model", "component": "prompts", "model_type": "generation"},
+            allow_expand=False,
+        )
 
 
 class RightPanel(Container):
@@ -624,6 +893,11 @@ class RightPanel(Container):
         self.remove_children()
         self.mount(SettingsPanel(context, self.config_manager))
 
+    def show_api_key(self, env_var: str, config_manager: ConfigManager | None = None) -> None:
+        """Show API key configuration panel."""
+        self.remove_children()
+        self.mount(APIKeyPanel(env_var, config_manager or self.config_manager))
+
     def show_info(self, info: str) -> None:
         """Show info panel."""
         self.remove_children()
@@ -639,7 +913,7 @@ class ModernConfigApp(App):
     }
 
     #logo {
-        height: 2;
+        height: 6;
         content-align: center middle;
         margin-bottom: 1;
         text-style: bold;
@@ -653,17 +927,18 @@ class ModernConfigApp(App):
     }
 
     #left-panel {
-        width: 50%;
+        width: 45%;
         height: 100%;
         border: solid cyan;
         padding: 1;
     }
 
     #right-panel {
-        width: 50%;
+        width: 55%;
         height: 100%;
         border: solid green;
         padding: 1;
+        overflow-y: auto;
     }
 
     Tree {
@@ -748,10 +1023,17 @@ class ModernConfigApp(App):
         self.sub_title = "Modern Tree-Based Configuration"
 
     def _create_logo(self) -> str:
-        """Create gradient logo text."""
-        # NINJA-MCP with gradient from turquoise to lilac using Rich markup
-        # Using color codes that work well in terminals
-        return "[bold cyan]N[/bold cyan][bold bright_cyan]I[/bold bright_cyan][bold blue]N[/bold blue][bold bright_blue]J[/bold bright_blue][bold magenta]A[/bold magenta][bold bright_magenta]-[/bold bright_magenta][bold magenta]M[/bold magenta][bold bright_magenta]C[/bold bright_magenta][bold magenta]P[/bold magenta]"
+        """Create gradient logo text with teal-blue gradient."""
+        # NINJA-MCP with gradient from teal to blue
+        # Using ANSI color codes for better terminal compatibility
+        # Teal: #00CED1 (DarkTurquoise), Blue: #1E90FF (DodgerBlue)
+        return (
+            "[bold color(14)]███[/bold color(14)]   [bold color(31)]███[/bold color(31)] [bold color(39)]████████[/bold color(39)] [bold color(45)]████████[/bold color(45)]\n"
+            "[bold color(14)]█[/bold color(14)]   [bold color(31)]█[/bold color(31)] [bold color(39)]█[/bold color(39)]   [bold color(45)]█[/bold color(45)] [bold color(51)]█[/bold color(51)]     [bold color(87)]█[/bold color(87)]\n"
+            "[bold color(31)]█[/bold color(31)]   [bold color(39)]█[/bold color(39)] [bold color(45)]████████[/bold color(45)] [bold color(51)]████████[/bold color(51)]\n"
+            "[bold color(39)]█[/bold color(39)]   [bold color(45)]█[/bold color(45)] [bold color(51)]█[/bold color(51)]     [bold color(87)]█[/bold color(87)]     [bold color(117)]█[/bold color(117)]\n"
+            "[bold color(45)]███[/bold color(45)]   [bold color(51)]███[/bold color(51)] [bold color(87)]█[/bold color(87)]     [bold color(117)]████████[/bold color(117)]"
+        )
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -798,12 +1080,18 @@ class ModernConfigApp(App):
             }
             right_panel.show_settings(context)
 
-        elif node_type == "global_credentials":
-            # Show global credentials panel
-            context = {
-                "component": "global",
-            }
-            right_panel.show_settings(context)
+        elif node_type == "api_key":
+            # Show individual API key configuration panel
+            env_var = event.node.data.get("env_var")
+            if env_var:
+                right_panel.show_api_key(env_var)
+
+        elif node_type == "api_keys_branch":
+            # Show info about API keys
+            info = "[bold cyan]🔑 API Keys[/bold cyan]\n\n"
+            info += "Configure your API keys for various providers.\n\n"
+            info += "[dim]Expand to select individual API keys to configure[/dim]"
+            right_panel.show_info(info)
 
         elif node_type == "operator":
             # Show operator info
@@ -907,11 +1195,15 @@ class ModernConfigApp(App):
             expanded.append(tuple(current_path + [node.data]))
 
         for child in node.children:
-            expanded.extend(self._get_expanded_paths(child, current_path + [node.data] if node.data else []))
+            expanded.extend(
+                self._get_expanded_paths(child, current_path + [node.data] if node.data else [])
+            )
 
         return expanded
 
-    def _restore_expanded_state(self, node, expanded_paths: list[tuple], current_path: list) -> None:
+    def _restore_expanded_state(
+        self, node, expanded_paths: list[tuple], current_path: list
+    ) -> None:
         """Recursively restore expanded state to matching nodes."""
         if node.data:
             current_tuple = tuple(current_path + [node.data])
@@ -921,9 +1213,7 @@ class ModernConfigApp(App):
 
         for child in node.children:
             self._restore_expanded_state(
-                child,
-                expanded_paths,
-                current_path + [node.data] if node.data else []
+                child, expanded_paths, current_path + [node.data] if node.data else []
             )
 
     def action_refresh(self) -> None:
