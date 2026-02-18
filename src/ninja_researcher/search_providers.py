@@ -70,12 +70,10 @@ class DuckDuckGoProvider(SearchProvider):
         try:
             logger.info(f"Searching DuckDuckGo for: {query}")
 
-            # DuckDuckGo search is synchronous, but we run it in executor to not block
             import asyncio
 
-            loop = asyncio.get_event_loop()
-            results = await loop.run_in_executor(
-                None, lambda: list(self.ddgs.text(query, max_results=max_results))
+            results = await asyncio.to_thread(
+                lambda: list(self.ddgs.text(query, max_results=max_results))
             )
 
             # Normalize results to common format
