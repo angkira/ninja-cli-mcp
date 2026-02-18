@@ -87,7 +87,6 @@ async def stdio_to_http_proxy(url: str) -> None:
             # Task to read from stdin and POST to daemon
             async def forward_to_daemon():
                 nonlocal stdin_closed
-                loop = asyncio.get_event_loop()
 
                 # Wait for session endpoint to be set
                 max_wait = 100  # 10 seconds
@@ -103,7 +102,7 @@ async def stdio_to_http_proxy(url: str) -> None:
                 while True:
                     try:
                         # Read line from stdin (non-blocking)
-                        line = await loop.run_in_executor(None, sys.stdin.readline)
+                        line = await asyncio.to_thread(sys.stdin.readline)
                         if not line:
                             # stdin closed - this is NORMAL when client disconnects
                             logger.debug("stdin closed, proxy finishing input forwarding")
