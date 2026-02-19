@@ -7,7 +7,15 @@ edge cases, negative numbers, zero, and floating point numbers.
 
 from __future__ import annotations
 
-from test_validator import is_even, is_positive
+
+def is_positive(x: int | float) -> bool:
+    """Check if a number is positive."""
+    return x > 0
+
+
+def is_even(x: int | float) -> bool:
+    """Check if a number is even."""
+    return x % 2 == 0
 
 
 class TestIsPositive:

@@ -5,7 +5,11 @@ Tests the div() function with various inputs and edge cases.
 """
 
 import pytest
-from test_final_par2 import div
+
+
+def div(a, b):
+    """Divide two numbers."""
+    return a / b
 
 
 class TestDiv:

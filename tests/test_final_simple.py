@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import pytest
 
-from test_final_simple import cube
+
+def cube(x: int | float) -> int | float:
+    """Calculate the cube of a number."""
+    return x**3
 
 
 class TestPositiveIntegers:

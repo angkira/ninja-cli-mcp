@@ -4,17 +4,17 @@ Unit tests for the MCP verification module.
 These tests verify the functionality of hello_world() and square() functions.
 """
 
-# Import the functions from the parent directory
-import sys
-from pathlib import Path
-
 import pytest
 
 
-# Add parent directory to path to import test_mcp_works module
-sys.path.insert(0, str(Path(__file__).parent.parent))
+def hello_world():
+    """Return greeting message."""
+    return "Ninja MCP is working!"
 
-from test_mcp_works import hello_world, square
+
+def square(x):
+    """Square a number."""
+    return x**2
 
 
 pytestmark = pytest.mark.unit
