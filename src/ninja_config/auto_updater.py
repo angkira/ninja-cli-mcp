@@ -118,7 +118,7 @@ class AutoUpdater:
                 result["steps_completed"].append("migration")
                 print(f"   ✓ Migrated {migration_result['credentials_count']} credentials\n")
             else:
-                print("   ℹ Migration not needed\n")
+                print("   i Migration not needed\n")
 
             # Step 5: Update MCP config
             print("⚙️  Step 5: Updating MCP configuration...")
@@ -163,7 +163,7 @@ class AutoUpdater:
         # Check if this is a git repository
         git_dir = self.repo_path / ".git"
         if not git_dir.exists():
-            print("   ℹ Not a git repository, skipping pull")
+            print("   i Not a git repository, skipping pull")
             return
 
         try:
@@ -176,7 +176,7 @@ class AutoUpdater:
                 timeout=300,  # 5 minute timeout
             )
             if "Already up to date" in result.stdout:
-                print("   ℹ Already up to date")
+                print("   i Already up to date")
         except subprocess.CalledProcessError as e:
             raise UpdateError(f"git pull failed: {e.stderr}") from e
         except subprocess.TimeoutExpired:
@@ -233,7 +233,7 @@ class AutoUpdater:
                 # Extract version
                 for line in result.stdout.split("\n"):
                     if "ninja-mcp==" in line:
-                        print(f"   ℹ {line.strip()}")
+                        print(f"   i {line.strip()}")
         except subprocess.CalledProcessError as e:
             raise UpdateError(f"Package reinstall failed: {e.stderr}") from e
         except subprocess.TimeoutExpired:
@@ -256,7 +256,7 @@ class AutoUpdater:
         config_path = Path.home() / ".claude.json"
 
         if not config_path.exists():
-            print("   ℹ No .claude.json found, skipping MCP config update")
+            print("   i No .claude.json found, skipping MCP config update")
             return
 
         # Backup MCP config
@@ -275,7 +275,7 @@ class AutoUpdater:
             openrouter_key = manager.get("OPENROUTER_API_KEY")
         except Exception as e:
             print(f"   ⚠️  Could not read from credentials DB: {e}")
-            print("   ℹ Trying to read from .ninja-mcp.env file...")
+            print("   i Trying to read from .ninja-mcp.env file...")
 
             # Fallback: read from .env file
             env_file = Path.home() / ".ninja-mcp.env"
@@ -312,7 +312,7 @@ class AutoUpdater:
             json.dump(config, f, indent=2)
 
         if updated:
-            print(f"   ℹ Updated: {', '.join(updated)}")
+            print(f"   i Updated: {', '.join(updated)}")
 
     def _restart_daemons(self) -> None:
         """Restart ninja daemons."""
