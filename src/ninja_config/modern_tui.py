@@ -1024,15 +1024,14 @@ class ModernConfigApp(App):
 
     def _create_logo(self) -> str:
         """Create gradient logo text with teal-blue gradient."""
-        # NINJA-MCP with gradient from teal to blue
-        # Using ANSI color codes for better terminal compatibility
-        # Teal: #00CED1 (DarkTurquoise), Blue: #1E90FF (DodgerBlue)
+        # NINJA-MCP with gradient from turquoise to blue
+        # Using bright colors for visibility
         return (
-            "[bold color(14)]███[/bold color(14)]   [bold color(31)]███[/bold color(31)] [bold color(39)]████████[/bold color(39)] [bold color(45)]████████[/bold color(45)]\n"
-            "[bold color(14)]█[/bold color(14)]   [bold color(31)]█[/bold color(31)] [bold color(39)]█[/bold color(39)]   [bold color(45)]█[/bold color(45)] [bold color(51)]█[/bold color(51)]     [bold color(87)]█[/bold color(87)]\n"
-            "[bold color(31)]█[/bold color(31)]   [bold color(39)]█[/bold color(39)] [bold color(45)]████████[/bold color(45)] [bold color(51)]████████[/bold color(51)]\n"
-            "[bold color(39)]█[/bold color(39)]   [bold color(45)]█[/bold color(45)] [bold color(51)]█[/bold color(51)]     [bold color(87)]█[/bold color(87)]     [bold color(117)]█[/bold color(117)]\n"
-            "[bold color(45)]███[/bold color(45)]   [bold color(51)]███[/bold color(51)] [bold color(87)]█[/bold color(87)]     [bold color(117)]████████[/bold color(117)]"
+            "[bold cyan]███[/bold cyan]   [bold blue]███[/bold blue] [bold]████████[/bold] [bold cyan]████████[/bold cyan]\n"
+            "[bold cyan]█[/bold cyan]   [bold blue]█[/bold blue] [bold]█[/bold]   [bold cyan]█[/bold cyan] [bold bright_cyan]█[/bold bright_cyan]     [bold]█[/bold]\n"
+            "[bold blue]█[/bold blue]   [bold]█[/bold] [bold cyan]████████[/bold cyan] [bold bright_blue]████████[/bold bright_blue]\n"
+            "[bold]█[/bold]   [bold cyan]█[/bold cyan] [bold bright_cyan]█[/bold bright_cyan]     [bold]█[/bold]     [bold bright_cyan]█[/bold bright_cyan]\n"
+            "[bold cyan]███[/bold cyan]   [bold bright_cyan]███[/bold bright_cyan] [bold]█[/bold]     [bold bright_cyan]████████[/bold bright_cyan]"
         )
 
     def compose(self) -> ComposeResult:
