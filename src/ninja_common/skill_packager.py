@@ -150,7 +150,7 @@ class SkillPackager:
                 # Find the root directory in the ZIP
                 root_dirs = {name.split("/")[0] for name in names if "/" in name}
                 if len(root_dirs) == 1:
-                    root = list(root_dirs)[0] + "/"
+                    root = next(iter(root_dirs)) + "/"
                 else:
                     root = ""
 

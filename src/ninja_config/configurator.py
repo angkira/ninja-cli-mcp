@@ -179,7 +179,7 @@ class NinjaConfigurator:
         if not key_info:
             return
 
-        key_name, display_name, url, desc = key_info
+        key_name, display_name, url, _desc = key_info
 
         print(f"\n{display_name} API Key")
         print(f"Get your key from: {url}\n")
