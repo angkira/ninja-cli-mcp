@@ -464,7 +464,6 @@ async def test_rate_limiting():
 
     # Make multiple rapid requests
     requests_made = 0
-    rate_limited = False
 
     try:
         for i in range(35):  # Exceed the 30/min limit
@@ -478,7 +477,7 @@ async def test_rate_limiting():
             await asyncio.sleep(0.1)  # Small delay
     except Exception as e:
         if "rate limit" in str(e).lower():
-            rate_limited = True
+            pass
 
     # Either we hit the rate limit or completed all requests
     # (depends on timing and system load)

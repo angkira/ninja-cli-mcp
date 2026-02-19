@@ -1,4 +1,3 @@
-import pytest
 from tests.test_calculator import Calculator
 
 

@@ -595,7 +595,6 @@ async def test_execute_async_with_opencode_session_fallback_non_opencode(
     # driver fixture uses Aider strategy (not OpenCode)
 
     # Mock execute_async to track if it was called
-    original_execute_async = driver.execute_async
     execute_async_called = False
 
     async def mock_execute_async(*args, **kwargs):
@@ -788,7 +787,7 @@ async def test_execute_async_with_opencode_session_continue_last(
     }
 
     # Call with is_initial=False and no session_id (should trigger --continue)
-    result = await opencode_driver.execute_async_with_opencode_session(
+    await opencode_driver.execute_async_with_opencode_session(
         repo_root=str(tmp_path),
         step_id="test-continue",
         instruction=instruction,

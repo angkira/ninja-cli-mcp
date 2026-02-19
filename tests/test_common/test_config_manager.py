@@ -198,7 +198,7 @@ class TestConfigManager:
             import stat
 
             file_stat = config_file.stat()
-            permissions = stat.filemode(file_stat.st_mode)
+            stat.filemode(file_stat.st_mode)
 
             # Should be readable and writable by owner only
             assert file_stat.st_mode & stat.S_IRUSR
