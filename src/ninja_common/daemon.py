@@ -143,7 +143,7 @@ async def stdio_to_http_proxy(url: str) -> None:
             ]
 
             # Wait for both tasks, but don't let stdin closure kill SSE
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            _done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
             # If stdin task finished but SSE is still running, let SSE finish gracefully
             if stdin_closed and pending:

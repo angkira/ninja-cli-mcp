@@ -43,7 +43,7 @@ class TestSmartCommitGrouping:
 
         # Should have 2 groups: tests and src
         assert len(groups) == 2
-        test_group = [g for g in groups if "test" in g[0]][0]
+        test_group = next(g for g in groups if "test" in g[0])
         assert len(test_group) == 2
 
     def test_group_config_files_together(self):
@@ -65,7 +65,7 @@ class TestSmartCommitGrouping:
 
         # Should have 2 groups: docs and src
         assert len(groups) == 2
-        doc_group = [g for g in groups if g[0].endswith(".md")][0]
+        doc_group = next(g for g in groups if g[0].endswith(".md"))
         assert len(doc_group) == 2
 
     def test_group_single_file(self):

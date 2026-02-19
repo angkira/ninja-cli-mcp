@@ -1150,7 +1150,7 @@ class NinjaDriver:
             # Log command without sensitive data (redact API key)
             safe_cmd = [
                 arg if "api-key" not in prev.lower() else "***REDACTED***"
-                for prev, arg in zip([""] + cli_result.command[:-1], cli_result.command)
+                for prev, arg in zip(["", *cli_result.command[:-1]], cli_result.command)
             ]
             task_logger.info(f"Running {self._strategy.name}: {' '.join(safe_cmd)}")
 
@@ -1405,7 +1405,7 @@ class NinjaDriver:
             # Log command (redact sensitive data)
             safe_cmd = [
                 arg if "api-key" not in prev.lower() else "***REDACTED***"
-                for prev, arg in zip([""] + cli_result.command[:-1], cli_result.command)
+                for prev, arg in zip(["", *cli_result.command[:-1]], cli_result.command)
             ]
             task_logger.info(f"Running {self._strategy.name}: {' '.join(safe_cmd)}")
 
@@ -1709,7 +1709,7 @@ class NinjaDriver:
             # Log command (redact sensitive data)
             safe_cmd = [
                 arg if "api-key" not in prev.lower() else "***REDACTED***"
-                for prev, arg in zip([""] + cli_result.command[:-1], cli_result.command)
+                for prev, arg in zip(["", *cli_result.command[:-1]], cli_result.command)
             ]
             task_logger.info(f"Running {self._strategy.name}: {' '.join(safe_cmd)}")
 
