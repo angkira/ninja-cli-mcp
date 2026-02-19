@@ -1190,7 +1190,7 @@ class ModernConfigApp(App):
 
         if node.is_expanded and node.data:
             # Store the path as a tuple of data dictionaries
-            expanded.append(tuple([*current_path, node.data]))
+            expanded.append((*current_path, node.data))
 
         for child in node.children:
             expanded.extend(
@@ -1204,7 +1204,7 @@ class ModernConfigApp(App):
     ) -> None:
         """Recursively restore expanded state to matching nodes."""
         if node.data:
-            current_tuple = tuple([*current_path, node.data])
+            current_tuple = (*current_path, node.data)
             # Check if this node's path was expanded
             if current_tuple in expanded_paths:
                 node.expand()
