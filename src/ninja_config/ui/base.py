@@ -9,9 +9,7 @@ import subprocess
 
 
 try:
-    from InquirerPy import inquirer
-
-    HAS_INQUIRERPY = True
+    HAS_INQUIRERPY = False
 except ImportError:
     HAS_INQUIRERPY = False
 
