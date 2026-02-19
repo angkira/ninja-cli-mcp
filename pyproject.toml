@@ -134,17 +134,8 @@ ignore = [
     "SIM117",  # nested with statements
     "SIM222",  # use true instead of ... or True
     "RUF015",  # prefer next(iter())
-    "RUF059",  # unpacked variable never used
-    "RUF005",  # prefer list unpacking
-    "PLC0415", # import at top level
-    "ARG001",  # unused function arguments
-    "ARG002",  # unused method arguments (may be part of interface)
-    "B905",    # zip() without strict parameter
-    "B007",    # loop control variable not used
-    "W293",    # blank line with whitespace
-    "PTH123",  # use pathlib
-    "PLW0603", # global statement use
-    "F821",    # undefined name (for forward refs/stubs)
+    "RUF001",  # ambiguous unicode characters
+    "RUF012",  # mutable class attributes
 ]
 
 [tool.ruff.lint.per-file-ignores]
