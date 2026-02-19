@@ -173,11 +173,14 @@ class AutoUpdater:
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=300,  # 5 minute timeout
             )
             if "Already up to date" in result.stdout:
                 print("   ℹ️  Already up to date")
         except subprocess.CalledProcessError as e:
             raise UpdateError(f"git pull failed: {e.stderr}") from e
+        except subprocess.TimeoutExpired:
+            raise UpdateError("git pull timed out after 5 minutes") from None
 
     def _backup_credentials(self) -> Path:
         """Backup credentials before update."""
@@ -185,10 +188,12 @@ class AutoUpdater:
 
         if old_env.exists():
             import time
+
             timestamp = int(time.time())
             backup_path = Path.home() / f".ninja-mcp.env.backup-{timestamp}"
 
             import shutil
+
             shutil.copy2(old_env, backup_path)
             backup_path.chmod(0o600)
 
@@ -198,10 +203,12 @@ class AutoUpdater:
         creds_db = Path.home() / ".ninja" / "credentials.db"
         if creds_db.exists():
             import time
+
             timestamp = int(time.time())
             backup_path = Path.home() / ".ninja" / f"credentials.db.backup-{timestamp}"
 
             import shutil
+
             shutil.copy2(creds_db, backup_path)
             backup_path.chmod(0o600)
 
@@ -219,6 +226,7 @@ class AutoUpdater:
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=600,  # 10 minute timeout
             )
             # Check if version changed
             if "ninja-mcp==" in result.stdout:
@@ -228,6 +236,8 @@ class AutoUpdater:
                         print(f"   ℹ️  {line.strip()}")
         except subprocess.CalledProcessError as e:
             raise UpdateError(f"Package reinstall failed: {e.stderr}") from e
+        except subprocess.TimeoutExpired:
+            raise UpdateError("Package reinstall timed out after 10 minutes") from None
 
     def _run_migration_if_needed(self) -> dict[str, Any] | None:
         """Run migration if needed."""
@@ -252,6 +262,7 @@ class AutoUpdater:
         # Backup MCP config
         backup_path = Path.home() / ".claude.json.backup-auto-update"
         import shutil
+
         shutil.copy2(config_path, backup_path)
 
         with open(config_path) as f:
@@ -270,11 +281,12 @@ class AutoUpdater:
             env_file = Path.home() / ".ninja-mcp.env"
             if env_file.exists():
                 import re
+
                 with open(env_file) as f:
                     for line in f:
-                        match = re.match(r'^OPENROUTER_API_KEY=(.+)$', line.strip())
+                        match = re.match(r"^OPENROUTER_API_KEY=(.+)$", line.strip())
                         if match:
-                            openrouter_key = match.group(1).strip('"\'')
+                            openrouter_key = match.group(1).strip("\"'")
                             break
 
         if not openrouter_key:
@@ -309,9 +321,12 @@ class AutoUpdater:
                 ["ninja-daemon", "restart"],
                 check=True,
                 capture_output=True,
+                timeout=60,  # 1 minute timeout
             )
         except subprocess.CalledProcessError as e:
             raise UpdateError(f"Daemon restart failed: {e.stderr}") from e
+        except subprocess.TimeoutExpired:
+            raise UpdateError("Daemon restart timed out after 1 minute") from None
 
     def _verify(self) -> dict[str, Any]:
         """Verify installation."""
@@ -327,6 +342,7 @@ class AutoUpdater:
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=30,  # 30 second timeout
             )
             daemon_status = json.loads(result.stdout)
 
