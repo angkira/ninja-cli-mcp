@@ -5,7 +5,6 @@ Tests the square function with various inputs including positive numbers,
 zero, negative numbers, and large numbers.
 """
 
-import pytest
 
 
 def square(x):

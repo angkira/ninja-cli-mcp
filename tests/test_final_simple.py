@@ -8,8 +8,6 @@ integration scenarios.
 
 from __future__ import annotations
 
-import pytest
-
 
 def cube(x: int | float) -> int | float:
     """Calculate the cube of a number."""

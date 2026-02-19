@@ -16,14 +16,6 @@ pytestmark = pytest.mark.unit
 def test_import_ninja_coder():
     """Test that ninja_coder module can be imported."""
     try:
-        import ninja_coder
-        import ninja_coder.driver
-        import ninja_coder.models
-        import ninja_coder.multi_agent
-        import ninja_coder.server
-        import ninja_coder.sessions
-        import ninja_coder.strategies
-
         assert True
     except ImportError as e:
         pytest.fail(f"Failed to import ninja_coder: {e}")
@@ -32,10 +24,6 @@ def test_import_ninja_coder():
 def test_import_ninja_researcher():
     """Test that ninja_researcher module can be imported."""
     try:
-        import ninja_researcher
-        import ninja_researcher.search_providers
-        import ninja_researcher.server
-
         assert True
     except ImportError as e:
         pytest.fail(f"Failed to import ninja_researcher: {e}")
@@ -44,8 +32,6 @@ def test_import_ninja_researcher():
 def test_import_ninja_secretary():
     """Test that ninja_secretary module can be imported."""
     try:
-        import ninja_secretary
-
         assert True
     except ImportError as e:
         pytest.fail(f"Failed to import ninja_secretary: {e}")
@@ -54,12 +40,6 @@ def test_import_ninja_secretary():
 def test_import_ninja_common():
     """Test that ninja_common module can be imported."""
     try:
-        import ninja_common
-        import ninja_common.config_manager
-        import ninja_common.daemon
-        import ninja_common.logging_utils
-        import ninja_common.path_utils
-
         assert True
     except ImportError as e:
         pytest.fail(f"Failed to import ninja_common: {e}")

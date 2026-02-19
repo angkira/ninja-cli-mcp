@@ -227,7 +227,7 @@ def test_sequential_prompt_dependencies(sample_steps: list[PlanStep]):
     # First step should not have dependencies section
     step1_start = result.index("## STEP 1:")
     step2_start = result.index("## STEP 2:")
-    step1_section = result[step1_start:step2_start]
+    result[step1_start:step2_start]
 
     # Later steps should have dependencies
     assert "### Dependencies" in result
@@ -523,7 +523,7 @@ def test_context_file_deduplication(temp_repo: Path):
     context_files = builder._load_context_files(steps, ["src/main.py"])  # Triple
 
     # Should only have one entry
-    assert len([k for k in context_files.keys() if k == "src/main.py"]) == 1
+    assert len([k for k in context_files if k == "src/main.py"]) == 1
 
 
 def test_context_file_size_limit(temp_repo: Path):
@@ -597,9 +597,8 @@ def test_context_file_read_error_handling(temp_repo: Path):
     unreadable.write_text("test")
 
     # Try to make it unreadable (may not work on all platforms)
-    import os
     try:
-        os.chmod(unreadable, 0o000)
+        Path(unreadable).chmod(0o000)
 
         builder = PromptBuilder(str(temp_repo))
 
@@ -620,8 +619,8 @@ def test_context_file_read_error_handling(temp_repo: Path):
     finally:
         # Restore permissions for cleanup
         try:
-            os.chmod(unreadable, 0o644)
-        except:
+            Path(unreadable).chmod(0o644)
+        except OSError:
             pass
 
 
@@ -718,7 +717,9 @@ def test_sequential_prompt_with_real_context(temp_repo: Path, sample_steps: list
     assert "def helper():" in prompt
 
 
-def test_parallel_prompt_with_constraints_and_context(temp_repo: Path, parallel_tasks: list[PlanStep]):
+def test_parallel_prompt_with_constraints_and_context(
+    temp_repo: Path, parallel_tasks: list[PlanStep]
+):
     """Test building parallel prompt with constraints and real context."""
     builder = PromptBuilder(str(temp_repo))
 
@@ -897,5 +898,5 @@ def test_prompt_with_empty_globs():
     result = prompt.to_prompt()
 
     # Should not have constraints section if no globs
-    step_section = result[result.index("## STEP 1:"):result.index("---")]
+    step_section = result[result.index("## STEP 1:") : result.index("---")]
     assert "### File Constraints" not in step_section

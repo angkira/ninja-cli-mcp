@@ -8,8 +8,8 @@ with a structured prompt, rather than spawning multiple processes.
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -19,9 +19,12 @@ from ninja_coder.models import (
     ParallelPlanRequest,
     PlanExecutionResult,
     PlanStep,
-    StepResult,
 )
 from ninja_coder.tools import ToolExecutor
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -101,7 +104,7 @@ async def test_parallel_plan_end_to_end(temp_repo: Path, parallel_request: Paral
     mock_driver.execute_async = AsyncMock(
         return_value=NinjaResult(
             success=True,
-            stdout=f'```json\n{json.dumps(result_json)}\n```',
+            stdout=f"```json\n{json.dumps(result_json)}\n```",
             stderr="",
             exit_code=0,
             summary="✅ Parallel execution completed",
@@ -156,7 +159,7 @@ async def test_parallel_with_mock_cli(temp_repo: Path, parallel_request: Paralle
     mock_driver.execute_async = AsyncMock(
         return_value=NinjaResult(
             success=True,
-            stdout=f'```json\n{json.dumps(result_json)}\n```',
+            stdout=f"```json\n{json.dumps(result_json)}\n```",
             stderr="",
             exit_code=0,
             summary="Success",
@@ -199,7 +202,6 @@ def test_parallel_timeout_estimation():
 
     # Test cases
     test_cases = [
-        # (fanout, num_tasks, expected_min, expected_max)
         (2, 4, 350, 370),  # base(300) + (30 * 4 // 2) = 360
         (4, 4, 320, 340),  # base(300) + (30 * 4 // 4) = 330
         (1, 6, 470, 490),  # base(300) + (30 * 6 // 1) = 480
@@ -276,7 +278,7 @@ async def test_parallel_file_scope_in_prompt(temp_repo: Path):
 
         return NinjaResult(
             success=True,
-            stdout=f'```json\n{json.dumps(result_json)}\n```',
+            stdout=f"```json\n{json.dumps(result_json)}\n```",
             stderr="",
             exit_code=0,
             summary="Success",
@@ -339,7 +341,7 @@ async def test_parallel_error_handling(temp_repo: Path):
     mock_driver.execute_async = AsyncMock(
         return_value=NinjaResult(
             success=True,  # Overall CLI call succeeded
-            stdout=f'```json\n{json.dumps(result_json)}\n```',
+            stdout=f"```json\n{json.dumps(result_json)}\n```",
             stderr="",
             exit_code=0,
             summary="⚠️ Partial success",
@@ -378,8 +380,7 @@ async def test_parallel_no_asyncio_gather(temp_repo: Path):
         repo_root=str(temp_repo),
         fanout=4,
         steps=[
-            PlanStep(id=f"task{i}", title=f"Task {i}", task=f"Do task {i}")
-            for i in range(1, 5)
+            PlanStep(id=f"task{i}", title=f"Task {i}", task=f"Do task {i}") for i in range(1, 5)
         ],
     )
 
@@ -392,10 +393,7 @@ async def test_parallel_no_asyncio_gather(temp_repo: Path):
         "overall_status": "success",
         "steps_completed": [f"task{i}" for i in range(1, 5)],
         "steps_failed": [],
-        "step_summaries": {
-            f"task{i}": f"Task {i} done"
-            for i in range(1, 5)
-        },
+        "step_summaries": {f"task{i}": f"Task {i} done" for i in range(1, 5)},
         "files_modified": [],
         "notes": "",
     }
@@ -404,7 +402,7 @@ async def test_parallel_no_asyncio_gather(temp_repo: Path):
     mock_driver.execute_async = AsyncMock(
         return_value=NinjaResult(
             success=True,
-            stdout=f'```json\n{json.dumps(result_json)}\n```',
+            stdout=f"```json\n{json.dumps(result_json)}\n```",
             stderr="",
             exit_code=0,
             summary="Success",
@@ -439,10 +437,7 @@ async def test_parallel_vs_sequential_timeout_difference():
     executor = ToolExecutor(driver=mock_driver)
 
     # Same 4 tasks
-    steps = [
-        PlanStep(id=f"task{i}", title=f"Task {i}", task=f"Do task {i}")
-        for i in range(1, 5)
-    ]
+    steps = [PlanStep(id=f"task{i}", title=f"Task {i}", task=f"Do task {i}") for i in range(1, 5)]
 
     # Parallel request with fanout=4 (all tasks at once)
     parallel_request = ParallelPlanRequest(
@@ -502,7 +497,7 @@ async def test_parallel_instruction_structure(temp_repo: Path):
     mock_driver.execute_async = AsyncMock(
         return_value=NinjaResult(
             success=True,
-            stdout=f'```json\n{json.dumps(result_json)}\n```',
+            stdout=f"```json\n{json.dumps(result_json)}\n```",
             stderr="",
             exit_code=0,
             summary="Success",

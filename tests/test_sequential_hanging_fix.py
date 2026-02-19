@@ -45,7 +45,7 @@ sys.stderr.close()
 time.sleep(60)  # Hang for 60 seconds
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(test_script)
         script_path = f.name
 
@@ -56,17 +56,10 @@ time.sleep(60)  # Hang for 60 seconds
 
         start_time = time.time()
 
-        # This is what the OLD code did (would hang)
-        # process = await asyncio.create_subprocess_exec(
-        #     "python3", script_path,
-        #     stdout=asyncio.subprocess.PIPE,
-        #     stderr=asyncio.subprocess.PIPE,
-        # )
-        # await process.wait()  # ← BUG: No timeout, hangs forever
-
         # This is what the FIX does (has timeout)
         process = await asyncio.create_subprocess_exec(
-            "python3", script_path,
+            "python3",
+            script_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -89,6 +82,7 @@ time.sleep(60)  # Hang for 60 seconds
                 print("⚠️  Process required SIGKILL")
                 try:
                     import signal
+
                     process.send_signal(signal.SIGKILL)
                     await asyncio.wait_for(process.wait(), timeout=1)
                 except Exception as e:
@@ -110,7 +104,7 @@ print("Task completed successfully")
 sys.exit(0)
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(test_script)
         script_path = f.name
 
@@ -121,7 +115,8 @@ sys.exit(0)
         start_time = time.time()
 
         process = await asyncio.create_subprocess_exec(
-            "python3", script_path,
+            "python3",
+            script_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -163,7 +158,7 @@ sys.stdout.flush()
 time.sleep(60)
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(test_script)
         script_path = f.name
 
@@ -172,7 +167,8 @@ time.sleep(60)
         print("Expected: Timeout, then force-kill with SIGKILL\n")
 
         process = await asyncio.create_subprocess_exec(
-            "python3", script_path,
+            "python3",
+            script_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -198,6 +194,7 @@ time.sleep(60)
             except TimeoutError:
                 print("⚠️  Process ignored SIGTERM, using SIGKILL")
                 import signal
+
                 try:
                     process.send_signal(signal.SIGKILL)
                     await asyncio.wait_for(process.wait(), timeout=2)
@@ -219,7 +216,10 @@ async def test_sequential_task_simulation():
     steps = [
         ("Step 1: Normal completion", "print('Step 1 done'); import sys; sys.exit(0)"),
         ("Step 2: Slow but completes", "import time; time.sleep(2); print('Step 2 done')"),
-        ("Step 3: Hangs (should timeout)", "import time; import sys; print('Step 3 starting'); sys.stdout.close(); time.sleep(60)"),
+        (
+            "Step 3: Hangs (should timeout)",
+            "import time; import sys; print('Step 3 starting'); sys.stdout.close(); time.sleep(60)",
+        ),
     ]
 
     results = []
@@ -228,7 +228,7 @@ async def test_sequential_task_simulation():
         print(f"\n{step_name}")
         print("-" * 70)
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(script_content)
             script_path = f.name
 
@@ -236,7 +236,8 @@ async def test_sequential_task_simulation():
             start_time = time.time()
 
             process = await asyncio.create_subprocess_exec(
-                "python3", script_path,
+                "python3",
+                script_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -260,6 +261,7 @@ async def test_sequential_task_simulation():
                     await asyncio.wait_for(process.wait(), timeout=2)
                 except TimeoutError:
                     import signal
+
                     process.send_signal(signal.SIGKILL)
                     await asyncio.wait_for(process.wait(), timeout=1)
 
@@ -307,6 +309,7 @@ async def main():
     except Exception as e:
         print(f"\n❌ TEST FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

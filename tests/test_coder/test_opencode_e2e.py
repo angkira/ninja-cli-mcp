@@ -45,10 +45,7 @@ class TestBasicCommandBuilding:
 
     def test_simple_command(self, strategy):
         """Test simplest command build."""
-        result = strategy.build_command(
-            prompt="Create hello.py",
-            repo_root="/tmp/test"
-        )
+        result = strategy.build_command(prompt="Create hello.py", repo_root="/tmp/test")
 
         assert result.command[0] == "/usr/local/bin/opencode"
         assert result.command[1] == "run"
@@ -61,9 +58,7 @@ class TestBasicCommandBuilding:
     def test_command_with_file_context(self, strategy):
         """Test command with file context paths."""
         result = strategy.build_command(
-            prompt="Fix bug",
-            repo_root="/tmp/test",
-            file_paths=["src/main.py", "src/utils.py"]
+            prompt="Fix bug", repo_root="/tmp/test", file_paths=["src/main.py", "src/utils.py"]
         )
 
         # Should mention files in prompt
@@ -75,9 +70,7 @@ class TestBasicCommandBuilding:
     def test_command_with_custom_model(self, strategy):
         """Test custom model override."""
         result = strategy.build_command(
-            prompt="Task",
-            repo_root="/tmp/test",
-            model="google/gemini-2.0-flash-exp"
+            prompt="Task", repo_root="/tmp/test", model="google/gemini-2.0-flash-exp"
         )
 
         assert "google/gemini-2.0-flash-exp" in result.command
@@ -90,9 +83,7 @@ class TestSessionSupport:
     def test_with_session_id(self, strategy):
         """Test explicit session ID."""
         result = strategy.build_command(
-            prompt="Continue work",
-            repo_root="/tmp/test",
-            session_id="abc123"
+            prompt="Continue work", repo_root="/tmp/test", session_id="abc123"
         )
 
         assert "--session" in result.command
@@ -102,9 +93,7 @@ class TestSessionSupport:
     def test_with_continue_last(self, strategy):
         """Test continue last session."""
         result = strategy.build_command(
-            prompt="Continue",
-            repo_root="/tmp/test",
-            continue_last=True
+            prompt="Continue", repo_root="/tmp/test", continue_last=True
         )
 
         assert "--continue" in result.command
@@ -112,10 +101,7 @@ class TestSessionSupport:
     def test_session_id_takes_precedence_over_continue(self, strategy):
         """Test session_id has priority over continue_last."""
         result = strategy.build_command(
-            prompt="Task",
-            repo_root="/tmp/test",
-            session_id="xyz",
-            continue_last=True
+            prompt="Task", repo_root="/tmp/test", session_id="xyz", continue_last=True
         )
 
         assert "--session" in result.command
@@ -130,7 +116,7 @@ class TestMultiAgentMode:
         result = strategy.build_command(
             prompt="Build feature",
             repo_root="/tmp/test",
-            additional_flags={"enable_multi_agent": True}
+            additional_flags={"enable_multi_agent": True},
         )
 
         prompt = result.command[-1]
@@ -142,7 +128,7 @@ class TestMultiAgentMode:
         result = strategy.build_command(
             prompt="Build feature ultrawork",
             repo_root="/tmp/test",
-            additional_flags={"enable_multi_agent": True}
+            additional_flags={"enable_multi_agent": True},
         )
 
         prompt = result.command[-1]
@@ -152,9 +138,7 @@ class TestMultiAgentMode:
     def test_multi_agent_doubles_timeout(self, strategy):
         """Test multi-agent doubles timeout."""
         result = strategy.build_command(
-            prompt="Task",
-            repo_root="/tmp/test",
-            additional_flags={"enable_multi_agent": True}
+            prompt="Task", repo_root="/tmp/test", additional_flags={"enable_multi_agent": True}
         )
 
         # Default 600s * 2 = 1200s
@@ -166,20 +150,14 @@ class TestZAIModelDetection:
 
     def test_glm_model_detected_as_zai(self, strategy):
         """Test GLM models detected as z.ai provider."""
-        result = strategy.build_command(
-            prompt="Task",
-            repo_root="/tmp/test",
-            model="glm-4.7"
-        )
+        result = strategy.build_command(prompt="Task", repo_root="/tmp/test", model="glm-4.7")
 
         assert result.metadata["provider"] == "z.ai"
 
     def test_anthropic_model_not_zai(self, strategy):
         """Test Anthropic models not z.ai."""
         result = strategy.build_command(
-            prompt="Task",
-            repo_root="/tmp/test",
-            model="anthropic/claude-sonnet-4-20250514"
+            prompt="Task", repo_root="/tmp/test", model="anthropic/claude-sonnet-4-20250514"
         )
 
         assert result.metadata["provider"] == "generic"
@@ -192,10 +170,7 @@ class TestEnvironmentVariables:
         """Test command inherits current environment."""
         monkeypatch.setenv("CUSTOM_VAR", "test_value")
 
-        result = strategy.build_command(
-            prompt="Task",
-            repo_root="/tmp/test"
-        )
+        result = strategy.build_command(prompt="Task", repo_root="/tmp/test")
 
         assert result.env.get("CUSTOM_VAR") == "test_value"
 
@@ -203,10 +178,7 @@ class TestEnvironmentVariables:
         """Test custom timeout from env."""
         monkeypatch.setenv("NINJA_OPENCODE_TIMEOUT", "300")
 
-        result = strategy.build_command(
-            prompt="Task",
-            repo_root="/tmp/test"
-        )
+        result = strategy.build_command(prompt="Task", repo_root="/tmp/test")
 
         assert result.metadata["timeout"] == 300
 
@@ -221,7 +193,7 @@ class TestMetadata:
             repo_root="/tmp/test",
             model="test/model",
             session_id="sid",
-            additional_flags={"use_coding_plan": True, "enable_multi_agent": False}
+            additional_flags={"use_coding_plan": True, "enable_multi_agent": False},
         )
 
         metadata = result.metadata
@@ -264,10 +236,7 @@ class TestEdgeCases:
 
     def test_empty_prompt(self, strategy):
         """Test with empty prompt."""
-        result = strategy.build_command(
-            prompt="",
-            repo_root="/tmp/test"
-        )
+        result = strategy.build_command(prompt="", repo_root="/tmp/test")
 
         # Should still build command
         assert result.command[-1] == ""
@@ -275,18 +244,14 @@ class TestEdgeCases:
     def test_long_prompt(self, strategy):
         """Test with very long prompt."""
         long_prompt = "Task " * 1000
-        result = strategy.build_command(
-            prompt=long_prompt,
-            repo_root="/tmp/test"
-        )
+        result = strategy.build_command(prompt=long_prompt, repo_root="/tmp/test")
 
         assert result.command[-1] == long_prompt
 
     def test_unicode_in_prompt(self, strategy):
         """Test unicode characters in prompt."""
         result = strategy.build_command(
-            prompt="Create file with emoji 🚀 and unicode ñ",
-            repo_root="/tmp/test"
+            prompt="Create file with emoji 🚀 and unicode ñ", repo_root="/tmp/test"
         )
 
         prompt = result.command[-1]
@@ -296,11 +261,7 @@ class TestEdgeCases:
     def test_many_file_paths(self, strategy):
         """Test with many file paths."""
         files = [f"file{i}.py" for i in range(50)]
-        result = strategy.build_command(
-            prompt="Fix all",
-            repo_root="/tmp/test",
-            file_paths=files
-        )
+        result = strategy.build_command(prompt="Fix all", repo_root="/tmp/test", file_paths=files)
 
         prompt = result.command[-1]
         # Should mention all files
@@ -313,19 +274,13 @@ class TestNoDaemonMode:
 
     def test_no_attach_flag_ever(self, strategy):
         """Test --attach is never used."""
-        result = strategy.build_command(
-            prompt="Task",
-            repo_root="/tmp/test"
-        )
+        result = strategy.build_command(prompt="Task", repo_root="/tmp/test")
 
         assert "--attach" not in result.command
 
     def test_no_server_metadata(self, strategy):
         """Test no server-related metadata."""
-        result = strategy.build_command(
-            prompt="Task",
-            repo_root="/tmp/test"
-        )
+        result = strategy.build_command(prompt="Task", repo_root="/tmp/test")
 
         metadata = result.metadata
         assert "server_url" not in metadata
@@ -338,14 +293,10 @@ class TestCommandStructure:
     def test_command_order(self, strategy):
         """Test command arguments in correct order."""
         result = strategy.build_command(
-            prompt="Test task",
-            repo_root="/tmp/test",
-            model="test/model",
-            session_id="sid"
+            prompt="Test task", repo_root="/tmp/test", model="test/model", session_id="sid"
         )
 
         cmd = result.command
-        # [bin_path, "run", "--model", model, "--session", sid, prompt]
         assert cmd[0] == "/usr/local/bin/opencode"
         assert cmd[1] == "run"
         assert cmd[2] == "--model"
@@ -360,7 +311,7 @@ class TestCommandStructure:
             repo_root="/tmp/test",
             session_id="test",
             file_paths=["a.py", "b.py"],
-            additional_flags={"enable_multi_agent": True}
+            additional_flags={"enable_multi_agent": True},
         )
 
         # Prompt should contain original + file mentions + ultrawork

@@ -11,8 +11,7 @@ Tests the complete flow of sequential plan execution including:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -27,6 +26,10 @@ from ninja_coder.models import (
     TestPlan,
 )
 from ninja_coder.tools import ToolExecutor
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
