@@ -1105,7 +1105,7 @@ def delete_component(component_name: str) -> bool:
             print(f"      - {key}")
         return True
     else:
-        print(f"   ℹ No configuration found for {component_name}")
+        print(f"   i No configuration found for {component_name}")
         return True
 
 
