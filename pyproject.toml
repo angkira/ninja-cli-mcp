@@ -162,6 +162,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
+warn_no_return_from_any = false
 
 [[tool.mypy.overrides]]
 module = "tests.*"
