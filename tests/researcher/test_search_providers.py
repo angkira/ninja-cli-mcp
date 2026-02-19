@@ -12,7 +12,6 @@ from ninja_researcher.search_providers import (
 
 
 @pytest.mark.unit
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_duckduckgo_provider_is_available():
     """Test that DuckDuckGo provider is always available."""
     provider = DuckDuckGoProvider()
@@ -21,7 +20,6 @@ def test_duckduckgo_provider_is_available():
 
 
 @pytest.mark.unit
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_serper_provider_availability():
     """Test Serper provider availability based on API key."""
     # Without API key
@@ -35,7 +33,6 @@ def test_serper_provider_availability():
 
 
 @pytest.mark.unit
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_provider_factory_get_available():
     """Test getting available providers."""
     # Clear environment
@@ -62,7 +59,6 @@ def test_provider_factory_get_available():
 
 
 @pytest.mark.unit
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_provider_factory_default():
     """Test default provider selection."""
     # Without Serper key, should default to DuckDuckGo
@@ -87,7 +83,6 @@ def test_provider_factory_default():
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_duckduckgo_search():
     """Test DuckDuckGo search (integration test)."""
     provider = DuckDuckGoProvider()
@@ -105,13 +100,11 @@ async def test_duckduckgo_search():
         assert isinstance(result["score"], float)
 
 
-@pytest.mark.integration
 @pytest.mark.skipif(
     not os.environ.get("SERPER_API_KEY"),
     reason="SERPER_API_KEY not configured",
 )
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_serper_search():
     """Test Serper.dev search (integration test)."""
     provider = SerperProvider()

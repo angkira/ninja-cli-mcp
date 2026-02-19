@@ -1,7 +1,8 @@
+import pytest
+
 from tests.test_calculator import Calculator
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_add():
     calc = Calculator()
     assert calc.add(2, 3) == 5
@@ -9,7 +10,6 @@ def test_add():
     assert calc.add(0, 0) == 0
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_multiply():
     calc = Calculator()
     assert calc.multiply(2, 3) == 6

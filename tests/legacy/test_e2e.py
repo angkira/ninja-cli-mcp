@@ -21,7 +21,6 @@ from ninja_cli_mcp.path_utils import get_internal_dir
 @pytest.mark.e2e
 @pytest.mark.agent
 @pytest.mark.slow
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_complete_workflow_fibonacci():
     """Test complete workflow: MCP request -> Ninja -> AI CLI -> Result."""
     # Skip if no API key
@@ -86,7 +85,6 @@ def test_complete_workflow_fibonacci():
 @pytest.mark.e2e
 @pytest.mark.agent
 @pytest.mark.slow
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_execution():
     """Test that parallel tasks execute correctly without conflicts."""
     if not os.getenv("OPENROUTER_API_KEY"):
@@ -108,7 +106,6 @@ def test_parallel_execution():
 
 
 @pytest.mark.e2e
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_plan_execution():
     """Test that sequential plans execute steps in order."""
     if not os.getenv("OPENROUTER_API_KEY"):
@@ -128,7 +125,6 @@ def test_sequential_plan_execution():
 
 
 @pytest.mark.e2e
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_work_directory_isolation():
     """Test that work directories are properly isolated per task."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -142,7 +138,6 @@ def test_work_directory_isolation():
 
 
 @pytest.mark.e2e
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_logs_generation():
     """Test that logs are properly generated for tasks."""
     if not os.getenv("OPENROUTER_API_KEY"):
@@ -161,7 +156,6 @@ def test_logs_generation():
 
 @pytest.mark.e2e
 @pytest.mark.slow
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_error_handling_invalid_task():
     """Test that errors are properly reported."""
     if not os.getenv("OPENROUTER_API_KEY"):
@@ -209,7 +203,6 @@ def test_error_handling_invalid_task():
 
 
 @pytest.mark.e2e
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_multiple_file_context():
     """Test that multiple context files are handled correctly."""
     with tempfile.TemporaryDirectory() as tmpdir:

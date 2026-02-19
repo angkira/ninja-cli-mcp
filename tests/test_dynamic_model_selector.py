@@ -1,3 +1,6 @@
+import pytest
+
+
 """Test dynamic model selector with multi-operator support."""
 
 import sys
@@ -9,14 +12,12 @@ src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_imports():
     """Test that all new functions can be imported."""
 
     print("✅ All imports successful")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_get_provider_models_signatures():
     """Test that get_provider_models works for all operators."""
     from ninja_config.model_selector import get_provider_models
@@ -37,7 +38,6 @@ def test_get_provider_models_signatures():
             print(f"❌ {operator}/{provider}: {e}")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_operator_specific_functions():
     """Test operator-specific model fetching functions."""
     from ninja_config.model_selector import (
@@ -63,7 +63,6 @@ def test_operator_specific_functions():
     print(f"✅ Aider models: {len(aider_models)} models (may be 0 if aider not installed)")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_dynamic_loading_function_signature():
     """Test the new dynamic loading function signature."""
     import inspect
@@ -80,7 +79,6 @@ def test_dynamic_loading_function_signature():
     print("✅ Dynamic loading function signature correct")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_ui_module_exports():
     """Test that UI module exports the new function."""
     from ninja_config import ui

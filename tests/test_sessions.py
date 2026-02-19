@@ -1,3 +1,6 @@
+import pytest
+
+
 """
 Tests for session management functionality.
 
@@ -13,7 +16,6 @@ from ninja_coder.driver import NinjaConfig, NinjaDriver
 from ninja_coder.sessions import SessionManager
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_session_manager_initialization():
     """Test SessionManager initialization."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -25,7 +27,6 @@ def test_session_manager_initialization():
         assert manager.sessions_dir.exists()
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_session_creation():
     """Test session creation and persistence."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -53,7 +54,6 @@ def test_session_creation():
         assert session_file.exists()
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_session_load():
     """Test session loading."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -78,7 +78,6 @@ def test_session_load():
         assert len(loaded.messages) == 1  # User message
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_session_messages():
     """Test adding messages to session."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -107,7 +106,6 @@ def test_session_messages():
         assert len(session.get_assistant_messages()) == 1
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_list_sessions():
     """Test listing sessions."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -140,7 +138,6 @@ def test_list_sessions():
         assert len(repo2_sessions) == 1
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_delete_session():
     """Test session deletion."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -173,7 +170,6 @@ def test_delete_session():
         assert deleted is False
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_session_summary():
     """Test session summary generation."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -205,7 +201,6 @@ def test_session_summary():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_driver_session_integration():
     """Test NinjaDriver integration with sessions."""
     # Note: This test requires OpenCode to be installed and configured

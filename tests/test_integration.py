@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+
+
 """
 Integration tests that verify end-to-end functionality with real API calls.
 
@@ -10,7 +14,6 @@ These tests require:
 Run with: pytest tests/test_integration.py -v -s
 """
 
-from __future__ import annotations
 
 import os
 from pathlib import Path
@@ -60,7 +63,6 @@ def real_driver():
 
 
 @pytest.fixture
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_repo():
     """Create a temporary test repository within current repo to avoid permission prompts."""
     import shutil
@@ -108,7 +110,6 @@ if __name__ == "__main__":
     shutil.rmtree(repo, ignore_errors=True)
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_driver_config_from_env(skip_if_no_api_key):
     """Test that driver can be configured from environment."""
     config = NinjaConfig.from_env()
@@ -123,7 +124,6 @@ def test_driver_config_from_env(skip_if_no_api_key):
     print(f"  Base URL: {config.openai_base_url}")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_driver_initialization(skip_if_no_api_key, real_driver):
     """Test that driver initializes correctly with real config."""
     assert real_driver.config is not None
@@ -136,7 +136,6 @@ def test_driver_initialization(skip_if_no_api_key, real_driver):
     print(f"  Model: {real_driver.config.model}")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_model_selection_for_task_types(skip_if_no_api_key, real_driver):
     """Test model selection for different task types."""
     from ninja_coder.model_selector import ModelSelector
@@ -160,7 +159,6 @@ def test_model_selection_for_task_types(skip_if_no_api_key, real_driver):
 
 @pytest.mark.slow
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_quick_task_execution(skip_if_no_api_key, real_driver, test_repo):
     """Test executing a quick task with real API call using direct execute_async."""
     print(f"\n✓ Running quick task in {test_repo}")
@@ -215,7 +213,6 @@ async def test_quick_task_execution(skip_if_no_api_key, real_driver, test_repo):
 
 @pytest.mark.slow
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_multi_agent_task_execution(
     skip_if_no_api_key, skip_if_no_opencode, real_driver, test_repo
 ):
@@ -272,7 +269,6 @@ async def test_multi_agent_task_execution(
 
 @pytest.mark.slow
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_session_continuation(skip_if_no_api_key, real_driver, test_repo):
     """Test that sessions can be continued across multiple tasks."""
     print("\n✓ Task 1: Create greet function")
@@ -326,7 +322,6 @@ async def test_session_continuation(skip_if_no_api_key, real_driver, test_repo):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_structured_logging_integration(skip_if_no_api_key, real_driver, test_repo):
     """Test that structured logging works during task execution."""
     # Clear previous logs

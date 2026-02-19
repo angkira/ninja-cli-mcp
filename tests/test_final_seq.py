@@ -1,3 +1,6 @@
+import pytest
+
+
 """
 Tests for the test_final_seq module.
 

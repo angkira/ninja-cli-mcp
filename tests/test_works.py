@@ -1,3 +1,6 @@
+import pytest
+
+
 """
 Tests for the test_works module.
 

@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+
+
 """
 Unit tests for the validator module.
 
@@ -5,7 +9,6 @@ Tests the is_positive and is_even functions with various inputs including
 edge cases, negative numbers, zero, and floating point numbers.
 """
 
-from __future__ import annotations
 
 
 def is_positive(x: int | float) -> bool:

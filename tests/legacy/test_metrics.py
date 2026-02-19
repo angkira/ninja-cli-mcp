@@ -14,7 +14,6 @@ from ninja_cli_mcp.metrics import (
 )
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_model_pricing_structure():
     """Test that model pricing data has the correct structure."""
     assert len(MODEL_PRICING) > 0
@@ -28,7 +27,6 @@ def test_model_pricing_structure():
         assert pricing["output"] >= 0
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_task_metrics_creation():
     """Test TaskMetrics dataclass creation."""
     metrics = TaskMetrics(
@@ -55,7 +53,6 @@ def test_task_metrics_creation():
     assert metrics.success is True
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_metrics_tracker_initialization(tmp_path: Path):
     """Test MetricsTracker initialization and directory creation."""
     repo_root = tmp_path / "repo"
@@ -77,7 +74,6 @@ def test_metrics_tracker_initialization(tmp_path: Path):
         assert "total_cost" in headers
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_calculate_cost():
     """Test cost calculation for different models."""
     tracker = MetricsTracker(Path("/tmp"))
@@ -122,7 +118,6 @@ def test_calculate_cost():
     assert total_cost == 3.0
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_record_task(tmp_path: Path):
     """Test recording a task to CSV."""
     repo_root = tmp_path / "repo"
@@ -161,7 +156,6 @@ def test_record_task(tmp_path: Path):
         assert rows[0]["success"] == "True"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_get_summary_empty(tmp_path: Path):
     """Test get_summary with no recorded tasks."""
     repo_root = tmp_path / "repo"
@@ -177,7 +171,6 @@ def test_get_summary_empty(tmp_path: Path):
     assert summary["failed_tasks"] == 0
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_get_summary_with_tasks(tmp_path: Path):
     """Test get_summary with recorded tasks."""
     repo_root = tmp_path / "repo"
@@ -216,7 +209,6 @@ def test_get_summary_with_tasks(tmp_path: Path):
     assert summary["model_usage"]["anthropic/claude-sonnet-4"] == 5
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_get_recent_tasks(tmp_path: Path):
     """Test retrieving recent tasks."""
     repo_root = tmp_path / "repo"
@@ -255,7 +247,6 @@ def test_get_recent_tasks(tmp_path: Path):
     assert recent[0]["task_id"] == "test-5"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_extract_token_usage():
     """Test extracting token usage from output."""
     # Test with explicit token reporting
@@ -305,7 +296,6 @@ def test_extract_token_usage():
     assert output_tokens == 999
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_create_task_metrics(tmp_path: Path):
     """Test creating TaskMetrics from task results."""
     repo_root = tmp_path / "repo"
@@ -343,7 +333,6 @@ def test_create_task_metrics(tmp_path: Path):
     assert metrics.total_cost > 0
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_metrics_with_error(tmp_path: Path):
     """Test metrics recording for failed tasks."""
     repo_root = tmp_path / "repo"
@@ -375,7 +364,6 @@ def test_metrics_with_error(tmp_path: Path):
         assert "timeout" in rows[0]["error_message"].lower()
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_metrics_file_scope(tmp_path: Path):
     """Test recording file scope in metrics."""
     repo_root = tmp_path / "repo"

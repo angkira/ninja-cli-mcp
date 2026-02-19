@@ -77,8 +77,6 @@ def parallel_request(temp_repo: Path) -> ParallelPlanRequest:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky integration test - needs investigation")
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_parallel_plan_end_to_end(temp_repo: Path, parallel_request: ParallelPlanRequest):
     """Test parallel plan execution returns proper result structure."""
     # Mock driver with successful result
@@ -139,8 +137,6 @@ async def test_parallel_plan_end_to_end(temp_repo: Path, parallel_request: Paral
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky integration test - needs investigation")
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_parallel_with_mock_cli(temp_repo: Path, parallel_request: ParallelPlanRequest):
     """Test that PromptBuilder and driver are called correctly."""
     # Mock driver
@@ -195,7 +191,6 @@ async def test_parallel_with_mock_cli(temp_repo: Path, parallel_request: Paralle
     assert result.overall_status == "success"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_timeout_estimation():
     """Test _estimate_parallel_timeout formula."""
     from ninja_coder.models import PlanStep
@@ -238,8 +233,6 @@ def test_parallel_timeout_estimation():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky integration test - needs investigation")
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_parallel_file_scope_in_prompt(temp_repo: Path):
     """Test that file scopes are properly defined per task."""
     # Create request with strict file scopes
@@ -315,8 +308,6 @@ async def test_parallel_file_scope_in_prompt(temp_repo: Path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky integration test - needs investigation")
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_parallel_error_handling(temp_repo: Path):
     """Test parallel execution with partial success."""
     request = ParallelPlanRequest(
@@ -381,8 +372,6 @@ async def test_parallel_error_handling(temp_repo: Path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky integration test - needs investigation")
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_parallel_no_asyncio_gather(temp_repo: Path):
     """Test that parallel execution does NOT use asyncio.gather."""
     # This test verifies the architecture by checking call counts
@@ -440,8 +429,6 @@ async def test_parallel_no_asyncio_gather(temp_repo: Path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky integration test - needs investigation")
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_parallel_vs_sequential_timeout_difference():
     """Test that parallel timeout is shorter than sequential for same tasks."""
     # Mock driver
@@ -478,8 +465,6 @@ async def test_parallel_vs_sequential_timeout_difference():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Flaky integration test - needs investigation")
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_parallel_instruction_structure(temp_repo: Path):
     """Test that instruction document has correct structure for parallel."""
     request = ParallelPlanRequest(

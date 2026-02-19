@@ -19,7 +19,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_openrouter_api_key_format():
     """Test that API key is properly formatted."""
     api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
@@ -44,7 +43,6 @@ def test_openrouter_api_key_format():
 
 
 @pytest.mark.slow
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_openrouter_api_connection():
     """Test basic connection to OpenRouter API."""
     api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
@@ -92,7 +90,6 @@ def test_openrouter_api_connection():
 
 
 @pytest.mark.slow
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_openrouter_chat_completion_minimal():
     """Test minimal chat completion to verify authentication works."""
     api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
@@ -154,7 +151,6 @@ def test_openrouter_chat_completion_minimal():
         pytest.skip("OpenRouter API timed out (network issue)")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_openrouter_config_from_env():
     """Test that configuration is properly loaded from environment."""
 

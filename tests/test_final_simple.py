@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+
+
 """
 Unit tests for the cube function.
 
@@ -6,7 +10,6 @@ negative integers, zero, arithmetic properties, special sequences, and
 integration scenarios.
 """
 
-from __future__ import annotations
 
 
 def cube(x: int | float) -> int | float:
