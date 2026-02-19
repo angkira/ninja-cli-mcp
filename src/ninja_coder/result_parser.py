@@ -125,7 +125,7 @@ class ResultParser:
 
         for match in matches:
             try:
-                return json.loads(match)
+                return dict[str, Any](json.loads(match))
             except json.JSONDecodeError as e:
                 logger.debug(f"Failed to parse JSON code block: {e}")
                 continue
@@ -253,6 +253,7 @@ class ResultParser:
             steps=step_results,
             files_modified=data.get("files_modified", []),
             notes=overall_summary,
+            execution_time=0,  # TODO: Add proper execution time tracking
         )
 
     def _extract_file_paths(self, output: str) -> list[str]:

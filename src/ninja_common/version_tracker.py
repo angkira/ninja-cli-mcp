@@ -54,7 +54,10 @@ def load_previous_versions() -> dict[str, str]:
 
     try:
         with VERSIONS_FILE.open() as f:
-            return json.load(f)
+            data = json.load(f)
+            if not isinstance(data, dict):
+                return {}
+            return {str(k): str(v) for k, v in data.items()}
     except (json.JSONDecodeError, OSError):
         return {}
 
@@ -74,9 +77,7 @@ def save_versions(versions: dict[str, str]) -> None:
         pass  # Silently fail if we can't write
 
 
-def compare_versions(
-    old: dict[str, str], new: dict[str, str]
-) -> dict[str, dict[str, Any]]:
+def compare_versions(old: dict[str, str], new: dict[str, str]) -> dict[str, dict[str, Any]]:
     """
     Compare two version dictionaries and return changes.
 
