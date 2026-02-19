@@ -10,8 +10,6 @@ import subprocess
 
 try:
     from InquirerPy import inquirer
-    from InquirerPy.base.control import Choice
-    from InquirerPy.separator import Separator
 
     HAS_INQUIRERPY = True
 except ImportError:
