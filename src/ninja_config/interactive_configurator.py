@@ -1807,31 +1807,23 @@ def run_power_configurator(config_path: str | None = None) -> int:
     """Run the power configurator (now uses modular UI)."""
     try:
         # Use the new modular UI instead of the old monolithic one
-        from ninja_config.ui.main_menu import show_welcome, show_main_menu
-        from ninja_config.ui.component_setup import run_coder_setup_flow, configure_secretary
-        from ninja_config.ui.operator_config import (
-            manage_api_keys,
-            configure_operators,
-            select_opencode_provider,
-            configure_opencode_auth,
-        )
+        from ninja_config.ui.component_setup import configure_secretary, run_coder_setup_flow
+        from ninja_config.ui.main_menu import show_main_menu, show_welcome
         from ninja_config.ui.model_selector import (
             configure_models,
             configure_task_based_models,
-            configure_model_preferences,
-            configure_single_task_model,
-            reset_task_models,
+        )
+        from ninja_config.ui.operator_config import (
+            configure_opencode_auth,
+            configure_operators,
+            manage_api_keys,
         )
         from ninja_config.ui.settings import (
-            configure_search,
+            advanced_settings,
             configure_daemon,
             configure_ide,
-            advanced_settings,
+            configure_search,
             reset_configuration,
-            setup_claude_integration,
-            setup_opencode_integration,
-            configure_perplexity_model,
-            edit_setting,
         )
 
         config_mgr = ConfigManager(config_path)

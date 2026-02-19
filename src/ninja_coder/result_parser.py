@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from .models import PlanExecutionResult, StepResult
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -119,7 +120,7 @@ class ResultParser:
             Parsed JSON dict or None if extraction fails
         """
         # Strategy 1: Extract from JSON code blocks
-        json_block_pattern = r'```json\s*\n(.*?)\n```'
+        json_block_pattern = r"```json\s*\n(.*?)\n```"
         matches = re.findall(json_block_pattern, output, re.DOTALL)
 
         for match in matches:
@@ -130,7 +131,7 @@ class ResultParser:
                 continue
 
         # Strategy 2: Find JSON objects in text
-        json_object_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+        json_object_pattern = r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}"
         matches = re.findall(json_object_pattern, output, re.DOTALL)
 
         for match in matches:
@@ -199,7 +200,7 @@ class ResultParser:
             PlanExecutionResult with structured step results
         """
         # Get overall status from data (already in correct format)
-        overall_status: Literal["success", "partial", "failed"] = data["overall_status"]
+        _ = data["overall_status"]
 
         # Build step results
         step_results: list[StepResult] = []
@@ -241,8 +242,7 @@ class ResultParser:
         total_count = len(all_steps)
 
         overall_summary = (
-            f"Executed {total_count} step(s): "
-            f"{completed_count} completed, {failed_count} failed. "
+            f"Executed {total_count} step(s): {completed_count} completed, {failed_count} failed. "
         )
 
         if data.get("notes"):
@@ -270,12 +270,12 @@ class ResultParser:
 
         # Pattern for common file path indicators
         # Looks for lines containing file extensions and path separators
-        path_pattern = r'(?:^|\s)([^\s]+\.[a-zA-Z]{1,4})(?:\s|$)'
+        path_pattern = r"(?:^|\s)([^\s]+\.[a-zA-Z]{1,4})(?:\s|$)"
         matches = re.findall(path_pattern, output, re.MULTILINE)
 
         for match in matches:
             # Filter out common non-file strings
-            if '/' in match or '\\' in match:
+            if "/" in match or "\\" in match:
                 paths.append(match)
 
         # Remove duplicates while preserving order

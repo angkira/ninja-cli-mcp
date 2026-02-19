@@ -10,24 +10,23 @@ Features:
 from __future__ import annotations
 
 import os
+
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
+from textual.binding import Binding
+from textual.containers import Container, Horizontal, ScrollableContainer
+from textual.widget import Widget
 from textual.widgets import (
-    Header,
-    Footer,
-    Static,
-    Tree,
     Button,
+    Checkbox,
+    Footer,
+    Header,
     Input,
     Label,
-    ListView,
     ListItem,
-    Checkbox,
+    ListView,
+    Static,
+    Tree,
 )
-from textual.binding import Binding
-from textual.widget import Widget
-from rich.text import Text
-from pathlib import Path
 
 from ninja_common.config_manager import ConfigManager
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from .models import ExecutionMode, PlanStep
 
@@ -289,7 +288,7 @@ class ParallelPlanPrompt:
             "## PLAN OVERVIEW",
             "",
             f"- **Total Tasks**: {len(self.tasks)}",
-            f"- **Execution Mode**: Parallel",
+            "- **Execution Mode**: Parallel",
             f"- **Max Concurrency**: {self.fanout}",
             f"- **Repository**: {self.repo_root}",
             f"- **Context Files**: {len(self.context_files)}",

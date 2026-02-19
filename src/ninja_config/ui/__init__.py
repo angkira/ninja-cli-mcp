@@ -69,48 +69,48 @@ from ninja_config.ui.settings import (
 
 
 __all__ = [
+    # Settings functions
+    "advanced_settings",
     # Modules
     "base",
-    "component_setup",
-    "main_menu",
-    "model_selector",
-    "operator_config",
-    "settings",
-    # Base functions
-    "check_opencode_auth",
-    "detect_installed_tools",
-    "get_masked_value",
-    "print_header",
     # Component setup functions
     "build_model_choices",
+    # Base functions
+    "check_opencode_auth",
+    "component_setup",
     "configure_coder_models",
-    "configure_secretary",
-    "get_fallback_models",
-    "run_coder_setup_flow",
-    # Main menu functions
-    "show_configuration_overview",
-    "show_main_menu",
-    "show_welcome",
-    # Operator config functions
-    "configure_opencode_auth",
-    "configure_operators",
-    "manage_api_keys",
-    "select_opencode_provider",
+    "configure_daemon",
+    "configure_ide",
     # Model selector functions
     "configure_model_preferences",
     "configure_models",
     "configure_models_with_dynamic_loading",
-    "configure_single_task_model",
-    "configure_task_based_models",
-    "reset_task_models",
-    # Settings functions
-    "advanced_settings",
-    "configure_daemon",
-    "configure_ide",
+    # Operator config functions
+    "configure_opencode_auth",
+    "configure_operators",
     "configure_perplexity_model",
     "configure_search",
+    "configure_secretary",
+    "configure_single_task_model",
+    "configure_task_based_models",
+    "detect_installed_tools",
     "edit_setting",
+    "get_fallback_models",
+    "get_masked_value",
+    "main_menu",
+    "manage_api_keys",
+    "model_selector",
+    "operator_config",
+    "print_header",
     "reset_configuration",
+    "reset_task_models",
+    "run_coder_setup_flow",
+    "select_opencode_provider",
+    "settings",
     "setup_claude_integration",
     "setup_opencode_integration",
+    # Main menu functions
+    "show_configuration_overview",
+    "show_main_menu",
+    "show_welcome",
 ]

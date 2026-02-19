@@ -10,14 +10,10 @@ Hierarchical menu navigation similar to Linux kernel menuconfig:
 from __future__ import annotations
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Vertical, VerticalScroll
-from textual.widgets import Header, Footer, Static, Button, Label, ListItem, ListView
 from textual.binding import Binding
+from textual.containers import VerticalScroll
 from textual.screen import Screen
-from rich.text import Text
-from rich.panel import Panel
-from rich.align import Align
-from pathlib import Path
+from textual.widgets import ListItem, ListView, Static
 
 from ninja_common.config_manager import ConfigManager
 
