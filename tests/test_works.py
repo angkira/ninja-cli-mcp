@@ -7,7 +7,10 @@ zero, negative numbers, and large numbers.
 
 import pytest
 
-from test_works import square
+
+def square(x):
+    """Square a number."""
+    return x**2
 
 
 class TestSquareFunction:

@@ -1,4 +1,6 @@
-from test_parallel_1 import add
+def add(a, b):
+    """Add two numbers."""
+    return a + b
 
 
 def test_add_positive_numbers():

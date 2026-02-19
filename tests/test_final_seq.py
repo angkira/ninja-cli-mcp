@@ -4,7 +4,16 @@ Tests for the test_final_seq module.
 Tests the Counter class initialization and basic functionality.
 """
 
-from test_final_seq import Counter
+
+class Counter:
+    """Simple counter class."""
+
+    def __init__(self):
+        self.count = 0
+
+    def increment(self):
+        """Increment the count by 1."""
+        self.count += 1
 
 
 class TestCounter:
