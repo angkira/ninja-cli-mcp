@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+
+
 """
 Comprehensive unit tests for ninja_coder.prompt_builder module.
 
@@ -9,7 +13,6 @@ Tests cover:
 - Constraint and test plan formatting
 """
 
-from __future__ import annotations
 
 from pathlib import Path
 
@@ -113,7 +116,6 @@ def parallel_tasks() -> list[PlanStep]:
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_prompt_structure(sample_steps: list[PlanStep]):
     """Test that sequential prompts contain all required sections."""
     prompt = SequentialPlanPrompt(
@@ -153,7 +155,6 @@ def test_sequential_prompt_structure(sample_steps: list[PlanStep]):
     assert "Stop on failure" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_prompt_with_context_paths(sample_steps: list[PlanStep]):
     """Test that context paths are correctly formatted in prompt."""
     prompt = SequentialPlanPrompt(
@@ -173,7 +174,6 @@ def test_sequential_prompt_with_context_paths(sample_steps: list[PlanStep]):
     assert "- `src/services/`" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_prompt_with_constraints(sample_steps: list[PlanStep]):
     """Test that file constraints are correctly formatted."""
     prompt = SequentialPlanPrompt(
@@ -197,7 +197,6 @@ def test_sequential_prompt_with_constraints(sample_steps: list[PlanStep]):
     assert "- `src/routes/admin/**`" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_prompt_with_test_plan(sample_steps: list[PlanStep]):
     """Test that test plans are correctly formatted."""
     prompt = SequentialPlanPrompt(
@@ -217,7 +216,6 @@ def test_sequential_prompt_with_test_plan(sample_steps: list[PlanStep]):
     assert "pytest tests/e2e/test_auth.py" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_prompt_dependencies(sample_steps: list[PlanStep]):
     """Test that dependency notes are added for steps after first."""
     prompt = SequentialPlanPrompt(
@@ -239,7 +237,6 @@ def test_sequential_prompt_dependencies(sample_steps: list[PlanStep]):
     assert "This step depends on the successful completion of Step 2" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_prompt_execution_mode_quick():
     """Test that quick mode is properly reflected in prompt."""
     steps = [
@@ -264,7 +261,6 @@ def test_sequential_prompt_execution_mode_quick():
     # so we don't get the "Quick mode" text, but we should see the mode in overview
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_prompt_output_format(sample_steps: list[PlanStep]):
     """Test that output format section is present and correct."""
     prompt = SequentialPlanPrompt(
@@ -295,7 +291,6 @@ def test_sequential_prompt_output_format(sample_steps: list[PlanStep]):
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_prompt_structure(parallel_tasks: list[PlanStep]):
     """Test that parallel prompts contain all required sections."""
     prompt = ParallelPlanPrompt(
@@ -326,7 +321,6 @@ def test_parallel_prompt_structure(parallel_tasks: list[PlanStep]):
     assert "File conflicts will cause merge failures" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_prompt_task_formatting(parallel_tasks: list[PlanStep]):
     """Test that tasks are correctly formatted in parallel prompt."""
     prompt = ParallelPlanPrompt(
@@ -350,7 +344,6 @@ def test_parallel_prompt_task_formatting(parallel_tasks: list[PlanStep]):
     assert "**ID**: `docs`" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_prompt_file_scope(parallel_tasks: list[PlanStep]):
     """Test that file scope restrictions are prominently displayed."""
     prompt = ParallelPlanPrompt(
@@ -374,7 +367,6 @@ def test_parallel_prompt_file_scope(parallel_tasks: list[PlanStep]):
     assert "⚠️ **DO NOT modify files outside these patterns**" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_prompt_denied_patterns(parallel_tasks: list[PlanStep]):
     """Test that denied patterns are displayed for parallel tasks."""
     prompt = ParallelPlanPrompt(
@@ -394,7 +386,6 @@ def test_parallel_prompt_denied_patterns(parallel_tasks: list[PlanStep]):
     assert "- `backend/venv/**`" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_prompt_independence_note(parallel_tasks: list[PlanStep]):
     """Test that task independence is emphasized."""
     prompt = ParallelPlanPrompt(
@@ -415,7 +406,6 @@ def test_parallel_prompt_independence_note(parallel_tasks: list[PlanStep]):
     assert "Modify only files in its allowed scope" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_prompt_execution_instructions(parallel_tasks: list[PlanStep]):
     """Test that parallel execution instructions are comprehensive."""
     prompt = ParallelPlanPrompt(
@@ -444,7 +434,6 @@ def test_parallel_prompt_execution_instructions(parallel_tasks: list[PlanStep]):
     assert "**DevOps Tasks**:" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_prompt_merge_strategy(parallel_tasks: list[PlanStep]):
     """Test that merge strategy is included in output format."""
     prompt = ParallelPlanPrompt(
@@ -473,7 +462,6 @@ def test_parallel_prompt_merge_strategy(parallel_tasks: list[PlanStep]):
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_context_file_loading_basic(temp_repo: Path):
     """Test loading context files from filesystem."""
     builder = PromptBuilder(str(temp_repo))
@@ -496,7 +484,6 @@ def test_context_file_loading_basic(temp_repo: Path):
     assert "# Test Project" in context_files["README.md"]
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_context_file_loading_with_additional_paths(temp_repo: Path):
     """Test loading context files from both steps and additional paths."""
     builder = PromptBuilder(str(temp_repo))
@@ -517,7 +504,6 @@ def test_context_file_loading_with_additional_paths(temp_repo: Path):
     assert "README.md" in context_files
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_context_file_deduplication(temp_repo: Path):
     """Test that duplicate paths are not loaded twice."""
     builder = PromptBuilder(str(temp_repo))
@@ -543,7 +529,6 @@ def test_context_file_deduplication(temp_repo: Path):
     assert len([k for k in context_files if k == "src/main.py"]) == 1
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_context_file_size_limit(temp_repo: Path):
     """Test that oversized files are handled with error message."""
     # Create a large file
@@ -570,7 +555,6 @@ def test_context_file_size_limit(temp_repo: Path):
     assert f"limit is {MAX_CONTEXT_FILE_SIZE} bytes]" in context_files["large.txt"]
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_context_file_missing_file(temp_repo: Path):
     """Test that missing files are silently skipped."""
     builder = PromptBuilder(str(temp_repo))
@@ -590,7 +574,6 @@ def test_context_file_missing_file(temp_repo: Path):
     assert "nonexistent.py" not in context_files
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_context_file_directory_skipped(temp_repo: Path):
     """Test that directories are skipped (not loaded as files)."""
     builder = PromptBuilder(str(temp_repo))
@@ -610,7 +593,6 @@ def test_context_file_directory_skipped(temp_repo: Path):
     assert "src/" not in context_files
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_context_file_read_error_handling(temp_repo: Path):
     """Test that file read errors are captured in error message."""
     # Create a file, then make it unreadable (if possible on platform)
@@ -650,7 +632,6 @@ def test_context_file_read_error_handling(temp_repo: Path):
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_file_count_estimation_file_extensions(temp_repo: Path):
     """Test that file extensions are counted in task description."""
     builder = PromptBuilder(str(temp_repo))
@@ -662,7 +643,6 @@ def test_file_count_estimation_file_extensions(temp_repo: Path):
     assert count >= 3
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_file_count_estimation_action_verbs(temp_repo: Path):
     """Test that action verbs contribute to file count."""
     builder = PromptBuilder(str(temp_repo))
@@ -674,7 +654,6 @@ def test_file_count_estimation_action_verbs(temp_repo: Path):
     assert count >= 4
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_file_count_estimation_mixed_indicators(temp_repo: Path):
     """Test file count with multiple file extensions and actions."""
     builder = PromptBuilder(str(temp_repo))
@@ -693,7 +672,6 @@ def test_file_count_estimation_mixed_indicators(temp_repo: Path):
     assert count >= 5
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_file_count_estimation_minimum_one(temp_repo: Path):
     """Test that file count is at least 1 even with no indicators."""
     builder = PromptBuilder(str(temp_repo))
@@ -710,7 +688,6 @@ def test_file_count_estimation_minimum_one(temp_repo: Path):
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_prompt_with_real_context(temp_repo: Path, sample_steps: list[PlanStep]):
     """Test building sequential prompt with real context files."""
     builder = PromptBuilder(str(temp_repo))
@@ -743,7 +720,6 @@ def test_sequential_prompt_with_real_context(temp_repo: Path, sample_steps: list
     assert "def helper():" in prompt
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_prompt_with_constraints_and_context(
     temp_repo: Path, parallel_tasks: list[PlanStep]
 ):
@@ -771,7 +747,6 @@ def test_parallel_prompt_with_constraints_and_context(
     assert "- `docs/**/*.md`" in prompt
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_prompt_empty_context(temp_repo: Path):
     """Test sequential prompt generation with no context files."""
     builder = PromptBuilder(str(temp_repo))
@@ -796,7 +771,6 @@ def test_sequential_prompt_empty_context(temp_repo: Path):
     assert "## CONTEXT FILES" not in prompt
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_prompt_empty_context(temp_repo: Path):
     """Test parallel prompt generation with no context files."""
     builder = PromptBuilder(str(temp_repo))
@@ -827,7 +801,6 @@ def test_parallel_prompt_empty_context(temp_repo: Path):
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_sequential_prompt_single_step():
     """Test sequential prompt with only one step."""
     steps = [
@@ -853,7 +826,6 @@ def test_sequential_prompt_single_step():
     assert "### Dependencies" not in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parallel_prompt_single_task():
     """Test parallel prompt with only one task."""
     tasks = [
@@ -880,7 +852,6 @@ def test_parallel_prompt_single_task():
     assert "## TASK 1: Only Task" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_prompt_with_special_characters_in_paths():
     """Test that special characters in paths are handled correctly."""
     steps = [
@@ -908,7 +879,6 @@ def test_prompt_with_special_characters_in_paths():
     assert "/tmp/test with spaces" in result
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_prompt_with_empty_globs():
     """Test prompt generation with empty allowed/deny globs."""
     steps = [

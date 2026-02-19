@@ -1,3 +1,6 @@
+import pytest
+
+
 """
 Integration tests for the new modular UI.
 
@@ -19,7 +22,6 @@ src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_ui_module_structure():
     """Test that UI module has correct structure."""
     ui_path = src_path / "ninja_config" / "ui"
@@ -43,7 +45,6 @@ def test_ui_module_structure():
     print("✓ All required UI files exist\n")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_function_signatures():
     """Test that function signatures are consistent."""
     print("Testing function signatures...")
@@ -93,7 +94,6 @@ def test_function_signatures():
     print("✓ All function signatures match\n")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_config_keys_consistency():
     """Test that config keys are used consistently."""
     print("Testing config key consistency...")
@@ -136,7 +136,6 @@ def test_config_keys_consistency():
     print("✓ Config keys found\n")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_model_lists_exist():
     """Test that model lists are properly defined."""
     print("Testing model lists...")
@@ -166,7 +165,6 @@ def test_model_lists_exist():
     print("✓ Model lists validated\n")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_ui_exports():
     """Test that __init__.py exports are correct."""
     print("Testing UI module exports...")
@@ -213,7 +211,6 @@ def test_ui_exports():
     print("✓ All critical exports present\n")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_interactive_configurator_integration():
     """Test that interactive_configurator properly integrates new UI."""
     print("Testing interactive_configurator integration...")
@@ -246,7 +243,6 @@ def test_interactive_configurator_integration():
     print("✓ Integration correct\n")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_no_syntax_errors():
     """Test that all UI files have valid Python syntax."""
     print("Testing for syntax errors...")

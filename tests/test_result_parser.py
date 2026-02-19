@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+
+
 """
 Comprehensive unit tests for the result_parser module.
 
@@ -11,7 +15,6 @@ Tests the ResultParser class with various input scenarios including:
 - Edge cases and error handling
 """
 
-from __future__ import annotations
 
 import pytest
 

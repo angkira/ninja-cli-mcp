@@ -1,3 +1,6 @@
+import pytest
+
+
 """Integration test for ninja-coder timeout fixes using MCP tools.
 
 This test simulates real user scenarios by:
@@ -23,7 +26,6 @@ src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_mcp_simple_task():
     """Test simple task using MCP coder_simple_task tool."""
     print("\n🧪 Test 1: MCP Simple Task (Real Usage)")
@@ -100,7 +102,6 @@ async def test_mcp_simple_task():
                 return False
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_mcp_sequential_tasks():
     """Test sequential tasks using MCP coder_execute_plan_sequential tool."""
     print("\n🧪 Test 2: MCP Sequential Tasks (Real Usage)")
@@ -184,7 +185,6 @@ async def test_mcp_sequential_tasks():
                 return False
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_subprocess_timeout_mechanism():
     """Test that the subprocess timeout mechanism works correctly.
 

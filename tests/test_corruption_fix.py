@@ -1,3 +1,6 @@
+import pytest
+
+
 """
 Test for OpenCode corruption detection and auto-fix.
 
@@ -12,7 +15,6 @@ from ninja_coder.driver import NinjaConfig
 from ninja_coder.strategies.opencode_strategy import OpenCodeStrategy
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_corruption_detection_and_fix():
     """Test that corrupted files (Python list literals) are detected and fixed."""
     # Create a temporary file with corrupted content (Python list literal)
@@ -68,7 +70,6 @@ def test_corruption_detection_and_fix():
             f"Content should be joined correctly.\nExpected:\n{expected_content}\n\nGot:\n{content_after}"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_no_false_positives():
     """Test that normal Python files are not incorrectly flagged as corrupted."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -108,7 +109,6 @@ def test_no_false_positives():
             "Normal file should not be modified"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_corruption_with_absolute_path():
     """Test corruption fix works with absolute file paths."""
     with tempfile.TemporaryDirectory() as tmpdir:

@@ -1,3 +1,6 @@
+import pytest
+
+
 """Test UI refactoring - verify all modules can be imported."""
 
 import sys
@@ -9,7 +12,6 @@ src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_ui_modules_exist():
     """Test that all UI modules exist."""
     from ninja_config import ui
@@ -23,49 +25,42 @@ def test_ui_modules_exist():
     print("✅ All 6 UI modules exist")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_base_functions_importable():
     """Test base module functions."""
 
     print("✅ Base functions importable")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_main_menu_functions_importable():
     """Test main menu functions."""
 
     print("✅ Main menu functions importable")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_component_setup_functions_importable():
     """Test component setup functions."""
 
     print("✅ Component setup functions importable")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_operator_config_functions_importable():
     """Test operator config functions."""
 
     print("✅ Operator config functions importable")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_model_selector_functions_importable():
     """Test model selector functions."""
 
     print("✅ Model selector functions importable (5 functions)")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_settings_functions_importable():
     """Test settings functions."""
 
     print("✅ Settings functions importable (9 functions)")
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_function_signatures():
     """Test that key functions have correct signatures."""
     import inspect

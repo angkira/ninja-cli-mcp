@@ -1,3 +1,6 @@
+import pytest
+
+
 """
 Test to verify that ninja MCP servers are running correctly after the fix.
 
@@ -9,7 +12,6 @@ import subprocess
 from pathlib import Path
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_servers_restarted():
     """Test that all ninja servers are running from the correct location (.venv)."""
     # Get list of running ninja server processes
@@ -42,7 +44,6 @@ def test_servers_restarted():
         assert len(matching) > 0, f"Server {server_type} not found in running processes"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_no_old_servers_running():
     """Test that no old servers from uv/tools are still running."""
     result = subprocess.run(
@@ -66,7 +67,6 @@ def test_no_old_servers_running():
     )
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_daemon_pid_files_exist():
     """Test that daemon PID files exist so Claude Code can connect."""
     daemon_dir = Path.home() / ".cache" / "ninja-mcp" / "daemons"

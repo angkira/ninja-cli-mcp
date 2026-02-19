@@ -1,3 +1,6 @@
+import pytest
+
+
 """
 Unit tests for the Haiku celebration module.
 

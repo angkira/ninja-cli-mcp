@@ -1,10 +1,13 @@
+from __future__ import annotations
+import pytest
+
+
 """
 Tests for CLI strategy pattern and implementations.
 
 Tests base models, registry, and individual strategy implementations.
 """
 
-from __future__ import annotations
 
 from pathlib import Path
 
@@ -22,7 +25,6 @@ from ninja_coder.strategies.opencode_strategy import OpenCodeStrategy
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_cli_capabilities_creation():
     """Test CLICapabilities dataclass."""
     caps = CLICapabilities(
@@ -44,7 +46,6 @@ def test_cli_capabilities_creation():
     assert "sequential" in caps.preferred_task_types
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_cli_command_result_creation():
     """Test CLICommandResult dataclass."""
     result = CLICommandResult(
@@ -60,7 +61,6 @@ def test_cli_command_result_creation():
     assert result.metadata == {"timeout": 300}
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parsed_result_creation():
     """Test ParsedResult dataclass."""
     result = ParsedResult(
@@ -83,7 +83,6 @@ def test_parsed_result_creation():
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_registry_list_strategies():
     """Test listing registered strategies."""
     strategies = CLIStrategyRegistry.list_strategies()
@@ -94,7 +93,6 @@ def test_registry_list_strategies():
     assert len(strategies) >= 3
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_registry_detect_aider():
     """Test registry detects aider from bin path."""
     config = NinjaConfig(
@@ -109,7 +107,6 @@ def test_registry_detect_aider():
     assert strategy.name == "aider"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_registry_detect_aider_full_path():
     """Test registry detects aider from full path."""
     config = NinjaConfig(
@@ -124,7 +121,6 @@ def test_registry_detect_aider_full_path():
     assert strategy.name == "aider"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_registry_detect_opencode():
     """Test registry detects opencode from bin path."""
     config = NinjaConfig(
@@ -139,7 +135,6 @@ def test_registry_detect_opencode():
     assert strategy.name == "opencode"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_registry_detect_opencode_cli():
     """Test registry detects opencode-cli from bin path."""
     config = NinjaConfig(
@@ -154,7 +149,6 @@ def test_registry_detect_opencode_cli():
     assert strategy.name == "opencode"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_registry_unsupported_cli():
     """Test registry raises error for unsupported CLI."""
     config = NinjaConfig(
@@ -170,7 +164,6 @@ def test_registry_unsupported_cli():
     assert "unsupported-cli" in str(exc_info.value)
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_registry_custom_registration():
     """Test registering a custom strategy."""
     from unittest.mock import MagicMock
@@ -192,7 +185,6 @@ def test_registry_custom_registration():
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_aider_strategy_initialization():
     """Test AiderStrategy initialization."""
     config = NinjaConfig(
@@ -209,7 +201,6 @@ def test_aider_strategy_initialization():
     assert strategy.config == config
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_aider_capabilities():
     """Test Aider capabilities."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
@@ -225,7 +216,6 @@ def test_aider_capabilities():
     assert caps.max_context_files == 50
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_aider_build_command_basic():
     """Test Aider command building with basic options."""
     config = NinjaConfig(
@@ -256,7 +246,6 @@ def test_aider_build_command_basic():
     assert "--api-key" in result.command
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_aider_build_command_with_files():
     """Test Aider command building with file context."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
@@ -276,7 +265,6 @@ def test_aider_build_command_with_files():
     assert file_count == 2  # One for each file
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_aider_parse_output_success():
     """Test parsing successful Aider output."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
@@ -294,7 +282,6 @@ def test_aider_parse_output_success():
     assert len(parsed.touched_paths) >= 0  # Aider extracts touched paths from output
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_aider_parse_output_failure():
     """Test parsing failed Aider output."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
@@ -307,7 +294,6 @@ def test_aider_parse_output_failure():
     assert parsed.success is False
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_aider_should_retry_api_error():
     """Test Aider retry logic for API errors."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
@@ -321,7 +307,6 @@ def test_aider_should_retry_api_error():
     assert isinstance(should_retry, bool)
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_aider_timeout_recommendations():
     """Test Aider timeout recommendations."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
@@ -344,7 +329,6 @@ def test_aider_timeout_recommendations():
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_opencode_strategy_initialization():
     """Test OpenCodeStrategy initialization."""
     config = NinjaConfig(
@@ -360,7 +344,6 @@ def test_opencode_strategy_initialization():
     assert strategy.config == config
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_opencode_capabilities():
     """Test OpenCode capabilities."""
     config = NinjaConfig(bin_path="opencode", model="test/model", openai_api_key="test")
@@ -375,7 +358,6 @@ def test_opencode_capabilities():
     assert caps.max_context_files == 100
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_opencode_build_command_basic():
     """Test OpenCode command building with basic options."""
     config = NinjaConfig(
@@ -395,7 +377,6 @@ def test_opencode_build_command_basic():
     assert "--model" in result.command or any("claude" in arg for arg in result.command)
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_opencode_build_command_with_multi_agent():
     """Test OpenCode multi-agent command building."""
     config = NinjaConfig(
@@ -430,7 +411,6 @@ def test_opencode_build_command_with_multi_agent():
         assert "ultrawork" in enhanced_prompt.lower()
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_opencode_parse_output_success():
     """Test parsing successful OpenCode output."""
     config = NinjaConfig(bin_path="opencode", model="test/model", openai_api_key="test")
@@ -451,7 +431,6 @@ def test_opencode_parse_output_success():
     assert parsed.retryable_error is False
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_opencode_parse_output_failure():
     """Test parsing failed OpenCode output."""
     config = NinjaConfig(bin_path="opencode", model="test/model", openai_api_key="test")
@@ -464,7 +443,6 @@ def test_opencode_parse_output_failure():
     assert parsed.success is False
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_opencode_timeout_recommendations():
     """Test OpenCode timeout recommendations."""
     config = NinjaConfig(bin_path="opencode", model="test/model", openai_api_key="test")
@@ -483,7 +461,6 @@ def test_opencode_timeout_recommendations():
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_opencode_server_mode_no_attach_flag_without_env(monkeypatch):
     """Test that --attach flag is NOT added when daemon mode is disabled."""
     # Disable daemon mode explicitly
@@ -506,7 +483,6 @@ def test_opencode_server_mode_no_attach_flag_without_env(monkeypatch):
     assert "--attach" not in result.command
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_opencode_server_mode_enables_session_flags_without_server(monkeypatch):
     """Test that session flags work normally when daemon mode is disabled."""
     # Disable daemon mode explicitly
@@ -548,7 +524,6 @@ def test_opencode_server_mode_enables_session_flags_without_server(monkeypatch):
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_registry_integration_aider():
     """Test full registry workflow with Aider."""
     config = NinjaConfig(
@@ -572,7 +547,6 @@ def test_registry_integration_aider():
     assert "aider" in result.command[0]
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_registry_integration_opencode():
     """Test full registry workflow with OpenCode."""
     config = NinjaConfig(
@@ -595,7 +569,6 @@ def test_registry_integration_opencode():
     assert "opencode" in result.command[0]
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_strategy_switch_via_config():
     """Test switching strategies via config."""
     # Aider config
@@ -625,7 +598,6 @@ def test_strategy_switch_via_config():
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_strategies_handle_empty_file_list():
     """Test that strategies handle empty file list gracefully."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
@@ -641,7 +613,6 @@ def test_strategies_handle_empty_file_list():
     assert len(result.command) > 0
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_strategies_handle_none_file_list():
     """Test that strategies handle None file list gracefully."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
@@ -657,7 +628,6 @@ def test_strategies_handle_none_file_list():
     assert len(result.command) > 0
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_strategies_preserve_working_dir():
     """Test that strategies preserve repo_root as working_dir."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
@@ -671,7 +641,6 @@ def test_strategies_preserve_working_dir():
     assert str(result.working_dir) == "/tmp/my-project"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_strategies_include_model_in_command():
     """Test that strategies include model in command."""
     config = NinjaConfig(
@@ -693,7 +662,6 @@ def test_strategies_include_model_in_command():
     assert "claude-sonnet-4-5" in result.command[model_idx + 1]
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_strategies_support_additional_flags():
     """Test that strategies support additional flags."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
@@ -709,7 +677,6 @@ def test_strategies_support_additional_flags():
     # Flags are strategy-specific, just verify no crash
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_parse_result_extracts_file_paths():
     """Test that parse_output extracts modified file paths."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")

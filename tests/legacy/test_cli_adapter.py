@@ -11,7 +11,6 @@ import os
 from ninja_cli_mcp.ninja_driver import NinjaConfig, NinjaDriver
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_detect_cli_type_claude():
     """Test Claude CLI detection."""
     config = NinjaConfig(bin_path="/usr/bin/claude")
@@ -20,7 +19,6 @@ def test_detect_cli_type_claude():
     assert driver._detect_cli_type() == "claude"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_detect_cli_type_aider():
     """Test Aider CLI detection."""
     config = NinjaConfig(bin_path="/usr/local/bin/aider")
@@ -29,7 +27,6 @@ def test_detect_cli_type_aider():
     assert driver._detect_cli_type() == "aider"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_detect_cli_type_cursor():
     """Test Cursor CLI detection."""
     config = NinjaConfig(bin_path="/opt/cursor/cursor")
@@ -38,7 +35,6 @@ def test_detect_cli_type_cursor():
     assert driver._detect_cli_type() == "cursor"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_detect_cli_type_generic():
     """Test generic CLI detection."""
     config = NinjaConfig(bin_path="/usr/bin/some-unknown-cli")
@@ -47,7 +43,6 @@ def test_detect_cli_type_generic():
     assert driver._detect_cli_type() == "generic"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_build_command_claude(tmp_path):
     """Test Claude CLI command building."""
     # Create a minimal instruction file
@@ -82,7 +77,6 @@ def test_build_command_claude(tmp_path):
     assert "--yes" not in cmd
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_build_command_aider(tmp_path):
     """Test Aider CLI command building."""
     task_file = tmp_path / "task.json"
@@ -111,7 +105,6 @@ def test_build_command_aider(tmp_path):
     assert "--message" in cmd
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_build_prompt_text(tmp_path):
     """Test prompt text building from instruction."""
     config = NinjaConfig(bin_path="claude")
@@ -146,7 +139,6 @@ def test_build_prompt_text(tmp_path):
     assert "pytest tests/integration/" in prompt
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_claude_cli_detection_with_path():
     """Test Claude CLI detection with full path."""
     config = NinjaConfig(bin_path="/home/user/.nvm/versions/node/v25.0.0/bin/claude")
@@ -155,7 +147,6 @@ def test_claude_cli_detection_with_path():
     assert driver._detect_cli_type() == "claude"
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_cli_command_format_without_invalid_flags(tmp_path):
     """Test that commands don't use flags that don't exist."""
     task_file = tmp_path / "task.json"
@@ -190,7 +181,6 @@ def test_cli_command_format_without_invalid_flags(tmp_path):
         assert cli_name in cmd[0].lower()
 
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_config_model_priority():
     """Test that model selection follows correct priority."""
     # Save original env

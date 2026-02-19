@@ -49,7 +49,6 @@ class TestClass:
     def method_two(self, param: str) -> int:
         return 42
 
-@pytest.mark.skip(reason="Flaky - needs investigation")
 def test_function():
     return "hello"
 

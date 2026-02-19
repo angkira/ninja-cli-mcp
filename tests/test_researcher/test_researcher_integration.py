@@ -455,7 +455,6 @@ class TestEndToEndWorkflow:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.skip(reason="Flaky - needs investigation")
 async def test_rate_limiting():
     """Test that rate limiting is enforced."""
     from ninja_researcher.tools import get_executor
