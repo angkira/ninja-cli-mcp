@@ -41,6 +41,7 @@ from ninja_coder.models import (
 )
 from ninja_coder.tools import get_executor
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.security import RequestDeduplicator
 
 
 if TYPE_CHECKING:
@@ -621,6 +622,9 @@ You:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""",
     )
 
+    # Create deduplicator instance for request deduplication
+    deduplicator = RequestDeduplicator()
+
     @server.list_tools()
     async def list_tools() -> list[Tool]:
         """Return the list of available tools."""
@@ -629,69 +633,57 @@ You:
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[TextContent]:
         """Handle tool invocations."""
-        # Extract client/session ID from MCP context if available
-        # Note: RequestContext is not available in current mcp version
-        # Client ID extraction will be added when MCP library supports it
         client_id = "default"
-
         logger.info(f"[{client_id}] Tool called: {name}")
         logger.debug(f"[{client_id}] Arguments: {json.dumps(arguments, indent=2)}")
-
         executor = get_executor()
+        SKIP_DEDUP = {"coder_get_agents", "coder_query_logs"}
 
-        try:
+        async def _execute() -> Any:
             if name == "coder_simple_task":
                 request = SimpleTaskRequest(**arguments)
-                result = await executor.simple_task(request, client_id=client_id)
-
+                return await executor.simple_task(request, client_id=client_id)
             elif name == "coder_execute_plan_sequential":
                 request = SequentialPlanRequest(**arguments)
-                result = await executor.execute_plan_sequential(request, client_id=client_id)
-
+                return await executor.execute_plan_sequential(request, client_id=client_id)
             elif name == "coder_execute_plan_parallel":
                 request = ParallelPlanRequest(**arguments)
-                result = await executor.execute_plan_parallel(request, client_id=client_id)
-
+                return await executor.execute_plan_parallel(request, client_id=client_id)
             elif name == "coder_run_tests":
                 request = RunTestsRequest(**arguments)
-                result = await executor.run_tests(request, client_id=client_id)
-
+                return await executor.run_tests(request, client_id=client_id)
             elif name == "coder_apply_patch":
                 request = ApplyPatchRequest(**arguments)
-                result = await executor.apply_patch(request, client_id=client_id)
-
+                return await executor.apply_patch(request, client_id=client_id)
             elif name == "coder_get_agents":
                 request = GetAgentsRequest(**arguments)
-                result = await executor.get_agents(request, client_id=client_id)
-
+                return await executor.get_agents(request, client_id=client_id)
             elif name == "coder_multi_agent_task":
                 request = MultiAgentTaskRequest(**arguments)
-                result = await executor.multi_agent_task(request, client_id=client_id)
-
+                return await executor.multi_agent_task(request, client_id=client_id)
             elif name == "coder_query_logs":
                 request = QueryLogsRequest(**arguments)
-                result = await executor.query_logs(request, client_id=client_id)
-
+                return await executor.query_logs(request, client_id=client_id)
             else:
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps({"error": f"Unknown tool: {name}"}),
-                    )
-                ]
+                raise ValueError(f"Unknown tool: {name}")
 
-            # Serialize result to JSON
+        try:
+            if name in SKIP_DEDUP:
+                result = await _execute()
+            else:
+                key = RequestDeduplicator.make_key(name, arguments)
+                result = await deduplicator.deduplicate(key, _execute)
+
             result_json = result.model_dump()
             logger.info(
                 f"[{client_id}] Tool {name} completed with status: {result_json.get('status', 'unknown')}"
             )
+            return [TextContent(type="text", text=json.dumps(result_json, indent=2))]
 
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(result_json, indent=2),
-                )
-            ]
+        except ValueError as e:
+            if "Unknown tool" in str(e):
+                return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
+            raise
 
         except Exception as e:
             logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
@@ -699,11 +691,7 @@ You:
                 TextContent(
                     type="text",
                     text=json.dumps(
-                        {
-                            "status": "error",
-                            "error": str(e),
-                            "error_type": type(e).__name__,
-                        }
+                        {"status": "error", "error": str(e), "error_type": type(e).__name__}
                     ),
                 )
             ]
