@@ -8,6 +8,7 @@ according to MCP best practices (December 2025).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -16,7 +17,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Any, ClassVar, TypeVar
+from typing import Any, ClassVar, TypeVar, Awaitable
 
 
 try:
@@ -160,8 +161,25 @@ class RateLimiter:
             logger.debug(f"Could not save persistent rate limit data: {e}")
 
 
-# Global rate limiter instance
-_rate_limiter = RateLimiter(max_calls=100, time_window=60)
+[
+    'str, tuple[float, Any]] = {}  # key -> (timestamp, result)\n        self._inflight: dict[str, asyncio.Event] = {}  # key -> event\n        self._inflight_results: dict[str, Any] = {}  # key -> result (or exception)\n        self._lock = asyncio.Lock()\n\n    @staticmethod\n    def make_key(tool_name: str, arguments: dict[str, Any]) -> str:\n        "',
+    'Create a deterministic cache key from tool name and arguments."',
+    "\n        canonical = json.dumps(arguments, sort_keys=True, separators=(",
+    ', ":"))\n        raw = f"{tool_name}:{canonical}',
+    'return hashlib.sha256(raw.encode()).hexdigest()\n\n    async def deduplicate(\n        self,\n        key: str,\n        coro_factory: Callable[[], Awaitable[Any]],\n    ) -> Any:\n        "',
+    'Execute coro_factory only once per unique key within TTL.\n\n        - Cache hit (within TTL): return cached result immediately.\n        - In-flight duplicate: wait on asyncio.Event, return same result.\n        - New request: execute, cache result, signal waiters.\n        Exceptions are also cached to prevent retries from re-executing failed requests.\n        "',
+    '\n        now = __import__("time',
+    ".",
+    "time()\n\n        async with self._lock:\n            # Lazy eviction\n            expired = [k for k, (ts, _) in self._cache.items() if now - ts > self._ttl]\n            for k in expired:\n                del self._cache[k]\n\n            # Cache hit\n            if key in self._cache:\n                ts, result = self._cache[key]\n                if now - ts <= self._ttl:\n                    logger.info(f",
+    [
+        "dedup] Cache hit for {key[:12]}...",
+        "if isinstance(result, Exception):\n                        raise result\n                    return result\n                del self._cache[key]\n\n            # In-flight duplicate — wait for the first request\n            if key in self._inflight:\n                event = self._inflight[key]\n                logger.info(f",
+        [
+            "dedup] Coalescing duplicate request {key[:12]}...",
+            "Release lock while waiting\n        \n                await event.wait()\n                result = self._inflight_results.get(key)\n                if isinstance(result, Exception):\n                    raise result\n                return result\n\n            # New request — register in-flight\n            event = asyncio.Event()\n            self._inflight[key] = event\n\n        # Execute outside the lock\n        try:\n            result = await coro_factory()\n            async with self._lock:\n                self._cache[key] = (now, result)\n                self._inflight_results[key] = result\n            return result\n        except Exception as exc:\n            async with self._lock:\n                self._cache[key] = (now, exc)\n                self._inflight_results[key] = exc\n            raise\n        finally:\n            async with self._lock:\n                event.set()\n                self._inflight.pop(key, None)\n                # Clean up inflight_results after a short delay is not needed;\n                # it will be overwritten or evicted by TTL\n\n\n# Global rate limiter instance\n_rate_limiter = RateLimiter(max_calls=100, time_window=60)",
+        ],
+    ],
+]
 
 
 def rate_limited(max_calls: int = 100, time_window: int = 60):
