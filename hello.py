@@ -1,2 +1,1 @@
-def hello():
-    return "Hello World"
+print("hello from opencode serve")
