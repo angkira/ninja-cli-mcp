@@ -1232,6 +1232,100 @@ class NinjaDriver:
                 model_used=self.config.model,
             )
 
+    async def _stream_with_activity_timeout(
+        self,
+        process: asyncio.subprocess.Process,
+        max_timeout: float,
+        inactivity_timeout: float = 60.0,
+        cpu_check_threshold: float = 1.0,
+    ) -> tuple[str, str]:
+        """Stream subprocess stdout with activity-based timeout extension.
+
+        Instead of a single wall-clock timeout, monitors output activity.
+        When no output arrives for inactivity_timeout seconds, checks CPU usage:
+        - CPU still active → process is computing, extend inactivity timer
+        - CPU idle → process is stuck, raise TimeoutError early
+        Absolute max_timeout still applies as a hard ceiling.
+        """
+        import time as _time
+
+        stdout_chunks: list[bytes] = []
+        absolute_deadline = _time.monotonic() + max_timeout
+        last_activity = _time.monotonic()
+
+        async def _read_stderr() -> bytes:
+            if process.stderr:
+                return await process.stderr.read()
+            return b""
+
+        stderr_task = asyncio.create_task(_read_stderr())
+
+        assert process.stdout is not None
+
+        try:
+            while True:
+                now = _time.monotonic()
+
+                if now >= absolute_deadline:
+                    raise TimeoutError(f"Absolute timeout of {max_timeout:.0f}s exceeded")
+
+                seconds_idle = now - last_activity
+                remaining_inactivity = inactivity_timeout - seconds_idle
+
+                if remaining_inactivity <= 0:
+                    # No output for a while — check if process is still computing
+                    cpu_active = False
+                    if PSUTIL_AVAILABLE and process.pid:
+                        try:
+                            import psutil as _psutil
+
+                            proc = _psutil.Process(process.pid)
+                            cpu = proc.cpu_percent(interval=1.0)
+                            if cpu > cpu_check_threshold:
+                                cpu_active = True
+                                logger.info(
+                                    f"[activity] No output for {seconds_idle:.0f}s but CPU={cpu:.1f}% — extending"
+                                )
+                        except Exception:
+                            pass
+
+                    if cpu_active:
+                        last_activity = _time.monotonic()
+                        continue
+                    else:
+                        raise TimeoutError(
+                            f"Process inactive for {seconds_idle:.0f}s with no CPU activity"
+                        )
+
+                read_timeout = min(remaining_inactivity, absolute_deadline - now, 5.0)
+
+                try:
+                    line = await asyncio.wait_for(
+                        process.stdout.readline(),
+                        timeout=read_timeout,
+                    )
+                except TimeoutError:
+                    continue  # Re-evaluate activity on next loop iteration
+
+                if line:
+                    stdout_chunks.append(line)
+                    last_activity = _time.monotonic()
+                else:
+                    break  # EOF — process finished writing
+
+        finally:
+            stderr_task.cancel()
+            try:
+                stderr_bytes = await asyncio.wait_for(stderr_task, timeout=5.0)
+            except (TimeoutError, asyncio.CancelledError):
+                stderr_bytes = b""
+
+        await process.wait()
+
+        stdout = b"".join(stdout_chunks).decode(errors="replace")
+        stderr = stderr_bytes.decode(errors="replace")
+        return stdout, stderr
+
     async def execute_async(
         self,
         repo_root: str,
@@ -1433,21 +1527,21 @@ class NinjaDriver:
             )
 
             try:
-                # Use communicate() with timeout for proper process lifecycle management
-                # This ensures both stream reading AND process exit are within timeout
                 start_time = asyncio.get_event_loop().time()
-
-                task_logger.debug(f"Starting subprocess with {max_timeout}s timeout")
-
-                # communicate() reads all output AND waits for process exit
-                # Single timeout for entire operation prevents hanging
-                stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=max_timeout,
+                inactivity_timeout = float(
+                    os.environ.get("NINJA_INACTIVITY_TIMEOUT", "60")
                 )
 
-                stdout = stdout_bytes.decode(errors="replace") if stdout_bytes else ""
-                stderr = stderr_bytes.decode(errors="replace") if stderr_bytes else ""
+                task_logger.debug(
+                    f"Starting subprocess with {max_timeout}s timeout, "
+                    f"{inactivity_timeout}s inactivity threshold"
+                )
+
+                stdout, stderr = await self._stream_with_activity_timeout(
+                    process,
+                    max_timeout=float(max_timeout),
+                    inactivity_timeout=inactivity_timeout,
+                )
                 exit_code = process.returncode or 0
 
                 total_time = asyncio.get_event_loop().time() - start_time
@@ -1456,7 +1550,6 @@ class NinjaDriver:
             except TimeoutError as e:
                 task_logger.warning(f"Task timed out after {max_timeout}s, killing process")
                 process.kill()
-                # Give process 5 seconds to die gracefully after kill signal
                 try:
                     await asyncio.wait_for(process.wait(), timeout=5)
                 except TimeoutError:
