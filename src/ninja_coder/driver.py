@@ -1513,6 +1513,56 @@ class NinjaDriver:
                         task_type=analysis.task_type,
                     )
 
+            # --- OpenCode serve pool path ---
+            # When NINJA_OPENCODE_SERVE_MODE=1 and strategy is opencode,
+            # use the long-running server pool instead of spawning a subprocess.
+            if (
+                os.environ.get("NINJA_OPENCODE_SERVE_MODE") == "1"
+                and self._strategy.name == "opencode"
+            ):
+                from ninja_coder.strategies.opencode_server_pool import get_pool
+
+                pool = get_pool(bin_path=self.config.bin_path)
+                task_logger.info("[serve-pool] Using opencode serve pool")
+
+                try:
+                    pool_result = await pool.execute(
+                        repo_root=repo_root,
+                        prompt=prompt,
+                        model=model,
+                        timeout=timeout_sec or self._strategy.get_timeout(task_type),
+                    )
+                except Exception as pool_exc:
+                    task_logger.error(f"[serve-pool] Execution failed: {pool_exc}")
+                    logs_path = task_logger.save()
+                    return NinjaResult(
+                        success=False,
+                        summary=f"❌ Serve pool error: {pool_exc}",
+                        raw_logs_path=logs_path,
+                        model_used=model,
+                    )
+
+                result = NinjaResult(
+                    success=pool_result.success,
+                    summary=f"✅ {pool_result.summary}" if pool_result.success else f"❌ {pool_result.summary}",
+                    suspected_touched_paths=pool_result.files_changed,
+                    raw_logs_path=task_logger.save(),
+                    model_used=model,
+                    session_id=pool_result.session_id,
+                )
+                self.structured_logger.log_result(
+                    success=result.success,
+                    summary=result.summary,
+                    session_id=session_id,
+                    task_id=step_id,
+                    cli_name=self._strategy.name,
+                    model=model,
+                    touched_paths=result.suspected_touched_paths,
+                    exit_code=0,
+                )
+                return result
+            # --- end serve pool path ---
+
             # Check if strategy supports dialogue mode and task type is sequential
             use_dialogue_mode = (
                 self._strategy.capabilities.supports_dialogue_mode and task_type == "sequential"
