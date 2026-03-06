@@ -1479,13 +1479,19 @@ class NinjaDriver:
             context_paths = file_scope.get("context_paths", [])
 
             # Check if multi-agent orchestration is needed
+            # Never auto-enable for sequential/parallel steps — they are always atomic
             enable_multi_agent = False
-            if hasattr(self._strategy, "build_command_with_multi_agent"):
+            if hasattr(self._strategy, "build_command_with_multi_agent") and task_type not in (
+                "sequential",
+                "parallel",
+            ):
                 # Import multi-agent orchestrator
                 from ninja_coder.multi_agent import MultiAgentOrchestrator
 
                 orchestrator = MultiAgentOrchestrator(self._strategy)
-                analysis = orchestrator.analyze_task(prompt, context_paths)
+                # Analyze only the raw task, not the full system prompt with agent descriptions
+                raw_task = instruction_data.get("task", prompt)
+                analysis = orchestrator.analyze_task(raw_task, context_paths)
 
                 if orchestrator.should_use_multi_agent(analysis):
                     enable_multi_agent = True
