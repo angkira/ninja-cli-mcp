@@ -1273,21 +1273,70 @@ class NinjaDriver:
                 remaining_inactivity = inactivity_timeout - seconds_idle
 
                 if remaining_inactivity <= 0:
-                    # No output for a while — check if process is still computing
+                    # No output for a while — inspect process tree
                     cpu_active = False
                     if PSUTIL_AVAILABLE and process.pid:
                         try:
                             import psutil as _psutil
 
                             proc = _psutil.Process(process.pid)
-                            cpu = proc.cpu_percent(interval=1.0)
-                            if cpu > cpu_check_threshold:
+
+                            # Check parent CPU
+                            parent_cpu = proc.cpu_percent(interval=0.5)
+
+                            # Check children CPU — find stuck ones (high CPU, no relation to output)
+                            try:
+                                children = proc.children(recursive=True)
+                            except _psutil.NoSuchProcess:
+                                children = []
+
+                            stuck_children: list[_psutil.Process] = []
+                            active_children: list[_psutil.Process] = []
+                            for child in children:
+                                try:
+                                    child_cpu = child.cpu_percent(interval=0.2)
+                                    cmdline = " ".join(child.cmdline())
+                                    if child_cpu > 50.0:  # pegging CPU
+                                        if any(s in cmdline for s in ["pyright", "langserver", "tsserver"]):
+                                            stuck_children.append(child)
+                                            logger.warning(
+                                                f"[watchdog] Detected stuck LSP child pid={child.pid} "
+                                                f"cpu={child_cpu:.0f}% cmd={cmdline[:80]!r}"
+                                            )
+                                        else:
+                                            active_children.append(child)
+                                except (_psutil.NoSuchProcess, _psutil.AccessDenied):
+                                    pass
+
+                            # Kill stuck LSP children — let OpenCode recover
+                            for child in stuck_children:
+                                try:
+                                    child.kill()
+                                    logger.warning(
+                                        f"[watchdog] Killed stuck LSP child pid={child.pid}"
+                                    )
+                                except Exception as ke:
+                                    logger.debug(f"[watchdog] Could not kill child {child.pid}: {ke}")
+
+                            if parent_cpu > cpu_check_threshold or active_children:
                                 cpu_active = True
                                 logger.info(
-                                    f"[activity] No output for {seconds_idle:.0f}s but CPU={cpu:.1f}% — extending"
+                                    f"[activity] No output for {seconds_idle:.0f}s but "
+                                    f"parent_cpu={parent_cpu:.1f}% active_children={len(active_children)} — extending"
                                 )
-                        except Exception:
-                            pass
+                            elif stuck_children:
+                                # Killed stuck children, give OpenCode a chance to recover
+                                cpu_active = True
+                                logger.info(
+                                    f"[watchdog] Killed {len(stuck_children)} stuck LSP child(ren), "
+                                    f"giving OpenCode 30s to recover"
+                                )
+                                last_activity = _time.monotonic()
+                                # Shrink inactivity window for this recovery attempt
+                                inactivity_timeout = min(inactivity_timeout, 30.0)
+
+                        except Exception as e:
+                            logger.debug(f"[watchdog] Process inspection failed: {e}")
 
                     if cpu_active:
                         last_activity = _time.monotonic()
@@ -1524,6 +1573,7 @@ class NinjaDriver:
                 stdin=asyncio.subprocess.DEVNULL,  # Prevent stdin blocking
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,  # Own process group — ensures children (pyright etc.) die with parent
             )
 
             try:
@@ -1548,17 +1598,28 @@ class NinjaDriver:
                 task_logger.info(f"Task completed in {total_time:.1f}s")
 
             except TimeoutError as e:
-                task_logger.warning(f"Task timed out after {max_timeout}s, killing process")
-                process.kill()
+                task_logger.warning(f"Task timed out after {max_timeout}s, killing process group")
+                try:
+                    if process.pid:
+                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                except (ProcessLookupError, PermissionError):
+                    process.kill()  # fallback
                 try:
                     await asyncio.wait_for(process.wait(), timeout=5)
                 except TimeoutError:
-                    task_logger.error("Process did not die after kill(), forcing with SIGKILL")
+                    task_logger.error("Process group did not die after SIGTERM, forcing SIGKILL")
                     try:
-                        process.send_signal(signal.SIGKILL)
+                        if process.pid:
+                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        try:
+                            process.send_signal(signal.SIGKILL)
+                        except Exception:
+                            pass
+                    try:
                         await asyncio.wait_for(process.wait(), timeout=2)
                     except Exception as kill_error:
-                        task_logger.error(f"Failed to force-kill process: {kill_error}")
+                        task_logger.error(f"Failed to force-kill process group: {kill_error}")
                 task_logger.error(f"Task timed out: {e}")
                 logs_path = task_logger.save()
                 return NinjaResult(

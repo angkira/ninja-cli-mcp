@@ -7,6 +7,7 @@ support for z.ai API endpoints including the Coding Plan API.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -125,6 +126,36 @@ class OpenCodeStrategy:
         """Return capabilities of OpenCode CLI."""
         return self._capabilities
 
+    @staticmethod
+    def _build_lsp_config(repo_root: str) -> dict | None:
+        """Build opencode LSP config based on detected project type.
+
+        Returns a dict suitable for opencode.json, or None if no override needed.
+        Disables LSPs that are known to hang on large codebases.
+        """
+        root = Path(repo_root)
+
+        has_tsconfig = (root / "tsconfig.json").exists() or any(root.glob("*/tsconfig.json"))
+        has_package_json = (root / "package.json").exists()
+        has_angular = (root / "angular.json").exists() or any(root.glob("*/angular.json"))
+        has_pyproject = (root / "pyproject.toml").exists() or (root / "setup.py").exists()
+
+        is_ts_project = has_tsconfig or has_package_json or has_angular
+        is_python_project = has_pyproject
+
+        lsp_config: dict = {}
+
+        if is_ts_project and not is_python_project:
+            # Pure TS/Angular project — pyright as Python LSP is useless, disable it
+            # TypeScript LSP via tsserver is fine; only disable the Python-specific one
+            lsp_config["python"] = {"disabled": True}
+            logger.info(f"[lsp] Detected TS/Angular project at {repo_root}, disabling Python LSP")
+
+        if not lsp_config:
+            return None
+
+        return {"lsp": lsp_config}
+
     def build_command(
         self,
         prompt: str,
@@ -209,6 +240,19 @@ class OpenCodeStrategy:
 
         # Build environment (inherit current environment)
         env = os.environ.copy()
+
+        # Project-aware LSP config: disable LSPs that will hang on this project type
+        lsp_override_config = self._build_lsp_config(repo_root)
+        if lsp_override_config:
+            import tempfile as _tempfile
+
+            config_dir = _tempfile.mkdtemp(prefix="ninja-opencode-config-")
+            opencode_dir = Path(config_dir) / "opencode"
+            opencode_dir.mkdir()
+            config_file = opencode_dir / "opencode.json"
+            config_file.write_text(json.dumps(lsp_override_config, indent=2))
+            env["XDG_CONFIG_HOME"] = config_dir
+            logger.info(f"[lsp] Project-aware config written to {config_file}: {lsp_override_config}")
 
         # Determine timeout based on task type
         # Multi-agent tasks may need more time
