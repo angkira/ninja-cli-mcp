@@ -161,3 +161,4 @@ secrets/
 .aider*
 .opencode.json
 coverage.json
+.claude/commands/
