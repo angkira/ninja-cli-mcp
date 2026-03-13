@@ -1484,6 +1484,8 @@ class NinjaDriver:
             if hasattr(self._strategy, "build_command_with_multi_agent") and task_type not in (
                 "sequential",
                 "parallel",
+                "sequential_plan",
+                "parallel_plan",
             ):
                 # Import multi-agent orchestrator
                 from ninja_coder.multi_agent import MultiAgentOrchestrator
