@@ -98,7 +98,9 @@ class NinjaConfigurator:
             ),
             Choice(value="search", name="🔍 Search Settings  •  Configure research provider"),
             Separator(),
-            Choice(value="delete_component", name="🗑️  Delete Component  •  Remove module configuration"),
+            Choice(
+                value="delete_component", name="🗑️  Delete Component  •  Remove module configuration"
+            ),
             Choice(value="show", name="📋 Show Configuration  •  View current settings"),
             Choice(value="reset", name="🗑️  Reset All  •  Clear all settings"),
             Separator(),

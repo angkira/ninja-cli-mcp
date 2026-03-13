@@ -83,7 +83,9 @@ class ModelSelector:
             task_specific_model = os.environ.get("NINJA_MODEL_QUICK")
 
         if task_specific_model:
-            return self._recommend_specific_model(task_specific_model, f"task-specific env var for {complexity.value}")
+            return self._recommend_specific_model(
+                task_specific_model, f"task-specific env var for {complexity.value}"
+            )
 
         # If default model is set and no preference, use it
         if self.default_model and not (prefer_cost or prefer_quality):

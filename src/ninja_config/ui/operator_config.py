@@ -203,7 +203,9 @@ def configure_operators(config_manager: ConfigManager, config: dict[str, str]) -
         info = operator_info.get(name, (name.title(), "Unknown", []))
         display_name, desc, providers = info
         provider_str = ", ".join(providers) if providers else "unknown"
-        choices.append(Choice(name, name=f"{display_name:15} • {desc:30} [Providers: {provider_str}]"))
+        choices.append(
+            Choice(name, name=f"{display_name:15} • {desc:30} [Providers: {provider_str}]")
+        )
 
     choices.append(Separator())
     choices.append(Choice(None, name="<- Back"))
@@ -370,6 +372,7 @@ def configure_opencode_auth(config_manager: ConfigManager, config: dict[str, str
     print("=" * 80)
 
     import shutil
+
     if not shutil.which("opencode"):
         print("\n⚠️  OpenCode CLI not found")
         print("   Install from: https://opencode.dev/download")

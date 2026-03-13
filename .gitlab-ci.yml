@@ -1,5 +1,6 @@
 stages:
   - lint
+  - test
   - build
   - publish
 
@@ -18,6 +19,17 @@ lint:
     - uv sync --frozen --all-extras
     - uv run ruff check src/
     - uv run ruff format --check src/
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_MERGE_REQUEST_ID
+
+test:
+  stage: test
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm
+  script:
+    - uv sync --frozen --all-extras
+    - uv run pytest tests/ -x -q --timeout=60
+  allow_failure: true
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_MERGE_REQUEST_ID

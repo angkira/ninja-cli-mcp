@@ -88,8 +88,7 @@ class NinjaConfig:
 
             if detected_path:
                 logger.info(
-                    f"Configured binary path '{bin_path}' not found. "
-                    f"Auto-detected: {detected_path}"
+                    f"Configured binary path '{bin_path}' not found. Auto-detected: {detected_path}"
                 )
                 bin_path = detected_path
             elif bin_name != DEFAULT_CODE_BIN:
@@ -1297,7 +1296,10 @@ class NinjaDriver:
                                     child_cpu = child.cpu_percent(interval=0.2)
                                     cmdline = " ".join(child.cmdline())
                                     if child_cpu > 50.0:  # pegging CPU
-                                        if any(s in cmdline for s in ["pyright", "langserver", "tsserver"]):
+                                        if any(
+                                            s in cmdline
+                                            for s in ["pyright", "langserver", "tsserver"]
+                                        ):
                                             stuck_children.append(child)
                                             logger.warning(
                                                 f"[watchdog] Detected stuck LSP child pid={child.pid} "
@@ -1316,7 +1318,9 @@ class NinjaDriver:
                                         f"[watchdog] Killed stuck LSP child pid={child.pid}"
                                     )
                                 except Exception as ke:
-                                    logger.debug(f"[watchdog] Could not kill child {child.pid}: {ke}")
+                                    logger.debug(
+                                        f"[watchdog] Could not kill child {child.pid}: {ke}"
+                                    )
 
                             if parent_cpu > cpu_check_threshold or active_children:
                                 cpu_active = True
@@ -1546,7 +1550,9 @@ class NinjaDriver:
 
                 result = NinjaResult(
                     success=pool_result.success,
-                    summary=f"✅ {pool_result.summary}" if pool_result.success else f"❌ {pool_result.summary}",
+                    summary=f"✅ {pool_result.summary}"
+                    if pool_result.success
+                    else f"❌ {pool_result.summary}",
                     suspected_touched_paths=pool_result.files_changed,
                     raw_logs_path=task_logger.save(),
                     model_used=model,
@@ -1636,9 +1642,7 @@ class NinjaDriver:
 
             try:
                 start_time = asyncio.get_event_loop().time()
-                inactivity_timeout = float(
-                    os.environ.get("NINJA_INACTIVITY_TIMEOUT", "60")
-                )
+                inactivity_timeout = float(os.environ.get("NINJA_INACTIVITY_TIMEOUT", "60"))
 
                 task_logger.debug(
                     f"Starting subprocess with {max_timeout}s timeout, "

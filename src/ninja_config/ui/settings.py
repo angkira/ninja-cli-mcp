@@ -388,9 +388,7 @@ def edit_setting(config_manager, config: dict) -> None:
         return
 
     # Select key to edit
-    choices = [
-        Choice(key, name=f"{key:35} [{config.get(key, '*** NOT SET ***')}]") for key in keys
-    ]
+    choices = [Choice(key, name=f"{key:35} [{config.get(key, '*** NOT SET ***')}]") for key in keys]
     choices.append(Separator())
     choices.append(Choice(None, name="← Back"))
 

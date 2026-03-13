@@ -128,11 +128,7 @@ class ConfigLoader:
 
         # Write to temporary file first (atomic write)
         with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=self._config_dir,
-            delete=False,
-            suffix=".tmp"
+            mode="w", encoding="utf-8", dir=self._config_dir, delete=False, suffix=".tmp"
         ) as temp_file:
             temp_path = Path(temp_file.name)
             temp_file.write(config_json)
@@ -245,11 +241,13 @@ class ConfigLoader:
 
 class ConfigLoaderError(Exception):
     """Base exception for ConfigLoader errors."""
+
     pass
 
 
 class ConfigValidationError(ConfigLoaderError):
     """Raised when configuration validation fails."""
+
     pass
 
 
@@ -259,4 +257,5 @@ class ConfigMigrationNeededError(ConfigLoaderError):
 
     This signals that automatic migration should be triggered.
     """
+
     pass

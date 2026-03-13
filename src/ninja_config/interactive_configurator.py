@@ -1258,7 +1258,11 @@ class PowerConfigurator:
                     "Claude Haiku 4.5",
                     "Fast & cost-effective (Recommended)",
                 ),
-                ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5", "Higher quality (more expensive)"),
+                (
+                    "anthropic/claude-sonnet-4-5",
+                    "Claude Sonnet 4.5",
+                    "Higher quality (more expensive)",
+                ),
                 ("claude-sonnet-4-5", "Claude Sonnet 4.5 (Claude Code)", "Via Claude Code"),
                 ("glm-4.7", "GLM-4.7 (z.ai)", "Supports Coding Plan API"),
                 ("anthropic/claude-opus-4", "Claude Opus 4", "Maximum quality"),
@@ -1838,6 +1842,7 @@ def run_power_configurator(config_path: str | None = None) -> int:
 
             if choice == "overview":
                 from ninja_config.ui.main_menu import show_configuration_overview
+
                 show_configuration_overview(config, config_mgr.config_file)
             elif choice == "coder_setup":
                 run_coder_setup_flow(config_mgr, config)
@@ -1876,6 +1881,7 @@ def run_power_configurator(config_path: str | None = None) -> int:
     except Exception as e:
         print(f"\n❌ Configuration error: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

@@ -10,6 +10,7 @@ Features:
 from __future__ import annotations
 
 import os
+from typing import ClassVar
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -212,7 +213,7 @@ class ModelSearchPanel(Widget):
 class APIKeyPanel(Widget):
     """Panel for configuring a single API key."""
 
-    API_KEY_INFO = {
+    API_KEY_INFO: ClassVar[dict[str, tuple[str, str]]] = {
         "OPENROUTER_API_KEY": ("OpenRouter", "Used by: Coder, Secretary, Prompts"),
         "ANTHROPIC_API_KEY": ("Anthropic", "Used by: Coder (OpenCode)"),
         "OPENAI_API_KEY": ("OpenAI", "Used by: Coder (OpenCode)"),
@@ -1010,7 +1011,7 @@ class ModernConfigApp(App):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("q", "quit", "Quit", priority=True),
         Binding("r", "refresh", "Refresh"),
     ]

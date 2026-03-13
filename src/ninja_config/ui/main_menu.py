@@ -43,9 +43,7 @@ def show_main_menu(config: dict[str, str]) -> str:
 
     # Show current status
     api_key_status = (
-        "✓ Configured"
-        if any("API_KEY" in k and v for k, v in config.items())
-        else "⚠️  Not set"
+        "✓ Configured" if any("API_KEY" in k and v for k, v in config.items()) else "⚠️  Not set"
     )
     operator_status = config.get("NINJA_CODE_BIN", "Not set")
     model_status = config.get("NINJA_CODER_MODEL", "Not set")

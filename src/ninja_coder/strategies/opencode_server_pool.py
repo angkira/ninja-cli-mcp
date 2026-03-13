@@ -208,7 +208,10 @@ class OpenCodeServerPool:
                 logger.info(f"[pool] prompt sent to session {session_id}")
 
                 result = await self._wait_for_idle(
-                    queue, instance, session_id, timeout=timeout,
+                    queue,
+                    instance,
+                    session_id,
+                    timeout=timeout,
                 )
             finally:
                 await listener.unsubscribe(session_id)

@@ -82,71 +82,87 @@ class SequentialPlanPrompt:
 
         # Context paths
         if step.context_paths:
-            lines.extend([
-                "### Context Paths",
-                "",
-                "Pay special attention to these files/directories:",
-                "",
-            ])
+            lines.extend(
+                [
+                    "### Context Paths",
+                    "",
+                    "Pay special attention to these files/directories:",
+                    "",
+                ]
+            )
             for path in step.context_paths:
                 lines.append(f"- `{path}`")
             lines.append("")
 
         # File constraints
         if step.allowed_globs or step.deny_globs:
-            lines.extend([
-                "### File Constraints",
-                "",
-            ])
-            if step.allowed_globs:
-                lines.extend([
-                    "**Allowed patterns**:",
+            lines.extend(
+                [
+                    "### File Constraints",
                     "",
-                ])
+                ]
+            )
+            if step.allowed_globs:
+                lines.extend(
+                    [
+                        "**Allowed patterns**:",
+                        "",
+                    ]
+                )
                 for pattern in step.allowed_globs:
                     lines.append(f"- `{pattern}`")
                 lines.append("")
             if step.deny_globs:
-                lines.extend([
-                    "**Denied patterns**:",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        "**Denied patterns**:",
+                        "",
+                    ]
+                )
                 for pattern in step.deny_globs:
                     lines.append(f"- `{pattern}`")
                 lines.append("")
 
         # Test plan
         if step.test_plan.unit or step.test_plan.e2e:
-            lines.extend([
-                "### Test Plan",
-                "",
-            ])
-            if step.test_plan.unit:
-                lines.extend([
-                    "**Unit tests**:",
+            lines.extend(
+                [
+                    "### Test Plan",
                     "",
-                ])
+                ]
+            )
+            if step.test_plan.unit:
+                lines.extend(
+                    [
+                        "**Unit tests**:",
+                        "",
+                    ]
+                )
                 for cmd in step.test_plan.unit:
                     lines.append(f"```bash\n{cmd}\n```")
                     lines.append("")
             if step.test_plan.e2e:
-                lines.extend([
-                    "**End-to-end tests**:",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        "**End-to-end tests**:",
+                        "",
+                    ]
+                )
                 for cmd in step.test_plan.e2e:
                     lines.append(f"```bash\n{cmd}\n```")
                     lines.append("")
 
         # Dependencies note
         if index > 1:
-            lines.extend([
-                "### Dependencies",
-                "",
-                f"This step depends on the successful completion of Step {index - 1}.",
-                "Use context and artifacts from previous steps as needed.",
-                "",
-            ])
+            lines.extend(
+                [
+                    "### Dependencies",
+                    "",
+                    f"This step depends on the successful completion of Step {index - 1}.",
+                    "Use context and artifacts from previous steps as needed.",
+                    "",
+                ]
+            )
 
         lines.append("---")
         lines.append("")
@@ -214,14 +230,16 @@ class SequentialPlanPrompt:
         ]
 
         for path, content in self.context_files.items():
-            lines.extend([
-                f"### `{path}`",
-                "",
-                "```",
-                content,
-                "```",
-                "",
-            ])
+            lines.extend(
+                [
+                    f"### `{path}`",
+                    "",
+                    "```",
+                    content,
+                    "```",
+                    "",
+                ]
+            )
 
         return lines
 
@@ -335,55 +353,65 @@ class ParallelPlanPrompt:
 
         # File scope
         if task.allowed_globs:
-            lines.extend([
-                "### File Scope (CRITICAL)",
-                "",
-                "This task is RESTRICTED to these patterns:",
-                "",
-            ])
+            lines.extend(
+                [
+                    "### File Scope (CRITICAL)",
+                    "",
+                    "This task is RESTRICTED to these patterns:",
+                    "",
+                ]
+            )
             for pattern in task.allowed_globs:
                 lines.append(f"- `{pattern}`")
-            lines.extend([
-                "",
-                "⚠️ **DO NOT modify files outside these patterns**",
-                "",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "⚠️ **DO NOT modify files outside these patterns**",
+                    "",
+                ]
+            )
 
         if task.deny_globs:
-            lines.extend([
-                "### Denied Patterns",
-                "",
-                "This task MUST NOT touch:",
-                "",
-            ])
+            lines.extend(
+                [
+                    "### Denied Patterns",
+                    "",
+                    "This task MUST NOT touch:",
+                    "",
+                ]
+            )
             for pattern in task.deny_globs:
                 lines.append(f"- `{pattern}`")
             lines.append("")
 
         # Context paths
         if task.context_paths:
-            lines.extend([
-                "### Context Paths",
-                "",
-                "Reference these for context (read-only unless in allowed scope):",
-                "",
-            ])
+            lines.extend(
+                [
+                    "### Context Paths",
+                    "",
+                    "Reference these for context (read-only unless in allowed scope):",
+                    "",
+                ]
+            )
             for path in task.context_paths:
                 lines.append(f"- `{path}`")
             lines.append("")
 
         # Independence note
-        lines.extend([
-            "### Task Independence",
-            "",
-            "This task runs in parallel with others. It MUST:",
-            "",
-            "- Be completely self-contained",
-            "- Not depend on outputs from other tasks",
-            "- Modify only files in its allowed scope",
-            "- Not assume any particular execution order",
-            "",
-        ])
+        lines.extend(
+            [
+                "### Task Independence",
+                "",
+                "This task runs in parallel with others. It MUST:",
+                "",
+                "- Be completely self-contained",
+                "- Not depend on outputs from other tasks",
+                "- Modify only files in its allowed scope",
+                "- Not assume any particular execution order",
+                "",
+            ]
+        )
 
         lines.append("---")
         lines.append("")
@@ -474,14 +502,16 @@ class ParallelPlanPrompt:
         ]
 
         for path, content in self.context_files.items():
-            lines.extend([
-                f"### `{path}`",
-                "",
-                "```",
-                content,
-                "```",
-                "",
-            ])
+            lines.extend(
+                [
+                    f"### `{path}`",
+                    "",
+                    "```",
+                    content,
+                    "```",
+                    "",
+                ]
+            )
 
         return lines
 

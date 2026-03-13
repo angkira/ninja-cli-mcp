@@ -91,10 +91,7 @@ class OpenCodeIntegration:
         os.environ["OPENCODE_CONFIG"] = config_path_str
         os.environ["OPENCODE_CONFIG_DIR"] = config_dir_str
 
-        logger.info(
-            f"Set OPENCODE_CONFIG={config_path_str}, "
-            f"OPENCODE_CONFIG_DIR={config_dir_str}"
-        )
+        logger.info(f"Set OPENCODE_CONFIG={config_path_str}, OPENCODE_CONFIG_DIR={config_dir_str}")
 
     def generate_opencode_config(self, ninja_config: NinjaConfig) -> dict[str, Any]:
         """
@@ -170,10 +167,7 @@ class OpenCodeIntegration:
         elif isinstance(settings_dict, OpenCodeOperatorSettings):
             settings = settings_dict
         else:
-            logger.warning(
-                f"Invalid opencode settings type: {type(settings_dict)}, "
-                "using defaults"
-            )
+            logger.warning(f"Invalid opencode settings type: {type(settings_dict)}, using defaults")
             settings = OpenCodeOperatorSettings()
 
         # Build OpenCode config structure

@@ -273,8 +273,8 @@ class ConfigMigrator:
             config: dict[str, str] = {}
 
             with self.old_env_path.open("r", encoding="utf-8") as f:
-                for line_num, line in enumerate(f, 1):
-                    line = line.strip()
+                for line_num, raw_line in enumerate(f, 1):
+                    line = raw_line.strip()
 
                     # Skip empty lines and comments
                     if not line or line.startswith("#"):
@@ -294,7 +294,9 @@ class ConfigMigrator:
                     value = value.strip()
 
                     # Remove quotes from value
-                    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                    if (value.startswith('"') and value.endswith('"')) or (
+                        value.startswith("'") and value.endswith("'")
+                    ):
                         value = value[1:-1]
 
                     config[key] = value
@@ -323,10 +325,7 @@ class ConfigMigrator:
             Dictionary of credential name -> value
 
         Example:
-            >>> old_config = {
-            ...     "OPENROUTER_API_KEY": "sk-or-...",
-            ...     "NINJA_CODE_BIN": "opencode"
-            ... }
+            >>> old_config = {"OPENROUTER_API_KEY": "sk-or-...", "NINJA_CODE_BIN": "opencode"}
             >>> credentials = migrator._extract_credentials(old_config)
             >>> assert "OPENROUTER_API_KEY" in credentials
             >>> assert "NINJA_CODE_BIN" not in credentials
@@ -384,9 +383,7 @@ class ConfigMigrator:
                 operator=coder_operator,
                 operator_settings=coder_operator_settings,
                 models=ModelConfiguration(
-                    default=old_config.get(
-                        "NINJA_CODER_MODEL", "anthropic/claude-sonnet-4-5"
-                    ),
+                    default=old_config.get("NINJA_CODER_MODEL", "anthropic/claude-sonnet-4-5"),
                     quick=old_config.get("NINJA_MODEL_QUICK"),
                     heavy=old_config.get("NINJA_MODEL_SEQUENTIAL"),
                     parallel=old_config.get("NINJA_MODEL_PARALLEL"),
@@ -422,9 +419,7 @@ class ConfigMigrator:
                 operator=secretary_operator,
                 operator_settings=secretary_operator_settings,
                 models=ModelConfiguration(
-                    default=old_config.get(
-                        "NINJA_SECRETARY_MODEL", "google/gemini-2.0-flash"
-                    )
+                    default=old_config.get("NINJA_SECRETARY_MODEL", "google/gemini-2.0-flash")
                 ),
             )
 
@@ -526,9 +521,7 @@ class ConfigMigrator:
 
         operator_lower = operator_str.lower()
         if operator_lower not in operator_map:
-            logger.warning(
-                f"Unknown operator '{operator_str}', defaulting to 'opencode'"
-            )
+            logger.warning(f"Unknown operator '{operator_str}', defaulting to 'opencode'")
             return OperatorType.OPENCODE
 
         return operator_map[operator_lower]
@@ -551,9 +544,7 @@ class ConfigMigrator:
 
         provider_lower = provider_str.lower()
         if provider_lower not in provider_map:
-            logger.warning(
-                f"Unknown search provider '{provider_str}', defaulting to 'duckduckgo'"
-            )
+            logger.warning(f"Unknown search provider '{provider_str}', defaulting to 'duckduckgo'")
             return SearchProvider.DUCKDUCKGO
 
         return provider_map[provider_lower]

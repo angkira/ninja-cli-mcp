@@ -52,17 +52,14 @@ class PromptToolExecutor:
                 )
             elif request.action == "get":
                 retrieved_prompt = self.manager.get_prompt(request.prompt_id)
-                return PromptRegistryResult(
-                    status="ok",
-                    prompts=[retrieved_prompt]
-                )
+                return PromptRegistryResult(status="ok", prompts=[retrieved_prompt])
             elif request.action == "create":
                 # Validation
                 if not request.name or not request.template or not request.description:
                     return PromptRegistryResult(
                         status="error",
                         prompts=[],
-                        message="name, template, and description are required"
+                        message="name, template, and description are required",
                     )
 
                 # Generate ID and create prompt
@@ -75,7 +72,7 @@ class PromptToolExecutor:
                     variables=request.variables or [],
                     tags=request.tags or [],
                     scope=request.scope or "user",
-                    created=datetime.now()
+                    created=datetime.now(),
                 )
 
                 # Save via manager
@@ -84,33 +81,27 @@ class PromptToolExecutor:
                 return PromptRegistryResult(
                     status="ok",
                     prompts=[new_prompt],
-                    message=f"Prompt created with ID: {prompt_id}"
+                    message=f"Prompt created with ID: {prompt_id}",
                 )
 
             elif request.action == "update":
                 # Validation
                 if not request.prompt_id:
                     return PromptRegistryResult(
-                        status="error",
-                        prompts=[],
-                        message="prompt_id is required for update"
+                        status="error", prompts=[], message="prompt_id is required for update"
                     )
 
                 # Load existing
                 existing = self.manager.get_prompt(request.prompt_id)
                 if not existing:
                     return PromptRegistryResult(
-                        status="error",
-                        prompts=[],
-                        message=f"Prompt not found: {request.prompt_id}"
+                        status="error", prompts=[], message=f"Prompt not found: {request.prompt_id}"
                     )
 
                 # Check scope (cannot update global)
                 if existing.scope == "global":
                     return PromptRegistryResult(
-                        status="error",
-                        prompts=[],
-                        message="Cannot update global (builtin) prompts"
+                        status="error", prompts=[], message="Cannot update global (builtin) prompts"
                     )
 
                 # Merge fields
@@ -135,33 +126,27 @@ class PromptToolExecutor:
                 return PromptRegistryResult(
                     status="ok",
                     prompts=[updated_prompt],
-                    message=f"Prompt updated: {request.prompt_id}"
+                    message=f"Prompt updated: {request.prompt_id}",
                 )
 
             elif request.action == "delete":
                 # Validation
                 if not request.prompt_id:
                     return PromptRegistryResult(
-                        status="error",
-                        prompts=[],
-                        message="prompt_id is required for delete"
+                        status="error", prompts=[], message="prompt_id is required for delete"
                     )
 
                 # Check if exists
                 existing = self.manager.get_prompt(request.prompt_id)
                 if not existing:
                     return PromptRegistryResult(
-                        status="error",
-                        prompts=[],
-                        message=f"Prompt not found: {request.prompt_id}"
+                        status="error", prompts=[], message=f"Prompt not found: {request.prompt_id}"
                     )
 
                 # Check scope (cannot delete global)
                 if existing.scope == "global":
                     return PromptRegistryResult(
-                        status="error",
-                        prompts=[],
-                        message="Cannot delete global (builtin) prompts"
+                        status="error", prompts=[], message="Cannot delete global (builtin) prompts"
                     )
 
                 # Delete
@@ -169,44 +154,34 @@ class PromptToolExecutor:
 
                 if success:
                     return PromptRegistryResult(
-                        status="ok",
-                        prompts=[],
-                        message=f"Prompt deleted: {request.prompt_id}"
+                        status="ok", prompts=[], message=f"Prompt deleted: {request.prompt_id}"
                     )
                 else:
                     return PromptRegistryResult(
                         status="error",
                         prompts=[],
-                        message=f"Failed to delete prompt: {request.prompt_id}"
+                        message=f"Failed to delete prompt: {request.prompt_id}",
                     )
 
             else:
                 return PromptRegistryResult(
-                    status="error",
-                    prompts=[],
-                    message=f"Unknown action: {request.action}"
+                    status="error", prompts=[], message=f"Unknown action: {request.action}"
                 )
 
         except ValueError as e:
             logger.error(f"Validation error in prompt_registry: {e}")
             return PromptRegistryResult(
-                status="error",
-                prompts=[],
-                message=f"Validation error: {e!s}"
+                status="error", prompts=[], message=f"Validation error: {e!s}"
             )
         except FileNotFoundError as e:
             logger.error(f"File not found in prompt_registry: {e}")
             return PromptRegistryResult(
-                status="error",
-                prompts=[],
-                message=f"File not found: {e!s}"
+                status="error", prompts=[], message=f"File not found: {e!s}"
             )
         except Exception as e:
             logger.error(f"Error in prompt_registry: {e}", exc_info=True)
             return PromptRegistryResult(
-                status="error",
-                prompts=[],
-                message=f"Internal error: {e!s}"
+                status="error", prompts=[], message=f"Internal error: {e!s}"
             )
 
     @rate_limited(60, 60)

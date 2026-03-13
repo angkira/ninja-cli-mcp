@@ -589,10 +589,15 @@ class DaemonManager:
         pkg_spec = f"ninja-mcp=={version}" if version else "ninja-mcp"
 
         cmd = [
-            sys.executable, "-m", "pip", "install",
-            "--user", "--break-system-packages",
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--user",
+            "--break-system-packages",
             "--upgrade",
-            "--extra-index-url", registry_url,
+            "--extra-index-url",
+            registry_url,
             pkg_spec,
         ]
 
@@ -764,6 +769,7 @@ def main() -> int:
 
     elif args.command == "version":
         from importlib.metadata import version as get_version
+
         try:
             v = get_version("ninja-mcp")
             print(f"ninja-mcp {v}")

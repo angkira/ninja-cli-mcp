@@ -330,7 +330,7 @@ class AiderStrategy:
                 try:
                     for root, dirs, files in os.walk(repo_root):
                         # Skip hidden directories (including .git, .cache, etc.)
-                        dirs[:] = [d for d in dirs if not d.startswith('.')]
+                        dirs[:] = [d for d in dirs if not d.startswith(".")]
                         for file in files:
                             file_path = Path(root) / file
                             try:

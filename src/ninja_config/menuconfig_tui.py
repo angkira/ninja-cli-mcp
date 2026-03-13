@@ -9,6 +9,8 @@ Hierarchical menu navigation similar to Linux kernel menuconfig:
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
@@ -68,7 +70,7 @@ class MenuItem:
 class MenuScreen(Screen):
     """Base screen for menu navigation."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("escape", "pop_screen", "Back", priority=True),
         Binding("q", "quit_app", "Quit", priority=True),
     ]
@@ -115,7 +117,9 @@ class MenuScreen(Screen):
             yield list_view
 
         # Status bar
-        yield Static("[dim]Use arrows to navigate, Enter to select, Esc to go back[/dim]", id="status-bar")
+        yield Static(
+            "[dim]Use arrows to navigate, Enter to select, Esc to go back[/dim]", id="status-bar"
+        )
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle menu item selection."""
@@ -340,7 +344,7 @@ class MenuConfigApp(App):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("q", "quit", "Quit", priority=True),
     ]
 

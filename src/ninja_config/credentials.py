@@ -297,12 +297,9 @@ class CredentialDatabase:
                 )
 
                 # Create indexes
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_credentials_name ON credentials(name)")
                 conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_credentials_name ON credentials(name)"
-                )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_credentials_provider "
-                    "ON credentials(provider)"
+                    "CREATE INDEX IF NOT EXISTS idx_credentials_provider ON credentials(provider)"
                 )
 
                 # Create encryption metadata table
@@ -446,9 +443,7 @@ class CredentialDatabase:
 
                 # Overwrite with random data of same length
                 random_data = os.urandom(len(row["value"]))
-                conn.execute(
-                    "UPDATE credentials SET value = ? WHERE name = ?", (random_data, name)
-                )
+                conn.execute("UPDATE credentials SET value = ? WHERE name = ?", (random_data, name))
 
                 # Now delete
                 conn.execute("DELETE FROM credentials WHERE name = ?", (name,))

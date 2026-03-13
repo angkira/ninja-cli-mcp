@@ -334,7 +334,11 @@ def configure_model_preferences(config_manager, config: dict) -> None:
 
 
 def configure_models_with_dynamic_loading(
-    config_manager, config: dict, module: str, operator: str = "opencode", provider: str = "openrouter"
+    config_manager,
+    config: dict,
+    module: str,
+    operator: str = "opencode",
+    provider: str = "openrouter",
 ) -> None:
     """Configure models with dynamic loading and fuzzy search.
 

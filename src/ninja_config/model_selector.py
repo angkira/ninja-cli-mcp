@@ -587,8 +587,8 @@ def _get_aider_models(provider: str) -> list[Model]:
             return models
 
         # Parse model IDs from Aider output
-        for line in result.stdout.strip().split("\n"):
-            line = line.strip()
+        for raw_line in result.stdout.strip().split("\n"):
+            line = raw_line.strip()
             if not line or line.startswith("#") or line.startswith("Models"):
                 continue
             # Aider typically shows: model-id  (description)

@@ -198,7 +198,17 @@ class OpenCodeStrategy:
         opencode_provider = os.environ.get("NINJA_CODER_OPENCODE_PROVIDER", "openrouter")
 
         # Check if model already has a known provider prefix
-        known_providers = ["openrouter", "anthropic", "openai", "google", "zhipu", "zai", "deepseek", "cohere", "mistral"]
+        known_providers = [
+            "openrouter",
+            "anthropic",
+            "openai",
+            "google",
+            "zhipu",
+            "zai",
+            "deepseek",
+            "cohere",
+            "mistral",
+        ]
         has_provider = any(model_name.startswith(f"{p}/") for p in known_providers)
 
         if not has_provider and opencode_provider:
@@ -252,7 +262,9 @@ class OpenCodeStrategy:
             config_file = opencode_dir / "opencode.json"
             config_file.write_text(json.dumps(lsp_override_config, indent=2))
             env["XDG_CONFIG_HOME"] = config_dir
-            logger.info(f"[lsp] Project-aware config written to {config_file}: {lsp_override_config}")
+            logger.info(
+                f"[lsp] Project-aware config written to {config_file}: {lsp_override_config}"
+            )
 
         # Determine timeout based on task type
         # Multi-agent tasks may need more time
@@ -435,7 +447,7 @@ class OpenCodeStrategy:
                 try:
                     for root, dirs, files in os.walk(repo_root):
                         # Skip hidden directories (including .git, .cache, etc.)
-                        dirs[:] = [d for d in dirs if not d.startswith('.')]
+                        dirs[:] = [d for d in dirs if not d.startswith(".")]
                         for file in files:
                             file_path = Path(root) / file
                             try:

@@ -83,8 +83,7 @@ class OpenCodeProviderRouting(BaseModel):
 
     Examples:
         >>> routing = OpenCodeProviderRouting(
-        ...     order=["anthropic", "openrouter"],
-        ...     allow_fallbacks=True
+        ...     order=["anthropic", "openrouter"], allow_fallbacks=True
         ... )
     """
 
@@ -121,10 +120,9 @@ class OpenCodeOperatorSettings(BaseModel):
         >>> settings = OpenCodeOperatorSettings(
         ...     provider="anthropic",
         ...     provider_routing=OpenCodeProviderRouting(
-        ...         order=["anthropic", "openrouter"],
-        ...         allow_fallbacks=True
+        ...         order=["anthropic", "openrouter"], allow_fallbacks=True
         ...     ),
-        ...     experimental_models=False
+        ...     experimental_models=False,
         ... )
     """
 
@@ -154,9 +152,7 @@ class OpenCodeOperatorSettings(BaseModel):
     def validate_routing_consistency(self) -> OpenCodeOperatorSettings:
         """Ensure provider is in routing order if routing is configured."""
         if self.provider_routing and self.provider not in self.provider_routing.order:
-            raise ValueError(
-                f"Primary provider '{self.provider}' must be in routing order"
-            )
+            raise ValueError(f"Primary provider '{self.provider}' must be in routing order")
         return self
 
 
@@ -168,9 +164,7 @@ class AiderOperatorSettings(BaseModel):
 
     Examples:
         >>> settings = AiderOperatorSettings(
-        ...     edit_format="diff",
-        ...     auto_commits=True,
-        ...     dirty_commits=True
+        ...     edit_format="diff", auto_commits=True, dirty_commits=True
         ... )
     """
 
@@ -263,7 +257,7 @@ class ModelConfiguration(BaseModel):
         ...     default="anthropic/claude-sonnet-4-5",
         ...     quick="anthropic/claude-haiku-4-5",
         ...     heavy="anthropic/claude-opus-4",
-        ...     parallel="anthropic/claude-haiku-4-5"
+        ...     parallel="anthropic/claude-haiku-4-5",
         ... )
     """
 
@@ -321,16 +315,14 @@ class ComponentConfig(BaseModel):
         ...         "opencode": OpenCodeOperatorSettings(
         ...             provider="anthropic",
         ...             provider_routing=OpenCodeProviderRouting(
-        ...                 order=["anthropic", "openrouter"],
-        ...                 allow_fallbacks=True
-        ...             )
+        ...                 order=["anthropic", "openrouter"], allow_fallbacks=True
+        ...             ),
         ...         )
         ...     },
         ...     models=ModelConfiguration(
-        ...         default="anthropic/claude-sonnet-4-5",
-        ...         quick="anthropic/claude-haiku-4-5"
+        ...         default="anthropic/claude-sonnet-4-5", quick="anthropic/claude-haiku-4-5"
         ...     ),
-        ...     search_provider="perplexity"
+        ...     search_provider="perplexity",
         ... )
     """
 
@@ -398,12 +390,7 @@ class DaemonConfig(BaseModel):
     Examples:
         >>> config = DaemonConfig(
         ...     enabled=True,
-        ...     ports={
-        ...         "coder": 8100,
-        ...         "researcher": 8101,
-        ...         "secretary": 8102,
-        ...         "prompts": 8107
-        ...     }
+        ...     ports={"coder": 8100, "researcher": 8101, "secretary": 8102, "prompts": 8107},
         ... )
     """
 
@@ -451,11 +438,7 @@ class Preferences(BaseModel):
     and telemetry collection.
 
     Examples:
-        >>> prefs = Preferences(
-        ...     cost_vs_quality="balanced",
-        ...     auto_update=True,
-        ...     telemetry=False
-        ... )
+        >>> prefs = Preferences(cost_vs_quality="balanced", auto_update=True, telemetry=False)
     """
 
     cost_vs_quality: CostQualityPreference = Field(
@@ -494,17 +477,13 @@ class NinjaConfig(BaseModel):
         ...         "coder": ComponentConfig(
         ...             operator="opencode",
         ...             operator_settings={
-        ...                 "opencode": OpenCodeOperatorSettings(
-        ...                     provider="anthropic"
-        ...                 )
+        ...                 "opencode": OpenCodeOperatorSettings(provider="anthropic")
         ...             },
-        ...             models=ModelConfiguration(
-        ...                 default="anthropic/claude-sonnet-4-5"
-        ...             )
+        ...             models=ModelConfiguration(default="anthropic/claude-sonnet-4-5"),
         ...         )
         ...     },
         ...     daemon=DaemonConfig(enabled=True),
-        ...     preferences=Preferences(cost_vs_quality="balanced")
+        ...     preferences=Preferences(cost_vs_quality="balanced"),
         ... )
     """
 
@@ -735,9 +714,9 @@ def validate_config_dict(config_dict: dict[str, Any]) -> NinjaConfig:
         ...     "components": {
         ...         "coder": {
         ...             "operator": "opencode",
-        ...             "models": {"default": "anthropic/claude-sonnet-4-5"}
+        ...             "models": {"default": "anthropic/claude-sonnet-4-5"},
         ...         }
-        ...     }
+        ...     },
         ... }
         >>> config = validate_config_dict(config_dict)
     """
