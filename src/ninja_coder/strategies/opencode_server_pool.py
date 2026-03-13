@@ -7,16 +7,17 @@ Replaces per-task subprocess spawning with a persistent HTTP server, eliminating
 - Zombie processes and process group management
 
 Architecture:
-    pool[repo_root] -> ServerInstance(port, process)
+    pool[repo_root] -> ServerInstance(port, process, sse_listener)
     execute(repo_root, prompt, model) ->
         1. GET or START server for repo_root
         2. POST /session  (fresh session per task)
         3. POST /session/{id}/prompt_async
-        4. GET /event (SSE) — wait for session.idle
+        4. Wait for session.idle via shared SSE listener
         5. Return result with files changed
 
-Session reuse: fresh session per task to avoid growing context and cross-task pollution.
-Server reuse: one serve process per project directory, kept alive across tasks.
+SSE multiplexing: one SSE connection per server instance, shared across all
+concurrent tasks. Events are routed to per-session asyncio.Queue waiters.
+This avoids the race condition where multiple SSE connections compete for events.
 """
 
 from __future__ import annotations
@@ -67,17 +68,115 @@ class ExecutionResult:
     raw_diff: list[dict] | None = None
 
 
+class SSEListener:
+    """Shared SSE listener for a single opencode serve instance.
+
+    Maintains one persistent SSE connection and routes events to
+    per-session asyncio.Queue subscribers. This ensures parallel tasks
+    on the same server all receive their events correctly.
+    """
+
+    def __init__(self, base_url: str) -> None:
+        self._base_url = base_url
+        self._subscribers: dict[str, asyncio.Queue] = {}
+        self._lock = asyncio.Lock()
+        self._task: asyncio.Task | None = None
+        self._http: aiohttp.ClientSession | None = None
+
+    async def start(self) -> None:
+        """Start the background SSE reader loop."""
+        if self._task and not self._task.done():
+            return
+        self._http = aiohttp.ClientSession()
+        self._task = asyncio.create_task(self._reader_loop())
+
+    async def stop(self) -> None:
+        """Stop the SSE reader and close the HTTP session."""
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._task = None
+        if self._http:
+            await self._http.close()
+            self._http = None
+
+    async def subscribe(self, session_id: str) -> asyncio.Queue:
+        """Register a queue for receiving events for the given session_id."""
+        async with self._lock:
+            q: asyncio.Queue = asyncio.Queue()
+            self._subscribers[session_id] = q
+            return q
+
+    async def unsubscribe(self, session_id: str) -> None:
+        """Remove a session subscriber."""
+        async with self._lock:
+            self._subscribers.pop(session_id, None)
+
+    async def _reader_loop(self) -> None:
+        """Persistent SSE reader — reconnects on failure."""
+        while True:
+            try:
+                await self._read_stream()
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                logger.warning(f"[sse] reader loop error: {exc}, reconnecting in 1s")
+                await asyncio.sleep(1)
+
+    async def _read_stream(self) -> None:
+        """Read SSE events and dispatch to subscribers."""
+        assert self._http is not None
+        async with self._http.get(
+            f"{self._base_url}/event",
+            timeout=aiohttp.ClientTimeout(total=0),  # no timeout — persistent
+        ) as resp:
+            resp.raise_for_status()
+            async for raw_line in resp.content:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line.startswith("data:"):
+                    continue
+
+                try:
+                    event = json.loads(line[5:].strip())
+                except json.JSONDecodeError:
+                    continue
+
+                # Route event to the correct session subscriber
+                props = event.get("properties", {})
+                event_sid = props.get("sessionID")
+
+                if event_sid:
+                    # Session-scoped event — route to that session's queue
+                    async with self._lock:
+                        q = self._subscribers.get(event_sid)
+                    if q:
+                        await q.put(event)
+                else:
+                    # Broadcast event (file.edited, server.heartbeat, etc.)
+                    # Send to ALL active subscribers so each task can track file changes
+                    etype = event.get("type", "")
+                    if etype in ("file.edited", "file.watcher.updated"):
+                        async with self._lock:
+                            for q in self._subscribers.values():
+                                await q.put(event)
+
+
 class OpenCodeServerPool:
     """Pool of `opencode serve` instances — one per project directory.
 
     Thread/coroutine safe via asyncio.Lock per repo_root.
     Instances are started lazily on first request and kept alive.
+    Each instance has a shared SSE listener for event multiplexing.
     Call `stop_all()` on daemon shutdown.
     """
 
     def __init__(self, bin_path: str = "opencode") -> None:
         self._bin_path = bin_path
         self._instances: dict[str, ServerInstance] = {}
+        self._listeners: dict[str, SSEListener] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._pool_lock = asyncio.Lock()
         self._next_port = _PORT_START
@@ -96,21 +195,33 @@ class OpenCodeServerPool:
         """Execute a task in the given repo via opencode serve REST API."""
         repo_root = str(Path(repo_root).resolve())
         instance = await self._get_or_start(repo_root, model=model)
+        listener = self._listeners[repo_root]
 
         async with aiohttp.ClientSession() as http:
             session_id = await self._create_session(http, instance)
             logger.info(f"[pool] session {session_id} created for {repo_root}")
 
-            await self._send_prompt(http, instance, session_id, prompt)
-            logger.info(f"[pool] prompt sent to session {session_id}")
+            # Subscribe BEFORE sending prompt to avoid race
+            queue = await listener.subscribe(session_id)
+            try:
+                await self._send_prompt(http, instance, session_id, prompt)
+                logger.info(f"[pool] prompt sent to session {session_id}")
 
-            result = await self._wait_for_idle(http, instance, session_id, timeout=timeout)
+                result = await self._wait_for_idle(
+                    queue, instance, session_id, timeout=timeout,
+                )
+            finally:
+                await listener.unsubscribe(session_id)
+
             logger.info(f"[pool] session {session_id} completed: {result.summary}")
             return result
 
     async def stop_all(self) -> None:
         """Terminate all server instances. Call on daemon shutdown."""
         async with self._pool_lock:
+            for key, listener in self._listeners.items():
+                await listener.stop()
+            self._listeners.clear()
             for key, inst in list(self._instances.items()):
                 logger.info(f"[pool] stopping server on port {inst.port} ({key})")
                 try:
@@ -138,9 +249,19 @@ class OpenCodeServerPool:
                 return existing
             if existing:
                 logger.warning(f"[pool] server for {repo_root} died, restarting")
+                # Stop old listener
+                old_listener = self._listeners.pop(repo_root, None)
+                if old_listener:
+                    await old_listener.stop()
 
             inst = await self._start_server(repo_root, model=model)
             self._instances[repo_root] = inst
+
+            # Start shared SSE listener for this instance
+            listener = SSEListener(inst.base_url)
+            await listener.start()
+            self._listeners[repo_root] = listener
+
             return inst
 
     async def _start_server(self, repo_root: str, model: str | None = None) -> ServerInstance:
@@ -192,7 +313,6 @@ class OpenCodeServerPool:
     def _build_env(model: str | None = None) -> dict[str, str]:
         env = os.environ.copy()
         if model:
-            # opencode respects OPENCODE_MODEL env var for default model
             env["OPENCODE_MODEL"] = model
         return env
 
@@ -223,66 +343,53 @@ class OpenCodeServerPool:
 
     async def _wait_for_idle(
         self,
-        http: aiohttp.ClientSession,
+        queue: asyncio.Queue,
         inst: ServerInstance,
         session_id: str,
         timeout: int,
     ) -> ExecutionResult:
-        """Stream SSE events until session.idle for our session_id."""
+        """Consume events from the per-session queue until session.idle."""
         files_changed: list[str] = []
         diff: list[dict] = []
         deadline = time.time() + timeout
 
-        async with http.get(
-            f"{inst.base_url}/event",
-            timeout=aiohttp.ClientTimeout(total=timeout + 10),
-        ) as resp:
-            resp.raise_for_status()
-            async for raw_line in resp.content:
-                if time.time() > deadline:
-                    raise TimeoutError(
-                        f"Task in session {session_id} did not complete within {timeout}s"
-                    )
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Task in session {session_id} did not complete within {timeout}s"
+                )
 
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line.startswith("data:"):
-                    continue
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=remaining)
+            except TimeoutError:
+                raise TimeoutError(
+                    f"Task in session {session_id} did not complete within {timeout}s"
+                ) from None
 
-                try:
-                    event = json.loads(line[5:].strip())
-                except json.JSONDecodeError:
-                    continue
+            etype = event.get("type", "")
+            props = event.get("properties", {})
 
-                etype = event.get("type", "")
-                props = event.get("properties", {})
+            if etype == "file.edited":
+                fpath = props.get("file", "")
+                if fpath:
+                    try:
+                        rel = str(Path(fpath).relative_to(inst.repo_root))
+                    except ValueError:
+                        rel = fpath
+                    if rel not in files_changed:
+                        files_changed.append(rel)
 
-                # Only care about events for our session
-                event_sid = props.get("sessionID")
-                if event_sid and event_sid != session_id:
-                    continue
+            elif etype == "session.diff":
+                diff = props.get("diff", [])
 
-                if etype == "file.edited":
-                    fpath = props.get("file", "")
-                    if fpath:
-                        # Convert absolute path to relative to repo_root
-                        try:
-                            rel = str(Path(fpath).relative_to(inst.repo_root))
-                        except ValueError:
-                            rel = fpath
-                        if rel not in files_changed:
-                            files_changed.append(rel)
+            elif etype == "session.idle":
+                break
 
-                elif etype == "session.diff":
-                    diff = props.get("diff", [])
-
-                elif etype == "session.idle":
-                    # Task complete
+            elif etype == "session.status":
+                status_type = props.get("status", {}).get("type", "")
+                if status_type == "idle":
                     break
-
-                elif etype == "session.status":
-                    status_type = props.get("status", {}).get("type", "")
-                    if status_type == "idle":
-                        break
 
         # Build result
         if not files_changed and diff:
