@@ -1,6 +1,12 @@
 """Common infrastructure for Ninja MCP modules."""
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version
+
+
+try:
+    __version__ = version("ninja-mcp")
+except PackageNotFoundError:
+    __version__ = "0.0.0-dev"
 
 from ninja_common.daemon import DaemonManager
 from ninja_common.logging_utils import get_logger, setup_logging

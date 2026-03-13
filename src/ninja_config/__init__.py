@@ -2,7 +2,13 @@
 Ninja Config Module - Configuration and model selection tools.
 """
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version
+
+
+try:
+    __version__ = version("ninja-mcp")
+except PackageNotFoundError:
+    __version__ = "0.0.0-dev"
 
 from ninja_config.configurator import run_configurator
 from ninja_config.installer import run_installer

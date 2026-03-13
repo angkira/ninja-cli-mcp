@@ -573,6 +573,45 @@ class DaemonManager:
         self.stop(module)
         return self.start(module)
 
+    def upgrade(self, version: str | None = None) -> bool:
+        """Upgrade ninja-mcp from GitLab PyPI registry."""
+        import subprocess as sp
+
+        registry_url = os.environ.get(
+            "NINJA_REGISTRY_URL",
+            "https://git.mcp-test.dev/api/v4/projects/hars%2Fninja-cli-mcp/packages/pypi/simple",
+        )
+        token = os.environ.get("NINJA_REGISTRY_TOKEN", "")
+
+        if token:
+            registry_url = registry_url.replace("https://", f"https://__token__:{token}@")
+
+        pkg_spec = f"ninja-mcp=={version}" if version else "ninja-mcp"
+
+        cmd = [
+            sys.executable, "-m", "pip", "install",
+            "--user", "--break-system-packages",
+            "--upgrade",
+            "--extra-index-url", registry_url,
+            pkg_spec,
+        ]
+
+        logger.info(f"Installing {pkg_spec}...")
+        result = sp.run(cmd, check=False, capture_output=True, text=True, timeout=120)
+
+        if result.returncode != 0:
+            logger.error(f"Upgrade failed: {result.stderr}")
+            return False
+
+        logger.info("Package upgraded, restarting running daemons...")
+        for name in ["coder", "researcher", "secretary", "prompts"]:
+            status = self.status(name)
+            if status.get("running"):
+                logger.info(f"Restarting {name}...")
+                self.restart(name)
+
+        return True
+
     def list_modules(self) -> list[str]:
         """List all available modules.
 
@@ -630,6 +669,13 @@ def main() -> int:
         choices=["coder", "researcher", "secretary", "resources", "prompts"],
         help="Module name (omit for all)",
     )
+
+    # Upgrade command
+    upgrade_parser = subparsers.add_parser("upgrade", help="Upgrade ninja-mcp package")
+    upgrade_parser.add_argument("--version", "-v", help="Specific version (for rollback)")
+
+    # Version command
+    subparsers.add_parser("version", help="Show installed version")
 
     # Connect command (for MCP clients)
     connect_parser = subparsers.add_parser("connect", help="Connect to daemon socket")
@@ -707,6 +753,22 @@ def main() -> int:
             status_all = manager.status_all()
             print(json.dumps(status_all, indent=2))
         return 0
+
+    elif args.command == "upgrade":
+        print("Upgrading ninja-mcp...")
+        if manager.upgrade(version=getattr(args, "version", None)):
+            print("✅ Upgrade complete!")
+        else:
+            print("❌ Upgrade failed.", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.command == "version":
+        from importlib.metadata import version as get_version
+        try:
+            v = get_version("ninja-mcp")
+            print(f"ninja-mcp {v}")
+        except Exception:
+            print("ninja-mcp (version unknown)")
 
     elif args.command == "connect":
         # For MCP clients - forward stdio to HTTP/SSE daemon

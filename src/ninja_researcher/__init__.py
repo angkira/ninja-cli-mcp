@@ -1,6 +1,12 @@
 """Ninja Researcher - Web search and report generation module for Ninja MCP."""
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version
+
+
+try:
+    __version__ = version("ninja-mcp")
+except PackageNotFoundError:
+    __version__ = "0.0.0-dev"
 
 from ninja_researcher.models import (
     DeepResearchRequest,

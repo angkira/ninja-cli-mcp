@@ -4,7 +4,13 @@ Ninja Secretary MCP Module.
 Provides codebase exploration, documentation, and session tracking capabilities.
 """
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version
+
+
+try:
+    __version__ = version("ninja-mcp")
+except PackageNotFoundError:
+    __version__ = "0.0.0-dev"
 
 from ninja_secretary.models import (
     AnalyseFileRequest,
