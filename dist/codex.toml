@@ -1,0 +1,23 @@
+# ninja-mcp — OpenAI Codex CLI integration
+# Paste this block into ~/.codex/config.toml after running: pip install ninja-mcp
+# API keys are managed via: ninja-config  (stored in OS keyring)
+
+[mcp_servers.ninja_coder]
+command = "ninja-coder"
+args = []
+startup_timeout_sec = 30
+
+[mcp_servers.ninja_researcher]
+command = "ninja-researcher"
+args = []
+startup_timeout_sec = 30
+
+[mcp_servers.ninja_secretary]
+command = "ninja-secretary"
+args = []
+startup_timeout_sec = 30
+
+[mcp_servers.ninja_prompts]
+command = "ninja-prompts"
+args = []
+startup_timeout_sec = 30

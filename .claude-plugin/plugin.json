@@ -1,0 +1,9 @@
+{
+  "name": "ninja",
+  "version": "0.7.3",
+  "description": "Multi-module MCP server: Coder, Researcher, Secretary, Resources, Prompts",
+  "author": "ninja-mcp contributors",
+  "homepage": "https://git.mcp-test.dev/hars/ninja-cli-mcp",
+  "repository": "https://git.mcp-test.dev/hars/ninja-cli-mcp",
+  "license": "MIT"
+}

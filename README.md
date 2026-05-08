@@ -639,6 +639,83 @@ See [SECURITY.md](SECURITY.md) for details.
 
 ---
 
+## Install — MCP Host Integration
+
+Install the package first, then configure your host:
+
+```bash
+pip install ninja-mcp
+```
+
+API keys (OpenRouter, Anthropic, etc.) are managed via the `ninja-config` TUI and stored in the OS keyring (with an encrypted-file fallback on headless machines):
+
+```bash
+ninja-config
+```
+
+### Claude Code
+
+After `pip install ninja-mcp`, install the plugin from this repository:
+
+```bash
+/plugin install ninja@https://git.mcp-test.dev/hars/ninja-cli-mcp
+```
+
+Or, if you have a local clone:
+
+```bash
+/plugin install ninja@/path/to/ninja-cli-mcp
+```
+
+Claude Code reads `.mcp.json` at the repo root automatically. All four MCP servers (`ninja-coder`, `ninja-researcher`, `ninja-secretary`, `ninja-prompts`) will be registered.
+
+### OpenAI Codex CLI
+
+After `pip install ninja-mcp`, paste the contents of `dist/codex.toml` into `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.ninja_coder]
+command = "ninja-coder"
+args = []
+startup_timeout_sec = 30
+
+[mcp_servers.ninja_researcher]
+command = "ninja-researcher"
+args = []
+startup_timeout_sec = 30
+
+[mcp_servers.ninja_secretary]
+command = "ninja-secretary"
+args = []
+startup_timeout_sec = 30
+
+[mcp_servers.ninja_prompts]
+command = "ninja-prompts"
+args = []
+startup_timeout_sec = 30
+```
+
+### Generic MCP (Cursor / Windsurf / Claude Desktop)
+
+After `pip install ninja-mcp`, paste the contents of `dist/mcp.json` into your host's MCP config file:
+
+- **Cursor**: `~/.cursor/mcp.json`
+- **Windsurf**: `~/.windsurf/mcp.json`
+- **Claude Desktop**: `claude_desktop_config.json` (under `mcpServers`)
+
+```json
+{
+  "mcpServers": {
+    "ninja-coder":      { "command": "ninja-coder",      "args": [], "env": {} },
+    "ninja-researcher": { "command": "ninja-researcher", "args": [], "env": {} },
+    "ninja-secretary":  { "command": "ninja-secretary",  "args": [], "env": {} },
+    "ninja-prompts":    { "command": "ninja-prompts",    "args": [], "env": {} }
+  }
+}
+```
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for:

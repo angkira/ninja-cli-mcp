@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "ninja-coder": {
+      "command": "ninja-coder",
+      "args": [],
+      "env": {}
+    },
+    "ninja-researcher": {
+      "command": "ninja-researcher",
+      "args": [],
+      "env": {}
+    },
+    "ninja-secretary": {
+      "command": "ninja-secretary",
+      "args": [],
+      "env": {}
+    },
+    "ninja-prompts": {
+      "command": "ninja-prompts",
+      "args": [],
+      "env": {}
+    }
+  }
+}

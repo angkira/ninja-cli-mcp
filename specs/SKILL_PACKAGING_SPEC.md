@@ -63,7 +63,7 @@ ninja-skill package <skill_dir> [--output <path>]
 
 **Example:**
 ```bash
-ninja-skill package claude-integration/skills/ninja-code -o ninja-code-skill.zip
+ninja-skill package skills/ninja-code -o ninja-code-skill.zip
 ```
 
 #### `ninja-skill validate`
@@ -193,10 +193,10 @@ ninja-skill = "ninja_common.skill_cli:main"
 
 ```bash
 # Package the ninja-code skill
-ninja-skill package claude-integration/skills/ninja-code
+ninja-skill package skills/ninja-code
 
 # Validate before packaging
-ninja-skill validate claude-integration/skills/ninja-code
+ninja-skill validate skills/ninja-code
 
 # Show skill info
 ninja-skill info ninja-code-skill.zip

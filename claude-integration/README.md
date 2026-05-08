@@ -29,14 +29,14 @@ Copy commands to your project's `.claude/commands/` directory:
 
 ```bash
 mkdir -p .claude/commands
-cp claude-integration/commands/*.md .claude/commands/
+cp commands/*.md .claude/commands/
 ```
 
 Or to your global Claude Code config:
 
 ```bash
 mkdir -p ~/.claude/commands
-cp claude-integration/commands/*.md ~/.claude/commands/
+cp commands/*.md ~/.claude/commands/
 ```
 
 ### 2. Install Custom Agents
@@ -45,7 +45,7 @@ Copy agents to your project:
 
 ```bash
 mkdir -p .claude/agents
-cp claude-integration/agents/*.md .claude/agents/
+cp agents/*.md .claude/agents/
 ```
 
 ### 3. Configure Hooks
