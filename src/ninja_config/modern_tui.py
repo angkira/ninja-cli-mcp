@@ -9,6 +9,7 @@ Features:
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import ClassVar
 
@@ -30,6 +31,15 @@ from textual.widgets import (
 )
 
 from ninja_common.config_manager import ConfigManager
+from ninja_config.secrets_store import (
+    KNOWN_SECRET_NAMES,
+    SecretStore,
+    SecretStoreUnavailable,
+    default_store,
+)
+
+
+log = logging.getLogger(__name__)
 
 
 # Import model fetching from model_selector
@@ -295,6 +305,282 @@ class APIKeyPanel(Widget):
             pass
 
 
+def _mask(value: str) -> str:
+    """Return a masked representation of a secret value.
+
+    Shows only the last 4 characters preceded by bullet dots.
+    Never exposes the raw value.
+
+    Examples:
+        "sk-abc1234" -> "••••234"  (last 4 of 10-char string is "1234" — wait, corrected below)
+        Actually: last 4 chars appended to "••••".
+        "abc" -> "••••"   (too short, no preview)
+        ""    -> "••••"
+    """
+    if len(value) > 4:
+        return f"••••{value[-4:]}"
+    return "••••"
+
+
+# Canonical display order for known secrets — stable across refreshes.
+_KNOWN_SECRET_NAMES_ORDERED: list[str] = sorted(KNOWN_SECRET_NAMES)
+
+
+class SecretsPanel(Widget):
+    """Panel for managing all known API secrets via the SecretStore backend.
+
+    Displays each KNOWN_SECRET_NAME with its set/unset status and a masked
+    preview when set.  Provides Set/Update and Delete actions per row.
+    Errors from the store (e.g. SecretStoreUnavailable) are surfaced inline;
+    the TUI never crashes.
+    """
+
+    # ID used for the error banner Static widget.
+    _ERROR_BANNER_ID = "secrets-error-banner"
+
+    def __init__(self, store: SecretStore | None = None) -> None:
+        super().__init__()
+        # Allow injecting a custom store for testing; otherwise use the singleton.
+        self._store: SecretStore = store if store is not None else default_store()
+        # Tracks which secret is pending a Set/Update operation (name or None).
+        self._pending_set: str | None = None
+
+    # ------------------------------------------------------------------
+    # Compose
+    # ------------------------------------------------------------------
+
+    def compose(self) -> ComposeResult:
+        """Render the secrets management panel."""
+        yield Label("[bold cyan]\U0001f511 API Key Secrets[/bold cyan]", id="secrets-title")
+        try:
+            backend = self._store.backend_name()
+        except Exception:
+            backend = "unknown"
+        yield Label(f"[dim]Backend: {backend}[/dim]", id="secrets-backend")
+
+        # Error banner — hidden by default; shown on store errors.
+        yield Static("", id=self._ERROR_BANNER_ID, classes="secrets-error")
+
+        # One row per known secret.
+        for name in _KNOWN_SECRET_NAMES_ORDERED:
+            yield self._make_secret_row(name)
+
+        # Input area for setting a value — always rendered, toggled visible.
+        yield Label("", id="secrets-input-label", classes="field-label")
+        yield Input(
+            placeholder="Enter new value...",
+            password=True,
+            id="secrets-value-input",
+        )
+        yield Button("Save", variant="primary", id="secrets-save-btn")
+
+        # Hide the input area until a Set/Update action is triggered.
+        self._set_input_visible(False)
+
+    def on_mount(self) -> None:
+        """Ensure input area is hidden on mount."""
+        self._set_input_visible(False)
+        self._clear_error()
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _make_secret_row(self, name: str) -> Widget:
+        """Build a horizontal row widget for a single secret."""
+        try:
+            value = self._store.get(name)
+        except Exception as exc:
+            log.warning("secrets panel: get(%s) error: %s", name, type(exc).__name__)
+            value = None
+
+        is_set = value is not None
+        status = "[green]✓[/green]" if is_set else "[dim]·[/dim]"
+        preview = f" [dim]{_mask(value)}[/dim]" if is_set else ""
+        row_label = f"{status} {name}{preview}"
+
+        row = Horizontal(classes="secret-row")
+        row.compose_add_child(Label(row_label, classes="secret-name-label"))
+        set_btn = Button(
+            "Update" if is_set else "Set",
+            variant="default",
+            id=f"set-{name}",
+            classes="secret-set-btn",
+        )
+        row.compose_add_child(set_btn)
+        if is_set:
+            del_btn = Button(
+                "Delete",
+                variant="error",
+                id=f"del-{name}",
+                classes="secret-del-btn",
+            )
+            row.compose_add_child(del_btn)
+        return row
+
+    def _set_input_visible(self, visible: bool) -> None:
+        """Show or hide the value-entry input area."""
+        if not self.is_mounted:
+            return
+        try:
+            label = self.query_one("#secrets-input-label", Label)
+            inp = self.query_one("#secrets-value-input", Input)
+            btn = self.query_one("#secrets-save-btn", Button)
+            label.display = visible
+            inp.display = visible
+            btn.display = visible
+        except Exception:
+            pass
+
+    def _show_error(self, message: str) -> None:
+        """Display an error message in the error banner."""
+        if not self.is_mounted:
+            return
+        try:
+            banner = self.query_one(f"#{self._ERROR_BANNER_ID}", Static)
+            banner.update(f"[bold red]Error:[/bold red] {message}")
+            banner.display = True
+        except Exception:
+            pass
+
+    def _clear_error(self) -> None:
+        """Hide the error banner."""
+        if not self.is_mounted:
+            return
+        try:
+            banner = self.query_one(f"#{self._ERROR_BANNER_ID}", Static)
+            banner.update("")
+            banner.display = False
+        except Exception:
+            pass
+
+    def refresh_secrets(self) -> None:
+        """Re-render secret rows to reflect current store state.
+
+        Called after a set or delete operation to keep the display consistent
+        with the store.  Uses the same store instance to ensure consistency.
+        """
+        # Remove all existing secret-row Horizontals and re-add them.
+        for row in list(self.query(".secret-row")):
+            row.remove()
+
+        # Re-insert rows before the input label — find the anchor widget.
+        try:
+            anchor = self.query_one("#secrets-input-label", Label)
+        except Exception:
+            return
+
+        for name in reversed(_KNOWN_SECRET_NAMES_ORDERED):
+            anchor.before(self._make_secret_row(name))
+
+    # ------------------------------------------------------------------
+    # Event handlers
+    # ------------------------------------------------------------------
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Dispatch Set/Update and Delete actions."""
+        btn_id = event.button.id or ""
+
+        if btn_id.startswith("set-"):
+            name = btn_id[4:]
+            self._pending_set = name
+            self._clear_error()
+            try:
+                label = self.query_one("#secrets-input-label", Label)
+                label.update(f"[bold]New value for {name}:[/bold]")
+            except Exception:
+                pass
+            self._set_input_visible(True)
+            try:
+                self.query_one("#secrets-value-input", Input).focus()
+            except Exception:
+                pass
+
+        elif btn_id.startswith("del-"):
+            name = btn_id[4:]
+            self._do_delete(name)
+
+        elif btn_id == "secrets-save-btn":
+            self._do_save()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Save value when Enter is pressed in the value input."""
+        if event.input.id == "secrets-value-input":
+            self._do_save()
+
+    def _do_save(self) -> None:
+        """Persist the entered value for the pending secret."""
+        name = self._pending_set
+        if not name:
+            return
+        try:
+            inp = self.query_one("#secrets-value-input", Input)
+            value = inp.value.strip()
+        except Exception:
+            return
+        if not value:
+            self._show_error("Value cannot be empty.")
+            return
+        try:
+            self._store.set(name, value)
+        except SecretStoreUnavailable as exc:
+            log.warning("secrets panel: set(%s) unavailable: %s", name, exc)
+            self._show_error(
+                f"Backend unavailable: {exc}. "
+                "Set NINJA_CREDENTIAL_PASSWORD env var or use a keyring daemon."
+            )
+            return
+        except Exception as exc:
+            log.warning("secrets panel: set(%s) error: %s", name, type(exc).__name__)
+            self._show_error(f"Failed to save {name}: {exc}")
+            return
+
+        log.debug("secrets panel: set(%s) ok", name)
+        inp.value = ""
+        self._pending_set = None
+        self._set_input_visible(False)
+        self._clear_error()
+        self.refresh_secrets()
+        self.app.notify(f"✓ {name} saved!", severity="information", timeout=2)
+
+    def _do_delete(self, name: str) -> None:
+        """Delete the named secret after inline confirmation."""
+        # Inline confirm: reuse the error banner area for a confirm prompt.
+        # If a previous delete was already armed for this key, execute it;
+        # otherwise arm the prompt.
+        banner_id = f"#{self._ERROR_BANNER_ID}"
+        try:
+            banner = self.query_one(banner_id, Static)
+            current_text = str(banner.renderable)
+        except Exception:
+            current_text = ""
+
+        confirm_marker = f"CONFIRM_DELETE:{name}"
+        if confirm_marker in current_text:
+            # Second press — execute the delete.
+            self._clear_error()
+            try:
+                self._store.delete(name)
+            except Exception as exc:
+                log.warning("secrets panel: delete(%s) error: %s", name, type(exc).__name__)
+                self._show_error(f"Failed to delete {name}: {exc}")
+                return
+            log.debug("secrets panel: delete(%s) ok", name)
+            self.refresh_secrets()
+            self.app.notify(f"✓ {name} deleted.", severity="information", timeout=2)
+        else:
+            # First press — show confirm prompt.
+            try:
+                banner = self.query_one(banner_id, Static)
+                banner.update(
+                    f"[yellow]{confirm_marker}[/yellow]\n"
+                    f"Press Delete again to confirm removing [bold]{name}[/bold]."
+                )
+                banner.display = True
+            except Exception:
+                pass
+
+
 class SettingsPanel(Widget):
     """Panel for configuring component-specific settings."""
 
@@ -454,13 +740,22 @@ class ConfigTree(Tree):
             "🌐 Global Settings", expand=False, data={"type": "global_settings", "id": "global"}
         )
 
-        # API Keys sub-branch with individual keys
+        # API Keys sub-branch with individual keys — status pulled from SecretStore.
         api_keys_branch = global_settings.add(
-            "🔑 API Keys", expand=False, data={"type": "api_keys_branch"}
+            "\U0001f511 API Keys", expand=False, data={"type": "api_keys_branch"}
         )
 
-        # AI Providers
-        ai_keys = [
+        # Collect names known to the store so we can mark them set/unset.
+        try:
+            _store = default_store()
+            _store_set: set[str] = set(_store.list_names())
+        except Exception:
+            _store_set = set()
+
+        # Ordered list of all display entries (name, env_var).
+        # Includes KNOWN_SECRET_NAMES plus legacy non-standard keys still
+        # present in the old APIKeyPanel.API_KEY_INFO dict.
+        _all_key_entries: list[tuple[str, str]] = [
             ("OpenRouter", "OPENROUTER_API_KEY"),
             ("Anthropic", "ANTHROPIC_API_KEY"),
             ("OpenAI", "OPENAI_API_KEY"),
@@ -469,24 +764,21 @@ class ConfigTree(Tree):
             ("Ollama", "OLLAMA_API_KEY"),
             ("LM Studio", "LMSTUDIO_API_KEY"),
             ("Z.ai", "ZAI_API_KEY"),
-        ]
-        for name, env_var in ai_keys:
-            key_value = self.config.get(env_var, "") or os.environ.get(env_var, "")
-            status = "✓" if key_value else "○"
-            api_keys_branch.add(
-                f"{status} {name}",
-                data={"type": "api_key", "env_var": env_var, "name": name},
-                allow_expand=False,
-            )
-
-        # Research Providers
-        research_keys = [
             ("Perplexity", "PERPLEXITY_API_KEY"),
             ("Serper", "SERPER_API_KEY"),
+            ("Groq", "GROQ_API_KEY"),
+            ("DeepSeek", "DEEPSEEK_API_KEY"),
+            ("Mistral", "MISTRAL_API_KEY"),
         ]
-        for name, env_var in research_keys:
-            key_value = self.config.get(env_var, "") or os.environ.get(env_var, "")
-            status = "✓" if key_value else "○"
+
+        for name, env_var in _all_key_entries:
+            # For KNOWN_SECRET_NAMES prefer the store status; for others fall
+            # back to config/env.
+            if env_var in KNOWN_SECRET_NAMES:
+                is_set = env_var in _store_set
+            else:
+                is_set = bool(self.config.get(env_var, "") or os.environ.get(env_var, ""))
+            status = "✓" if is_set else "·"
             api_keys_branch.add(
                 f"{status} {name}",
                 data={"type": "api_key", "env_var": env_var, "name": name},
@@ -903,6 +1195,11 @@ class RightPanel(Container):
         self.remove_children()
         self.mount(InfoPanel(info))
 
+    def show_secrets(self) -> None:
+        """Show the secrets management panel."""
+        self.remove_children()
+        self.mount(SecretsPanel())
+
 
 class ModernConfigApp(App):
     """Modern TUI configurator."""
@@ -1009,6 +1306,51 @@ class ModernConfigApp(App):
     #save-settings-btn {
         margin-top: 1;
     }
+
+    /* SecretsPanel styles */
+    #secrets-title {
+        height: 1;
+        margin-bottom: 1;
+    }
+
+    #secrets-backend {
+        height: 1;
+        margin-bottom: 1;
+    }
+
+    .secrets-error {
+        color: $error;
+        margin-bottom: 1;
+        display: none;
+    }
+
+    .secret-row {
+        height: auto;
+        margin-bottom: 1;
+    }
+
+    .secret-name-label {
+        width: 1fr;
+    }
+
+    .secret-set-btn {
+        width: auto;
+        margin-left: 1;
+    }
+
+    .secret-del-btn {
+        width: auto;
+        margin-left: 1;
+    }
+
+    #secrets-value-input {
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+
+    #secrets-save-btn {
+        margin-bottom: 1;
+    }
     """
 
     BINDINGS: ClassVar[list] = [
@@ -1080,17 +1422,12 @@ class ModernConfigApp(App):
             right_panel.show_settings(context)
 
         elif node_type == "api_key":
-            # Show individual API key configuration panel
-            env_var = event.node.data.get("env_var")
-            if env_var:
-                right_panel.show_api_key(env_var)
+            # Route to the unified SecretsPanel for all secrets management.
+            right_panel.show_secrets()
 
         elif node_type == "api_keys_branch":
-            # Show info about API keys
-            info = "[bold cyan]🔑 API Keys[/bold cyan]\n\n"
-            info += "Configure your API keys for various providers.\n\n"
-            info += "[dim]Expand to select individual API keys to configure[/dim]"
-            right_panel.show_info(info)
+            # Show the unified secrets management panel.
+            right_panel.show_secrets()
 
         elif node_type == "operator":
             # Show operator info

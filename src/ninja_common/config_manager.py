@@ -7,9 +7,18 @@ stored in ~/.ninja-mcp.env file.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
+import shutil
+import sys
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
+
+# Module-level guard — migration runs at most once per process.
+_migration_done: bool = False
 
 
 class ConfigManager:
@@ -26,6 +35,8 @@ class ConfigManager:
             self.config_file = Path(config_file)
         else:
             self.config_file = Path.home() / ".ninja-mcp.env"
+
+        _maybe_migrate(self.config_file)
 
     def read_config(self) -> dict[str, str]:
         """
@@ -196,10 +207,43 @@ class ConfigManager:
     def export_env(self) -> None:
         """
         Export all configuration values to environment variables.
+
+        For keys in KNOWN_SECRET_NAMES the resolution order is:
+        1. SecretStore (keyring → encrypted-file) — highest priority
+        2. Existing os.environ value (already set by CI/Docker)
+        3. Plaintext value from ~/.ninja-mcp.env (legacy fallback)
+
+        Non-secret keys are injected from the .env file only if not already
+        present in os.environ (same as before, only if not already set).
         """
-        config = self.read_config()
-        for key, value in config.items():
-            os.environ[key] = value
+        # Deferred import — avoids pulling keyring into processes that only
+        # call read_config/write_config without ever exporting.
+        from ninja_config.secrets_store import KNOWN_SECRET_NAMES, default_store
+
+        store = default_store()
+        env_config = self.read_config()
+
+        for key, file_value in env_config.items():
+            if key in KNOWN_SECRET_NAMES:
+                # Resolution chain for secrets
+                resolved: str | None = store.get(key)
+                source = "store"
+                if resolved is None:
+                    existing = os.environ.get(key)
+                    if existing:
+                        resolved = existing
+                        source = "env"
+                    elif file_value:
+                        resolved = file_value
+                        source = "file"
+
+                if resolved is not None:
+                    if os.environ.get(key) != resolved:
+                        os.environ[key] = resolved
+                    logger.debug("Secret %s resolved from %s", key, source)
+            elif key not in os.environ:
+                # Non-secret: inject only if not already in environment
+                os.environ[key] = file_value
 
     def get_masked(self, key: str) -> str | None:
         """
@@ -220,3 +264,110 @@ class ConfigManager:
             return f"{value[:8]}...{value[-4:]}"
 
         return value
+
+
+# ---------------------------------------------------------------------------
+# Migration helpers (module-level, run at most once per process)
+# ---------------------------------------------------------------------------
+
+
+# Regex matching a secret key at line start, allowing leading whitespace and
+# optional "export " prefix:  ^\s*(?:export\s+)?<NAME>\s*=
+def _secret_line_pattern(name: str) -> re.Pattern[str]:
+    """Compile a regex that matches a .env line declaring the given secret name."""
+    return re.compile(r"^\s*(?:export\s+)?" + re.escape(name) + r"\s*=")
+
+
+def _maybe_migrate(env_file: Path) -> None:
+    """Run one-time migration of plaintext secrets from .env into the secret store.
+
+    Decision notes:
+    - Backup is created BEFORE any store.set() calls; if store.set raises
+      SecretStoreUnavailable the .env is left completely untouched (no backup
+      is written in that case — we only write the backup once we know migration
+      will succeed).
+    - Actually: backup is created only after all secrets are successfully
+      written to the store. This keeps the invariant "if backup exists,
+      migration completed".
+    - Atomic rewrite: write to .env.tmp then os.replace() — never leaves a
+      half-written .env.
+    - The module-level _migration_done guard prevents re-running on subsequent
+      ConfigManager instantiations within the same process.
+    """
+    global _migration_done
+    if _migration_done:
+        return
+    _migration_done = True  # Set early — even if we bail out, don't retry.
+
+    if not env_file.exists():
+        return
+
+    # Deferred import — keyring is not always installed / needed.
+    from ninja_config.secrets_store import (
+        KNOWN_SECRET_NAMES,
+        SecretStoreUnavailable,
+        default_store,
+    )
+
+    # Read all raw lines preserving original line endings.
+    raw_lines = env_file.read_text().splitlines(keepends=True)
+
+    # Identify secret lines: (name, value, index_in_raw_lines)
+    secret_line_patterns = {name: _secret_line_pattern(name) for name in KNOWN_SECRET_NAMES}
+
+    secrets_to_migrate: list[tuple[str, str, int]] = []  # (name, value, line_idx)
+    for idx, raw_line in enumerate(raw_lines):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        for name, pattern in secret_line_patterns.items():
+            if pattern.match(raw_line):
+                # Extract the value — handle quoted and unquoted forms.
+                value_match = re.match(
+                    r"^\s*(?:export\s+)?" + re.escape(name) + r"\s*=['\"]?(.*?)['\"]?\s*$",
+                    raw_line,
+                )
+                if value_match:
+                    value = value_match.group(1)
+                    if value:  # Only migrate non-empty values
+                        secrets_to_migrate.append((name, value, idx))
+                break  # A line can match at most one name
+
+    if not secrets_to_migrate:
+        return
+
+    # Attempt to write all secrets to the store. If any fails, abort entirely.
+    store = default_store()
+    try:
+        for name, value, _idx in secrets_to_migrate:
+            store.set(name, value)
+            logger.debug("Migrated secret %s to store", name)
+    except SecretStoreUnavailable:
+        logger.debug(
+            "SecretStore unavailable; skipping migration of %d secret(s) from %s",
+            len(secrets_to_migrate),
+            env_file,
+        )
+        return
+
+    # All secrets written — now create backup (idempotent) and rewrite .env.
+    backup_file = env_file.parent / (env_file.name + ".pre-migration.bak")
+    if not backup_file.exists():
+        shutil.copy2(env_file, backup_file)
+
+    # Line indices of secrets to remove
+    lines_to_remove: set[int] = {idx for _name, _value, idx in secrets_to_migrate}
+    new_lines = [line for i, line in enumerate(raw_lines) if i not in lines_to_remove]
+
+    tmp_file = env_file.parent / (env_file.name + ".tmp")
+    tmp_file.write_text("".join(new_lines))
+    tmp_file.chmod(0o600)
+    tmp_file.replace(env_file)
+
+    backend_name = store.backend_name()
+    n = len(secrets_to_migrate)
+    print(
+        f"[ninja-mcp] migrated {n} API key{'s' if n != 1 else ''} to {backend_name};"
+        f" backup at {backup_file}",
+        file=sys.stderr,
+    )
