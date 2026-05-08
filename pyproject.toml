@@ -32,6 +32,7 @@ dependencies = [
     "psutil>=5.9.0",
     "cryptography>=41.0.0",
     "keyring>=24",
+    "tomlkit>=0.13",
     "textual>=0.50.0",
     "rich>=13.0.0",
 ]
@@ -91,12 +92,19 @@ ninja-secretary-hooks = "ninja_secretary.hooks_cli:main"
 # Skill Packaging
 ninja-skill = "ninja_common.skill_cli:main"
 
+# MCP init helper
+ninja-mcp = "ninja_common.init_cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ninja_common", "src/ninja_coder", "src/ninja_researcher", "src/ninja_secretary", "src/ninja_prompts", "src/ninja_config"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+# Include dist/ manifests as package data inside ninja_common
+"src/ninja_common/dist" = "ninja_common/dist"
 
 [tool.ruff]
 line-length = 100
