@@ -38,12 +38,10 @@ Replace `opencode run` (spawn-and-kill per task) with long-running server:
 - If viable: replace `OpenCodeStrategy.build_command()` + subprocess with HTTP client
 - This eliminates ALL process management issues (zombies, process groups, LSP hangs)
 
-### 4. Remove ninja-prompts
-Currently unclear what ninja-prompts does that isn't covered by Claude skills.
-- [ ] Read `src/ninja_prompts/` — understand what it actually provides
-- [ ] Check if anything depends on it
-- [ ] Propose removal or consolidation to user
-- Files: `src/ninja_prompts/`
+### 4. Remove ninja-prompts ✅ DONE (2026-05-08)
+ninja-prompts (and ninja-resources) removed. Functionality covered by Claude skills.
+- [x] Source package, tests, console-script, manifests, init host targets, README all updated.
+- [x] Host configs (Codex, Claude Code, Cursor) cleaned of references.
 
 ### 5. Cleanup obsolete components on update
 When `ninja-config update` runs, detect and offer to remove outdated daemons/components.

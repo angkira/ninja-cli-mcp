@@ -48,7 +48,7 @@ fi
 echo ""
 echo -e "${BLUE}▸${NC} Verifying binary locations..."
 all_good=true
-for cmd in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts; do
+for cmd in ninja-coder ninja-researcher ninja-secretary; do
     cmd_path=$(command -v "$cmd" 2>/dev/null || echo "")
     if [[ "$cmd_path" == *"/.local/"* ]]; then
         echo -e "${GREEN}✓${NC} $cmd: $cmd_path"

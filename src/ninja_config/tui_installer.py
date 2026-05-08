@@ -729,7 +729,6 @@ class TUIInstaller:
             "ninja-coder",
             "ninja-researcher",
             "ninja-secretary",
-            "ninja-prompts",
         ]
 
         for cmd in commands:

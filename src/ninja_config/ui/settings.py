@@ -242,7 +242,6 @@ def setup_claude_integration() -> None:
         "ninja-coder",
         "ninja-researcher",
         "ninja-secretary",
-        "ninja-prompts",
     ]
 
     success_count = 0

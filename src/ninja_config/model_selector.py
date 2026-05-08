@@ -1067,7 +1067,7 @@ def delete_component(component_name: str) -> bool:
     """Delete a component's configuration.
 
     Args:
-        component_name: Component name (e.g., 'ninja-resources', 'ninja-prompts').
+        component_name: Component name (e.g., 'ninja-coder', 'ninja-secretary').
 
     Returns:
         True if successful, False otherwise.
@@ -1079,8 +1079,6 @@ def delete_component(component_name: str) -> bool:
 
     # Module-specific environment variable patterns
     module_patterns = {
-        "ninja-resources": ["NINJA_RESOURCES_"],
-        "ninja-prompts": ["NINJA_PROMPTS_"],
         "ninja-coder": ["NINJA_CODER_", "NINJA_CODE_BIN", "NINJA_MODEL"],
         "ninja-researcher": ["NINJA_RESEARCHER_"],
         "ninja-secretary": ["NINJA_SECRETARY_"],
@@ -1141,8 +1139,6 @@ def cleanup_removed_modules(config_manager: ConfigManager) -> list[str]:
 
     # Known module prefixes and their environment variable patterns
     module_patterns = {
-        "ninja-resources": ["NINJA_RESOURCES_"],
-        "ninja-prompts": ["NINJA_PROMPTS_"],
         "ninja-coder": ["NINJA_CODER_", "NINJA_CODE_BIN"],
         "ninja-researcher": ["NINJA_RESEARCHER_"],
         "ninja-secretary": ["NINJA_SECRETARY_"],

@@ -297,7 +297,7 @@ class AutoUpdater:
         mcpServers = config.get("mcpServers", {})
         updated = []
 
-        for server_name in ["ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-prompts"]:
+        for server_name in ["ninja-coder", "ninja-researcher", "ninja-secretary"]:
             if server_name in mcpServers:
                 if "env" not in mcpServers[server_name]:
                     mcpServers[server_name]["env"] = {}

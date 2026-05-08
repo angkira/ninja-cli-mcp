@@ -32,13 +32,13 @@ def test_servers_restarted():
     ]
 
     # Should have at least 4 servers: coder, researcher, secretary, prompts
-    assert len(ninja_servers) >= 4, (
-        f"Expected at least 4 ninja servers running from .venv, "
+    assert len(ninja_servers) >= 3, (
+        f"Expected at least 3 ninja servers running from .venv, "
         f"but found {len(ninja_servers)}: {ninja_servers}"
     )
 
     # Verify specific servers are running
-    server_types = ["ninja_coder", "ninja_researcher", "ninja_secretary", "ninja_prompts"]
+    server_types = ["ninja_coder", "ninja_researcher", "ninja_secretary"]
     for server_type in server_types:
         matching = [s for s in ninja_servers if server_type in s]
         assert len(matching) > 0, f"Server {server_type} not found in running processes"

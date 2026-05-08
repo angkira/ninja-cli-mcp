@@ -432,8 +432,6 @@ class NinjaConfigurator:
             "ninja-coder",
             "ninja-researcher",
             "ninja-secretary",
-            "ninja-resources",
-            "ninja-prompts",
         ]
         active_modules = get_active_modules()
 

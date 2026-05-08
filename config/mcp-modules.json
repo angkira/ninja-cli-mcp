@@ -208,113 +208,18 @@
           }
         }
       ]
-    },
-    "ninja-resources": {
-      "name": "Resources",
-      "id": "ninja-resources",
-      "command": "ninja-resources",
-      "description": "Load project context as queryable resources with automatic caching",
-      "icon": "🧠",
-      "version": "0.3.0",
-      "status": "stable",
-      "environment_variables": {
-        "NINJA_RESOURCES_CACHE_TTL": {
-          "default": "3600",
-          "description": "Cache TTL in seconds (default 1 hour)"
-        },
-        "NINJA_RESOURCES_MAX_FILES": {
-          "default": "1000",
-          "description": "Maximum files to process"
-        }
-      },
-      "tools": [
-        {
-          "name": "resource_codebase",
-          "description": "Load and analyze project codebase structure",
-          "parameters": {
-            "repo_root": "Root directory to analyze",
-            "include_patterns": "File patterns to include (optional)",
-            "exclude_patterns": "File patterns to exclude (optional)",
-            "max_files": "Maximum files to process (optional)"
-          }
-        },
-        {
-          "name": "resource_config",
-          "description": "Load configuration files with automatic secret redaction",
-          "parameters": {
-            "repo_root": "Root directory to search",
-            "include": "Config files to include (optional)",
-            "exclude": "Config files to exclude (optional)"
-          }
-        },
-        {
-          "name": "resource_docs",
-          "description": "Extract documentation with section parsing",
-          "parameters": {
-            "repo_root": "Root directory to analyze",
-            "max_depth": "Maximum directory depth (optional)",
-            "include_patterns": "File patterns to include (optional)"
-          }
-        }
-      ]
-    },
-    "ninja-prompts": {
-      "name": "Prompts",
-      "id": "ninja-prompts",
-      "command": "ninja-prompts",
-      "description": "Reusable prompt templates and multi-step workflow composition",
-      "icon": "✨",
-      "version": "0.3.0",
-      "status": "stable",
-      "environment_variables": {
-        "NINJA_PROMPTS_MAX_SUGGESTIONS": {
-          "default": "5",
-          "description": "Maximum prompt suggestions"
-        },
-        "NINJA_PROMPTS_CACHE_TTL": {
-          "default": "3600",
-          "description": "Cache TTL in seconds"
-        }
-      },
-      "tools": [
-        {
-          "name": "prompt_registry",
-          "description": "Manage prompt templates (CRUD operations)",
-          "parameters": {
-            "action": "Action: list, get, create, update, delete",
-            "prompt_id": "Prompt identifier (for get/delete)",
-            "prompt": "Prompt template data (for create/update)"
-          }
-        },
-        {
-          "name": "prompt_suggest",
-          "description": "Get AI-powered prompt suggestions",
-          "parameters": {
-            "context": "Context object with task, language, file_type",
-            "max_suggestions": "Maximum suggestions (optional)"
-          }
-        },
-        {
-          "name": "prompt_chain",
-          "description": "Execute multi-step workflows",
-          "parameters": {
-            "action": "Action: execute or validate",
-            "steps": "Array of workflow steps"
-          }
-        }
-      ]
     }
   },
   "installation": {
     "claude_code": {
       "description": "Register with Claude Code IDE",
       "script": "./scripts/install_claude_code_mcp.sh",
-      "flags": "--all or --coder --researcher --secretary --resources --prompts"
+      "flags": "--all or --coder --researcher --secretary"
     },
     "opencode": {
       "description": "Register with OpenCode CLI",
       "script": "./scripts/install_opencode_mcp.sh",
-      "flags": "--all or --coder --researcher --secretary --resources --prompts"
+      "flags": "--all or --coder --researcher --secretary"
     },
     "vscode": {
       "description": "Register with VS Code Cline extension",
@@ -339,14 +244,9 @@
       "description": "Use Researcher for investigating issues and Secretary for analyzing code"
     },
     {
-      "title": "Learning & Documentation",
-      "modules": ["ninja-resources", "ninja-secretary"],
-      "description": "Use Resources to load project context and Secretary for documentation analysis"
-    },
-    {
       "title": "Code Review & Analysis",
-      "modules": ["ninja-prompts", "ninja-secretary"],
-      "description": "Use Prompts for systematic reviews and Secretary for codebase metrics"
+      "modules": ["ninja-coder", "ninja-secretary"],
+      "description": "Use Coder for systematic reviews and Secretary for codebase metrics"
     }
   ]
 }

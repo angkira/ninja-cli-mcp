@@ -58,8 +58,8 @@ def _plugin_mode_instructions() -> None:
     print(f"  /plugin install ninja@{repo_url}")
     print()
     print(
-        "This installs all 4 MCP servers (ninja-coder, ninja-researcher,\n"
-        "ninja-secretary, ninja-prompts) plus Claude Code skills and agents."
+        "This installs all 3 MCP servers (ninja-coder, ninja-researcher,\n"
+        "ninja-secretary) plus Claude Code skills and agents."
     )
     print()
     print("To install directly into ~/.claude/settings.json instead, use:")

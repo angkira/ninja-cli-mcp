@@ -26,7 +26,6 @@ _NINJA_SECTIONS = [
     "mcp_servers.ninja_coder",
     "mcp_servers.ninja_researcher",
     "mcp_servers.ninja_secretary",
-    "mcp_servers.ninja_prompts",
 ]
 
 

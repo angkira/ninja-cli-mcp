@@ -51,11 +51,6 @@ def update_mcp_config(config_path, server_name):
             "NINJA_SECRETARY_MODEL": "google/gemini-2.0-flash-exp",
             "NINJA_SECRETARY_MAX_FILE_SIZE": "1048576",
         }
-    elif server_name == "ninja-prompts":
-        env_vars = {
-            "NINJA_PROMPTS_MAX_SUGGESTIONS": "5",
-            "NINJA_PROMPTS_CACHE_TTL": "3600",
-        }
 
     # Get actual API key from environment
     api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY", "")

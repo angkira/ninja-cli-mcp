@@ -35,7 +35,7 @@ try:
 
     # Remove env from all ninja servers
     cleaned = []
-    for server in ["ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-resources", "ninja-prompts"]:
+    for server in ["ninja-coder", "ninja-researcher", "ninja-secretary"]:
         if server in config["mcpServers"]:
             if "env" in config["mcpServers"][server]:
                 del config["mcpServers"][server]["env"]

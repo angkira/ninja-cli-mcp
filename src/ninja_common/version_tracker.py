@@ -24,7 +24,6 @@ def get_component_versions() -> dict[str, str]:
         ("ninja_coder", "coder"),
         ("ninja_researcher", "researcher"),
         ("ninja_secretary", "secretary"),
-        ("ninja_prompts", "prompts"),
         ("ninja_common", "common"),
         ("ninja_config", "config"),
     ]

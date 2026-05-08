@@ -291,7 +291,7 @@ fi
 
 # Verify correct binaries are being used and update command aliases
 info "Verifying binary locations..."
-for cmd in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts ninja-config ninja-daemon; do
+for cmd in ninja-coder ninja-researcher ninja-secretary ninja-config ninja-daemon; do
     cmd_path=$(command -v "$cmd" 2>/dev/null || echo "not found")
     if [[ "$cmd_path" == *"/.local/"* ]]; then
         success "$cmd: $cmd_path"
@@ -507,7 +507,6 @@ else
     pkill -f "ninja_coder.server" 2>/dev/null || true
     pkill -f "ninja_researcher.server" 2>/dev/null || true
     pkill -f "ninja_secretary.server" 2>/dev/null || true
-    pkill -f "ninja_prompts.server" 2>/dev/null || true
     sleep 2
 
     # Start new servers (only if in dev directory)
@@ -516,7 +515,6 @@ else
         nohup uv run python -m ninja_coder.server --http --port 8100 > /tmp/ninja-coder.log 2>&1 &
         nohup uv run python -m ninja_researcher.server --http --port 8101 > /tmp/ninja-researcher.log 2>&1 &
         nohup uv run python -m ninja_secretary.server --http --port 8102 > /tmp/ninja-secretary.log 2>&1 &
-        nohup uv run python -m ninja_prompts.server --http --port 8107 > /tmp/ninja-prompts.log 2>&1 &
         sleep 3
         success "HTTP MCP servers restarted from local code"
     fi
@@ -548,7 +546,7 @@ info "Updating Claude Code MCP servers..."
 if command -v claude &> /dev/null; then
     # Remove and re-add to ensure clean state
     # Use daemon proxy mode for hot-reload support
-    for server_config in "ninja-coder:coder" "ninja-researcher:researcher" "ninja-secretary:secretary" "ninja-resources:resources" "ninja-prompts:prompts"; do
+    for server_config in "ninja-coder:coder" "ninja-researcher:researcher" "ninja-secretary:secretary"; do
         server="${server_config%%:*}"
         module="${server_config##*:}"
         claude mcp remove "$server" -s user 2>/dev/null || true
@@ -651,7 +649,7 @@ echo ""
 info "Verifying installation..."
 
 VERIFY_PASSED=true
-for cmd in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts ninja-config; do
+for cmd in ninja-coder ninja-researcher ninja-secretary ninja-config; do
     if command -v "$cmd" &> /dev/null; then
         success "$cmd"
     else

@@ -1557,7 +1557,6 @@ class PowerConfigurator:
             "ninja-coder",
             "ninja-researcher",
             "ninja-secretary",
-            "ninja-prompts",
         ]
 
         success_count = 0

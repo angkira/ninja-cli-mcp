@@ -247,7 +247,6 @@ def verify_installation() -> bool:
         "ninja-coder",
         "ninja-researcher",
         "ninja-secretary",
-        "ninja-prompts",
     ]
 
     for cmd in commands:

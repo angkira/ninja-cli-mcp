@@ -16,8 +16,3 @@ startup_timeout_sec = 30
 command = "ninja-secretary"
 args = []
 startup_timeout_sec = 30
-
-[mcp_servers.ninja_prompts]
-command = "ninja-prompts"
-args = []
-startup_timeout_sec = 30

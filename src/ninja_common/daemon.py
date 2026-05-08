@@ -547,8 +547,6 @@ class DaemonManager:
             "coder": "ninja_coder",
             "researcher": "ninja_researcher",
             "secretary": "ninja_secretary",
-            "prompts": "ninja_prompts",
-            "resources": "ninja_resources",
         }
 
         module_name = module_map.get(module)

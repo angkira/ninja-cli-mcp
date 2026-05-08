@@ -667,7 +667,7 @@ Or, if you have a local clone:
 /plugin install ninja@/path/to/ninja-cli-mcp
 ```
 
-Claude Code reads `.mcp.json` at the repo root automatically. All four MCP servers (`ninja-coder`, `ninja-researcher`, `ninja-secretary`, `ninja-prompts`) will be registered.
+Claude Code reads `.mcp.json` at the repo root automatically. All three MCP servers (`ninja-coder`, `ninja-researcher`, `ninja-secretary`) will be registered.
 
 ### OpenAI Codex CLI
 
@@ -688,11 +688,6 @@ startup_timeout_sec = 30
 command = "ninja-secretary"
 args = []
 startup_timeout_sec = 30
-
-[mcp_servers.ninja_prompts]
-command = "ninja-prompts"
-args = []
-startup_timeout_sec = 30
 ```
 
 ### Generic MCP (Cursor / Windsurf / Claude Desktop)
@@ -708,8 +703,7 @@ After `pip install ninja-mcp`, paste the contents of `dist/mcp.json` into your h
   "mcpServers": {
     "ninja-coder":      { "command": "ninja-coder",      "args": [], "env": {} },
     "ninja-researcher": { "command": "ninja-researcher", "args": [], "env": {} },
-    "ninja-secretary":  { "command": "ninja-secretary",  "args": [], "env": {} },
-    "ninja-prompts":    { "command": "ninja-prompts",    "args": [], "env": {} }
+    "ninja-secretary":  { "command": "ninja-secretary",  "args": [], "env": {} }
   }
 }
 ```

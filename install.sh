@@ -203,7 +203,7 @@ fi
 
 # Verify correct binaries are being used
 info "Verifying binary locations..."
-for cmd in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts ninja-config ninja-daemon; do
+for cmd in ninja-coder ninja-researcher ninja-secretary ninja-config ninja-daemon; do
     cmd_path=$(command -v "$cmd" 2>/dev/null || echo "not found")
     if [[ "$cmd_path" == *"/.local/"* ]]; then
         success "$cmd: $cmd_path"
@@ -698,12 +698,12 @@ if [[ "$CLAUDE_INSTALLED" == "true" ]]; then
 
     # Use claude mcp add command (the correct way to register MCP servers)
     # Remove existing entries first (ignore errors if they don't exist)
-    for server in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts; do
+    for server in ninja-coder ninja-researcher ninja-secretary; do
         claude mcp remove "$server" -s user 2>/dev/null || true
     done
 
-    # Add all 5 servers to user scope
-    for server in ninja-coder ninja-researcher ninja-secretary ninja-resources ninja-prompts; do
+    # Add all 3 servers to user scope
+    for server in ninja-coder ninja-researcher ninja-secretary; do
         if claude mcp add --scope user --transport stdio "$server" -- "$server" 2>/dev/null; then
             success "$server registered"
         else
@@ -797,8 +797,6 @@ echo -e "${BOLD}Installed commands:${NC}"
 echo "  ninja-coder       - AI code assistant (MCP server)"
 echo "  ninja-researcher  - Web research (MCP server)"
 echo "  ninja-secretary   - File operations (MCP server)"
-echo "  ninja-resources   - Resource templates (MCP server)"
-echo "  ninja-prompts     - Prompt management (MCP server)"
 echo "  ninja-config      - Configuration & diagnostics"
 echo "  ninja-daemon      - Server management"
 echo ""

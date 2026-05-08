@@ -295,8 +295,6 @@ Expected output:
 ✓ ninja-coder running on port 8100
 ✓ ninja-researcher running on port 8101
 ✓ ninja-secretary running on port 8102
-✓ ninja-resources running on port 8106
-✓ ninja-prompts running on port 8107
 ```
 
 ### 3. Check MCP Servers
@@ -309,8 +307,6 @@ Expected output:
 ninja-coder
 ninja-researcher
 ninja-secretary
-ninja-resources
-ninja-prompts
 ```
 
 ---

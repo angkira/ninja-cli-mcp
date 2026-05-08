@@ -185,7 +185,7 @@ if not openrouter_key:
 
 # Update servers
 mcpServers = config.get('mcpServers', {})
-for server_name in ['ninja-coder', 'ninja-researcher', 'ninja-secretary', 'ninja-prompts']:
+for server_name in ['ninja-coder', 'ninja-researcher', 'ninja-secretary']:
     if server_name in mcpServers:
         if 'env' not in mcpServers[server_name]:
             mcpServers[server_name]['env'] = {}

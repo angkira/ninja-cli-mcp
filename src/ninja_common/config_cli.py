@@ -246,7 +246,6 @@ def cmd_doctor(args: argparse.Namespace) -> None:
             "ninja-coder",
             "ninja-researcher",
             "ninja-secretary",
-            "ninja-prompts",
         ]
 
         for server in ninja_servers:
@@ -575,13 +574,10 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
         "ninja-coder",
         "ninja-researcher",
         "ninja-secretary",
-        "ninja-prompts",
     ]
 
     # Determine which servers to install
-    if args.all or (
-        not args.coder and not args.researcher and not args.secretary and not args.prompts
-    ):
+    if args.all or (not args.coder and not args.researcher and not args.secretary):
         servers_to_install = servers
     else:
         servers_to_install = []
@@ -591,8 +587,6 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
             servers_to_install.append("ninja-researcher")
         if args.secretary:
             servers_to_install.append("ninja-secretary")
-        if args.prompts:
-            servers_to_install.append("ninja-prompts")
 
     # Register servers using claude mcp add
     print()
@@ -792,11 +786,6 @@ Examples:
         "--secretary",
         action="store_true",
         help="Register ninja-secretary server",
-    )
-    setup_claude_parser.add_argument(
-        "--prompts",
-        action="store_true",
-        help="Register ninja-prompts server",
     )
     setup_claude_parser.add_argument(
         "--all",
