@@ -233,12 +233,25 @@ class ResearchToolExecutor:
 
             # Process each chunk to extract key information
             async def analyze_chunk(chunk: list[dict]) -> str:
-                """Analyze a chunk of sources."""
+                """Analyze a chunk of sources.
+
+                Each source dict may contain the text body under any of:
+                ``snippet``, ``content``, or ``description``.  All three keys
+                are accepted so that callers using DuckDuckGo-style dicts
+                (``snippet``) and callers using the output of
+                ``researcher_deep_research`` or other natural key names
+                (``content`` / ``description``) work without adaptation.
+                """
                 analysis = []
                 for source in chunk:
                     title = source.get("title", "Untitled")
                     url = source.get("url", "")
-                    snippet = source.get("snippet", "No description available")
+                    snippet = (
+                        source.get("snippet")
+                        or source.get("content")
+                        or source.get("description")
+                        or "No description available"
+                    )
                     analysis.append(f"- **{title}**: {snippet}\n  Source: {url}")
                 return "\n".join(analysis)
 
@@ -342,7 +355,9 @@ class ResearchToolExecutor:
         for i, source in enumerate(sources, 1):
             title = source.get("title", "Untitled")
             url = source.get("url", "")
-            snippet = source.get("snippet", "")
+            snippet = (
+                source.get("snippet") or source.get("content") or source.get("description") or ""
+            )
             report += f"{i}. **{title}**\n   - URL: {url}\n   - Summary: {snippet}\n\n"
         return report
 

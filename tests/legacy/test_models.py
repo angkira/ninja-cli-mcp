@@ -6,7 +6,6 @@ import pytest
 from pydantic import ValidationError
 
 from ninja_cli_mcp.models import (
-    ApplyPatchResult,
     ExecutionMode,
     MergeReport,
     ParallelPlanRequest,
@@ -14,7 +13,6 @@ from ninja_cli_mcp.models import (
     PlanStep,
     QuickTaskRequest,
     QuickTaskResult,
-    RunTestsRequest,
     SequentialPlanRequest,
     StepConstraints,
     StepResult,
@@ -175,30 +173,6 @@ class TestParallelPlanRequest:
             ParallelPlanRequest(repo_root="/tmp", fanout=17, steps=steps)
 
 
-class TestRunTestsRequest:
-    """Tests for RunTestsRequest model."""
-
-    def test_minimal_request(self) -> None:
-        req = RunTestsRequest(repo_root="/tmp/repo", commands=["pytest"])
-        assert req.timeout_sec == 600
-        assert req.commands == ["pytest"]
-
-    def test_custom_timeout(self) -> None:
-        req = RunTestsRequest(
-            repo_root="/tmp/repo",
-            commands=["pytest", "npm test"],
-            timeout_sec=1200,
-        )
-        assert req.timeout_sec == 1200
-
-    def test_timeout_bounds(self) -> None:
-        with pytest.raises(ValidationError):
-            RunTestsRequest(repo_root="/tmp", commands=["pytest"], timeout_sec=5)
-
-        with pytest.raises(ValidationError):
-            RunTestsRequest(repo_root="/tmp", commands=["pytest"], timeout_sec=4000)
-
-
 class TestResultModels:
     """Tests for result models."""
 
@@ -251,9 +225,3 @@ class TestResultModels:
         assert result.status == "fail"
         assert result.logs_ref == ""
 
-    def test_apply_patch_result(self) -> None:
-        result = ApplyPatchResult(
-            status="not_supported",
-            message="Use AI code CLI directly",
-        )
-        assert result.status == "not_supported"

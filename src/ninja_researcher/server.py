@@ -16,6 +16,7 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Any
 
+import anyio
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
@@ -109,7 +110,11 @@ TOOLS: list[Tool] = [
                 "sources": {
                     "type": "array",
                     "items": {"type": "object"},
-                    "description": "Source documents to synthesize",
+                    "description": (
+                        "Source documents to synthesize. Each object should have "
+                        "'url' and 'title' fields. The text body may be provided "
+                        "under any of: 'snippet', 'content', or 'description'."
+                    ),
                 },
                 "report_type": {
                     "type": "string",
@@ -324,19 +329,33 @@ def create_server() -> Server:
     return server
 
 
+def _is_client_disconnect(exc: BaseException) -> bool:
+    """Return True if *exc* (or all leaves of an ExceptionGroup) are stream-closed errors."""
+    _disconnect_types = (anyio.ClosedResourceError, anyio.BrokenResourceError)
+    if isinstance(exc, BaseExceptionGroup):
+        return all(_is_client_disconnect(e) for e in exc.exceptions)
+    return isinstance(exc, _disconnect_types)
+
+
 async def main_stdio() -> None:
     """Run the MCP server over stdio."""
     logger.info("Starting ninja-researcher server (stdio mode)")
 
     server = create_server()
 
-    async with stdio_server() as (read_stream, write_stream):
-        logger.info("Server ready, waiting for requests")
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            logger.info("Server ready, waiting for requests")
+            await server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
+            )
+    except BaseException as exc:
+        if _is_client_disconnect(exc):
+            logger.warning("Client disconnected during server run (stream closed)")
+        else:
+            raise
 
 
 async def main_http(host: str, port: int) -> None:

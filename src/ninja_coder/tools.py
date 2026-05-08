@@ -19,8 +19,6 @@ from pathlib import Path
 from ninja_coder.driver import InstructionBuilder, NinjaDriver, NinjaResult
 from ninja_coder.models import (
     AgentInfo,
-    ApplyPatchRequest,
-    ApplyPatchResult,
     ExecutionMode,
     GetAgentsRequest,
     GetAgentsResult,
@@ -30,12 +28,10 @@ from ninja_coder.models import (
     PlanExecutionResult,
     QueryLogsRequest,
     QueryLogsResult,
-    RunTestsRequest,
     SequentialPlanRequest,
     SimpleTaskRequest,
     SimpleTaskResult,
     StepResult,
-    TestResult,
 )
 from ninja_common.logging_utils import get_logger
 from ninja_common.metrics import MetricsTracker, create_task_metrics
@@ -530,61 +526,6 @@ class ToolExecutor:
         base = 300
         per_task = 30  # Parallel is faster
         return base + (per_task * max(1, len(request.steps) // request.fanout))
-
-    async def run_tests(self, request: RunTestsRequest, client_id: str = "default") -> TestResult:
-        """
-        ⚠️ DEPRECATED - Run test commands via the AI code CLI.
-
-        This tool is deprecated because Ninja is for CODE WRITING ONLY.
-        Use bash tool or execute commands yourself to run tests.
-
-        Args:
-            request: Run tests request parameters.
-            client_id: Client identifier for isolation and rate limiting.
-
-        Returns:
-            Test result indicating this tool is deprecated.
-        """
-        logger.warning(f"run_tests called for client {client_id} - this tool is deprecated")
-
-        return TestResult(
-            status="error",
-            summary=(
-                "⚠️ DEPRECATED: Ninja is for code writing only. "
-                "Use bash tool to run tests: bash 'pytest tests/'"
-            ),
-        )
-
-    async def apply_patch(
-        self,
-        request: ApplyPatchRequest,
-        client_id: str = "default",
-    ) -> ApplyPatchResult:
-        """
-        Apply a patch (not supported - delegated to AI code CLI).
-
-        In this architecture, code patches are created and applied by the AI code CLI,
-        not by this server. This tool returns a not_supported status.
-
-        If you need to apply patches, include them in the task description for
-        coder_simple_task or execute_plan_sequential/parallel.
-
-        Args:
-            request: Apply patch request parameters.
-            client_id: Client identifier for isolation and rate limiting.
-
-        Returns:
-            Apply patch result with not_supported status.
-        """
-        logger.info(f"apply_patch called for client {client_id} - this is a no-op shim")
-
-        return ApplyPatchResult(
-            status="not_supported",
-            message=(
-                "⚠️ NOT SUPPORTED: Ninja writes code based on specifications, not patches. "
-                "To apply changes, describe what code to write in coder_simple_task."
-            ),
-        )
 
     async def get_agents(
         self,

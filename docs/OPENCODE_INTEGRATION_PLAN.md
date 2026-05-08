@@ -1686,7 +1686,7 @@ All core phases implemented and tested:
 4. **Comprehensive Logging**: Structured JSONL logs with rich metadata and query interface
 
 ### 📦 Deliverables
-- **7 MCP Tools**: simple_task, execute_plan, run_tests, apply_patch, session management (4 tools), multi-agent (2 tools), log querying
+- **5 MCP Tools**: simple_task, execute_plan, session management (4 tools), multi-agent (2 tools), log querying (removed coder_run_tests and coder_apply_patch — were non-functional stubs)
 - **3 Core Modules**: sessions.py (278 lines), multi_agent.py (311 lines), structured_logger.py (411 lines)
 - **61 Tests Passing**: 31 logger tests, 9 integration tests, 14 multi-agent tests, 7 session tests
 

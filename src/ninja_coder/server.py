@@ -30,12 +30,10 @@ from mcp.types import (
 )
 
 from ninja_coder.models import (
-    ApplyPatchRequest,
     GetAgentsRequest,
     MultiAgentTaskRequest,
     ParallelPlanRequest,
     QueryLogsRequest,
-    RunTestsRequest,
     SequentialPlanRequest,
     SimpleTaskRequest,
 )
@@ -329,70 +327,6 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="coder_run_tests",
-        description=(
-            "⚠️ DEPRECATED - DO NOT USE. "
-            "\n\n"
-            "Ninja is for CODE WRITING ONLY, not for running tests or commands. "
-            "\n\n"
-            "To run tests: Use bash tool or execute commands yourself. "
-            "Ninja only writes code based on specifications."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Absolute path to the repository root",
-                },
-                "commands": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Test commands (NOT SUPPORTED - use bash tool instead)",
-                },
-                "timeout_sec": {
-                    "type": "integer",
-                    "minimum": 10,
-                    "maximum": 3600,
-                    "description": "Timeout in seconds",
-                    "default": 600,
-                },
-            },
-            "required": ["repo_root", "commands"],
-        },
-    ),
-    Tool(
-        name="coder_apply_patch",
-        description=(
-            "⚠️ NOT SUPPORTED. "
-            "\n\n"
-            "Ninja writes code based on specifications, not patches. "
-            "\n\n"
-            "To apply changes: Describe what code to write in coder_simple_task. "
-            "Ninja will implement it directly."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repo_root": {
-                    "type": "string",
-                    "description": "Absolute path to the repository root",
-                },
-                "patch_content": {
-                    "type": "string",
-                    "description": "Patch content (NOT SUPPORTED)",
-                    "default": "",
-                },
-                "patch_description": {
-                    "type": "string",
-                    "description": "Description of the patch (NOT SUPPORTED)",
-                    "default": "",
-                },
-            },
-            "required": ["repo_root"],
-        },
-    ),
-    Tool(
         name="coder_get_agents",
         description=(
             "Get information about available specialized agents for multi-agent orchestration. "
@@ -649,12 +583,6 @@ You:
             elif name == "coder_execute_plan_parallel":
                 request = ParallelPlanRequest(**arguments)
                 return await executor.execute_plan_parallel(request, client_id=client_id)
-            elif name == "coder_run_tests":
-                request = RunTestsRequest(**arguments)
-                return await executor.run_tests(request, client_id=client_id)
-            elif name == "coder_apply_patch":
-                request = ApplyPatchRequest(**arguments)
-                return await executor.apply_patch(request, client_id=client_id)
             elif name == "coder_get_agents":
                 request = GetAgentsRequest(**arguments)
                 return await executor.get_agents(request, client_id=client_id)

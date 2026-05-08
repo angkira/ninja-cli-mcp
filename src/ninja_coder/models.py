@@ -163,27 +163,6 @@ class ParallelPlanRequest(BaseModel):
     steps: list[PlanStep] = Field(..., description="Plan steps to execute in parallel")
 
 
-class RunTestsRequest(BaseModel):
-    """Request to run tests via the AI code CLI."""
-
-    repo_root: str = Field(..., description="Absolute path to repository root")
-    commands: list[str] = Field(..., description="Test commands to execute")
-    timeout_sec: int = Field(
-        default=600,
-        ge=10,
-        le=3600,
-        description="Timeout in seconds",
-    )
-
-
-class ApplyPatchRequest(BaseModel):
-    """Request to apply a patch (delegated to AI code CLI)."""
-
-    repo_root: str = Field(..., description="Absolute path to repository root")
-    patch_content: str = Field(default="", description="Patch content (if applicable)")
-    patch_description: str = Field(default="", description="Description of the patch")
-
-
 # ============================================================================
 # Response Models
 # ============================================================================
@@ -241,20 +220,6 @@ class PlanExecutionResult(BaseModel):
         None,
         description="Total execution time in seconds",
     )
-
-
-class TestResult(BaseModel):
-    """Result of test execution."""
-
-    status: Literal["ok", "fail", "error"] = Field(..., description="Test status")
-    summary: str = Field(..., description="Test summary")
-    logs_ref: str = Field(default="", description="Path to test logs")
-
-
-class ApplyPatchResult(BaseModel):
-    """Result of patch application."""
-
-    status: Literal["ok", "not_supported", "error"] = Field(..., description="Status")
 
 
 # Multi-Agent Models

@@ -33,6 +33,10 @@ class FileSearchRequest(BaseModel):
     pattern: str = Field(..., description="Glob pattern to match files (e.g., '**/*.py')")
     repo_root: str = Field(..., description="Repository root path")
     max_results: int = Field(default=100, ge=1, le=1000, description="Maximum results")
+    content_regex: str | None = Field(
+        default=None,
+        description="Optional regex to filter files by content. Only files matching this pattern are returned.",
+    )
 
 
 class CodebaseReportRequest(BaseModel):
@@ -57,7 +61,9 @@ class DocumentSummaryRequest(BaseModel):
 class SessionReportRequest(BaseModel):
     """Request to get or update session report."""
 
-    session_id: str = Field(..., description="Session identifier")
+    session_id: str | None = Field(
+        default=None, description="Session identifier. Omit to list all sessions."
+    )
     action: Literal["get", "update", "create"] = Field(
         default="get", description="Action to perform"
     )
@@ -146,6 +152,7 @@ class FileSearchResult(BaseModel):
     matches: list[FileMatch] = Field(default_factory=list, description="Matching files")
     total_count: int = Field(..., description="Total matches found")
     truncated: bool = Field(default=False, description="Results truncated to max_results")
+    message: str = Field(default="", description="Error or informational message")
 
 
 class FileMatch(BaseModel):

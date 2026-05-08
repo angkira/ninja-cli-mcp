@@ -261,6 +261,23 @@ class SecretaryToolExecutor:
         """
         logger.info(f"Searching files with pattern '{request.pattern}' (client: {client_id})")
 
+        # Compile content_regex once before the loop; return a clean error for invalid patterns.
+        content_pattern: re.Pattern[str] | None = None
+        if request.content_regex:
+            try:
+                content_pattern = re.compile(request.content_regex)
+            except re.error as exc:
+                return FileSearchResult(
+                    status="error",
+                    matches=[],
+                    total_count=0,
+                    truncated=False,
+                    message=f"Invalid content_regex: {exc}",
+                )
+
+        _SKIP_DIRS = {".venv", "venv", "node_modules", "__pycache__", ".git"}
+        _MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
         try:
             repo_root = Path(request.repo_root)
 
@@ -271,17 +288,34 @@ class SecretaryToolExecutor:
             all_matches: list[FileMatch] = []
 
             for path in repo_root.glob(request.pattern):
-                if path.is_file():
-                    stat = path.stat()
-                    rel_path = str(path.relative_to(repo_root))
+                if not path.is_file():
+                    continue
 
-                    all_matches.append(
-                        FileMatch(
-                            path=rel_path,
-                            size=stat.st_size,
-                            modified=datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                        )
+                # Skip files inside ignored directories.
+                if _SKIP_DIRS.intersection(path.parts):
+                    continue
+
+                stat = path.stat()
+
+                # Apply content filter when requested.
+                if content_pattern is not None:
+                    if stat.st_size > _MAX_FILE_SIZE:
+                        continue
+                    try:
+                        content = path.read_text(encoding="utf-8", errors="replace")
+                    except Exception:
+                        continue
+                    if not content_pattern.search(content):
+                        continue
+
+                rel_path = str(path.relative_to(repo_root))
+                all_matches.append(
+                    FileMatch(
+                        path=rel_path,
+                        size=stat.st_size,
+                        modified=datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(),
                     )
+                )
 
             # Sort by path
             all_matches.sort(key=lambda m: m.path)
@@ -520,6 +554,19 @@ class SecretaryToolExecutor:
         Returns:
             Session report.
         """
+        # When session_id is omitted, return an index of available sessions.
+        if request.session_id is None:
+            return SessionReport(
+                session_id="__index__",
+                started_at=datetime.datetime.now().isoformat(),
+                last_updated=datetime.datetime.now().isoformat(),
+                summary="Session index",
+                metadata={
+                    "available_sessions": list(self.sessions.keys()),
+                    "message": "Pass session_id=<id> to fetch a specific report",
+                },
+            )
+
         session_id = request.session_id
 
         if request.action == "create":

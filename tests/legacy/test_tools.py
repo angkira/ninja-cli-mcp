@@ -8,11 +8,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from ninja_cli_mcp.models import (
-    ApplyPatchRequest,
     ParallelPlanRequest,
     PlanStep,
     QuickTaskRequest,
-    RunTestsRequest,
     SequentialPlanRequest,
     StepConstraints,
 )
@@ -333,88 +331,3 @@ class TestExecutePlanParallel:
         assert result.status == "partial"
 
 
-class TestRunTests:
-    """Tests for run_tests tool."""
-
-    @pytest.mark.asyncio
-    async def test_successful_tests(
-        self,
-        executor: ToolExecutor,
-        mock_driver: MagicMock,
-        temp_repo: Path,
-    ) -> None:
-        mock_driver.execute_async.return_value = NinjaResult(
-            success=True,
-            summary="All tests passed",
-            raw_logs_path="/tmp/test.log",
-        )
-
-        request = RunTestsRequest(
-            repo_root=str(temp_repo),
-            commands=["pytest tests/"],
-        )
-
-        result = await executor.run_tests(request)
-
-        assert result.status == "ok"
-        assert result.summary == "All tests passed"
-
-    @pytest.mark.asyncio
-    async def test_failed_tests(
-        self,
-        executor: ToolExecutor,
-        mock_driver: MagicMock,
-        temp_repo: Path,
-    ) -> None:
-        mock_driver.execute_async.return_value = NinjaResult(
-            success=False,
-            summary="3 tests failed",
-            exit_code=1,
-        )
-
-        request = RunTestsRequest(
-            repo_root=str(temp_repo),
-            commands=["pytest tests/"],
-        )
-
-        result = await executor.run_tests(request)
-
-        assert result.status == "fail"
-
-    @pytest.mark.asyncio
-    async def test_error_status(
-        self,
-        executor: ToolExecutor,
-        mock_driver: MagicMock,
-        temp_repo: Path,
-    ) -> None:
-        mock_driver.execute_async.return_value = NinjaResult(
-            success=False,
-            summary="Error",
-            exit_code=-1,
-        )
-
-        request = RunTestsRequest(
-            repo_root=str(temp_repo),
-            commands=["pytest"],
-        )
-
-        result = await executor.run_tests(request)
-
-        assert result.status == "error"
-
-
-class TestApplyPatch:
-    """Tests for apply_patch tool."""
-
-    @pytest.mark.asyncio
-    async def test_returns_not_supported(self, executor: ToolExecutor) -> None:
-        request = ApplyPatchRequest(
-            repo_root="/tmp/repo",
-            patch_content="diff content",
-        )
-
-        result = await executor.apply_patch(request)
-
-        assert result.status == "not_supported"
-        assert "AI code CLI" in result.message
