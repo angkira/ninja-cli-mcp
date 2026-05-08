@@ -52,6 +52,12 @@ from ninja_common.path_utils import ensure_internal_dirs, safe_join
 
 logger = get_logger(__name__)
 
+try:
+    import psutil  # noqa: F401
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+
 
 @dataclass
 class NinjaConfig:

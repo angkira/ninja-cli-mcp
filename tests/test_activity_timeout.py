@@ -25,6 +25,9 @@ def driver(tmp_path, monkeypatch):
         "ninja_common.path_utils.get_cache_dir",
         lambda: tmp_path / "cache",
     )
+    # Ensure serve pool mode is disabled so tests hit subprocess path
+    monkeypatch.delenv("NINJA_OPENCODE_SERVE_MODE", raising=False)
+    monkeypatch.setenv("NINJA_INACTIVITY_TIMEOUT", "20")
 
     config = NinjaConfig(
         bin_path="aider",
@@ -50,18 +53,21 @@ async def test_activity_based_timeout_no_output(driver, tmp_path, monkeypatch):
 
         process = MagicMock()
         process.returncode = 0
+        process.pid = 99999
 
         # Create mock streams that never produce data
         mock_stdout = AsyncMock()
         mock_stderr = AsyncMock()
 
-        # read() will wait forever (simulating hung process)
-        async def never_read(*args, **kwargs):
-            await asyncio.sleep(100)  # Sleep long enough
+        # readline() will wait forever (simulating hung process)
+        async def never_readline():
+            await asyncio.sleep(100)
             return b""
 
-        mock_stdout.read = never_read
-        mock_stderr.read = never_read
+        mock_stdout.readline = never_readline
+        mock_stderr.readline = never_readline
+        mock_stdout.read = never_readline
+        mock_stderr.read = never_readline
 
         process.stdout = mock_stdout
         process.stderr = mock_stderr
@@ -84,6 +90,10 @@ async def test_activity_based_timeout_no_output(driver, tmp_path, monkeypatch):
         "asyncio.create_subprocess_exec",
         mock_subprocess,
     )
+
+    # Mock process group kill (used by timeout handler)
+    monkeypatch.setattr("os.killpg", lambda *a, **kw: None)
+    monkeypatch.setattr("os.getpgid", lambda pid: pid)
 
     # Disable safety checks
     monkeypatch.setattr(
