@@ -28,6 +28,18 @@ except ImportError:
 
 from ninja_common.config_manager import ConfigManager
 from ninja_common.defaults import OPENROUTER_MODELS, PERPLEXITY_MODELS, ZAI_MODELS
+from ninja_config.config_shared import (
+    API_KEYS,
+    DAEMON_CONFIG,
+    OPERATOR_MAP,
+    PROVIDER_KEY_URLS,
+    TASK_MODEL_DEFAULTS,
+    detect_ides,
+    detect_tools,
+    get_fallback_models,
+    mask_key,
+    register_claude_mcp,
+)
 from ninja_config.model_selector import (
     OPENCODE_PROVIDERS,
     check_provider_auth,
@@ -54,36 +66,10 @@ class PowerConfigurator:
         self.config[key] = value
 
     def _get_masked_value(self, value: str) -> str:
-        """Return masked version of sensitive value."""
-        if not value or len(value) < 8:
-            return "*** NOT SET ***"
-        return f"{value[:4]}...{value[-4:]}"
+        return mask_key(value)
 
     def _detect_installed_tools(self) -> dict[str, str]:
-        """Detect installed AI coding tools."""
-        tools = {}
-
-        # Check for aider
-        if shutil.which("aider"):
-            tools["aider"] = shutil.which("aider")
-
-        # Check for opencode
-        if shutil.which("opencode"):
-            tools["opencode"] = shutil.which("opencode")
-
-        # Check for gemini
-        if shutil.which("gemini"):
-            tools["gemini"] = shutil.which("gemini")
-
-        # Check for claude (Claude Code)
-        if shutil.which("claude"):
-            tools["claude"] = shutil.which("claude")
-
-        # Check for cursor
-        if shutil.which("cursor"):
-            tools["cursor"] = shutil.which("cursor")
-
-        return tools
+        return detect_tools()
 
     def _check_opencode_auth(self) -> list[str]:
         """Check OpenCode authentication status."""
@@ -324,40 +310,7 @@ class PowerConfigurator:
         print("  🔑 API KEY MANAGEMENT")
         print("=" * 80)
 
-        api_keys = [
-            (
-                "OPENROUTER_API_KEY",
-                "OpenRouter",
-                "https://openrouter.ai/keys",
-                "For Aider and general AI access",
-            ),
-            (
-                "ANTHROPIC_API_KEY",
-                "Anthropic",
-                "https://console.anthropic.com/settings/keys",
-                "For Claude models",
-            ),
-            ("OPENAI_API_KEY", "OpenAI", "https://platform.openai.com/api-keys", "For GPT models"),
-            (
-                "GOOGLE_API_KEY",
-                "Google",
-                "https://aistudio.google.com/app/apikey",
-                "For Gemini models",
-            ),
-            (
-                "PERPLEXITY_API_KEY",
-                "Perplexity",
-                "https://www.perplexity.ai/settings/api",
-                "For research quality",
-            ),
-            ("SERPER_API_KEY", "Serper", "https://serper.dev", "For Google search integration"),
-            (
-                "ZHIPU_API_KEY",
-                "Zhipu AI (Z.ai)",
-                "https://open.bigmodel.cn/usercenter/apikeys",
-                "For GLM models via z.ai",
-            ),
-        ]
+        api_keys = [(k.env_var, k.display_name, k.url, k.description) for k in API_KEYS]
 
         # Show current status
         print("\n📋 Current API Keys:")
@@ -454,15 +407,8 @@ class PowerConfigurator:
 
         # Operator descriptions with provider info
         operator_info = {
-            "aider": ("Aider", "OpenRouter-based CLI", ["openrouter"]),
-            "opencode": (
-                "OpenCode",
-                "Multi-provider CLI (75+ LLMs)",
-                ["anthropic", "google", "openai", "github", "openrouter"],
-            ),
-            "gemini": ("Gemini CLI", "Google native CLI", ["google"]),
-            "claude": ("Claude Code", "Anthropic's official CLI", ["anthropic"]),
-            "cursor": ("Cursor", "AI code editor", ["openai", "anthropic"]),
+            op_id: (op.display_name, op.description, list(op.providers))
+            for op_id, op in OPERATOR_MAP.items()
         }
 
         if not tools:
@@ -587,13 +533,7 @@ class PowerConfigurator:
             print(f"\n⚠️  {provider_display} is not authenticated")
 
             # API key URLs for each provider
-            api_key_urls = {
-                "anthropic": "https://console.anthropic.com/settings/keys",
-                "google": "https://aistudio.google.com/app/apikey",
-                "openai": "https://platform.openai.com/api-keys",
-                "openrouter": "https://openrouter.ai/keys",
-                "github-copilot": "https://github.com/settings/copilot",
-            }
+            api_key_urls = PROVIDER_KEY_URLS
 
             api_key_url = api_key_urls.get(selected_provider, "")
             if api_key_url:
@@ -647,10 +587,9 @@ class PowerConfigurator:
         tools = self._detect_installed_tools()
 
         operator_info = {
-            "opencode": ("OpenCode", "Multi-provider CLI (75+ LLMs)"),
-            "aider": ("Aider", "OpenRouter-based CLI"),
-            "claude": ("Claude Code", "Anthropic's official CLI"),
-            "gemini": ("Gemini CLI", "Google native CLI"),
+            op_id: (op.display_name, op.description)
+            for op_id, op in OPERATOR_MAP.items()
+            if op_id != "cursor"
         }
 
         if not tools:
@@ -902,19 +841,7 @@ class PowerConfigurator:
         return choices
 
     def _get_fallback_models(self, provider: str | None = None) -> list:
-        """Get fallback model list when dynamic loading fails."""
-        from ninja_common.defaults import PROVIDER_MODELS
-
-        if provider and provider in PROVIDER_MODELS:
-            return list(PROVIDER_MODELS[provider])
-
-        # Default fallback - mix of top models
-        return [
-            ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Fast & cost-effective"),
-            ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5", "Latest Claude - Balanced"),
-            ("openai/gpt-4o", "GPT-4o", "OpenAI flagship multimodal"),
-            ("google/gemini-2.0-flash", "Gemini 2.0 Flash", "Latest fast model"),
-        ]
+        return get_fallback_models(provider)
 
     def _configure_secretary(self) -> None:
         """Configure secretary module with its own operator and model."""
@@ -950,10 +877,9 @@ class PowerConfigurator:
             # Select different operator for secretary
             tools = self._detect_installed_tools()
             operator_info = {
-                "opencode": ("OpenCode", "Multi-provider CLI"),
-                "aider": ("Aider", "OpenRouter-based CLI"),
-                "claude": ("Claude Code", "Anthropic's official CLI"),
-                "gemini": ("Gemini CLI", "Google native CLI"),
+                op_id: (op.display_name, op.description)
+                for op_id, op in OPERATOR_MAP.items()
+                if op_id != "cursor"
             }
 
             choices = []
@@ -1154,21 +1080,7 @@ class PowerConfigurator:
         print("=" * 80)
 
         # Show current task models
-        task_models = [
-            ("NINJA_MODEL_QUICK", "Quick Tasks", "Fast simple tasks", "anthropic/claude-haiku-4.5"),
-            (
-                "NINJA_MODEL_SEQUENTIAL",
-                "Sequential Tasks",
-                "Complex multi-step tasks",
-                "anthropic/claude-haiku-4.5",
-            ),
-            (
-                "NINJA_MODEL_PARALLEL",
-                "Parallel Tasks",
-                "High concurrency parallel tasks",
-                "anthropic/claude-haiku-4.5",
-            ),
-        ]
+        task_models = TASK_MODEL_DEFAULTS
 
         print("\n📋 Current Task Models:")
         for key, name, _, default in task_models:
@@ -1185,15 +1097,15 @@ class PowerConfigurator:
         choices = [
             Choice(
                 value="quick",
-                name="⚡ Quick Tasks Model     • Fast simple tasks (default: Claude Haiku 4.5)",
+                name=f"⚡ Quick Tasks Model     • Fast simple tasks (default: {TASK_MODEL_DEFAULTS[0][3]})",
             ),
             Choice(
                 value="sequential",
-                name="📊 Sequential Model     • Complex multi-step (default: Claude Sonnet 4)",
+                name=f"📊 Sequential Model     • Complex multi-step (default: {TASK_MODEL_DEFAULTS[1][3]})",
             ),
             Choice(
                 value="parallel",
-                name="🔀 Parallel Model       • High concurrency (default: Claude Haiku 4.5)",
+                name=f"🔀 Parallel Model       • High concurrency (default: {TASK_MODEL_DEFAULTS[2][3]})",
             ),
             Separator(),
             Choice(value="preferences", name="🎯 Model Preferences    • Cost vs Quality toggle"),
@@ -1405,11 +1317,7 @@ class PowerConfigurator:
 
         # NOTE: Perplexity models are hardcoded here since Perplexity API doesn't support
         # dynamic model discovery. These are the official Perplexity Sonar models.
-        perplexity_models = [
-            ("sonar", "Sonar", "Fast search-focused model"),
-            ("sonar-pro", "Sonar Pro", "Advanced search with better reasoning"),
-            ("sonar-reasoning", "Sonar Reasoning", "Complex reasoning with search"),
-        ]
+        perplexity_models = PERPLEXITY_MODELS
 
         current_model = self.config.get("NINJA_RESEARCHER_MODEL", "sonar")
         print(f"\nCurrent model: {current_model}")
@@ -1443,13 +1351,7 @@ class PowerConfigurator:
         print("\n📊 Current Status:")
         print(f"   Daemon Enabled: {'✓ Yes' if daemon_enabled else '✗ No'}")
 
-        daemon_ports = {
-            "NINJA_CODER_PORT": 8100,
-            "NINJA_RESEARCHER_PORT": 8101,
-            "NINJA_SECRETARY_PORT": 8102,
-            "NINJA_RESOURCES_PORT": 8106,
-            "NINJA_PROMPTS_PORT": 8107,
-        }
+        daemon_ports = {k: int(v) for k, v in DAEMON_CONFIG.items() if k != "NINJA_ENABLE_DAEMON"}
 
         print("\n🔌 Ports:")
         for key, default_port in daemon_ports.items():
@@ -1491,23 +1393,7 @@ class PowerConfigurator:
         print("=" * 80)
 
         # Check for IDE configs
-        ide_configs = {}
-        claude_config = Path.home() / ".claude.json"
-        if claude_config.exists():
-            ide_configs["claude"] = str(claude_config)
-
-        vscode_configs = [
-            Path.home() / ".config" / "Code" / "User" / "settings.json",
-            Path.home() / "Library" / "Application Support" / "Code" / "User" / "settings.json",
-        ]
-        for config_path in vscode_configs:
-            if config_path.exists():
-                ide_configs["vscode"] = str(config_path)
-                break
-
-        zed_config = Path.home() / ".config" / "zed" / "settings.json"
-        if zed_config.exists():
-            ide_configs["zed"] = str(zed_config)
+        ide_configs = detect_ides()
 
         print("\n📋 Detected IDE Configurations:")
         if ide_configs:
@@ -1544,61 +1430,19 @@ class PowerConfigurator:
             print("   Refer to documentation for detailed instructions")
 
     def _setup_claude_integration(self) -> None:
-        """Setup Claude Code integration."""
         if not shutil.which("claude"):
             print("\n⚠️  Claude Code CLI not found")
             print("   Install from: https://claude.ai/download")
             return
 
         print("\n🔄 Setting up Claude Code MCP configuration...")
+        success_count = register_claude_mcp()
+        total = 3
 
-        # Register all servers
-        servers = [
-            "ninja-coder",
-            "ninja-researcher",
-            "ninja-secretary",
-        ]
-
-        success_count = 0
-        for server_name in servers:
-            # Remove existing entry first
-            subprocess.run(
-                ["claude", "mcp", "remove", server_name, "-s", "user"],
-                capture_output=True,
-                check=False,
-            )
-
-            # Add server
-            result = subprocess.run(
-                [
-                    "claude",
-                    "mcp",
-                    "add",
-                    "--scope",
-                    "user",
-                    "--transport",
-                    "stdio",
-                    server_name,
-                    "--",
-                    server_name,
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            if result.returncode == 0:
-                print(f"   ✓ Registered {server_name}")
-                success_count += 1
-            else:
-                print(f"   ✗ Failed to register {server_name}")
-
-        if success_count == len(servers):
+        if success_count == total:
             print("\n✅ Claude Code integration completed successfully")
         else:
-            print(
-                f"\n⚠️  Claude Code integration completed with {success_count}/{len(servers)} servers"
-            )
+            print(f"\n⚠️  Claude Code integration completed with {success_count}/{total} servers")
 
     def _setup_opencode_integration(self) -> None:
         """Setup OpenCode integration."""

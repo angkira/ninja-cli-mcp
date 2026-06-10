@@ -1,853 +1,398 @@
 """
-Modern TUI installer for ninja-mcp with comprehensive key collection and model selection.
+TUI installer for ninja-mcp — uses shared config code with configurator.
+
+Reuses: config_shared (API keys, tool/IDE detection), ConfigManager (saves),
+        defaults (models, ports), secrets_store (API key storage).
 """
 
-import json
-import os
+from __future__ import annotations
+
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 from typing import Any
 
-
-# Try multiple import patterns for InquirerPy compatibility
 try:
     from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
     from InquirerPy.separator import Separator
-    from InquirerPy.validator import PathValidator
-
-    HAS_INQUIRERPY = True
 except ImportError:
-    try:
-        from InquirerPy import inquirer
-        from InquirerPy.base.control import Choice
-        from InquirerPy.separator import Separator
-        from InquirerPy.validator import PathValidator
+    print("InquirerPy required. Install with: pip install InquirerPy")
+    sys.exit(1)
 
-        HAS_INQUIRERPY = True
-    except ImportError:
-        HAS_INQUIRERPY = False
-        print("⚠️  InquirerPy not installed. Install with: pip install InquirerPy")
-        sys.exit(1)
+from ninja_common.config_manager import ConfigManager
+from ninja_common.defaults import (
+    DEFAULT_CODE_BIN,
+    OPENROUTER_MODELS,
+    PERPLEXITY_MODELS,
+    ZAI_MODELS,
+)
+from ninja_config.config_shared import (
+    CODER_API_KEYS,
+    DAEMON_CONFIG,
+    RESEARCHER_API_KEYS,
+    APIKeyDef,
+    check_python,
+    check_uv,
+    detect_ides,
+    detect_tools,
+    get_secret,
+    install_uv,
+    mask_key,
+    register_claude_mcp,
+    save_secret,
+)
+
+
+def _exec(result: Any) -> Any:
+    return result.execute() if hasattr(result, "execute") else result
 
 
 class TUIInstaller:
-    """Interactive TUI installer with comprehensive configuration."""
+    def __init__(self) -> None:
+        self.config_mgr = ConfigManager()
+        self.config = self.config_mgr.list_all()
+        self.modules: list[str] = []
+        self.tools = detect_tools()
+        self.ides = detect_ides()
 
-    def __init__(self):
-        """Initialize installer."""
-        self.config_data = {}
-        self.detected_tools = {}
-        self.detected_ide_configs = {}
+    def _save(self, key: str, value: str) -> None:
+        self.config_mgr.set(key, value)
+        self.config[key] = value
 
-    def print_header(self) -> None:
-        """Print installation header."""
-        print("\n" + "═" * 80)
-        print("  🥷 NINJA MCP - ADVANCED TUI INSTALLER")
-        print("  Complete setup with API keys, model selection, and IDE integration")
-        print("═" * 80)
+    def _save_batch(self, updates: dict[str, str]) -> None:
+        self.config_mgr.update(updates)
+        self.config.update(updates)
 
-    def print_success(self, message: str) -> None:
-        """Print success message."""
-        print(f"✅ {message}")
+    # ── System checks ────────────────────────────────────────────────
 
-    def print_info(self, message: str) -> None:
-        """Print info message."""
-        print(f"i  {message}")
+    def run(self) -> int:
+        self._header()
 
-    def print_warning(self, message: str) -> None:
-        """Print warning message."""
-        print(f"⚠️  {message}")
+        if not check_python():
+            return 1
+        print(f"  ✓ Python {sys.version_info.major}.{sys.version_info.minor}")
 
-    def detect_system(self) -> dict[str, str]:
-        """Detect system information."""
-        system_info = {
-            "os": "unknown",
-            "arch": "unknown",
-            "shell": os.environ.get("SHELL", "unknown"),
-        }
+        if not check_uv():
+            print("  uv not found. Installing...")
+            if not install_uv():
+                print("  ✗ Failed to install uv")
+                return 1
+        print(f"  ✓ uv {shutil.which('uv')}")
 
-        # OS detection
-        if sys.platform.startswith("linux"):
-            system_info["os"] = "linux"
-        elif sys.platform == "darwin":
-            system_info["os"] = "macos"
-        elif sys.platform == "win32":
-            system_info["os"] = "windows"
+        if self.tools:
+            print(f"  Tools: {', '.join(self.tools.keys())}")
+        if self.ides:
+            print(f"  IDEs:  {', '.join(self.ides.keys())}")
 
-        # Architecture detection
-        system_info["arch"] = os.uname().machine if hasattr(os, "uname") else "unknown"
+        self._select_modules()
 
-        return system_info
+        if not self._install_package():
+            return 1
 
-    def check_python_version(self) -> bool:
-        """Check if Python version is 3.11+."""
-        version = sys.version_info
-        if version.major >= 3 and version.minor >= 11:
-            self.print_success(f"Python {version.major}.{version.minor}")
-            return True
-        else:
-            print(f"❌ Python 3.11+ required (you have {version.major}.{version.minor})")
-            return False
+        if "coder" in self.modules:
+            self._configure_coder()
 
-    def check_uv(self) -> bool:
-        """Check if uv is installed."""
-        if shutil.which("uv"):
-            result = subprocess.run(
-                ["uv", "--version"], capture_output=True, text=True, check=False
-            )
-            version = result.stdout.strip().split()[1] if result.stdout else "unknown"
-            self.print_success(f"uv {version}")
-            return True
-        else:
-            self.print_warning("uv package manager not found")
-            result = inquirer.confirm(
-                message="Install uv package manager?",
-                default=True,
-            )
-            install = result.execute() if hasattr(result, "execute") else result
+        if "researcher" in self.modules:
+            self._configure_researcher()
 
-            if install:
-                print("🔄 Installing uv...")
-                result = subprocess.run(
-                    "curl -LsSf https://astral.sh/uv/install.sh | sh",
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
+        self._configure_models()
+        self._configure_daemon()
+        selected_ides = self._configure_ide()
+        self._register_ides(selected_ides)
+        self._verify()
+        self._summary(selected_ides)
+        return 0
 
-                if result.returncode == 0:
-                    self.print_success("uv installed successfully")
-                    # Update PATH
-                    local_bin = Path.home() / ".local" / "bin"
-                    os.environ["PATH"] = f"{local_bin}:{os.environ.get('PATH', '')}"
-                    return True
-                else:
-                    print(f"❌ Failed to install uv: {result.stderr}")
-                    return False
-            return False
+    def _header(self) -> None:
+        print("\n" + "═" * 60)
+        print("  🥷 NINJA MCP — TUI INSTALLER")
+        print("═" * 60)
 
-    def detect_installed_tools(self) -> dict[str, str]:
-        """Detect installed AI coding tools."""
-        tools = {}
+    # ── Modules ──────────────────────────────────────────────────────
 
-        # Check for aider
-        if shutil.which("aider"):
-            tools["aider"] = shutil.which("aider")
-
-        # Check for opencode
-        if shutil.which("opencode"):
-            tools["opencode"] = shutil.which("opencode")
-
-        # Check for gemini
-        if shutil.which("gemini"):
-            tools["gemini"] = shutil.which("gemini")
-
-        # Check for cursor
-        if shutil.which("cursor"):
-            tools["cursor"] = shutil.which("cursor")
-
-        return tools
-
-    def detect_ide_configs(self) -> dict[str, str]:
-        """Detect IDE configuration files."""
-        configs = {}
-
-        # Claude Code
-        claude_configs = [
-            Path.home() / ".config" / "claude" / "mcp.json",
-            Path.home() / ".claude.json",
-        ]
-        for config_path in claude_configs:
-            if config_path.exists():
-                configs["claude"] = str(config_path)
-                break
-
-        # VS Code
-        vscode_configs = [
-            Path.home() / ".config" / "Code" / "User" / "settings.json",
-            Path.home() / "Library" / "Application Support" / "Code" / "User" / "settings.json",
-        ]
-        for config_path in vscode_configs:
-            if config_path.exists():
-                configs["vscode"] = str(config_path)
-                break
-
-        # Zed
-        zed_config = Path.home() / ".config" / "zed" / "settings.json"
-        if zed_config.exists():
-            configs["zed"] = str(zed_config)
-
-        # OpenCode
-        opencode_configs = [
-            Path.home() / ".opencode.json",
-            Path.home() / ".config" / "opencode" / ".opencode.json",
-        ]
-        for config_path in opencode_configs:
-            if config_path.exists():
-                configs["opencode"] = str(config_path)
-                break
-
-        return configs
-
-    def select_installation_type(self) -> str:
-        """Select installation type."""
+    def _select_modules(self) -> None:
         result = inquirer.select(
-            message="📦 Installation Type:",
+            message="📦 Installation type:",
             choices=[
-                Choice(
-                    value="full",
-                    name="Full Installation  •  All modules with advanced features",
-                ),
-                Choice(
-                    value="minimal",
-                    name="Minimal Installation  •  Core modules only (coder, resources)",
-                ),
-                Choice(
-                    value="custom",
-                    name="Custom Installation  •  Select specific modules",
-                ),
+                Choice(value="full", name="Full  •  All modules"),
+                Choice(value="minimal", name="Minimal  •  Coder + resources"),
+                Choice(value="custom", name="Custom  •  Pick modules"),
             ],
             pointer="►",
         )
+        install_type = _exec(result)
 
-        return result.execute() if hasattr(result, "execute") else result
-
-    def select_modules(self) -> list[str]:
-        """Select modules for installation."""
-        all_modules = [
-            ("coder", "AI code assistant with Aider/OpenCode/Gemini support"),
-            ("researcher", "Web research with DuckDuckGo/Perplexity"),
-            ("secretary", "File operations and codebase analysis"),
-            ("resources", "Resource templates and prompts"),
-            ("prompts", "Prompt management and chaining"),
-        ]
-
-        choices = [
-            Choice(
-                value=name,
-                name=f"{name.title()}  •  {desc}",
-                enabled=True,
-            )
-            for name, desc in all_modules
-        ]
-
-        result = inquirer.checkbox(
-            message="🎯 Select Modules to Install:",
-            choices=choices,
-            pointer="►",
-            instruction="Space to select, Enter to confirm",
-        )
-
-        selected = result.execute() if hasattr(result, "execute") else result
-        return selected if selected else ["coder", "resources"]
-
-    def collect_api_keys(self) -> dict[str, str]:
-        """Collect all required API keys."""
-        keys = {}
-
-        print("\n🔑 API KEY CONFIGURATION")
-        print("   Securely store your API keys for AI services")
-        print("   " + "─" * 50)
-
-        # OpenRouter API Key (primary)
-        existing_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
-        if existing_key:
-            masked = (
-                f"{existing_key[:8]}...{existing_key[-4:]}" if len(existing_key) > 12 else "***"
-            )
-            result = inquirer.confirm(
-                message=f"Use existing API key ({masked})?",
-                default=True,
-            )
-            use_existing = result.execute() if hasattr(result, "execute") else result
-
-            if use_existing:
-                keys["OPENROUTER_API_KEY"] = existing_key
-            else:
-                result = inquirer.secret(
-                    message="OpenRouter API Key:",
-                    instruction="Get from https://openrouter.ai/keys",
-                )
-                api_key = result.execute() if hasattr(result, "execute") else result
-                if api_key:
-                    keys["OPENROUTER_API_KEY"] = api_key
-        else:
-            result = inquirer.secret(
-                message="OpenRouter API Key:",
-                instruction="Get from https://openrouter.ai/keys",
-            )
-            api_key = result.execute() if hasattr(result, "execute") else result
-            if api_key:
-                keys["OPENROUTER_API_KEY"] = api_key
-
-        # Additional keys for researcher module
-        if "researcher" in self.config_data.get("modules", []):
-            print("\n🌐 Search Provider Configuration")
-
-            result = inquirer.select(
-                message="Select Search Provider:",
-                choices=[
-                    Choice("duckduckgo", name="DuckDuckGo  •  Free, no API key required"),
-                    Choice("serper", name="Serper.dev  •  Google Search API"),
-                    Choice("perplexity", name="Perplexity AI  •  AI-powered search"),
-                ],
-                pointer="►",
-            )
-            search_provider = result.execute() if hasattr(result, "execute") else result
-            keys["NINJA_SEARCH_PROVIDER"] = search_provider
-
-            if search_provider == "serper":
-                result = inquirer.secret(
-                    message="Serper.dev API Key:",
-                    instruction="Get from https://serper.dev",
-                )
-                serper_key = result.execute() if hasattr(result, "execute") else result
-                if serper_key:
-                    keys["SERPER_API_KEY"] = serper_key
-
-            elif search_provider == "perplexity":
-                result = inquirer.secret(
-                    message="Perplexity API Key:",
-                    instruction="Get from https://www.perplexity.ai/settings/api",
-                )
-                perplexity_key = result.execute() if hasattr(result, "execute") else result
-                if perplexity_key:
-                    keys["PERPLEXITY_API_KEY"] = perplexity_key
-
-        # Google API Key for Gemini
-        if "gemini" in self.detected_tools:
-            result = inquirer.secret(
-                message="Google API Key (for Gemini):",
-                instruction="Optional, for native Gemini integration",
-            )
-            google_key = result.execute() if hasattr(result, "execute") else result
-            if google_key:
-                keys["GOOGLE_API_KEY"] = google_key
-
-        return keys
-
-    def fetch_model_recommendations(self, category: str) -> list[dict[str, Any]]:
-        """Fetch model recommendations from LiveBench or fallback."""
-        try:
-            script_path = (
-                Path(__file__).parent.parent.parent / "scripts" / "get_recommended_models.py"
-            )
-            if script_path.exists():
-                result = subprocess.run(
-                    [sys.executable, str(script_path), category],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    timeout=15,
-                )
-                if result.stdout.strip():
-                    return json.loads(result.stdout)
-        except Exception:
-            pass
-
-        # Fallback models
-        fallback_models = {
-            "coder": [
-                {
-                    "name": "anthropic/claude-haiku-4.5-20250929",
-                    "tier": "🏆 Recommended",
-                    "price": 0.15,
-                    "speed": "⚡ Very Fast",
-                },
-                {
-                    "name": "qwen/qwen-2.5-coder-32b-instruct",
-                    "tier": "💰 Budget",
-                    "price": 0.30,
-                    "speed": "🚀 Fast",
-                },
-                {
-                    "name": "google/gemini-2.0-flash-exp",
-                    "tier": "⚡ Speed",
-                    "price": 0.075,
-                    "speed": "⚡ Very Fast",
-                },
-                {
-                    "name": "anthropic/claude-haiku-4.5",
-                    "tier": "🎯 Quality",
-                    "price": 3.0,
-                    "speed": "⚖️ Balanced",
-                },
-                {
-                    "name": "openai/gpt-4o-mini",
-                    "tier": "💰 Budget",
-                    "price": 0.15,
-                    "speed": "⚡ Very Fast",
-                },
-            ],
-            "researcher": [
-                {
-                    "name": "anthropic/claude-haiku-4.5",
-                    "tier": "🏆 Recommended",
-                    "price": 3.0,
-                    "speed": "⚖️ Balanced",
-                },
-                {
-                    "name": "openai/gpt-4o",
-                    "tier": "🎯 Quality",
-                    "price": 3.0,
-                    "speed": "⚖️ Balanced",
-                },
-                {
-                    "name": "google/gemini-2.0-flash-exp",
-                    "tier": "⚡ Speed",
-                    "price": 0.075,
-                    "speed": "⚡ Very Fast",
-                },
-                {
-                    "name": "anthropic/claude-sonnet-3.5",
-                    "tier": "⚖️ Balanced",
-                    "price": 3.0,
-                    "speed": "⚖️ Balanced",
-                },
-                {
-                    "name": "deepseek/deepseek-chat",
-                    "tier": "💰 Budget",
-                    "price": 0.14,
-                    "speed": "🚀 Fast",
-                },
-            ],
-            "secretary": [
-                {
-                    "name": "google/gemini-2.0-flash-exp",
-                    "tier": "🏆 Recommended",
-                    "price": 0.075,
-                    "speed": "⚡ Very Fast",
-                },
-                {
-                    "name": "anthropic/claude-haiku-4.5-20250929",
-                    "tier": "⚡ Speed",
-                    "price": 0.15,
-                    "speed": "⚡ Very Fast",
-                },
-                {
-                    "name": "openai/gpt-4o-mini",
-                    "tier": "💰 Budget",
-                    "price": 0.15,
-                    "speed": "⚡ Very Fast",
-                },
-                {
-                    "name": "qwen/qwen-2.5-coder-32b-instruct",
-                    "tier": "⚖️ Balanced",
-                    "price": 0.30,
-                    "speed": "🚀 Fast",
-                },
-                {
-                    "name": "deepseek/deepseek-chat",
-                    "tier": "💰 Budget",
-                    "price": 0.14,
-                    "speed": "🚀 Fast",
-                },
-            ],
-        }
-
-        return fallback_models.get(category, fallback_models["coder"])
-
-    def select_models(self) -> dict[str, str]:
-        """Select models for each module."""
-        models = {}
-
-        print("\n🤖 MODEL SELECTION")
-        print("   Choose AI models for each module")
-        print("   " + "─" * 50)
-
-        modules_with_models = [
-            module
-            for module in self.config_data.get("modules", [])
-            if module in ["coder", "researcher", "secretary"]
-        ]
-
-        for module in modules_with_models:
-            print(f"\n🎯 {module.title()} Module:")
-
-            # Fetch recommendations
-            recommendations = self.fetch_model_recommendations(module)
-
-            # Build choices
-            choices = []
-            for i, model in enumerate(recommendations[:5]):
-                price_str = f"${model['price']:.2f}/1M" if model["price"] > 0 else "Free"
-                choices.append(
-                    Choice(
-                        value=model["name"],
-                        name=f"{model['tier']} | {model['name']} | {price_str} | {model['speed']}",
-                    )
-                )
-
-            # Add custom option
-            choices.append(Separator())
-            choices.append(Choice(value="custom", name="Enter custom model name"))
-
-            # Select model
-            result = inquirer.select(
-                message=f"Select {module} model:",
-                choices=choices,
-                pointer="►",
-            )
-            selected = result.execute() if hasattr(result, "execute") else result
-
-            if selected == "custom":
-                result = inquirer.text(
-                    message="Enter model name:",
-                    instruction="e.g., anthropic/claude-opus-4",
-                )
-                custom_model = result.execute() if hasattr(result, "execute") else result
-                models[f"NINJA_{module.upper()}_MODEL"] = custom_model
-            else:
-                models[f"NINJA_{module.upper()}_MODEL"] = selected
-
-        return models
-
-    def select_code_cli(self) -> str:
-        """Select AI code CLI tool."""
-        print("\n💻 AI CODE CLI SELECTION")
-        print("   Choose your preferred AI coding assistant")
-        print("   " + "─" * 50)
-
-        # Build tool choices
-        tool_choices = []
-
-        # Add detected tools
-        for name, path in self.detected_tools.items():
-            tool_choices.append(Choice(value=path, name=f"{name.title()}  •  {path}"))
-
-        # Add common tools
-        common_tools = [
-            ("aider", "Aider Chat - OpenRouter integration"),
-            ("opencode", "OpenCode - Multi-provider CLI"),
-            ("gemini", "Gemini CLI - Google models"),
-            ("cursor", "Cursor - IDE with AI"),
-        ]
-
-        for name, desc in common_tools:
-            if name not in self.detected_tools:
-                tool_choices.append(
-                    Choice(value=name, name=f"{name.title()}  •  {desc} (will be installed)")
-                )
-
-        # Add custom option
-        tool_choices.append(Separator())
-        tool_choices.append(Choice(value="custom", name="Enter custom path"))
-
-        result = inquirer.select(
-            message="Select AI Code CLI:",
-            choices=tool_choices,
-            pointer="►",
-        )
-        selected = result.execute() if hasattr(result, "execute") else result
-
-        # Handle installation if needed
-        if selected in ["aider", "opencode", "gemini", "cursor"]:
-            tool_name = selected
-            print(f"\n🔄 Installing {tool_name}...")
-
-            if tool_name == "aider":
-                result = subprocess.run(
-                    ["uv", "tool", "install", "aider-chat"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0:
-                    self.print_success("Aider installed")
-                    return shutil.which("aider") or "aider"
-                else:
-                    self.print_warning(f"Failed to install aider: {result.stderr}")
-                    return "aider"
-            else:
-                print(f"i  Please install {tool_name} manually")
-                return tool_name
-
-        elif selected == "custom":
-            result = inquirer.text(
-                message="Enter path to AI Code CLI:",
-                validate=PathValidator(),
-            )
-            custom_path = result.execute() if hasattr(result, "execute") else result
-            return custom_path
-        else:
-            return selected
-
-    def configure_daemon(self) -> bool:
-        """Configure daemon mode."""
-        print("\n⚙️  DAEMON CONFIGURATION")
-        print("   Run modules as background services")
-        print("   " + "─" * 50)
-
-        result = inquirer.confirm(
-            message="Enable daemon mode? (recommended)",
-            default=True,
-        )
-        enable_daemon = result.execute() if hasattr(result, "execute") else result
-        return enable_daemon
-
-    def configure_ide_integration(self) -> list[str]:
-        """Configure IDE integration."""
-        if not self.detected_ide_configs:
-            return []
-
-        print("\n🖥️  IDE INTEGRATION")
-        print("   Connect Ninja MCP to your editors")
-        print("   " + "─" * 50)
-
-        # Build IDE choices
-        ide_choices = []
-        for ide, config_path in self.detected_ide_configs.items():
-            ide_choices.append(Choice(value=ide, name=f"{ide.title()}  •  Config: {config_path}"))
-
-        if not ide_choices:
-            self.print_info("No supported IDEs detected")
-            return []
-
-        result = inquirer.checkbox(
-            message="Select IDEs to configure:",
-            choices=ide_choices,
-            pointer="►",
-        )
-        selected_ides = result.execute() if hasattr(result, "execute") else result
-        return selected_ides if selected_ides else []
-
-    def save_configuration(
-        self, api_keys: dict[str, str], models: dict[str, str], code_cli: str
-    ) -> bool:
-        """Save configuration to ~/.ninja-mcp.env."""
-        config_file = Path.home() / ".ninja-mcp.env"
-
-        print(f"\n💾 Saving configuration to {config_file}")
-
-        # Combine all configuration
-        config_lines = [
-            "# Ninja MCP Configuration",
-            f"# Generated on {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "",
-            "# ===================================================================",
-            "# Common Configuration",
-            "# ===================================================================",
-            "",
-        ]
-
-        # Add API keys
-        for key, value in api_keys.items():
-            if value:  # Only save non-empty values
-                config_lines.append(f'export {key}="{value}"')
-
-        # Add models
-        config_lines.append("")
-        config_lines.append("# ===================================================================")
-        config_lines.append("# Module Models")
-        config_lines.append("# ===================================================================")
-        config_lines.append("")
-
-        for key, value in models.items():
-            if value:  # Only save non-empty values
-                config_lines.append(f'export {key}="{value}"')
-
-        # Add code CLI
-        if code_cli:
-            config_lines.append("")
-            config_lines.append(
-                "# ==================================================================="
-            )
-            config_lines.append("# Code CLI")
-            config_lines.append(
-                "# ==================================================================="
-            )
-            config_lines.append("")
-            config_lines.append(f'export NINJA_CODE_BIN="{code_cli}"')
-
-        # Add daemon configuration
-        config_lines.append("")
-        config_lines.append("# ===================================================================")
-        config_lines.append("# Daemon Configuration")
-        config_lines.append("# ===================================================================")
-        config_lines.append("")
-        config_lines.append("export NINJA_ENABLE_DAEMON=true")
-        config_lines.append("export NINJA_CODER_PORT=8100")
-        config_lines.append("export NINJA_RESEARCHER_PORT=8101")
-        config_lines.append("export NINJA_SECRETARY_PORT=8102")
-        config_lines.append("export NINJA_RESOURCES_PORT=8106")
-        config_lines.append("export NINJA_PROMPTS_PORT=8107")
-
-        # Write configuration
-        try:
-            config_file.parent.mkdir(parents=True, exist_ok=True)
-            config_file.write_text("\n".join(config_lines) + "\n")
-            config_file.chmod(0o600)  # Secure permissions
-            self.print_success("Configuration saved")
-            return True
-        except Exception as e:
-            print(f"❌ Failed to save configuration: {e}")
-            return False
-
-    def install_ninja_mcp(self, install_type: str, modules: list[str]) -> bool:
-        """Install ninja-mcp with selected modules."""
-        print("\n🔄 Installing ninja-mcp...")
-
-        # Determine installation extras
         if install_type == "full":
-            extras = "[all]"
+            self.modules = ["coder", "researcher", "secretary", "resources", "prompts"]
         elif install_type == "minimal":
-            extras = "[coder,resources]"
+            self.modules = ["coder", "resources"]
         else:
-            extras = f"[{','.join(modules)}]"
+            all_mods = [
+                ("coder", "AI code assistant"),
+                ("researcher", "Web research & search"),
+                ("secretary", "File ops & analysis"),
+                ("resources", "Resource templates"),
+                ("prompts", "Prompt management"),
+            ]
+            choices = [
+                Choice(value=n, name=f"{n.title()}  •  {d}", enabled=True)
+                for n, d in all_mods
+            ]
+            result = inquirer.checkbox(
+                message="🎯 Modules:", choices=choices,
+                pointer="►", instruction="Space to toggle, Enter to confirm",
+            )
+            self.modules = _exec(result) or ["coder", "resources"]
 
-        print(f"   Installing with extras: {extras}")
+        print(f"  Modules: {', '.join(self.modules)}")
 
-        # Check if we're in dev directory
+    # ── Install package ──────────────────────────────────────────────
+
+    def _install_package(self) -> bool:
+        print("\n🔄 Installing ninja-mcp...")
+        extras = f"[{','.join(self.modules)}]"
+
+        from pathlib import Path
         cwd = Path.cwd()
         if (cwd / "pyproject.toml").exists():
-            print(f"   Installing from local source: {cwd}")
             cmd = ["uv", "tool", "install", "--force", f"{cwd}{extras}"]
         else:
-            print("   Installing from PyPI...")
             cmd = ["uv", "tool", "install", "--force", f"ninja-mcp{extras}"]
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-
         if result.returncode == 0:
-            self.print_success("ninja-mcp installed successfully")
+            print("  ✓ ninja-mcp installed")
             return True
+        print(f"  ✗ Install failed: {result.stderr}")
+        return False
+
+    # ── Coder config ─────────────────────────────────────────────────
+
+    def _configure_coder(self) -> None:
+        print("\n" + "─" * 50)
+        print("  💻 CODER MODULE")
+        print("─" * 50)
+
+        tool_choices: list[Any] = []
+        for name, path in self.tools.items():
+            tool_choices.append(Choice(value=name, name=f"{name.title()}  (detected: {path})"))
+        for name, desc in [
+            ("aider", "Aider Chat  •  OpenRouter"),
+            ("opencode", "OpenCode  •  Multi-provider CLI"),
+            ("gemini", "Gemini CLI  •  Google models"),
+            ("cursor", "Cursor  •  AI-powered IDE"),
+        ]:
+            if name not in self.tools:
+                tool_choices.append(Choice(value=name, name=desc))
+        tool_choices.append(Separator())
+        tool_choices.append(Choice(value="__custom", name="Custom path"))
+
+        result = inquirer.select(message="Code CLI:", choices=tool_choices, pointer="►")
+        selected = _exec(result)
+
+        if selected == "__custom":
+            result = inquirer.text(message="Path to code CLI:")
+            code_cli = _exec(result)
         else:
-            print(f"❌ Installation failed: {result.stderr}")
-            return False
+            code_cli = selected
 
-    def verify_installation(self) -> bool:
-        """Verify all components are installed correctly."""
-        print("\n🔍 Verifying installation...")
+        self._save("NINJA_CODE_BIN", code_cli)
 
-        all_ok = True
-        commands = [
-            "ninja-config",
-            "ninja-coder",
-            "ninja-researcher",
-            "ninja-secretary",
-        ]
+        if code_cli == "aider" and not shutil.which("aider"):
+            print("  Installing aider...")
+            subprocess.run(
+                ["uv", "tool", "install", "aider-chat"],
+                capture_output=True, text=True, check=False,
+            )
 
-        for cmd in commands:
-            if shutil.which(cmd):
-                self.print_success(cmd)
+        print("\n  🔑 Coder API Keys")
+        for key_def in CODER_API_KEYS:
+            self._ask_key(key_def)
+
+    def _ask_key(self, key_def: APIKeyDef) -> None:
+        existing = get_secret(key_def.env_var)
+        if existing:
+            masked = mask_key(existing)
+            result = inquirer.confirm(
+                message=f"  Use existing {key_def.display_name} ({masked})?",
+                default=True,
+            )
+            if _exec(result):
+                return
+
+        result = inquirer.secret(
+            message=f"  {key_def.display_name} API key (for {key_def.module}):",
+            instruction=f"Get from {key_def.url}  •  Enter to skip",
+        )
+        val = _exec(result)
+        if val:
+            save_secret(key_def.env_var, val)
+
+    # ── Researcher config ────────────────────────────────────────────
+
+    def _configure_researcher(self) -> None:
+        print("\n" + "─" * 50)
+        print("  🔬 RESEARCHER MODULE")
+        print("─" * 50)
+
+        result = inquirer.select(
+            message="  Search provider:",
+            choices=[
+                Choice(value="duckduckgo", name="DuckDuckGo  •  Free, no key needed"),
+                Choice(value="serper", name="Serper.dev  •  Google Search API"),
+                Choice(value="perplexity", name="Perplexity AI  •  AI-powered research"),
+            ],
+            pointer="►",
+        )
+        provider = _exec(result)
+        self._save("NINJA_SEARCH_PROVIDER", provider)
+
+        for key_def in RESEARCHER_API_KEYS:
+            needed = (
+                (provider == "serper" and key_def.env_var == "SERPER_API_KEY")
+                or (provider == "perplexity" and key_def.env_var == "PERPLEXITY_API_KEY")
+            )
+            if needed:
+                self._ask_key(key_def)
+
+    # ── Models ───────────────────────────────────────────────────────
+
+    def _configure_models(self) -> None:
+        print("\n" + "─" * 50)
+        print("  🤖 MODEL SELECTION")
+        print("─" * 50)
+
+        for module in self.modules:
+            if module not in ("coder", "researcher", "secretary"):
+                continue
+
+            key = f"NINJA_{module.upper()}_MODEL"
+            current = self.config.get(key, "")
+
+            if module == "researcher":
+                model_list = PERPLEXITY_MODELS
             else:
-                print(f"❌ {cmd} not found")
-                all_ok = False
+                model_list = OPENROUTER_MODELS
 
-        return all_ok
+            choices: list[Any] = [
+                Choice(
+                    value=mid,
+                    name=f"{mname:25} • {mdesc}",
+                )
+                for mid, mname, mdesc in model_list
+            ]
 
-    def show_completion_summary(self, selected_ides: list[str]) -> None:
-        """Show installation completion summary."""
-        print("\n" + "🎉" * 80)
-        print("  🎉 INSTALLATION COMPLETE!")
-        print("  Ninja MCP is ready to use")
-        print("🎉" * 80)
+            if module == "coder":
+                choices.append(Separator("── Z.AI / GLM ──"))
+                for mid, mname, mdesc in ZAI_MODELS:
+                    choices.append(Choice(value=mid, name=f"{mname:25} • {mdesc}"))
 
-        print("\n📋 QUICK START:\n")
-        print("1. Load configuration:")
-        print("   source ~/.ninja-mcp.env")
-        print()
-        print("2. Select operator and model:")
-        print("   ninja-config select-model")
-        print()
-        print("3. Configure IDE integration:")
-        if selected_ides:
-            for ide in selected_ides:
-                print(f"   ninja-config setup-{ide}")
+            choices.append(Separator())
+            choices.append(Choice(value="__custom", name="Custom model"))
+
+            result = inquirer.select(
+                message=f"  {module.title()} model:",
+                choices=choices,
+                pointer="►",
+            )
+            selected = _exec(result)
+
+            if selected == "__custom":
+                result = inquirer.text(
+                    message=f"  Custom model for {module}:",
+                    instruction="e.g. anthropic/claude-opus-4",
+                )
+                selected = _exec(result)
+
+            if selected:
+                self._save(key, selected)
+
+    # ── Daemon ───────────────────────────────────────────────────────
+
+    def _configure_daemon(self) -> None:
+        print("\n" + "─" * 50)
+        print("  ⚙️  DAEMON MODE")
+        print("─" * 50)
+
+        result = inquirer.confirm(
+            message="  Enable daemon mode? (recommended)",
+            default=True,
+        )
+        if _exec(result):
+            self._save_batch(DAEMON_CONFIG)
         else:
-            print("   ninja-config setup-claude  # or setup other IDEs")
-        print()
-        print("4. Verify installation:")
-        print("   ninja-config doctor")
-        print()
-        print("5. Start using Ninja MCP in your IDE!")
-        print()
-        print("📚 Documentation: https://github.com/angkira/ninja-cli-mcp")
-        print()
+            self._save("NINJA_ENABLE_DAEMON", "false")
 
-    def run(self) -> int:
-        """Run the interactive installer."""
-        self.print_header()
+    # ── IDE ───────────────────────────────────────────────────────────
 
-        # System detection
-        system_info = self.detect_system()
-        print(f"\n🖥️  System: {system_info['os'].title()} {system_info['arch']}")
+    def _configure_ide(self) -> list[str]:
+        if not self.ides:
+            return []
 
-        # Check prerequisites
-        if not self.check_python_version():
-            return 1
+        print("\n" + "─" * 50)
+        print("  🖥️  IDE INTEGRATION")
+        print("─" * 50)
 
-        if not self.check_uv():
-            return 1
+        choices = [
+            Choice(value=ide_id, name=f"{ide_id.title()}  •  {path}")
+            for ide_id, path in self.ides.items()
+        ]
+        result = inquirer.checkbox(
+            message="  Select IDEs to configure:",
+            choices=choices, pointer="►",
+        )
+        selected = _exec(result)
+        return selected if selected else []
 
-        # Detect installed tools
-        self.detected_tools = self.detect_installed_tools()
-        if self.detected_tools:
-            print(f"\n🔧 Detected Tools: {', '.join(self.detected_tools.keys())}")
+    def _register_ides(self, ides: list[str]) -> None:
+        for ide in ides:
+            if ide == "claude":
+                count = register_claude_mcp()
+                print(f"  ✓ Claude Code: {count}/3 servers registered")
+            else:
+                print(f"  ⚠ {ide}: use ninja-config configure for setup")
 
-        # Detect IDE configs
-        self.detected_ide_configs = self.detect_ide_configs()
-        if self.detected_ide_configs:
-            print(f"🖥️  Detected IDEs: {', '.join(self.detected_ide_configs.keys())}")
+    # ── Verify & Summary ─────────────────────────────────────────────
 
-        # Select installation type
-        install_type = self.select_installation_type()
+    def _verify(self) -> None:
+        print("\n🔍 Verifying...")
+        for cmd in ("ninja-config", "ninja-coder", "ninja-researcher", "ninja-secretary"):
+            if shutil.which(cmd):
+                print(f"  ✓ {cmd}")
+            else:
+                print(f"  ✗ {cmd} not found")
 
-        # Select modules
-        if install_type == "custom":
-            modules = self.select_modules()
-        elif install_type == "minimal":
-            modules = ["coder", "resources"]
-        else:  # full
-            modules = ["coder", "researcher", "secretary", "resources", "prompts"]
+    def _summary(self, ides: list[str]) -> None:
+        print("\n" + "═" * 60)
+        print("  🎉 INSTALLATION COMPLETE!")
+        print("═" * 60)
 
-        self.config_data["modules"] = modules
-        print(f"\n📦 Selected modules: {', '.join(modules)}")
+        cli = self.config.get("NINJA_CODE_BIN", "")
+        search = self.config.get("NINJA_SEARCH_PROVIDER", "")
+        if cli:
+            print(f"  Code CLI:     {cli}")
+        if search:
+            print(f"  Search:       {search}")
+        for m in self.modules:
+            if m in ("coder", "researcher", "secretary"):
+                model = self.config.get(f"NINJA_{m.upper()}_MODEL", "")
+                if model:
+                    print(f"  {m:14s}{model}")
+        if ides:
+            print(f"  IDEs:         {', '.join(ides)}")
 
-        # Install ninja-mcp
-        if not self.install_ninja_mcp(install_type, modules):
-            return 1
+        print(f"\n  Config: {self.config_mgr.config_file}")
+        print("  Next: ninja-config configure  |  ninja-config doctor\n")
 
-        # Collect API keys
-        api_keys = self.collect_api_keys()
 
-        # Select models
-        models = self.select_models()
-
-        # Select code CLI
-        code_cli = self.select_code_cli()
-
-        # Configure daemon
-        enable_daemon = self.configure_daemon()
-        if enable_daemon:
-            api_keys["NINJA_ENABLE_DAEMON"] = "true"
-
-        # Configure IDE integration
-        selected_ides = self.configure_ide_integration()
-
-        # Save configuration
-        if not self.save_configuration(api_keys, models, code_cli):
-            return 1
-
-        # Verify installation
-        if not self.verify_installation():
-            self.print_warning("Some components failed to install")
-            print("   Run: ninja-config doctor")
-
-        # Show completion summary
-        self.show_completion_summary(selected_ides)
-
-        return 0
+def _get_env(key: str) -> str:
+    import os
+    return os.environ.get(key, "")
 
 
 def run_tui_installer() -> int:
-    """Run the TUI installer."""
-    installer = TUIInstaller()
-    return installer.run()
+    return TUIInstaller().run()
 
 
 if __name__ == "__main__":

@@ -11,7 +11,6 @@ except PackageNotFoundError:
     __version__ = "0.0.0-dev"
 
 from ninja_config.configurator import run_configurator
-from ninja_config.installer import run_installer
 from ninja_config.model_selector import (
     detect_operators,
     run_interactive_selector,
@@ -19,14 +18,15 @@ from ninja_config.model_selector import (
     select_operator_interactive,
 )
 from ninja_config.opencode_integration import OpenCodeIntegration
+from ninja_config.tui_installer import run_tui_installer
 
 
 __all__ = [
     "OpenCodeIntegration",
     "detect_operators",
     "run_configurator",
-    "run_installer",
     "run_interactive_selector",
+    "run_tui_installer",
     "select_model_interactive",
     "select_operator_interactive",
 ]

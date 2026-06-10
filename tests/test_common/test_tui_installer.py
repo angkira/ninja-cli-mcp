@@ -1,158 +1,479 @@
 """
-Unit tests for TUI Installer model preset defaults.
+Unit tests for TUIInstaller.
 
-Tests that the correct default models are configured for different modules.
+Tests cover constructor, save helpers, interactive configuration methods,
+and the main run() flow. All InquirerPy calls are mocked.
 """
 
 from __future__ import annotations
 
-from ninja_config.tui_installer import TUIInstaller
+import shutil
+import subprocess
+from unittest.mock import MagicMock, PropertyMock, call, patch
+
+import pytest
+
+from ninja_config.config_shared import APIKeyDef, DAEMON_CONFIG
+from ninja_config.tui_installer import TUIInstaller, _exec, run_tui_installer
 
 
-class TestTUIInstallerModelPresets:
-    """Tests for TUI installer model preset configuration."""
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    def test_coder_quality_tier_uses_haiku(self):
-        """Test that coder Quality tier preset uses openrouter claude-haiku-4.5."""
-        installer = TUIInstaller()
+def _make_installer(**overrides):
+    with patch("ninja_config.tui_installer.ConfigManager") as MockCM, \
+         patch("ninja_config.tui_installer.detect_tools", return_value={}), \
+         patch("ninja_config.tui_installer.detect_ides", return_value={}):
+        mock_mgr = MagicMock()
+        mock_mgr.list_all.return_value = {}
+        MockCM.return_value = mock_mgr
+        inst = TUIInstaller()
+    for k, v in overrides.items():
+        setattr(inst, k, v)
+    return inst
 
-        # Get coder recommendations
-        coder_models = installer.fetch_model_recommendations("coder")
 
-        # Find the Quality tier model
-        quality_model = None
-        for model in coder_models:
-            if model.get("tier") == "🎯 Quality":
-                quality_model = model
-                break
+# ---------------------------------------------------------------------------
+# _exec helper
+# ---------------------------------------------------------------------------
 
-        # Verify Quality tier exists and uses claude-haiku-4.5
-        assert quality_model is not None, "Quality tier not found in coder presets"
-        assert quality_model["name"] == "openrouter/anthropic/claude-haiku-4.5", (
-            f"Expected 'openrouter/anthropic/claude-haiku-4.5' for coder Quality tier, "
-            f"got '{quality_model['name']}'"
+class TestExec:
+    def test_returns_value_directly(self):
+        assert _exec("hello") == "hello"
+
+    def test_calls_execute_if_present(self):
+        obj = MagicMock()
+        obj.execute.return_value = 42
+        del obj.spam  # ensure hasattr only for execute
+        assert _exec(obj) == 42
+        obj.execute.assert_called_once()
+
+    def test_no_execute_attr(self):
+        class NoExec:
+            pass
+        obj = NoExec()
+        assert _exec(obj) is obj
+
+
+# ---------------------------------------------------------------------------
+# Constructor
+# ---------------------------------------------------------------------------
+
+class TestConstructor:
+    @patch("ninja_config.tui_installer.detect_ides", return_value={"claude": "/path"})
+    @patch("ninja_config.tui_installer.detect_tools", return_value={"aider": "/usr/local/bin/aider"})
+    @patch("ninja_config.tui_installer.ConfigManager")
+    def test_creates_config_manager(self, MockCM, mock_tools, mock_ides):
+        mock_mgr = MagicMock()
+        mock_mgr.list_all.return_value = {"K": "V"}
+        MockCM.return_value = mock_mgr
+        inst = TUIInstaller()
+        MockCM.assert_called_once()
+        assert inst.config_mgr is mock_mgr
+
+    @patch("ninja_config.tui_installer.detect_ides", return_value={})
+    @patch("ninja_config.tui_installer.detect_tools", return_value={"aider": "/bin/aider"})
+    @patch("ninja_config.tui_installer.ConfigManager")
+    def test_calls_detect_tools(self, MockCM, mock_tools, mock_ides):
+        MockCM.return_value.list_all.return_value = {}
+        TUIInstaller()
+        mock_tools.assert_called_once()
+
+    @patch("ninja_config.tui_installer.detect_ides", return_value={"vscode": "/path"})
+    @patch("ninja_config.tui_installer.detect_tools", return_value={})
+    @patch("ninja_config.tui_installer.ConfigManager")
+    def test_calls_detect_ides(self, MockCM, mock_tools, mock_ides):
+        MockCM.return_value.list_all.return_value = {}
+        TUIInstaller()
+        mock_ides.assert_called_once()
+
+    @patch("ninja_config.tui_installer.detect_ides", return_value={})
+    @patch("ninja_config.tui_installer.detect_tools", return_value={})
+    @patch("ninja_config.tui_installer.ConfigManager")
+    def test_modules_starts_empty(self, MockCM, mock_tools, mock_ides):
+        MockCM.return_value.list_all.return_value = {}
+        inst = TUIInstaller()
+        assert inst.modules == []
+
+
+# ---------------------------------------------------------------------------
+# _save / _save_batch
+# ---------------------------------------------------------------------------
+
+class TestSave:
+    def test_save_calls_config_mgr_set(self):
+        inst = _make_installer()
+        inst._save("FOO", "bar")
+        inst.config_mgr.set.assert_called_once_with("FOO", "bar")
+        assert inst.config["FOO"] == "bar"
+
+    def test_save_batch_calls_config_mgr_update(self):
+        inst = _make_installer()
+        updates = {"A": "1", "B": "2"}
+        inst._save_batch(updates)
+        inst.config_mgr.update.assert_called_once_with(updates)
+        assert inst.config["A"] == "1"
+        assert inst.config["B"] == "2"
+
+
+# ---------------------------------------------------------------------------
+# _ask_key
+# ---------------------------------------------------------------------------
+
+class TestAskKey:
+    def _key_def(self, env_var="TEST_KEY", display_name="Test", url="http://x",
+                 module="coder", description="desc"):
+        return APIKeyDef(env_var, display_name, url, module, description)
+
+    @patch("ninja_config.tui_installer.save_secret")
+    @patch("ninja_config.tui_installer.inquirer")
+    @patch("ninja_config.tui_installer.get_secret", return_value="existing_secret_value")
+    def test_existing_key_user_confirms(self, mock_get, mock_inq, mock_save):
+        mock_inq.confirm.return_value.execute.return_value = True
+        inst = _make_installer()
+        inst._ask_key(self._key_def())
+        mock_save.assert_not_called()
+
+    @patch("ninja_config.tui_installer.save_secret")
+    @patch("ninja_config.tui_installer.inquirer")
+    @patch("ninja_config.tui_installer.get_secret", return_value="existing_secret_value")
+    def test_existing_key_user_declines_enters_new(self, mock_get, mock_inq, mock_save):
+        mock_inq.confirm.return_value.execute.return_value = False
+        mock_inq.secret.return_value.execute.return_value = "new_key_123"
+        inst = _make_installer()
+        inst._ask_key(self._key_def())
+        mock_save.assert_called_once_with("TEST_KEY", "new_key_123")
+
+    @patch("ninja_config.tui_installer.save_secret")
+    @patch("ninja_config.tui_installer.inquirer")
+    @patch("ninja_config.tui_installer.get_secret", return_value=None)
+    def test_no_existing_key_enters_new(self, mock_get, mock_inq, mock_save):
+        mock_inq.secret.return_value.execute.return_value = "brand_new_key"
+        inst = _make_installer()
+        inst._ask_key(self._key_def())
+        mock_save.assert_called_once_with("TEST_KEY", "brand_new_key")
+
+    @patch("ninja_config.tui_installer.save_secret")
+    @patch("ninja_config.tui_installer.inquirer")
+    @patch("ninja_config.tui_installer.get_secret", return_value=None)
+    def test_no_existing_key_user_skips(self, mock_get, mock_inq, mock_save):
+        mock_inq.secret.return_value.execute.return_value = ""
+        inst = _make_installer()
+        inst._ask_key(self._key_def())
+        mock_save.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _configure_coder
+# ---------------------------------------------------------------------------
+
+class TestConfigureCoder:
+    @patch("ninja_config.tui_installer.save_secret")
+    @patch("ninja_config.tui_installer.inquirer")
+    @patch("ninja_config.tui_installer.get_secret", return_value=None)
+    @patch("ninja_config.tui_installer.shutil.which", return_value="/bin/aider")
+    def test_selects_aider(self, mock_which, mock_get, mock_inq, mock_save):
+        mock_inq.select.return_value.execute.return_value = "aider"
+        mock_inq.secret.return_value.execute.return_value = ""
+        inst = _make_installer()
+        inst.modules = ["coder"]
+        inst.tools = {}
+        inst._configure_coder()
+        assert inst.config.get("NINJA_CODE_BIN") == "aider"
+
+    @patch("ninja_config.tui_installer.save_secret")
+    @patch("ninja_config.tui_installer.inquirer")
+    @patch("ninja_config.tui_installer.get_secret", return_value=None)
+    @patch("ninja_config.tui_installer.shutil.which", return_value=None)
+    @patch("ninja_config.tui_installer.subprocess")
+    def test_aider_auto_install(self, mock_sub, mock_which, mock_get, mock_inq, mock_save):
+        mock_inq.select.return_value.execute.return_value = "aider"
+        mock_inq.secret.return_value.execute.return_value = ""
+        mock_sub.run.return_value = MagicMock(returncode=0)
+        inst = _make_installer()
+        inst.modules = ["coder"]
+        inst.tools = {}
+        inst._configure_coder()
+        mock_sub.run.assert_any_call(
+            ["uv", "tool", "install", "aider-chat"],
+            capture_output=True, text=True, check=False,
         )
 
-    def test_researcher_recommended_tier_uses_haiku(self):
-        """Test that researcher Recommended tier preset uses openrouter claude-haiku-4.5."""
-        installer = TUIInstaller()
+    @patch("ninja_config.tui_installer.save_secret")
+    @patch("ninja_config.tui_installer.inquirer")
+    @patch("ninja_config.tui_installer.get_secret", return_value=None)
+    @patch("ninja_config.tui_installer.shutil.which", return_value="/bin/opencode")
+    def test_custom_path(self, mock_which, mock_get, mock_inq, mock_save):
+        mock_inq.select.return_value.execute.return_value = "__custom"
+        mock_inq.text.return_value.execute.return_value = "/custom/path/bin"
+        mock_inq.secret.return_value.execute.return_value = ""
+        inst = _make_installer()
+        inst.modules = ["coder"]
+        inst.tools = {"opencode": "/bin/opencode"}
+        inst._configure_coder()
+        assert inst.config.get("NINJA_CODE_BIN") == "/custom/path/bin"
 
-        # Get researcher recommendations
-        researcher_models = installer.fetch_model_recommendations("researcher")
 
-        # Find the Recommended tier model
-        recommended_model = None
-        for model in researcher_models:
-            if model.get("tier") == "🏆 Recommended":
-                recommended_model = model
-                break
+# ---------------------------------------------------------------------------
+# _configure_researcher
+# ---------------------------------------------------------------------------
 
-        # Verify Recommended tier exists and uses claude-haiku-4.5
-        assert recommended_model is not None, "Recommended tier not found in researcher presets"
-        assert recommended_model["name"] == "openrouter/anthropic/claude-haiku-4.5", (
-            f"Expected 'openrouter/anthropic/claude-haiku-4.5' for researcher Recommended tier, "
-            f"got '{recommended_model['name']}'"
-        )
+class TestConfigureResearcher:
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_duckduckgo_no_key_prompt(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "duckduckgo"
+        inst = _make_installer()
+        inst.modules = ["researcher"]
+        with patch.object(inst, "_ask_key") as mock_ask:
+            inst._configure_researcher()
+            mock_ask.assert_not_called()
+        assert inst.config.get("NINJA_SEARCH_PROVIDER") == "duckduckgo"
 
-    def test_coder_presets_structure(self):
-        """Test that coder presets have the correct structure."""
-        installer = TUIInstaller()
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_serper_prompts_key(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "serper"
+        inst = _make_installer()
+        inst.modules = ["researcher"]
+        with patch.object(inst, "_ask_key") as mock_ask:
+            inst._configure_researcher()
+            called_vars = [c.args[0].env_var for c in mock_ask.call_args_list]
+            assert "SERPER_API_KEY" in called_vars
 
-        # Get coder recommendations
-        coder_models = installer.fetch_model_recommendations("coder")
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_perplexity_prompts_key(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "perplexity"
+        inst = _make_installer()
+        inst.modules = ["researcher"]
+        with patch.object(inst, "_ask_key") as mock_ask:
+            inst._configure_researcher()
+            called_vars = [c.args[0].env_var for c in mock_ask.call_args_list]
+            assert "PERPLEXITY_API_KEY" in called_vars
 
-        # Verify we have models
-        assert len(coder_models) > 0, "No coder models found"
 
-        # Verify each model has required fields
-        for model in coder_models:
-            assert "name" in model, "Model missing 'name' field"
-            assert "tier" in model, "Model missing 'tier' field"
-            assert "price" in model, "Model missing 'price' field"
-            assert "speed" in model, "Model missing 'speed' field"
+# ---------------------------------------------------------------------------
+# _configure_models
+# ---------------------------------------------------------------------------
 
-    def test_researcher_presets_structure(self):
-        """Test that researcher presets have the correct structure."""
-        installer = TUIInstaller()
+class TestConfigureModels:
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_coder_model_saved(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "openrouter/anthropic/claude-haiku-4.5"
+        inst = _make_installer()
+        inst.modules = ["coder"]
+        inst._configure_models()
+        assert inst.config.get("NINJA_CODER_MODEL") == "openrouter/anthropic/claude-haiku-4.5"
 
-        # Get researcher recommendations
-        researcher_models = installer.fetch_model_recommendations("researcher")
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_researcher_model_saved(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "sonar-pro"
+        inst = _make_installer()
+        inst.modules = ["researcher"]
+        inst._configure_models()
+        assert inst.config.get("NINJA_RESEARCHER_MODEL") == "sonar-pro"
 
-        # Verify we have models
-        assert len(researcher_models) > 0, "No researcher models found"
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_custom_model(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "__custom"
+        mock_inq.text.return_value.execute.return_value = "my/custom-model"
+        inst = _make_installer()
+        inst.modules = ["coder"]
+        inst._configure_models()
+        assert inst.config.get("NINJA_CODER_MODEL") == "my/custom-model"
 
-        # Verify each model has required fields
-        for model in researcher_models:
-            assert "name" in model, "Model missing 'name' field"
-            assert "tier" in model, "Model missing 'tier' field"
-            assert "price" in model, "Model missing 'price' field"
-            assert "speed" in model, "Model missing 'speed' field"
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_coder_choices_include_zai_models(self, mock_inq):
+        captured_choices = []
+        def capture_choices(**kwargs):
+            captured_choices.extend(kwargs.get("choices", []))
+            m = MagicMock()
+            m.execute.return_value = "some_model"
+            return m
+        mock_inq.select.side_effect = capture_choices
+        inst = _make_installer()
+        inst.modules = ["coder"]
+        inst._configure_models()
+        choice_values = [
+            c.value for c in captured_choices
+            if hasattr(c, "value")
+        ]
+        from ninja_common.defaults import ZAI_MODELS
+        for mid, _name, _desc in ZAI_MODELS:
+            assert mid in choice_values, f"ZAI model {mid} not in coder choices"
 
-    def test_secretary_presets_unchanged(self):
-        """Test that secretary presets remain unchanged (no sonnet-4-5)."""
-        installer = TUIInstaller()
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_skips_non_model_modules(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "x"
+        inst = _make_installer()
+        inst.modules = ["resources", "prompts"]
+        inst._configure_models()
+        mock_inq.select.assert_not_called()
 
-        # Get secretary recommendations
-        secretary_models = installer.fetch_model_recommendations("secretary")
 
-        # Verify none of the secretary models use sonnet-4-5
-        for model in secretary_models:
-            assert model["name"] != "openrouter/anthropic/claude-sonnet-4-5", (
-                "Secretary presets should not have been changed to use sonnet-4-5"
-            )
+# ---------------------------------------------------------------------------
+# _configure_daemon
+# ---------------------------------------------------------------------------
 
-    def test_other_coder_tiers_unchanged(self):
-        """Test that other coder tier presets (besides Quality) are unchanged."""
-        installer = TUIInstaller()
+class TestConfigureDaemon:
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_accept_daemon(self, mock_inq):
+        mock_inq.confirm.return_value.execute.return_value = True
+        inst = _make_installer()
+        inst._configure_daemon()
+        inst.config_mgr.update.assert_called_once_with(DAEMON_CONFIG)
 
-        # Get coder recommendations
-        coder_models = installer.fetch_model_recommendations("coder")
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_decline_daemon(self, mock_inq):
+        mock_inq.confirm.return_value.execute.return_value = False
+        inst = _make_installer()
+        inst._configure_daemon()
+        inst.config_mgr.set.assert_any_call("NINJA_ENABLE_DAEMON", "false")
+        assert inst.config.get("NINJA_ENABLE_DAEMON") == "false"
 
-        # Check that Recommended tier still uses the versioned haiku
-        recommended_model = None
-        for model in coder_models:
-            if model.get("tier") == "🏆 Recommended":
-                recommended_model = model
-                break
 
-        if recommended_model:
-            assert recommended_model["name"] == "anthropic/claude-haiku-4.5-20250929", (
-                f"Expected Recommended tier to use versioned model, "
-                f"got '{recommended_model['name']}'"
-            )
+# ---------------------------------------------------------------------------
+# _configure_ide
+# ---------------------------------------------------------------------------
 
-    def test_other_researcher_tiers_unchanged(self):
-        """Test that other researcher tier presets (besides Recommended) are unchanged."""
-        installer = TUIInstaller()
+class TestConfigureIde:
+    def test_no_ides_returns_empty(self):
+        inst = _make_installer()
+        inst.ides = {}
+        assert inst._configure_ide() == []
 
-        # Get researcher recommendations
-        researcher_models = installer.fetch_model_recommendations("researcher")
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_ides_selected(self, mock_inq):
+        mock_inq.checkbox.return_value.execute.return_value = ["claude", "vscode"]
+        inst = _make_installer()
+        inst.ides = {"claude": "/path1", "vscode": "/path2"}
+        result = inst._configure_ide()
+        assert result == ["claude", "vscode"]
 
-        # Check that Quality tier uses gpt-4o (not changed)
-        quality_model = None
-        for model in researcher_models:
-            if model.get("tier") == "🎯 Quality":
-                quality_model = model
-                break
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_ides_none_selected_returns_empty(self, mock_inq):
+        mock_inq.checkbox.return_value.execute.return_value = None
+        inst = _make_installer()
+        inst.ides = {"claude": "/path1"}
+        assert inst._configure_ide() == []
 
-        if quality_model:
-            assert quality_model["name"] == "openai/gpt-4o", (
-                f"Expected Quality tier to remain as gpt-4o, got '{quality_model['name']}'"
-            )
 
-    def test_model_name_format(self):
-        """Test that model names follow the correct format."""
-        installer = TUIInstaller()
+# ---------------------------------------------------------------------------
+# _register_ides
+# ---------------------------------------------------------------------------
 
-        # Test all categories
-        for category in ["coder", "researcher", "secretary"]:
-            models = installer.fetch_model_recommendations(category)
+class TestRegisterIdes:
+    @patch("ninja_config.tui_installer.register_claude_mcp", return_value=3)
+    def test_claude_calls_register(self, mock_reg):
+        inst = _make_installer()
+        inst._register_ides(["claude"])
+        mock_reg.assert_called_once()
 
-            for model in models:
-                name = model["name"]
-                # Model names should contain a provider and model name
-                assert "/" in name, f"Model name '{name}' missing provider separator"
-                parts = name.split("/")
-                assert len(parts) == 2, f"Model name '{name}' has invalid format"
-                assert len(parts[0]) > 0, f"Model provider empty in '{name}'"
-                assert len(parts[1]) > 0, f"Model name empty in '{name}'"
+    def test_other_ide_prints_warning(self, capsys):
+        inst = _make_installer()
+        inst._register_ides(["zed"])
+        captured = capsys.readouterr()
+        assert "zed" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# _verify
+# ---------------------------------------------------------------------------
+
+class TestVerify:
+    @patch("ninja_config.tui_installer.shutil.which", return_value="/usr/local/bin/cmd")
+    def test_all_found(self, mock_which, capsys):
+        inst = _make_installer()
+        inst._verify()
+        out = capsys.readouterr().out
+        for cmd in ("ninja-config", "ninja-coder", "ninja-researcher", "ninja-secretary"):
+            assert cmd in out
+
+    @patch("ninja_config.tui_installer.shutil.which", return_value=None)
+    def test_none_found(self, mock_which, capsys):
+        inst = _make_installer()
+        inst._verify()
+        out = capsys.readouterr().out
+        assert "not found" in out
+
+
+# ---------------------------------------------------------------------------
+# run — integration
+# ---------------------------------------------------------------------------
+
+class TestRun:
+    def _full_installer(self):
+        with patch("ninja_config.tui_installer.ConfigManager") as MockCM, \
+             patch("ninja_config.tui_installer.detect_tools", return_value={}), \
+             patch("ninja_config.tui_installer.detect_ides", return_value={}):
+            mock_mgr = MagicMock()
+            mock_mgr.list_all.return_value = {}
+            MockCM.return_value = mock_mgr
+            inst = TUIInstaller()
+        return inst
+
+    @patch("ninja_config.tui_installer.shutil.which", return_value="/bin/uv")
+    @patch("ninja_config.tui_installer.check_python", return_value=True)
+    @patch("ninja_config.tui_installer.check_uv", return_value=True)
+    @patch("ninja_config.tui_installer.subprocess")
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_run_success_returns_0(self, mock_inq, mock_sub, mock_uv, mock_py, mock_which):
+        mock_sub.run.return_value = MagicMock(returncode=0)
+        mock_inq.select.return_value.execute.return_value = "full"
+        mock_inq.confirm.return_value.execute.return_value = True
+        mock_inq.checkbox.return_value.execute.return_value = []
+        mock_inq.secret.return_value.execute.return_value = ""
+
+        inst = self._full_installer()
+        with patch.object(inst, "_configure_coder"), \
+             patch.object(inst, "_configure_researcher"), \
+             patch.object(inst, "_configure_models"), \
+             patch.object(inst, "_configure_daemon"), \
+             patch.object(inst, "_configure_ide", return_value=[]), \
+             patch.object(inst, "_register_ides"), \
+             patch.object(inst, "_verify"), \
+             patch.object(inst, "_summary"):
+            assert inst.run() == 0
+
+    @patch("ninja_config.tui_installer.check_python", return_value=False)
+    def test_run_fails_on_python(self, mock_py):
+        inst = self._full_installer()
+        assert inst.run() == 1
+
+    @patch("ninja_config.tui_installer.install_uv", return_value=False)
+    @patch("ninja_config.tui_installer.check_python", return_value=True)
+    @patch("ninja_config.tui_installer.check_uv", return_value=False)
+    def test_run_fails_on_uv_install(self, mock_uv, mock_install, mock_py):
+        inst = self._full_installer()
+        assert inst.run() == 1
+
+    @patch("ninja_config.tui_installer.shutil.which", return_value="/bin/uv")
+    @patch("ninja_config.tui_installer.check_python", return_value=True)
+    @patch("ninja_config.tui_installer.check_uv", return_value=True)
+    @patch("ninja_config.tui_installer.subprocess")
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_run_fails_on_package_install(self, mock_inq, mock_sub, mock_uv, mock_py, mock_which):
+        mock_sub.run.return_value = MagicMock(returncode=1, stderr="fail")
+        mock_inq.select.return_value.execute.return_value = "full"
+
+        inst = self._full_installer()
+        with patch.object(inst, "_configure_coder"), \
+             patch.object(inst, "_configure_researcher"), \
+             patch.object(inst, "_configure_models"), \
+             patch.object(inst, "_configure_daemon"), \
+             patch.object(inst, "_configure_ide", return_value=[]), \
+             patch.object(inst, "_register_ides"), \
+             patch.object(inst, "_verify"), \
+             patch.object(inst, "_summary"):
+            assert inst.run() == 1
+
+
+# ---------------------------------------------------------------------------
+# run_tui_installer entry point
+# ---------------------------------------------------------------------------
+
+class TestRunTuiInstaller:
+    @patch("ninja_config.tui_installer.TUIInstaller")
+    def test_delegates_to_installer(self, MockCls):
+        MockCls.return_value.run.return_value = 0
+        assert run_tui_installer() == 0
+        MockCls.return_value.run.assert_called_once()

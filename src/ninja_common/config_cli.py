@@ -360,6 +360,26 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print()
 
 
+def cmd_install(_args: argparse.Namespace) -> None:
+    """
+    Run the TUI installer for initial setup.
+
+    This is the primary installation entry point, launched by install.sh.
+    Collects API keys, selects models, configures IDE integrations.
+    """
+    try:
+        from ninja_config.tui_installer import run_tui_installer
+
+        sys.exit(run_tui_installer())
+    except ImportError:
+        print_colored("TUI installer not available (InquirerPy missing).", "red")
+        print_colored("Install with: pip install InquirerPy", "dim")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\n\nInstallation cancelled.")
+        sys.exit(1)
+
+
 def cmd_configure(args: argparse.Namespace) -> None:
     """
     Run interactive configurator (MAIN ENTRY POINT).
@@ -382,12 +402,10 @@ def cmd_configure(args: argparse.Namespace) -> None:
     menuconfig_mode = getattr(args, "menuconfig", False)
 
     if quick_mode:
-        # Quick mode: simple API key + operator selection
         print_colored("Quick Configuration Mode", "cyan")
         print_colored("─" * 40, "dim")
         _run_quick_configure(args.config)
     elif menuconfig_mode:
-        # MenuConfig mode: hierarchical menu navigation
         try:
             from ninja_config.menuconfig_tui import run_menuconfig_tui
 
@@ -400,14 +418,12 @@ def cmd_configure(args: argparse.Namespace) -> None:
             print("\nCancelled.")
             sys.exit(1)
     elif full_mode:
-        # Full mode: comprehensive TUI configurator (legacy)
         try:
             sys.exit(run_power_configurator(args.config))
         except KeyboardInterrupt:
             print("\nCancelled.")
             sys.exit(1)
     else:
-        # Default: Modern TUI mode - tree-based navigation with textual
         try:
             from ninja_config.modern_tui import run_modern_tui
 
@@ -671,8 +687,11 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Full interactive configuration (RECOMMENDED)
-  ninja-config configure
+   # Initial setup (TUI installer - API keys, models, IDE)
+   ninja-config install
+
+   # Full interactive configuration (RECOMMENDED)
+   ninja-config configure
 
   # Quick setup (API key + operator only)
   ninja-config configure --quick
@@ -705,6 +724,12 @@ Examples:
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
+
+    # Install command (TUI installer)
+    subparsers.add_parser(
+        "install",
+        help="Run TUI installer for initial setup (API keys, models, IDE)",
+    )
 
     # Configure command (MAIN ENTRY POINT)
     configure_parser = subparsers.add_parser(
@@ -813,9 +838,10 @@ Examples:
 
     # Dispatch to command handler using dictionary mapping
     command_handlers = {
+        "install": cmd_install,
         "configure": cmd_configure,
         "list": cmd_list,
-        "show": cmd_list,  # Alias for list
+        "show": cmd_list,
         "get": cmd_get,
         "set": cmd_set,
         "doctor": cmd_doctor,
