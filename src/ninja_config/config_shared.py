@@ -191,7 +191,7 @@ DAEMON_CONFIG: dict[str, str] = {
 
 
 MCP_SERVER_COMMANDS: dict[str, list[str]] = {
-    "ninja-coder": ["ninja-daemon", "connect", "coder"],
+    "ninja-coder": ["ninja-mcp", "daemon", "connect", "coder"],
     "ninja-researcher": ["ninja-researcher"],
     "ninja-secretary": ["ninja-secretary"],
 }

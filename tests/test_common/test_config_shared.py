@@ -401,7 +401,7 @@ class TestRegisterClaudeMcp:
 
     @patch("ninja_config.config_shared.subprocess.run")
     @patch("ninja_config.config_shared.shutil.which", return_value="/usr/bin/claude")
-    def test_registers_coder_through_daemon_bridge(self, mock_which, mock_run):
+    def test_registers_coder_through_unified_daemon_bridge(self, mock_which, mock_run):
         mock_run.return_value = MagicMock(returncode=0)
 
         register_claude_mcp()
@@ -417,7 +417,8 @@ class TestRegisterClaudeMcp:
             "stdio",
             "ninja-coder",
             "--",
-            "ninja-daemon",
+            "ninja-mcp",
+            "daemon",
             "connect",
             "coder",
         ] in add_calls

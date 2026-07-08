@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "ninja-coder": {
-      "command": "ninja-daemon",
-      "args": ["connect", "coder"],
+      "command": "ninja-mcp",
+      "args": ["daemon", "connect", "coder"],
       "env": {}
     },
     "ninja-researcher": {

@@ -194,8 +194,8 @@ class TestClaudeCode:
             rc = claude_code.install(_make_args(direct=True, force=True))
             assert rc == 0
             data = json.loads(target_file.read_text())
-            assert data["mcpServers"]["ninja-coder"]["command"] == "ninja-daemon"
-            assert data["mcpServers"]["ninja-coder"]["args"] == ["connect", "coder"]
+            assert data["mcpServers"]["ninja-coder"]["command"] == "ninja-mcp"
+            assert data["mcpServers"]["ninja-coder"]["args"] == ["daemon", "connect", "coder"]
         finally:
             claude_code._CLAUDE_DIR = orig_dir
             claude_code._SETTINGS_FILE = orig_file
