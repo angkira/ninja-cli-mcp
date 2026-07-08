@@ -19,9 +19,13 @@ logger = get_logger(__name__)
 
 
 class SafetyMode(str, Enum):
-    """Safety enforcement modes."""
+    """Safety enforcement modes.
 
-    STRICT = "strict"  # Refuse to run with uncommitted changes
+    STRICT has been removed. Any NINJA_SAFETY_MODE=strict configuration is
+    treated as AUTO with a deprecation warning — tasks are never denied due
+    to a dirty worktree.
+    """
+
     AUTO = "auto"  # Auto-create safety tags/commits before running
     WARN = "warn"  # Warn but allow execution
     OFF = "off"  # Disable safety checks
@@ -84,9 +88,15 @@ class GitSafetyChecker:
             changed_files = []
             for line in output.split("\n"):
                 if line.strip():
-                    parts = line.split(maxsplit=1)
-                    if len(parts) == 2:
-                        changed_files.append(parts[1])
+                    # Status code occupies the first 2 chars; path follows after a space
+                    path = line[2:].strip()
+                    # Rename/copy entries contain " -> "; keep only the destination path
+                    if " -> " in path:
+                        path = path.split(" -> ", 1)[1]
+                    # Strip quotes that git adds for paths with special characters
+                    path = path.strip().strip('"')
+                    if path:
+                        changed_files.append(path)
 
             return True, changed_files
 
@@ -137,7 +147,8 @@ class GitSafetyChecker:
         Args:
             repo_root: Repository root path.
             task_description: Description of task for commit message.
-            changed_files: List of specific files to commit (if None, add all changes).
+            changed_files: Advisory; provided for context but staging always uses
+                ``git add -A`` so renames and deletions are handled correctly.
 
         Returns:
             True if committed successfully, False otherwise.
@@ -145,44 +156,72 @@ class GitSafetyChecker:
         try:
             import time
 
-            # Add specific files if provided, otherwise add all changes
-            if changed_files:
-                # Only add the specific changed files
-                for file_path in changed_files:
-                    result = subprocess.run(
-                        ["git", "add", file_path],
-                        cwd=repo_root,
-                        capture_output=True,
-                        timeout=10,
-                        check=False,
-                    )
-                    if result.returncode != 0:
-                        logger.warning(f"Failed to git add {file_path}: {result.stderr.decode()}")
-                        return False
-            else:
-                # Add all changes
-                result = subprocess.run(
-                    ["git", "add", "."],
-                    cwd=repo_root,
-                    capture_output=True,
-                    timeout=10,
-                    check=False,
-                )
-
-                if result.returncode != 0:
-                    logger.warning(f"Failed to git add: {result.stderr.decode()}")
-                    return False
+            # Stage all changes atomically — avoids per-file add failures for renames etc.
+            add_result = subprocess.run(
+                ["git", "add", "-A"],
+                cwd=repo_root,
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+            if add_result.returncode != 0:
+                logger.warning(f"Failed to git add -A: {add_result.stderr.decode()}")
+                return False
 
             # Create commit message
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             task_summary = (
                 task_description[:60] + "..." if len(task_description) > 60 else task_description
             )
-            commit_msg = f"[ninja-auto-save] Before task: {task_summary}\n\nTimestamp: {timestamp}\nAutomatic safety commit by ninja-coder"
+            file_hint = f"\nFiles detected: {len(changed_files)}" if changed_files else ""
+            commit_msg = f"[ninja-auto-save] Before task: {task_summary}\n\nTimestamp: {timestamp}{file_hint}\nAutomatic safety commit by ninja-coder"
 
-            # Commit changes
+            # Detect whether git identity is configured; inject a fallback if not
+            name_result = subprocess.run(
+                ["git", "config", "user.name"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            email_result = subprocess.run(
+                ["git", "config", "user.email"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+
+            has_identity = (
+                name_result.returncode == 0
+                and bool(name_result.stdout.strip())
+                and email_result.returncode == 0
+                and bool(email_result.stdout.strip())
+            )
+
+            identity_args: list[str] = []
+            if not has_identity:
+                logger.warning("Git identity not configured; using fallback ninja-coder identity")
+                identity_args = [
+                    "-c", "user.name=ninja-coder",
+                    "-c", "user.email=ninja@localhost",
+                ]
+
+            commit_cmd = [
+                "git",
+                *identity_args,
+                "commit",
+                "--no-verify",
+                "--no-gpg-sign",
+                "-m",
+                commit_msg,
+            ]
+
+            # Commit changes, bypassing hooks and signing requirements
             result = subprocess.run(
-                ["git", "commit", "-m", commit_msg],
+                commit_cmd,
                 cwd=repo_root,
                 capture_output=True,
                 timeout=10,
@@ -316,11 +355,17 @@ def validate_task_safety(
     # Determine safety mode
     if safety_mode is None:
         mode_str = os.environ.get("NINJA_SAFETY_MODE", "auto").lower()
-        try:
-            safety_mode = SafetyMode(mode_str)
-        except ValueError:
-            logger.warning(f"Invalid NINJA_SAFETY_MODE '{mode_str}', using 'auto'")
+        if mode_str == "strict":
+            logger.warning(
+                "NINJA_SAFETY_MODE=strict is deprecated and now behaves as 'auto' (never denies)"
+            )
             safety_mode = SafetyMode.AUTO
+        else:
+            try:
+                safety_mode = SafetyMode(mode_str)
+            except ValueError:
+                logger.warning(f"Invalid NINJA_SAFETY_MODE '{mode_str}', using 'auto'")
+                safety_mode = SafetyMode.AUTO
 
     results = {
         "safe": True,
@@ -335,7 +380,7 @@ def validate_task_safety(
         results["warnings"].append("⚠️  Safety checks disabled (NINJA_SAFETY_MODE=off)")
         return results
 
-    # Check git safety (don't create tag yet in strict/auto mode)
+    # Check git safety (don't create tag yet in auto mode; WARN creates tag upfront)
     create_tag = safety_mode == SafetyMode.WARN
     git_check = GitSafetyChecker.check_safety(
         repo_root,
@@ -349,21 +394,8 @@ def validate_task_safety(
     if git_check["has_changes"]:
         changed_files = git_check.get("changed_files", [])
 
-        if safety_mode == SafetyMode.STRICT:
-            # STRICT: Refuse to run
-            results["safe"] = False
-            results["warnings"].append(
-                f"❌ STRICT MODE: Refusing to run with {len(changed_files)} uncommitted file(s)"
-            )
-            results["recommendations"].append(
-                "Commit your changes first: git add . && git commit -m 'message'"
-            )
-            results["recommendations"].append("Or set NINJA_SAFETY_MODE=auto for automatic commits")
-            return results
-
-        elif safety_mode == SafetyMode.AUTO:
-            # AUTO: Automatically commit changes
-            changed_files = git_check.get("changed_files", [])
+        if safety_mode == SafetyMode.AUTO:
+            # AUTO: Automatically commit changes; never deny the task
             logger.info(f"🔒 AUTO MODE: Committing {len(changed_files)} uncommitted file(s)")
             committed = GitSafetyChecker.auto_commit_changes(
                 repo_root, task_description, changed_files
@@ -382,14 +414,10 @@ def validate_task_safety(
                         f"✅ Safety tag created: {tag} (recover with: git reset --hard {tag})"
                     )
             else:
-                results["safe"] = False
                 results["warnings"].append(
-                    "❌ Failed to auto-commit changes - cannot proceed safely"
+                    "⚠️ Could not create safety commit — proceeding without a git recovery point"
                 )
-                results["recommendations"].append(
-                    "Commit manually: git add . && git commit -m 'message'"
-                )
-                return results
+                # safe stays True — never deny a task due to a dirty worktree
 
         else:  # WARN mode
             # WARN: Just log warnings

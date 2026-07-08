@@ -15,7 +15,8 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-from importlib.metadata import PackageNotFoundError, version as pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as pkg_version
 from typing import ClassVar
 
 from rich.text import Text
@@ -36,6 +37,10 @@ from textual.widgets import (
 )
 
 from ninja_common.config_manager import ConfigManager
+from ninja_common.defaults import (
+    PERPLEXITY_MODELS,
+    PROVIDER_MODELS,
+)
 from ninja_config.config_shared import (
     API_KEYS,
     DAEMON_CONFIG,
@@ -46,13 +51,9 @@ from ninja_config.config_shared import (
     register_claude_mcp,
 )
 from ninja_config.secrets_store import (
+    SecretStore,
     SecretStoreUnavailable,
     default_store,
-)
-
-from ninja_common.defaults import (
-    PERPLEXITY_MODELS,
-    PROVIDER_MODELS,
 )
 
 
@@ -78,14 +79,12 @@ def _gradient_logo() -> Text:
     ]
     logo = Text()
     for row_idx, line in enumerate(lines):
-        col = 0
-        for ch in line:
+        for col, ch in enumerate(line):
             if ch != " ":
                 ci = min(col * len(colors) // max(len(line), 1), len(colors) - 1)
                 logo.append(ch, style=colors[ci])
             else:
                 logo.append(" ")
-            col += 1
         if row_idx < len(lines) - 1:
             logo.append("\n")
     return logo
@@ -95,6 +94,101 @@ class AppNotification(Message):
     def __init__(self, text: str) -> None:
         super().__init__()
         self.text = text
+
+
+def _mask(value: str) -> str:
+    """Mask a secret value, showing only the last four characters when useful."""
+    return f"••••{value[-4:]}" if len(value) > 4 else "••••"
+
+
+class SecretsPanel(Vertical):
+    """Reusable API-key management panel for the modern Textual configurator."""
+
+    def __init__(self, store: SecretStore | None = None) -> None:
+        super().__init__()
+        self._store = store if store is not None else default_store()
+        self._pending_set: str | None = None
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id="secrets-error-banner")
+        yield Static("Select a key to set or update.", id="secrets-input-label")
+        yield Input(placeholder="API key value...", id="secrets-value-input", password=True)
+        yield Button("Save", variant="primary", id="secrets-save-btn")
+        for key_def in API_KEYS:
+            yield self._make_secret_row(key_def.env_var)
+
+    def _make_secret_row(self, name: str) -> Horizontal:
+        try:
+            value = self._store.get(name)
+        except Exception:
+            value = None
+
+        if value:
+            marker = "✓"
+            action = "Update"
+            preview = _mask(value)
+        else:
+            marker = "·"
+            action = "Set"
+            preview = "[dim]not set[/dim]"
+
+        children = [
+            Static(f"{marker} [bold]{name}[/bold]  {preview}"),
+            Button(action, id=f"set-{name}"),
+        ]
+        if value:
+            children.append(Button("Delete", variant="error", id=f"del-{name}"))
+        return Horizontal(*children)
+
+    def _error_banner(self) -> Static:
+        return self.query_one("#secrets-error-banner", Static)
+
+    def _show_error(self, message: str) -> None:
+        banner = self._error_banner()
+        banner.renderable = message
+        banner.display = True
+
+    def _do_save(self) -> None:
+        if not self._pending_set:
+            return
+
+        inp = self.query_one("#secrets-value-input", Input)
+        value = inp.value.strip()
+        if not value:
+            self._show_error("Enter a value before saving.")
+            return
+
+        try:
+            self._store.set(self._pending_set, value)
+        except SecretStoreUnavailable as exc:
+            self._show_error(f"Secret store unavailable: {exc}")
+            return
+        except Exception as exc:
+            self._show_error(f"Failed to save {self._pending_set}: {exc}")
+            return
+
+        saved_name = self._pending_set
+        self._pending_set = None
+        inp.value = ""
+        self._error_banner().display = False
+        self.app.notify(f"{saved_name} saved.", timeout=3)
+
+    def _do_delete(self, name: str) -> None:
+        banner = self._error_banner()
+        confirm = f"CONFIRM_DELETE:{name}"
+        if not str(getattr(banner, "renderable", "")).startswith(confirm):
+            banner.renderable = f"{confirm} — press again"
+            banner.display = True
+            return
+
+        try:
+            self._store.delete(name)
+        except Exception as exc:
+            self._show_error(f"Failed to delete {name}: {exc}")
+            return
+
+        banner.display = False
+        self.app.notify(f"{name} deleted.", timeout=3)
 
 
 class NinjaConfigApp(App):
@@ -465,15 +559,15 @@ class NinjaConfigApp(App):
 
     def _selected_api_key(self) -> tuple[str, str] | None:
         lv = self.query_one("#api-key-list", ListView)
-        sel = lv.highlighted_item
+        sel = getattr(lv, "highlighted_child", None)
+        if sel is None and getattr(lv, "index", None) is not None:
+            try:
+                sel = lv.children[lv.index]
+            except Exception:
+                sel = None
         if sel and hasattr(sel, "env_var"):
             return sel.env_var, sel.display_name
         return None
-
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        if hasattr(event.item, "env_var"):
-            inp = self.query_one("#api-key-input", Input)
-            inp.placeholder = f"Enter {event.item.display_name} key..."
 
     # ── Event handlers ───────────────────────────────────────────────────
 
