@@ -59,6 +59,14 @@ class TestSimpleSubprocessMode:
         assert "--model" in cmd
         assert "test task" in cmd[-1]
 
+    def test_noninteractive_flags_enable_file_writes(self, strategy):
+        """Non-interactive OpenCode runs must emit JSON events and allow write tools."""
+        result = strategy.build_command(prompt="test task", repo_root="/tmp/test-repo")
+
+        assert "--format" in result.command
+        assert result.command[result.command.index("--format") + 1] == "json"
+        assert "--dangerously-skip-permissions" in result.command
+
     def test_working_directory(self, strategy):
         """Test working directory is set correctly."""
         result = strategy.build_command(prompt="test", repo_root="/tmp/test-repo")

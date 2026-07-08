@@ -144,24 +144,27 @@ class SSEListener:
                 except json.JSONDecodeError:
                     continue
 
-                # Route event to the correct session subscriber
-                props = event.get("properties", {})
-                event_sid = props.get("sessionID")
+                await self._dispatch_event(event)
 
-                if event_sid:
-                    # Session-scoped event — route to that session's queue
-                    async with self._lock:
-                        q = self._subscribers.get(event_sid)
-                    if q:
-                        await q.put(event)
-                else:
-                    # Broadcast event (file.edited, server.heartbeat, etc.)
-                    # Send to ALL active subscribers so each task can track file changes
-                    etype = event.get("type", "")
-                    if etype in ("file.edited", "file.watcher.updated"):
-                        async with self._lock:
-                            for q in self._subscribers.values():
-                                await q.put(event)
+    async def _dispatch_event(self, event: dict) -> None:
+        """Route an OpenCode event to the right session queue."""
+        props = event.get("properties", {})
+        part = event.get("part", {})
+        event_sid = props.get("sessionID") or event.get("sessionID") or part.get("sessionID")
+
+        if event_sid:
+            async with self._lock:
+                q = self._subscribers.get(event_sid)
+            if q:
+                await q.put(event)
+            return
+
+        # Broadcast file events without a session id so each task can track changes.
+        etype = event.get("type", "")
+        if etype in ("file.edited", "file.watcher.updated"):
+            async with self._lock:
+                for q in self._subscribers.values():
+                    await q.put(event)
 
 
 class OpenCodeServerPool:
@@ -372,6 +375,7 @@ class OpenCodeServerPool:
 
             etype = event.get("type", "")
             props = event.get("properties", {})
+            part = event.get("part", {})
 
             if etype == "file.edited":
                 fpath = props.get("file", "")
@@ -385,6 +389,23 @@ class OpenCodeServerPool:
 
             elif etype == "session.diff":
                 diff = props.get("diff", [])
+
+            elif etype == "tool_use" or part.get("type") == "tool":
+                state = part.get("state", {})
+                input_data = state.get("input", {})
+                metadata = state.get("metadata", {})
+                fpath = input_data.get("filePath") or metadata.get("filepath")
+                if fpath:
+                    try:
+                        rel = str(Path(fpath).relative_to(inst.repo_root))
+                    except ValueError:
+                        rel = fpath
+                    if rel not in files_changed:
+                        files_changed.append(rel)
+
+            elif etype == "step_finish":
+                if part.get("reason") == "stop":
+                    break
 
             elif etype == "session.idle":
                 break

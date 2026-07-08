@@ -221,6 +221,9 @@ class OpenCodeStrategy:
         cmd = [
             self.bin_path,
             "run",
+            "--format",
+            "json",
+            "--dangerously-skip-permissions",
             "--model",
             model_name,
         ]
