@@ -14,6 +14,7 @@ from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 from InquirerPy.separator import Separator
 
+from ninja_config.config_shared import MCP_SERVER_COMMANDS
 from ninja_config.ui.base import get_masked_value
 
 
@@ -238,11 +239,7 @@ def setup_claude_integration() -> None:
     print("\n🔄 Setting up Claude Code MCP configuration...")
 
     # Register all servers
-    servers = [
-        "ninja-coder",
-        "ninja-researcher",
-        "ninja-secretary",
-    ]
+    servers = list(MCP_SERVER_COMMANDS)
 
     success_count = 0
     for server_name in servers:
@@ -265,7 +262,7 @@ def setup_claude_integration() -> None:
                 "stdio",
                 server_name,
                 "--",
-                server_name,
+                *MCP_SERVER_COMMANDS[server_name],
             ],
             capture_output=True,
             text=True,

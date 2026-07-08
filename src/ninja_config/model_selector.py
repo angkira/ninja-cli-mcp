@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ninja_common.config_manager import ConfigManager
+from ninja_config.config_shared import MCP_SERVER_COMMANDS
 
 
 try:
@@ -1232,10 +1233,11 @@ def update_configuration(operator: Operator, model: Model) -> bool:
             config["mcpServers"] = {}
 
         if "ninja-coder" not in config["mcpServers"]:
+            command = MCP_SERVER_COMMANDS["ninja-coder"]
             config["mcpServers"]["ninja-coder"] = {
                 "type": "stdio",
-                "command": "ninja-coder",
-                "args": [],
+                "command": command[0],
+                "args": command[1:],
             }
 
         config["mcpServers"]["ninja-coder"]["env"] = {

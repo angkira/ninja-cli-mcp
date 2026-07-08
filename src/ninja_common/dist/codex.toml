@@ -3,8 +3,8 @@
 # API keys are managed via: ninja-config  (stored in OS keyring)
 
 [mcp_servers.ninja_coder]
-command = "ninja-coder"
-args = []
+command = "ninja-daemon"
+args = ["connect", "coder"]
 startup_timeout_sec = 30
 
 [mcp_servers.ninja_researcher]

@@ -7,22 +7,19 @@ secret management, and utility functions.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ninja_config.config_shared import (
     API_KEYS,
-    APIKeyDef,
     CODER_API_KEYS,
     DAEMON_CONFIG,
     IDES,
-    IDEDef,
     RESEARCHER_API_KEYS,
+    IDEDef,
     check_python,
     check_uv,
     detect_ides,
@@ -33,9 +30,6 @@ from ninja_config.config_shared import (
     register_claude_mcp,
     save_secret,
 )
-
-if TYPE_CHECKING:
-    pass
 
 
 class TestAPIKeyDef:
@@ -404,6 +398,29 @@ class TestRegisterClaudeMcp:
         result = register_claude_mcp()
         assert result == 3
         assert mock_run.call_count == 6  # 3 remove + 3 add
+
+    @patch("ninja_config.config_shared.subprocess.run")
+    @patch("ninja_config.config_shared.shutil.which", return_value="/usr/bin/claude")
+    def test_registers_coder_through_daemon_bridge(self, mock_which, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+
+        register_claude_mcp()
+
+        add_calls = [call.args[0] for call in mock_run.call_args_list if "add" in call.args[0]]
+        assert [
+            "claude",
+            "mcp",
+            "add",
+            "--scope",
+            "user",
+            "--transport",
+            "stdio",
+            "ninja-coder",
+            "--",
+            "ninja-daemon",
+            "connect",
+            "coder",
+        ] in add_calls
 
     @patch("ninja_config.config_shared.subprocess.run")
     @patch("ninja_config.config_shared.shutil.which", return_value="/usr/bin/claude")

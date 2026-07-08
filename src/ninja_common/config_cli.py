@@ -21,6 +21,7 @@ from pathlib import Path
 import httpx
 
 from ninja_common.config_manager import ConfigManager
+from ninja_config.config_shared import MCP_SERVER_COMMANDS
 
 
 # Import ninja_config modules if available
@@ -586,11 +587,7 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
         return
 
     # Define servers to register
-    servers = [
-        "ninja-coder",
-        "ninja-researcher",
-        "ninja-secretary",
-    ]
+    servers = list(MCP_SERVER_COMMANDS)
 
     # Determine which servers to install
     if args.all or (not args.coder and not args.researcher and not args.secretary):
@@ -627,7 +624,7 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
                 "stdio",
                 server_name,
                 "--",
-                server_name,
+                *MCP_SERVER_COMMANDS[server_name],
             ],
             check=False,
             capture_output=True,

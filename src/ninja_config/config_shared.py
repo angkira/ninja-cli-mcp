@@ -19,8 +19,6 @@ from ninja_common.defaults import (
     DEFAULT_MODEL_QUICK,
     DEFAULT_MODEL_SEQUENTIAL,
     DEFAULT_PORTS,
-    OPENCODE_PROVIDERS,
-    PERPLEXITY_MODELS,
     PROVIDER_MODELS,
 )
 
@@ -172,13 +170,13 @@ def register_claude_mcp() -> int:
     if not shutil.which("claude"):
         return 0
     count = 0
-    for server in ("ninja-coder", "ninja-researcher", "ninja-secretary"):
+    for server, command in MCP_SERVER_COMMANDS.items():
         subprocess.run(
             ["claude", "mcp", "remove", server, "-s", "user"],
             capture_output=True, check=False,
         )
         result = subprocess.run(
-            ["claude", "mcp", "add", "--scope", "user", "--transport", "stdio", server, "--", server],
+            ["claude", "mcp", "add", "--scope", "user", "--transport", "stdio", server, "--", *command],
             capture_output=True, text=True, check=False,
         )
         if result.returncode == 0:
@@ -189,6 +187,13 @@ def register_claude_mcp() -> int:
 DAEMON_CONFIG: dict[str, str] = {
     "NINJA_ENABLE_DAEMON": "true",
     **{f"NINJA_{name.upper()}_PORT": str(port) for name, port in DEFAULT_PORTS.items()},
+}
+
+
+MCP_SERVER_COMMANDS: dict[str, list[str]] = {
+    "ninja-coder": ["ninja-daemon", "connect", "coder"],
+    "ninja-researcher": ["ninja-researcher"],
+    "ninja-secretary": ["ninja-secretary"],
 }
 
 
