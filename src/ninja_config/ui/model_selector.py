@@ -93,7 +93,6 @@ def configure_models(config_manager, config: dict) -> None:
             model_choices.append(Choice(value=model_id, name=f"{model_name:25} • {model_desc}"))
 
     model_choices.append(Separator())
-    model_choices.append(Choice(value="__custom__", name="📝 Enter custom model name"))
     model_choices.append(Choice(value=None, name="← Back"))
 
     current_model = config.get(key, "")
@@ -106,14 +105,6 @@ def configure_models(config_manager, config: dict) -> None:
 
     if selected_model is None:
         return
-
-    if selected_model == "__custom__":
-        # Allow custom model input
-        selected_model = inquirer.text(
-            message="Enter custom model name:",
-            default=current_model,
-            instruction="e.g., anthropic/claude-sonnet-4, qwen/qwen3-235b-a22b",
-        ).execute()
 
     if selected_model:
         config_manager.set(key, selected_model)
@@ -265,7 +256,6 @@ def configure_single_task_model(
         Choice(value=model_id, name=f"{name:30} • {desc}") for model_id, name, desc in recommended
     ]
     choices.append(Separator())
-    choices.append(Choice(value="custom", name="✏️  Enter custom model"))
     choices.append(Choice(value=None, name="← Keep current"))
 
     selected = inquirer.select(
@@ -274,16 +264,7 @@ def configure_single_task_model(
         pointer="►",
     ).execute()
 
-    if selected == "custom":
-        custom_model = inquirer.text(
-            message="Enter model name:",
-            default=current,
-            instruction="e.g., anthropic/claude-sonnet-4, glm-4.7, openai/gpt-4o",
-        ).execute()
-        if custom_model:
-            config_manager.set(key, custom_model)
-            print(f"\n✅ {name} model set to: {custom_model}")
-    elif selected:
+    if selected:
         config_manager.set(key, selected)
         print(f"\n✅ {name} model set to: {selected}")
 
@@ -419,9 +400,8 @@ def configure_models_with_dynamic_loading(
 
             model_choices.append(Choice(value=model.id, name=display_name))
 
-    # Add separator and custom option
+    # Add separator and back option
     model_choices.append(Separator())
-    model_choices.append(Choice(value="__custom__", name="✏️  Enter custom model name"))
     model_choices.append(Choice(value=None, name="← Back"))
 
     # Get current model
@@ -440,19 +420,197 @@ def configure_models_with_dynamic_loading(
     if selected_model is None:
         return
 
-    if selected_model == "__custom__":
-        # Allow custom model input
-        selected_model = inquirer.text(
-            message="Enter custom model name:",
-            default=current_model,
-            instruction="e.g., anthropic/claude-sonnet-4, qwen/qwen-2.5-coder-32b",
-        ).execute()
-
     if selected_model:
         config_manager.set(key, selected_model)
         print(f"\n✅ {module.capitalize()} model updated to: {selected_model}")
     else:
         print("\n💡 No changes made")
+
+
+def configure_model_slots(config_manager, config: dict) -> None:
+    """Two-part model slot configuration.
+
+    Part 1: Pick a model slot to configure (e.g. Coder - Quick, Researcher).
+    Part 2: Pick a model with type-to-filter autocomplete and provider grouping.
+    No "custom model" option.
+
+    Args:
+        config_manager: ConfigManager instance for saving settings.
+        config: Current configuration dictionary.
+    """
+    slots = [
+        ("Coder - Primary", "NINJA_CODER_MODEL", "Primary model for coding", "openrouter"),
+        ("Coder - Quick", "NINJA_MODEL_QUICK", "Fast model for simple tasks", "openrouter"),
+        ("Coder - Sequential", "NINJA_MODEL_SEQUENTIAL", "Multi-step complex tasks", "openrouter"),
+        ("Coder - Parallel", "NINJA_MODEL_PARALLEL", "High-concurrency parallel tasks", "openrouter"),
+        ("Researcher", "NINJA_RESEARCHER_MODEL", "Web research engine", "perplexity"),
+        ("Secretary", "NINJA_SECRETARY_MODEL", "Documentation & analysis", "openrouter"),
+        ("Resources", "NINJA_RESOURCES_MODEL", "Resource templates", "openrouter"),
+        ("Prompts", "NINJA_PROMPTS_MODEL", "Prompt management", "openrouter"),
+    ]
+
+    while True:
+        print("\n" + "=" * 60)
+        print("  🤖 MODEL SLOT CONFIGURATION")
+        print("=" * 60)
+
+        choices = []
+        for name, key, desc, _ in slots:
+            current = config.get(key, "Not set")
+            choices.append(Choice(value=(name, key, desc), name=f"{name:20} {desc:30} [{current}]"))
+
+        choices.append(Separator())
+        choices.append(Choice(value=None, name="✅ All done"))
+
+        selected = inquirer.select(
+            message="Select a model slot to configure:",
+            choices=choices,
+            pointer="►",
+        ).execute()
+
+        if not selected:
+            break
+
+        slot_name, slot_key, slot_desc = selected
+        _pick_model_for_slot(config_manager, config, slot_name, slot_key, slot_desc)
+
+
+def _pick_model_for_slot(
+    config_manager,
+    config: dict,
+    slot_name: str,
+    slot_key: str,
+    slot_desc: str,
+) -> None:
+    """Pick a model for a specific slot with provider grouping and type-to-filter.
+
+    Dynamically loads models from the operator, groups by provider,
+    and presents an autocomplete-style selector. No "custom model" option.
+
+    Args:
+        config_manager: ConfigManager instance for saving settings.
+        config: Current configuration dictionary.
+        slot_name: Display name of the slot.
+        slot_key: Config key to save.
+        slot_desc: Description of the slot.
+    """
+    print(f"\n  🎯 {slot_name}")
+    print(f"     {slot_desc}")
+
+    # Determine provider based on slot
+    provider = "openrouter"
+    if "researcher" in slot_name.lower() or "RESEARCHER" in slot_key:
+        provider = "perplexity"
+
+    # Detect preferred operator
+    preferred_operator = config.get("NINJA_CODE_BIN", "opencode")
+    operator = preferred_operator if preferred_operator else "opencode"
+
+    # Fetch models dynamically
+    print(f"\n  🔄 Fetching models from {operator}/{provider}...")
+    dynamic_models = get_provider_models(operator, provider)
+
+    if not dynamic_models:
+        print(f"\n  ⚠️  Could not fetch models from {operator}/{provider}")
+        fallback = OPENROUTER_MODELS if provider == "openrouter" else PERPLEXITY_MODELS
+        if not fallback:
+            print("  ❌ No models available")
+            return
+        _display_and_pick_static(config_manager, config, slot_name, slot_key, fallback)
+        return
+
+    print(f"  ✅ Found {len(dynamic_models)} models")
+    print("     Use ↑↓ arrows or type to search • Enter to select\n")
+
+    # Build choices grouped by provider
+    model_choices = []
+    current_provider = None
+
+    for model in dynamic_models:
+        model_provider = model.provider
+        if model_provider != current_provider:
+            if current_provider is not None:
+                model_choices.append(Separator())
+            model_choices.append(Separator(f"─── {model_provider.upper()} ───"))
+            current_provider = model_provider
+
+        display_name = f"{model.name:35}"
+        if model.description:
+            display_name += f" • {model.description}"
+        model_choices.append(Choice(value=model.id, name=display_name))
+
+    model_choices.append(Separator())
+    model_choices.append(Choice(value=None, name="← Back"))
+
+    current_model = config.get(slot_key, "")
+
+    selected_model = inquirer.select(
+        message=f"Select model for {slot_name}:",
+        choices=model_choices,
+        pointer="►",
+        default=current_model if current_model else None,
+        height="70%",
+    ).execute()
+
+    if selected_model is None:
+        return
+
+    if selected_model:
+        config_manager.set(slot_key, selected_model)
+        print(f"\n  ✅ {slot_name} model updated to: {selected_model}")
+    else:
+        print("\n  💡 No changes made")
+
+
+def _display_and_pick_static(
+    config_manager,
+    config: dict,
+    slot_name: str,
+    slot_key: str,
+    static_models: list,
+) -> None:
+    """Fallback: display static model list and let user pick one.
+
+    Args:
+        config_manager: ConfigManager instance.
+        config: Current configuration dict.
+        slot_name: Display name of the slot.
+        slot_key: Config key to save.
+        static_models: List of (model_id, name, desc) tuples.
+    """
+    print("  Using fallback model list\n")
+
+    model_choices = []
+    current_provider = None
+
+    for model_id, model_name, model_desc in static_models:
+        provider = model_id.split("/")[0] if "/" in model_id else "native"
+        if provider != current_provider:
+            if current_provider is not None:
+                model_choices.append(Separator())
+            provider_label = provider.upper() if provider != "native" else "Z.AI / GLM"
+            model_choices.append(Separator(f"── {provider_label} ──"))
+            current_provider = provider
+        model_choices.append(Choice(value=model_id, name=f"{model_name:25} • {model_desc}"))
+
+    model_choices.append(Separator())
+    model_choices.append(Choice(value=None, name="← Back"))
+
+    current_model = config.get(slot_key, "")
+
+    selected_model = inquirer.select(
+        message=f"Select model for {slot_name}:",
+        choices=model_choices,
+        pointer="►",
+        default=current_model if current_model else None,
+    ).execute()
+
+    if selected_model is None:
+        return
+
+    if selected_model:
+        config_manager.set(slot_key, selected_model)
+        print(f"\n  ✅ {slot_name} model updated to: {selected_model}")
 
 
 def reset_task_models(config_manager, config: dict, task_models: list) -> None:

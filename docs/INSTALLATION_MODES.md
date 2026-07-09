@@ -6,7 +6,7 @@ The Ninja MCP servers support multiple installation modes to accommodate differe
 
 | Mode | Use Case | Command | MCP Config |
 |------|----------|---------|------------|
-| **Global** | Regular users | `uv tool install ninja-mcp[all]` | Uses `ninja-coder` directly |
+| **Global** | Regular users | `ninja-mcp` from a package channel | Uses `ninja-mcp daemon connect ...` |
 | **Local Dev** | Contributors | `uv sync --all-extras` | Uses `uv --directory <path> run ninja-coder` |
 | **One-off** | Quick testing | `uvx --from ninja-mcp[coder] ninja-coder` | Uses `uvx --from ninja-mcp[coder] ninja-coder` |
 
@@ -17,13 +17,13 @@ The Ninja MCP servers support multiple installation modes to accommodate differe
 **Best for**: Regular users who want to install once and use everywhere.
 
 ```bash
-# Install all modules globally
-uv tool install ninja-mcp[all]
+# Install from the platform package channel when available
+brew install angkira/ninja-mcp/ninja-mcp
+sudo apt install ninja-mcp
 
-# Or install specific modules
-uv tool install ninja-mcp[coder]
-uv tool install ninja-mcp[researcher]
-uv tool install ninja-mcp[secretary]
+# Then configure MCP hosts and credentials
+ninja-mcp init detect
+ninja-mcp config
 ```
 
 **MCP Configuration** (`~/.config/claude/mcp.json`):
@@ -32,12 +32,8 @@ uv tool install ninja-mcp[secretary]
 {
   "mcpServers": {
     "ninja-coder": {
-      "command": "ninja-coder",
-      "env": {
-        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}",
-        "NINJA_CODER_MODEL": "anthropic/claude-haiku-4.5-20250929",
-        "NINJA_CODE_BIN": "aider"
-      }
+      "command": "ninja-mcp",
+      "args": ["daemon", "connect", "coder"]
     }
   }
 }
@@ -47,7 +43,7 @@ uv tool install ninja-mcp[secretary]
 - ✅ No hardcoded paths
 - ✅ Works from any directory
 - ✅ Easy to share configuration
-- ✅ Simple updates: `uv tool upgrade ninja-mcp`
+- ✅ Simple updates: `ninja-mcp daemon upgrade`
 
 **Installation Script**:
 ```bash
@@ -200,18 +196,20 @@ The automated installer script handles all modes:
 # 1. Uninstall old configuration
 rm ~/.config/claude/mcp.json
 
-# 2. Install globally
-uv tool install ninja-mcp[all]
+# 2. Install globally from a package channel
+brew install angkira/ninja-mcp/ninja-mcp
+# or: sudo apt install ninja-mcp
 
 # 3. Run installer
-./scripts/install_claude_code_mcp.sh --all
+ninja-mcp init detect
 ```
 
 ### From Global to Local Dev
 
 ```bash
-# 1. Uninstall global
-uv tool uninstall ninja-mcp
+# 1. Uninstall the package-channel install
+brew uninstall ninja-mcp
+# or: sudo apt remove ninja-mcp
 
 # 2. Clone and sync
 git clone https://github.com/yourusername/ninja-mcp
@@ -230,7 +228,7 @@ echo 'export NINJA_MCP_PROJECT_DIR="'$(pwd)'"' >> ~/.bashrc
 
 ### "Command not found: ninja-coder"
 
-**Solution**: Either install globally with `uv tool install ninja-mcp[coder]` or use local dev mode configuration.
+**Solution**: Install globally from a package channel, then run `ninja-mcp init detect`, or use local dev mode configuration.
 
 ### "Wrong version is running"
 

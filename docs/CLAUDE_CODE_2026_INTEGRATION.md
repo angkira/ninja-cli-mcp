@@ -148,7 +148,7 @@ Hooks are shell commands that execute at specific points in Claude Code's lifecy
   "hooks": {
     "SessionStart": [
       {
-        "command": "ninja-daemon status --json"
+        "command": "ninja-mcp daemon status"
       }
     ],
     "SessionEnd": [
@@ -168,7 +168,7 @@ Hooks are shell commands that execute at specific points in Claude Code's lifecy
 | `ninja-coder post-edit-hook` | PostToolUse | Format/test after edits |
 | `ninja-secretary validate-path` | PreToolUse | Security path validation |
 | `ninja-secretary session-report` | SessionEnd | Session summary |
-| `ninja-daemon status` | SessionStart | Verify daemons running |
+| `ninja-mcp daemon status` | SessionStart | Verify daemons running |
 | `ninja-researcher fact-check` | PreToolUse | Validate claims |
 
 ---
@@ -242,7 +242,7 @@ description: Setup and verify all Ninja MCP servers
 ---
 
 1. Check if ninja-mcp is installed: `which ninja-coder`
-2. If not installed, suggest: `uv tool install ninja-mcp[all]`
+2. If not installed, suggest a package-channel install, then `ninja-mcp init detect`
 3. Verify MCP configuration in settings
 4. Test each server with a simple operation
 5. Report status of all three modules
@@ -453,7 +453,7 @@ if __name__ == "__main__":
 {
   "hooks": {
     "SessionStart": [
-      {"command": "ninja-daemon ensure-running"}
+      {"command": "ninja-mcp daemon status"}
     ],
     "PostToolUse": [
       {

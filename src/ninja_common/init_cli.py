@@ -10,6 +10,23 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from ninja_common.init_targets._json_target import JsonMcpTarget
+
+
+# ── JSON-target registry ───────────────────────────────────────────────────────
+# Each entry: (command_name, target_instance, help_text)
+# Adding a new JSON-based MCP host is as simple as adding an entry here
+# (after creating a thin module in init_targets/).
+
+_JSON_TARGETS: list[tuple[str, JsonMcpTarget, str]] = []
+
+
+def _register_json_target(command: str, target: JsonMcpTarget, help_text: str = "") -> None:
+    _JSON_TARGETS.append((command, target, help_text or target.help_text))
+
+
+# ── build parser ───────────────────────────────────────────────────────────────
+
 
 def _build_parser() -> argparse.ArgumentParser:
     """Build and return the top-level argument parser."""
@@ -33,6 +50,9 @@ Examples:
 
   # Merge into ~/.cursor/mcp.json
   ninja-mcp init cursor
+
+  # Install into Google Antigravity
+  ninja-mcp init antigravity
 
   # Print mcp.json for any generic MCP host
   ninja-mcp init generic
@@ -90,23 +110,11 @@ Examples:
     )
     codex_parser.set_defaults(func=_cmd_codex)
 
-    # cursor
-    cursor_parser = init_sub.add_parser(
-        "cursor",
-        help="Merge into ~/.cursor/mcp.json.",
-    )
-    cursor_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        dest="dry_run",
-        help="Print the diff without writing to disk.",
-    )
-    cursor_parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Overwrite servers that already exist in the target file.",
-    )
-    cursor_parser.set_defaults(func=_cmd_cursor)
+    # ── auto-registered JSON targets ─────────────────────────────────────────
+    for cmd_name, tgt, _ in _JSON_TARGETS:
+        p = init_sub.add_parser(cmd_name, help=tgt.help_text)
+        tgt.add_arguments(p)
+        p.set_defaults(func=_cmd_json_target, _json_target=tgt)
 
     # generic
     generic_parser = init_sub.add_parser(
@@ -149,11 +157,10 @@ def _cmd_codex(args: argparse.Namespace) -> int:
     return codex.install(args)
 
 
-def _cmd_cursor(args: argparse.Namespace) -> int:
-    """Dispatch to the cursor install target."""
-    from ninja_common.init_targets import cursor
-
-    return cursor.install(args)
+def _cmd_json_target(args: argparse.Namespace) -> int:
+    """Generic dispatch for all JSON-based install targets."""
+    target: JsonMcpTarget = args._json_target
+    return target.install(args)
 
 
 def _cmd_generic(args: argparse.Namespace) -> int:
@@ -166,12 +173,12 @@ def _cmd_generic(args: argparse.Namespace) -> int:
 def _cmd_detect(args: argparse.Namespace) -> int:
     """Print which MCP hosts are detected on this machine."""
     _ = args
-    from ninja_common.init_targets import claude_code, codex, cursor, generic
+    from ninja_common.init_targets import claude_code, codex, generic
 
     targets: list[tuple[str, Callable[[], bool], str]] = [
         ("claude-code", claude_code.detect, "~/.claude/"),
         ("codex", codex.detect, "~/.codex/"),
-        ("cursor", cursor.detect, "~/.cursor/"),
+        *[t.as_detect_tuple() for _, t, _ in _JSON_TARGETS],
         ("generic", generic.detect, "(always available)"),
     ]
 
@@ -195,6 +202,7 @@ def _cmd_detect(args: argparse.Namespace) -> int:
 
 def main() -> None:
     """Entry point for the ninja-mcp console script."""
+    _populate_json_targets()
     parser = _build_parser()
     args = parser.parse_args()
 
@@ -204,6 +212,65 @@ def main() -> None:
 
     func: Callable[[argparse.Namespace], int] = args.func
     sys.exit(func(args))
+
+
+# ── registry population (imports are deferred to avoid circular deps) ──────────
+
+
+def _populate_json_targets() -> None:
+    """Lazily populate the JSON target registry.
+
+    This must be called **before** _build_parser() so that all targets appear
+    in the CLI.  Imports are deferred here to keep ``ninja-mcp --help`` fast.
+    """
+    if _JSON_TARGETS:
+        return  # already populated
+
+    from ninja_common.init_targets import (
+        antigravity,
+        cursor,
+        kiro,
+        roo_code,
+        vscode_cline,
+        windsurf,
+    )
+
+    _register_json_target(
+        "antigravity",
+        antigravity.antigravity,
+        "Install into Google Antigravity IDE (~/.gemini/config/mcp_config.json).",
+    )
+    _register_json_target(
+        "cursor",
+        cursor._cursor_target,
+        "Merge into ~/.cursor/mcp.json.",
+    )
+    _register_json_target(
+        "kiro",
+        kiro.kiro,
+        "Merge into ~/.kiro/settings/mcp.json.",
+    )
+    _register_json_target(
+        "roo-code",
+        roo_code.roo_code,
+        "Merge into ~/.config/roo/mcp_settings.json.",
+    )
+    _register_json_target(
+        "vscode-cline",
+        vscode_cline.vscode_cline,
+        "Merge into ~/.config/Code/User/mcp.json.",
+    )
+    _register_json_target(
+        "windsurf",
+        windsurf.windsurf,
+        "Merge into ~/.windsurf/mcp.json.",
+    )
+
+
+# Populate the JSON target registry at import time so that
+# ``_build_parser()`` and ``_cmd_detect()`` always see the full list
+# (even when called by tests or from the unified CLI wrapper).
+_populate_json_targets()
 
 
 if __name__ == "__main__":

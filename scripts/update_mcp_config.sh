@@ -158,7 +158,7 @@ if [[ "$FORCE_DAEMON" == "yes" ]]; then
     USE_DAEMON=1
 elif [[ "$FORCE_DAEMON" == "no" ]]; then
     USE_DAEMON=0
-elif command -v ninja-daemon &> /dev/null && uv run ninja-daemon status >/dev/null 2>&1; then
+elif command -v ninja-mcp &> /dev/null && ninja-mcp daemon status >/dev/null 2>&1; then
     USE_DAEMON=1
     info "Daemon mode available and will be used"
 else
@@ -218,11 +218,11 @@ update_code_and_deps() {
     fi
 
     # Stop daemons before updating
-    if command -v ninja-daemon &> /dev/null; then
+    if command -v ninja-mcp &> /dev/null; then
         info "Stopping daemons before code update..."
-        uv run ninja-daemon stop coder 2>/dev/null || true
-        uv run ninja-daemon stop researcher 2>/dev/null || true
-        uv run ninja-daemon stop secretary 2>/dev/null || true
+        ninja-mcp daemon stop coder 2>/dev/null || true
+        ninja-mcp daemon stop researcher 2>/dev/null || true
+        ninja-mcp daemon stop secretary 2>/dev/null || true
         sleep 2
         success "Daemons stopped"
     fi
@@ -266,8 +266,8 @@ update_code_and_deps() {
 
 # Function to restart all daemons
 restart_all_daemons() {
-    if ! command -v ninja-daemon &> /dev/null; then
-        warn "ninja-daemon not available, skipping daemon restart"
+    if ! command -v ninja-mcp &> /dev/null; then
+        warn "ninja-mcp not available, skipping daemon restart"
         return 0
     fi
 
@@ -283,16 +283,16 @@ restart_all_daemons() {
         info "Restarting $module daemon..."
 
         # Stop the daemon first
-        uv run ninja-daemon stop "$module" 2>/dev/null || true
+        ninja-mcp daemon stop "$module" 2>/dev/null || true
         sleep 1
 
         # Start the daemon
-        if uv run ninja-daemon start "$module" 2>/dev/null; then
+        if ninja-mcp daemon start "$module" 2>/dev/null; then
             # Wait a bit for daemon to initialize
             sleep 2
 
             # Check if it's actually running
-            if uv run ninja-daemon status "$module" 2>/dev/null | grep -q '"running": true'; then
+            if ninja-mcp daemon status "$module" 2>/dev/null | grep -q '"running": true'; then
                 success "$module daemon restarted successfully"
                 restarted=$((restarted + 1))
             else
@@ -319,7 +319,7 @@ restart_all_daemons() {
 
 # Function to verify daemon health
 verify_daemon_health() {
-    if ! command -v ninja-daemon &> /dev/null; then
+    if ! command -v ninja-mcp &> /dev/null; then
         return 0
     fi
 
@@ -327,7 +327,7 @@ verify_daemon_health() {
     info "Verifying daemon health..."
     echo ""
 
-    local status_json=$(uv run ninja-daemon status 2>/dev/null)
+    local status_json=$(ninja-mcp daemon status 2>/dev/null)
 
     if [[ -z "$status_json" ]]; then
         warn "Could not get daemon status"
@@ -412,8 +412,8 @@ for server_name in ["ninja-coder", "ninja-researcher", "ninja-secretary"]:
             # Update to daemon mode
             module = server_name.replace("ninja-", "")
             config["mcpServers"][server_name] = {
-                "command": "uv",
-                "args": ["--directory", "$PROJECT_ROOT", "run", "ninja-daemon", "connect", module]
+                "command": "ninja-mcp",
+                "args": ["daemon", "connect", module]
             }
         else:
             # Update to direct mode
@@ -696,7 +696,7 @@ if [[ $UPDATE_CODE -eq 1 ]]; then
         success "Code update completed successfully"
         echo ""
         echo "Next steps:"
-        echo "  - Verify daemons: uv run ninja-daemon status"
+        echo "  - Verify daemons: ninja-mcp daemon status"
         echo "  - Test MCP servers: claude mcp list"
         echo ""
     else
@@ -791,7 +791,7 @@ echo ""
 echo "Next steps:"
 echo "  - Restart your IDE to apply changes"
 if [[ $USE_DAEMON -eq 1 ]]; then
-    echo "  - Check daemon status: uv run ninja-daemon status"
+    echo "  - Check daemon status: ninja-mcp daemon status"
 fi
 echo "  - Validate configurations: $0 --validate"
 echo ""

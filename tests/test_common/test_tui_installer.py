@@ -7,13 +7,9 @@ and the main run() flow. All InquirerPy calls are mocked.
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-from unittest.mock import MagicMock, PropertyMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from ninja_config.config_shared import APIKeyDef, DAEMON_CONFIG
+from ninja_config.config_shared import DAEMON_CONFIG, APIKeyDef
 from ninja_config.tui_installer import TUIInstaller, _exec, run_tui_installer
 
 
@@ -196,7 +192,7 @@ class TestConfigureCoder:
         inst.tools = {}
         inst._configure_coder()
         mock_sub.run.assert_any_call(
-            ["uv", "tool", "install", "aider-chat"],
+            ["pipx", "install", "aider-chat"],
             capture_output=True, text=True, check=False,
         )
 

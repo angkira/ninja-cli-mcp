@@ -52,7 +52,7 @@ def run_coder_setup_flow(config_manager: ConfigManager, config: dict[str, str]) 
         print("\n⚠️  No operators detected!")
         print("   Install at least one operator:")
         print("     • OpenCode: https://opencode.dev/download")
-        print("     • Aider: uv tool install aider-chat")
+        print("     • Aider: pipx install aider-chat")
         print("     • Claude Code: https://claude.ai/download")
         print("     • Gemini CLI: npm install -g @google/generative-ai-cli")
         return

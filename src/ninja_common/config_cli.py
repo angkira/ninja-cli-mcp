@@ -183,7 +183,7 @@ def cmd_set(args: argparse.Namespace) -> None:
     print_colored(f"  New value: {args.value}", "dim")
     print()
     print_colored("Restart daemons to apply changes:", "dim")
-    print_colored("  ninja-daemon restart all", "dim")
+    print_colored("  ninja-mcp daemon restart", "dim")
 
 
 def cmd_doctor(args: argparse.Namespace) -> None:
@@ -308,7 +308,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     if not operators_found:
         print_colored("  ⚠ No operators found (need at least one for ninja-coder)", "yellow")
         print_colored("    Install one of:", "dim")
-        print_colored("      • Aider: uv tool install aider-chat", "dim")
+        print_colored("      • Aider: pipx install aider-chat", "dim")
         print_colored("      • OpenCode: https://opencode.dev", "dim")
         print_colored("      • Claude Code: https://claude.ai/download", "dim")
         issues_found += 1
@@ -325,7 +325,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print_colored("Checking daemon status...", "cyan")
     try:
         result = subprocess.run(
-            ["ninja-daemon", "status"],
+            ["ninja-mcp", "daemon", "status"],
             check=False,
             capture_output=True,
             text=True,
@@ -337,9 +337,9 @@ def cmd_doctor(args: argparse.Namespace) -> None:
                 print_colored(f"    {line}", "dim")
         else:
             print_colored("  ⚠ Daemon not running", "yellow")
-            print_colored("    Start with: ninja-daemon start all", "dim")
+            print_colored("    Start with: ninja-mcp daemon start", "dim")
     except FileNotFoundError:
-        print_colored("  ⚠ ninja-daemon not found", "yellow")
+        print_colored("  ⚠ ninja-mcp not found", "yellow")
     except subprocess.TimeoutExpired:
         print_colored("  ⚠ Daemon check timed out", "yellow")
     except Exception as e:
@@ -486,7 +486,7 @@ def _run_quick_configure(config_path: str | None = None) -> None:
     if not operators:
         print_colored("No operators found. Install one of:", "yellow")
         print_colored("  • OpenCode: https://opencode.dev", "dim")
-        print_colored("  • Aider: uv tool install aider-chat", "dim")
+        print_colored("  • Aider: pipx install aider-chat", "dim")
         print_colored("  • Claude Code: https://claude.ai/download", "dim")
         return
 
@@ -519,6 +519,34 @@ def _run_quick_configure(config_path: str | None = None) -> None:
     print_colored("Run 'ninja-config configure' for full options.", "dim")
 
 
+def cmd_models(args: argparse.Namespace) -> None:
+    """Configure model slots interactively.
+
+    Two-part flow:
+    1. Pick a model slot (e.g. Coder - Quick, Researcher)
+    2. Pick a model with type-to-filter autocomplete and provider grouping
+    No "custom model" option.
+
+    Args:
+        args: Command arguments.
+    """
+    from ninja_config.ui.model_selector import configure_model_slots
+
+    config_mgr = ConfigManager(args.config)
+    config = config_mgr.read_config()
+
+    if args.slot:
+        # Direct slot key configuration — skip slot picker, go straight to model picker
+        from ninja_config.ui.model_selector import _pick_model_for_slot
+
+        slot_name = args.slot
+        slot_key = args.slot
+        slot_desc = args.slot
+        _pick_model_for_slot(config_mgr, config, slot_name, slot_key, slot_desc)
+    else:
+        configure_model_slots(config_mgr, config)
+
+
 def cmd_update(args: argparse.Namespace) -> None:
     """
     Update ninja-mcp to the latest version.
@@ -541,7 +569,7 @@ def cmd_update(args: argparse.Namespace) -> None:
             print()
             print_colored("You can now use:", "dim")
             print_colored("  - ninja-config configure", "dim")
-            print_colored("  - ninja-daemon status", "dim")
+            print_colored("  - ninja-mcp daemon status", "dim")
             print_colored("  - ninja-coder (via MCP)", "dim")
         else:
             print()
@@ -552,18 +580,14 @@ def cmd_update(args: argparse.Namespace) -> None:
     except ImportError:
         print_colored("❌ Auto-updater not available in this installation", "red")
         print_colored("Please update manually:", "dim")
-        print_colored("  cd /path/to/ninja-cli-mcp", "dim")
-        print_colored("  git pull", "dim")
-        print_colored("  uv tool install --reinstall --force .", "dim")
-        print_colored("  ninja-daemon restart", "dim")
+        print_colored("  ninja-mcp daemon upgrade", "dim")
+        print_colored("  ninja-mcp daemon restart", "dim")
         sys.exit(1)
     except Exception as e:
         print_colored(f"❌ Update failed: {e}", "red")
         print_colored("Please update manually:", "dim")
-        print_colored("  cd /path/to/ninja-cli-mcp", "dim")
-        print_colored("  git pull", "dim")
-        print_colored("  uv tool install --reinstall --force .", "dim")
-        print_colored("  ninja-daemon restart", "dim")
+        print_colored("  ninja-mcp daemon upgrade", "dim")
+        print_colored("  ninja-mcp daemon restart", "dim")
         sys.exit(1)
 
 
@@ -696,16 +720,19 @@ Examples:
   # Update to the latest version
   ninja-config update
 
-  # List all configuration
-  ninja-config list
+   # Configure models (slot picker → model autocomplete)
+   ninja-config models
 
-  # Get a specific value
-  ninja-config get NINJA_CODER_MODEL
+   # List all configuration
+   ninja-config list
 
-  # Set a value
-  ninja-config set NINJA_CODER_MODEL anthropic/claude-sonnet-4
+   # Get a specific value
+   ninja-config get NINJA_CODER_MODEL
 
-  # Diagnose issues
+   # Set a value
+   ninja-config set NINJA_CODER_MODEL anthropic/claude-sonnet-4
+
+   # Diagnose issues
   ninja-config doctor
   ninja-config doctor --fix
 
@@ -820,6 +847,17 @@ Examples:
         help="Overwrite existing server configurations",
     )
 
+    # Models command (model slot configuration)
+    models_parser = subparsers.add_parser(
+        "models",
+        help="Configure model slots interactively (slot picker → model autocomplete)",
+    )
+    models_parser.add_argument(
+        "slot",
+        nargs="?",
+        help="Model slot key (e.g. NINJA_CODER_MODEL). If omitted, shows interactive slot picker.",
+    )
+
     # Update command
     subparsers.add_parser(
         "update",
@@ -837,6 +875,7 @@ Examples:
     command_handlers = {
         "install": cmd_install,
         "configure": cmd_configure,
+        "models": cmd_models,
         "list": cmd_list,
         "show": cmd_list,
         "get": cmd_get,

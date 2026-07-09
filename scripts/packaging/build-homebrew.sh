@@ -40,7 +40,7 @@ class NinjaMcp < Formula
     system libexec/"bin/pip", "install", "--no-deps", "."
 
     # Install all modules
-    system libexec/"bin/pip", "install", ".[all]"
+    system libexec/"bin/pip", "install", ".[runtime]"
 
     # Create wrappers for executables
     bin.install_symlink libexec/"bin/ninja-coder"

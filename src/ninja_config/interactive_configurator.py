@@ -5,7 +5,6 @@ Powerful interactive configurator for Ninja MCP with TUI interface.
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
 
 try:
@@ -293,7 +292,11 @@ class PowerConfigurator:
         # Check daemon status
         try:
             result = subprocess.run(
-                ["ninja-daemon", "status"], capture_output=True, text=True, check=False, timeout=3
+                ["ninja-mcp", "daemon", "status"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=3,
             )
             if result.returncode == 0:
                 print("  🚀 Daemon Status: Running")
@@ -414,7 +417,7 @@ class PowerConfigurator:
         if not tools:
             print("\n⚠️  No operators detected!")
             print("   Install at least one operator:")
-            print("     • Aider: uv tool install aider-chat")
+            print("     • Aider: pipx install aider-chat")
             print("     • OpenCode: https://opencode.dev/download")
             print("     • Claude Code: https://claude.ai/download")
             print("     • Gemini CLI: npm install -g @google/generative-ai-cli")
@@ -596,7 +599,7 @@ class PowerConfigurator:
             print("\n⚠️  No operators detected!")
             print("   Install at least one operator:")
             print("     • OpenCode: https://opencode.dev/download")
-            print("     • Aider: uv tool install aider-chat")
+            print("     • Aider: pipx install aider-chat")
             print("     • Claude Code: https://claude.ai/download")
             print("     • Gemini CLI: npm install -g @google/generative-ai-cli")
             return
@@ -1657,7 +1660,7 @@ def run_power_configurator(config_path: str | None = None) -> int:
         from ninja_config.ui.component_setup import configure_secretary, run_coder_setup_flow
         from ninja_config.ui.main_menu import show_main_menu, show_welcome
         from ninja_config.ui.model_selector import (
-            configure_models,
+            configure_model_slots,
             configure_task_based_models,
         )
         from ninja_config.ui.operator_config import (
@@ -1696,7 +1699,7 @@ def run_power_configurator(config_path: str | None = None) -> int:
             elif choice == "operator":
                 configure_operators(config_mgr, config)
             elif choice == "models":
-                configure_models(config_mgr, config)
+                configure_model_slots(config_mgr, config)
             elif choice == "task_models":
                 configure_task_based_models(config_mgr, config)
             elif choice == "search":

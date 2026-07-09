@@ -144,7 +144,7 @@ Servers run as **background daemons**:
 
 ```bash
 # Start daemon
-ninja-daemon start researcher
+ninja-mcp daemon start researcher
 
 # Server runs in background
 ps aux | grep ninja-researcher
@@ -208,21 +208,21 @@ class DaemonManager:
 
 ```bash
 # Start all daemons
-ninja-daemon start coder
-ninja-daemon start researcher
-ninja-daemon start secretary
+ninja-mcp daemon start coder
+ninja-mcp daemon start researcher
+ninja-mcp daemon start secretary
 
 # Check status
-ninja-daemon status
+ninja-mcp daemon status
 # → coder: running (PID 12345)
 # → researcher: running (PID 12346)
 # → secretary: running (PID 12347)
 
 # Stop a daemon
-ninja-daemon stop researcher
+ninja-mcp daemon stop researcher
 
 # Restart
-ninja-daemon restart coder
+ninja-mcp daemon restart coder
 ```
 
 ## Request/Response Flow
@@ -495,10 +495,10 @@ tail -f ~/Library/Logs/Claude/mcp.log
 
 ```bash
 # Check daemon status
-ninja-daemon status
+ninja-mcp daemon status
 
 # Restart daemons
-ninja-daemon restart all
+ninja-mcp daemon restart
 
 # Check resource usage
 ps aux | grep ninja

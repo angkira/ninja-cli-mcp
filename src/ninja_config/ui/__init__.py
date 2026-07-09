@@ -43,6 +43,7 @@ from ninja_config.ui.main_menu import (
 )
 from ninja_config.ui.model_selector import (
     configure_model_preferences,
+    configure_model_slots,
     configure_models,
     configure_models_with_dynamic_loading,
     configure_single_task_model,
@@ -83,6 +84,7 @@ __all__ = [
     "configure_ide",
     # Model selector functions
     "configure_model_preferences",
+    "configure_model_slots",
     "configure_models",
     "configure_models_with_dynamic_loading",
     # Operator config functions

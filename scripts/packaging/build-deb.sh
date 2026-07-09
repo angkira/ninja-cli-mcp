@@ -19,11 +19,16 @@ echo "Building Debian package for ninja-mcp v${VERSION}..."
 
 # Create packaging directory
 PKG_DIR="packaging/debian/ninja-mcp_${VERSION}"
+rm -rf "$PKG_DIR" "packaging/debian/ninja-mcp_${VERSION}_all.deb"
 mkdir -p "$PKG_DIR/DEBIAN"
 mkdir -p "$PKG_DIR/usr/local/bin"
 mkdir -p "$PKG_DIR/usr/local/lib/ninja-mcp"
 mkdir -p "$PKG_DIR/usr/share/doc/ninja-mcp"
 mkdir -p "$PKG_DIR/usr/share/man/man1"
+mkdir -p "$PKG_DIR/usr/share/ninja-mcp/wheelhouse"
+
+echo "Building Python wheelhouse..."
+python3 -m pip wheel --wheel-dir "$PKG_DIR/usr/share/ninja-mcp/wheelhouse" ".[runtime]"
 
 # Create control file
 cat > "$PKG_DIR/DEBIAN/control" <<CONTROL_EOF
@@ -48,27 +53,31 @@ Homepage: https://github.com/angkira/ninja-mcp
 CONTROL_EOF
 
 # Create postinst script (runs after installation)
-cat > "$PKG_DIR/DEBIAN/postinst" <<'POSTINST_EOF'
+cat > "$PKG_DIR/DEBIAN/postinst" <<POSTINST_EOF
 #!/bin/bash
 set -e
 
-echo "Installing ninja-mcp with uv..."
+echo "Installing ninja-mcp into /opt/ninja-mcp..."
 
-# Install uv if not present
-if ! command -v uv &> /dev/null; then
-    echo "Installing uv package manager..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-fi
+INSTALL_DIR="/opt/ninja-mcp"
+BIN_DIR="/usr/local/bin"
+WHEELHOUSE="/usr/share/ninja-mcp/wheelhouse"
 
-# Install ninja-mcp globally
-uv tool install --force ninja-mcp[all]
+python3 -m venv "\$INSTALL_DIR"
+"\$INSTALL_DIR/bin/python" -m pip install --no-index --find-links "\$WHEELHOUSE" "ninja-mcp[runtime]==${VERSION}"
+
+for cmd in ninja-mcp ninja-config ninja-coder ninja-researcher ninja-secretary ninja-daemon; do
+    if [ -x "\$INSTALL_DIR/bin/\$cmd" ]; then
+        ln -sf "\$INSTALL_DIR/bin/\$cmd" "\$BIN_DIR/\$cmd"
+    fi
+done
 
 echo ""
 echo "✓ Ninja MCP installed successfully!"
 echo ""
 echo "Next steps:"
 echo "  1. Set your API key: export OPENROUTER_API_KEY='your-key'"
-echo "  2. Run setup: ninja-config"
+echo "  2. Run setup: ninja-mcp config"
 echo "  3. Check docs: /usr/share/doc/ninja-mcp/"
 echo ""
 
@@ -83,7 +92,10 @@ cat > "$PKG_DIR/DEBIAN/prerm" <<'PRERM_EOF'
 set -e
 
 echo "Uninstalling ninja-mcp..."
-uv tool uninstall ninja-mcp || true
+for cmd in ninja-mcp ninja-config ninja-coder ninja-researcher ninja-secretary ninja-daemon; do
+    rm -f "/usr/local/bin/$cmd"
+done
+rm -rf /opt/ninja-mcp
 
 exit 0
 PRERM_EOF
@@ -149,7 +161,7 @@ CHANGELOG_EOF
 gzip -9 "$PKG_DIR/usr/share/doc/ninja-mcp/changelog.Debian"
 
 # Build the package
-dpkg-deb --build "$PKG_DIR"
+dpkg-deb --root-owner-group --build "$PKG_DIR"
 
 # Move to packaging directory
 mv "$PKG_DIR.deb" "packaging/debian/ninja-mcp_${VERSION}_all.deb"

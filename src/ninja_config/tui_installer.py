@@ -12,6 +12,7 @@ import subprocess
 import sys
 from typing import Any
 
+
 try:
     from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
@@ -22,7 +23,6 @@ except ImportError:
 
 from ninja_common.config_manager import ConfigManager
 from ninja_common.defaults import (
-    DEFAULT_CODE_BIN,
     OPENROUTER_MODELS,
     PERPLEXITY_MODELS,
     ZAI_MODELS,
@@ -202,7 +202,7 @@ class TUIInstaller:
         if code_cli == "aider" and not shutil.which("aider"):
             print("  Installing aider...")
             subprocess.run(
-                ["uv", "tool", "install", "aider-chat"],
+                ["pipx", "install", "aider-chat"],
                 capture_output=True, text=True, check=False,
             )
 
@@ -268,7 +268,6 @@ class TUIInstaller:
                 continue
 
             key = f"NINJA_{module.upper()}_MODEL"
-            current = self.config.get(key, "")
 
             if module == "researcher":
                 model_list = PERPLEXITY_MODELS

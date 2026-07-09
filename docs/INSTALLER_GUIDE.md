@@ -5,12 +5,11 @@
 ### Installation
 ```bash
 # Option 1: From PyPI (recommended)
-pip install ninja-mcp[all]
+pip install ninja-mcp[runtime]
 
-# Option 2: From source
-git clone https://github.com/angkira/ninja-cli-mcp
-cd ninja-cli-mcp
-uv tool install ".[all]"
+# Option 2: Package manager
+brew install angkira/ninja-mcp/ninja-mcp
+# or: sudo apt install ninja-mcp
 
 # Option 3: Direct URL
 curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.sh | bash
@@ -263,8 +262,8 @@ ninja-config show
 # Add to PATH
 export PATH="$HOME/.local/bin:$PATH"
 
-# Or reinstall
-uv tool install --force ninja-mcp[all]
+# Or repair/update through the managed updater
+ninja-mcp daemon upgrade
 ```
 
 ### InquirerPy not available
@@ -272,8 +271,8 @@ uv tool install --force ninja-mcp[all]
 # Install InquirerPy
 pip install InquirerPy
 
-# Or reinstall with all extras
-uv tool install --force ninja-mcp[all]
+# Or repair/update through the managed updater
+ninja-mcp daemon upgrade
 ```
 
 ### Configuration not persisting

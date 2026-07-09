@@ -187,7 +187,7 @@ def configure_operators(config_manager: ConfigManager, config: dict[str, str]) -
     if not tools:
         print("\n⚠️  No operators detected!")
         print("   Install at least one operator:")
-        print("     • Aider: uv tool install aider-chat")
+        print("     • Aider: pipx install aider-chat")
         print("     • OpenCode: https://opencode.dev/download")
         print("     • Claude Code: https://claude.ai/download")
         print("     • Gemini CLI: npm install -g @google/generative-ai-cli")

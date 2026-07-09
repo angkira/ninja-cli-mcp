@@ -9,8 +9,8 @@
 #   ./install.sh --minimal    # Minimal install (coder only)
 #
 # This script:
-#   1. Detects system requirements (Python 3.11+, uv)
-#   2. Installs ninja-mcp package
+#   1. Detects system requirements (Python 3.11+)
+#   2. Installs ninja-mcp package into a managed venv
 #   3. Launches TUI installer for API keys, models, IDE setup
 #
 
@@ -84,23 +84,6 @@ else
 fi
 
 # ============================================================================
-# STEP 2: Install uv
-# ============================================================================
-if command -v uv &> /dev/null; then
-    success "uv already installed"
-else
-    info "Installing uv package manager..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-
-    if command -v uv &> /dev/null; then
-        success "uv installed"
-    else
-        die "Failed to install uv"
-    fi
-fi
-
-# ============================================================================
 # STEP 3: Install ninja-mcp
 # ============================================================================
 info "Installing ninja-mcp..."
@@ -120,29 +103,36 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 
 INSTALL_SUCCESS=false
-INSTALL_EXTRAS="[all]"
+INSTALL_EXTRAS="[runtime]"
 if [[ "$MINIMAL_MODE" == "true" ]]; then
-    INSTALL_EXTRAS="[coder,resources]"
+    INSTALL_EXTRAS="[coder]"
 fi
+
+INSTALL_PREFIX="${NINJA_INSTALL_PREFIX:-$HOME/.local/share/ninja-mcp}"
+VENV_DIR="$INSTALL_PREFIX/venv"
+BIN_DIR="$HOME/.local/bin"
+
+mkdir -p "$INSTALL_PREFIX" "$BIN_DIR"
+
+info "Preparing managed Python environment: $VENV_DIR"
+python3 -m venv "$VENV_DIR"
+"$VENV_DIR/bin/python" -m pip install --upgrade pip
 
 if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
     info "Detected dev directory, installing from local source..."
-    if uv tool install --force "${SCRIPT_DIR}${INSTALL_EXTRAS}" 2>&1; then
+    if "$VENV_DIR/bin/python" -m pip install --upgrade "${SCRIPT_DIR}${INSTALL_EXTRAS}" 2>&1; then
         INSTALL_SUCCESS=true
         success "Installed from local dev directory"
-        if [[ -d "$SCRIPT_DIR/.venv/bin" ]]; then
-            rm -f "$SCRIPT_DIR/.venv/bin/ninja-"* 2>/dev/null || true
-        fi
     else
         warn "Local install failed, falling back to remote..."
     fi
 fi
 
 if [[ "$INSTALL_SUCCESS" != "true" ]]; then
-    if uv tool install "ninja-mcp${INSTALL_EXTRAS}" 2>/dev/null; then
+    if "$VENV_DIR/bin/python" -m pip install --upgrade "ninja-mcp${INSTALL_EXTRAS}" 2>/dev/null; then
         INSTALL_SUCCESS=true
         success "Installed from PyPI"
-    elif uv tool install "ninja-mcp${INSTALL_EXTRAS} @ git+${REPO_URL}" 2>&1; then
+    elif "$VENV_DIR/bin/python" -m pip install --upgrade "ninja-mcp${INSTALL_EXTRAS} @ git+${REPO_URL}" 2>&1; then
         INSTALL_SUCCESS=true
         success "Installed from GitHub"
     else
@@ -154,7 +144,7 @@ if [[ "$INSTALL_SUCCESS" != "true" ]]; then
             (curl -sL "${REPO_URL%.git}/archive/main.tar.gz" | tar xz -C "$TEMP_DIR" && \
              mv "$TEMP_DIR/ninja-cli-mcp-main" "$TEMP_DIR/ninja-mcp")
 
-        if uv tool install "$TEMP_DIR/ninja-mcp${INSTALL_EXTRAS}"; then
+        if "$VENV_DIR/bin/python" -m pip install --upgrade "$TEMP_DIR/ninja-mcp${INSTALL_EXTRAS}"; then
             INSTALL_SUCCESS=true
             success "Installed from local build"
         fi
@@ -163,7 +153,13 @@ fi
 
 [[ "$INSTALL_SUCCESS" != "true" ]] && die "Installation failed"
 
-for cmd in ninja-coder ninja-researcher ninja-secretary ninja-config ninja-daemon; do
+for cmd in ninja-mcp ninja-coder ninja-researcher ninja-secretary ninja-config ninja-daemon; do
+    if [[ -x "$VENV_DIR/bin/$cmd" ]]; then
+        ln -sf "$VENV_DIR/bin/$cmd" "$BIN_DIR/$cmd"
+    fi
+done
+
+for cmd in ninja-mcp ninja-coder ninja-researcher ninja-secretary ninja-config ninja-daemon; do
     cmd_path=$(command -v "$cmd" 2>/dev/null || echo "not found")
     if [[ "$cmd_path" == *"/.local/"* ]]; then
         success "$cmd: $cmd_path"
@@ -222,9 +218,11 @@ if [[ "$AUTO_MODE" == "true" ]]; then
 
     if command -v aider &> /dev/null; then
         success "aider already installed"
-    else
+    elif command -v pipx &> /dev/null; then
         info "Installing aider..."
-        uv tool install aider-chat 2>&1 && success "aider installed" || warn "Could not install aider"
+        pipx install aider-chat 2>&1 && success "aider installed" || warn "Could not install aider"
+    else
+        warn "aider not found. Install manually: pipx install aider-chat"
     fi
 
     success "Auto-mode installation complete"

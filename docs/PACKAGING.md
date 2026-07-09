@@ -6,7 +6,7 @@ This guide covers how to build and distribute Ninja MCP packages for various pla
 
 Ninja MCP supports multiple distribution methods:
 
-1. **PyPI** - Python package (uv tool install)
+1. **PyPI** - Python package for package builders and isolated runners
 2. **Homebrew** - macOS package manager
 3. **Debian/Ubuntu** - .deb packages
 4. **Arch Linux** - AUR packages (coming soon)
@@ -42,7 +42,7 @@ just publish
 **Publishing to PyPI**:
 1. Get API token from https://pypi.org/manage/account/token/
 2. Configure: `uv publish --token YOUR_TOKEN`
-3. Users install: `uv tool install ninja-mcp[all]`
+3. Users install through a package channel or run `ninja-mcp daemon upgrade` for managed updates
 
 ### Homebrew Formula
 
@@ -172,8 +172,7 @@ Coming soon.
 
 ```dockerfile
 FROM python:3.12-slim
-RUN pip install uv
-RUN uv tool install ninja-mcp[all]
+RUN python -m pip install --no-cache-dir "ninja-mcp[runtime]"
 CMD ["ninja-coder"]
 ```
 
@@ -275,7 +274,7 @@ Track downloads:
 | Ubuntu/Debian | 🟢 Ready | `sudo apt install ninja-mcp` |
 | Arch Linux | 🟡 Planned | `yay -S ninja-mcp` |
 | Windows | 🟡 Planned | `winget install ninja-mcp` |
-| PyPI | 🟢 Ready | `uv tool install ninja-mcp[all]` |
+| PyPI | 🟢 Ready | `pipx install ninja-mcp[runtime]` or package-channel backend |
 | Docker | 🟡 Planned | `docker run ninja-mcp` |
 
 ## Contributing

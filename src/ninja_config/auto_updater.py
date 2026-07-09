@@ -4,7 +4,7 @@ Automatic updater for ninja-mcp.
 Handles the complete update process:
 1. Detects if update is needed
 2. Backs up credentials
-3. Reinstalls package
+3. Upgrades package through the Ninja daemon manager
 4. Runs migration
 5. Updates MCP config
 6. Restarts daemons
@@ -42,8 +42,8 @@ class AutoUpdater:
         """
         self.repo_path = repo_path or self._find_repo_path()
 
-    def _find_repo_path(self) -> Path:
-        """Find the ninja-cli-mcp repository path."""
+    def _find_repo_path(self) -> Path | None:
+        """Find the ninja-cli-mcp repository path if this is a source checkout."""
         # Try common locations
         candidates = [
             Path.cwd(),
@@ -52,13 +52,10 @@ class AutoUpdater:
         ]
 
         for path in candidates:
-            if (path / "pyproject.toml").exists():
+            if (path / "pyproject.toml").exists() and (path / ".git").exists():
                 return path
 
-        raise UpdateError(
-            "Could not find ninja-cli-mcp repository. "
-            "Please run from the repository directory or specify --repo-path"
-        )
+        return None
 
     def update(self, force: bool = False) -> dict[str, Any]:
         """
@@ -102,11 +99,11 @@ class AutoUpdater:
             result["steps_completed"].append("backup")
             print(f"   ✓ Backed up to: {backup_path}\n")
 
-            # Step 3: Reinstall package
-            print("📦 Step 3: Reinstalling package...")
+            # Step 3: Upgrade package
+            print("📦 Step 3: Upgrading package...")
             self._reinstall_package()
             result["package_updated"] = True
-            result["steps_completed"].append("reinstall")
+            result["steps_completed"].append("upgrade")
             print("   ✓ Package updated\n")
 
             # Step 4: Run migration if needed
@@ -155,11 +152,15 @@ class AutoUpdater:
             if result.get("backup_path"):
                 print(f"  1. Your credentials backup: {result['backup_path']}")
             print("  2. Check logs in ~/.cache/ninja-mcp/logs/")
-            print("  3. Run: ninja-daemon status")
+            print("  3. Run: ninja-mcp daemon status")
             raise UpdateError(f"Update failed: {e}") from e
 
     def _git_pull(self) -> None:
         """Pull latest code from git."""
+        if self.repo_path is None:
+            print("   i No source checkout detected, using package channel")
+            return
+
         # Check if this is a git repository
         git_dir = self.repo_path / ".git"
         if not git_dir.exists():
@@ -218,26 +219,23 @@ class AutoUpdater:
         return Path("/dev/null")
 
     def _reinstall_package(self) -> None:
-        """Reinstall the package."""
+        """Upgrade the package using the Ninja package updater."""
         try:
             result = subprocess.run(
-                ["uv", "tool", "install", "--reinstall", "--force", "."],
-                cwd=self.repo_path,
+                ["ninja-mcp", "daemon", "upgrade"],
                 check=True,
                 capture_output=True,
                 text=True,
                 timeout=600,  # 10 minute timeout
             )
             # Check if version changed
-            if "ninja-mcp==" in result.stdout:
-                # Extract version
-                for line in result.stdout.split("\n"):
-                    if "ninja-mcp==" in line:
-                        print(f"   i {line.strip()}")
+            for line in result.stdout.splitlines():
+                if line.strip():
+                    print(f"   i {line.strip()}")
         except subprocess.CalledProcessError as e:
-            raise UpdateError(f"Package reinstall failed: {e.stderr}") from e
+            raise UpdateError(f"Package upgrade failed: {e.stderr}") from e
         except subprocess.TimeoutExpired:
-            raise UpdateError("Package reinstall timed out after 10 minutes") from None
+            raise UpdateError("Package upgrade timed out after 10 minutes") from None
 
     def _run_migration_if_needed(self) -> dict[str, Any] | None:
         """Run migration if needed."""
@@ -318,7 +316,7 @@ class AutoUpdater:
         """Restart ninja daemons."""
         try:
             subprocess.run(
-                ["ninja-daemon", "restart"],
+                ["ninja-mcp", "daemon", "restart"],
                 check=True,
                 capture_output=True,
                 timeout=60,  # 1 minute timeout
@@ -338,7 +336,7 @@ class AutoUpdater:
         # Check daemons
         try:
             result = subprocess.run(
-                ["ninja-daemon", "status"],
+                ["ninja-mcp", "daemon", "status"],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -351,12 +349,16 @@ class AutoUpdater:
                 if status.get("running"):
                     running_daemons.append(name)
 
+            required_daemons = {"coder", "researcher"}
+            running_required = required_daemons.issubset(set(running_daemons))
+
             verification["checks"]["daemons"] = {
-                "success": len(running_daemons) >= 3,
+                "success": running_required,
                 "running": running_daemons,
+                "required": sorted(required_daemons),
             }
 
-            if len(running_daemons) < 3:
+            if not running_required:
                 verification["success"] = False
 
         except Exception as e:
@@ -407,7 +409,7 @@ def main():
             print("\n✅ Update completed successfully!")
             print("\nYou can now use:")
             print("  - ninja-config configure")
-            print("  - ninja-daemon status")
+            print("  - ninja-mcp daemon status")
             print("  - ninja-coder (via MCP)")
             sys.exit(0)
         else:

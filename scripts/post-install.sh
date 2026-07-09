@@ -13,18 +13,18 @@ cd "$PROJECT_ROOT"
 
 # Stop all daemons properly (creates proper shutdown, removes PID files)
 echo "Stopping all daemons..."
-uv run ninja-daemon stop 2>/dev/null || true
+ninja-mcp daemon stop 2>/dev/null || true
 
 sleep 2
 
 # Start all daemons with proper PID file management
-# This ensures Claude Code can connect via ninja-daemon connect
+# This ensures MCP clients can connect via ninja-mcp daemon connect
 echo "Starting all daemons..."
-uv run ninja-daemon start
+ninja-mcp daemon start
 
 sleep 3
 
 # Verify daemons are running
 echo ""
 echo "Daemon status:"
-uv run ninja-daemon status
+ninja-mcp daemon status

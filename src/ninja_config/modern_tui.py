@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from typing import ClassVar
@@ -587,7 +586,7 @@ class NinjaConfigApp(App):
         elif bid == "btn-toggle-daemon":
             self._toggle_daemon()
         elif bid == "btn-restart-daemon":
-            self.notify("Run 'ninja-daemon restart' to restart.", timeout=3)
+            self.notify("Run 'ninja-mcp daemon restart' to restart.", timeout=3)
         elif bid == "btn-claude-mcp":
             count = register_claude_mcp()
             self.notify(f"Claude Code MCP: {count}/3 servers registered.", timeout=3)
@@ -677,17 +676,7 @@ class NinjaConfigApp(App):
     # ── Actions ──────────────────────────────────────────────────────────
 
     def _check_update(self) -> None:
-        try:
-            result = subprocess.run(
-                ["uv", "tool", "upgrade", "ninja-mcp", "--dry-run"],
-                capture_output=True, text=True, check=False, timeout=15,
-            )
-            if "Would upgrade" in result.stdout or "upgraded" in result.stdout.lower():
-                self.notify("Update available! Run: uv tool upgrade ninja-mcp", timeout=5)
-            else:
-                self.notify("Already up to date.", timeout=3)
-        except Exception as e:
-            self.notify(f"Check failed: {e}", timeout=4)
+        self.notify("Update with: ninja-mcp daemon upgrade", timeout=5)
 
     def _show_config(self) -> None:
         cfg = self.config_manager.list_all()

@@ -631,16 +631,16 @@ ninja-researcher
 
 ```bash
 # Start daemon
-ninja-daemon start researcher
+ninja-mcp daemon start researcher
 
 # Check status
-ninja-daemon status researcher
+ninja-mcp daemon status researcher
 
 # View logs
 tail -f ~/.cache/ninja-mcp/logs/researcher.log
 
 # Stop daemon
-ninja-daemon stop researcher
+ninja-mcp daemon stop researcher
 ```
 
 ### Docker (Future)
@@ -674,7 +674,7 @@ CMD ["ninja-researcher"]
 
 ```bash
 # Check if server is running
-ninja-daemon status researcher
+ninja-mcp daemon status researcher
 
 # Check resource usage
 # (via ResourceMonitor in ninja_common)

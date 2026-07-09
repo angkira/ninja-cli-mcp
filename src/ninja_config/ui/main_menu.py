@@ -173,7 +173,7 @@ def show_configuration_overview(config: dict[str, str], config_file: Path) -> No
     # Check daemon status
     try:
         result = subprocess.run(
-            ["ninja-daemon", "status"],
+            ["ninja-mcp", "daemon", "status"],
             capture_output=True,
             text=True,
             check=False,

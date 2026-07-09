@@ -2344,6 +2344,17 @@ notebooks = [
     { name = "pandas" },
     { name = "seaborn" },
 ]
+runtime = [
+    { name = "beautifulsoup4" },
+    { name = "ddgs" },
+    { name = "fastapi" },
+    { name = "gitpython" },
+    { name = "markdownify" },
+    { name = "pygments" },
+    { name = "tree-sitter" },
+    { name = "tree-sitter-javascript" },
+    { name = "tree-sitter-python" },
+]
 researcher = [
     { name = "beautifulsoup4" },
     { name = "ddgs" },
@@ -2376,7 +2387,8 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'notebooks'", specifier = ">=3.8.0" },
     { name = "mcp", specifier = ">=1.1.2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
-    { name = "ninja-mcp", extras = ["coder", "researcher", "secretary", "notebooks", "dev"], marker = "extra == 'all'" },
+    { name = "ninja-mcp", extras = ["coder", "researcher", "secretary"], marker = "extra == 'runtime'" },
+    { name = "ninja-mcp", extras = ["runtime", "notebooks", "dev"], marker = "extra == 'all'" },
     { name = "pandas", marker = "extra == 'notebooks'", specifier = ">=2.1.0" },
     { name = "pathspec", specifier = ">=0.12.0" },
     { name = "psutil", specifier = ">=5.9.0" },
@@ -2401,7 +2413,7 @@ requires-dist = [
     { name = "types-requests", marker = "extra == 'dev'", specifier = ">=2.31.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.23.0" },
 ]
-provides-extras = ["coder", "researcher", "secretary", "notebooks", "dev", "all"]
+provides-extras = ["coder", "researcher", "secretary", "notebooks", "runtime", "dev", "all"]
 
 [[package]]
 name = "notebook"

@@ -230,7 +230,7 @@ class NinjaConfigurator:
             print("✗ No operators found!")
             print("\nInstall at least one operator:")
             print("  • OpenCode: https://opencode.dev")
-            print("  • Aider: uv tool install aider-chat")
+            print("  • Aider: pipx install aider-chat")
             print("  • Claude Code: https://claude.ai/download")
             print("  • Gemini: npm install -g @google/generative-ai-cli")
             return
