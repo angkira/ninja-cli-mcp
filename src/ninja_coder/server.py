@@ -63,6 +63,20 @@ setup_logging(level=logging.INFO)
 logger = get_logger(__name__)
 
 
+# Process-global deduplicator — shared across ALL sessions/connections so that
+# client retries over NEW SSE sessions coalesce onto in-flight executions
+# instead of spawning duplicate subprocesses.
+_deduplicator: RequestDeduplicator | None = None
+
+
+def _get_deduplicator() -> RequestDeduplicator:
+    """Get the process-global request deduplicator, created lazily."""
+    global _deduplicator
+    if _deduplicator is None:
+        _deduplicator = RequestDeduplicator()
+    return _deduplicator
+
+
 # Tool definitions with JSON Schema
 TOOLS: list[Tool] = [
     Tool(
@@ -556,8 +570,8 @@ You:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""",
     )
 
-    # Create deduplicator instance for request deduplication
-    deduplicator = RequestDeduplicator()
+    # Use the process-global deduplicator for request deduplication
+    deduplicator = _get_deduplicator()
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
@@ -601,6 +615,27 @@ You:
             else:
                 key = RequestDeduplicator.make_key(name, arguments)
                 result = await deduplicator.deduplicate(key, _execute)
+
+            if result is None or not hasattr(result, "model_dump"):
+                # Defensive: an executor must always return a result model.
+                # Never let a None/invalid result crash with AttributeError —
+                # return a proper MCP error envelope instead.
+                logger.error(
+                    f"[{client_id}] Tool {name} returned invalid result: "
+                    f"{type(result).__name__}"
+                )
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "status": "error",
+                                "error": f"Tool {name} produced no result (internal error)",
+                                "error_type": "InternalError",
+                            }
+                        ),
+                    )
+                ]
 
             result_json = result.model_dump()
             logger.info(

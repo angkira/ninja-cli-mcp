@@ -148,6 +148,13 @@ class ToolExecutor:
                 error_message=f"Input validation failed: {e!s}",
                 client_id=client_id,
             )
+            self._log_outcome(
+                task_id=task_id,
+                tool_name="coder_simple_task",
+                success=False,
+                client_id=client_id,
+                reason=f"Input validation failed: {e!s}",
+            )
             return SimpleTaskResult(
                 status="error",
                 summary=f"❌ Input validation failed: {e!s}",
@@ -156,6 +163,13 @@ class ToolExecutor:
         except PermissionError as e:
             # Rate limit exceeded
             logger.warning(f"Rate limit exceeded for simple_task (client {client_id}): {e}")
+            self._log_outcome(
+                task_id=task_id,
+                tool_name="coder_simple_task",
+                success=False,
+                client_id=client_id,
+                reason=f"Rate limit exceeded: {e!s}",
+            )
             return SimpleTaskResult(
                 status="error",
                 summary=f"⚠️ Rate limit exceeded: {e!s}",
@@ -186,12 +200,24 @@ class ToolExecutor:
                 await asyncio.sleep(retry_delay_sec)
 
             # Execute via AI code CLI
-            result = await self.driver.execute_async(
-                repo_root=request.repo_root,
-                step_id=f"simple_task_attempt_{attempt}",
-                instruction=instruction,
-                task_type="quick",  # Simple tasks are always quick
-            )
+            try:
+                result = await self.driver.execute_async(
+                    repo_root=request.repo_root,
+                    step_id=f"simple_task_attempt_{attempt}",
+                    instruction=instruction,
+                    task_type="quick",  # Simple tasks are always quick
+                )
+            except BaseException as e:
+                # Guarantee an outcome entry even on interruption (e.g.
+                # CancelledError when the MCP client disconnects mid-flight).
+                self._log_outcome(
+                    task_id=task_id,
+                    tool_name="coder_simple_task",
+                    success=False,
+                    client_id=client_id,
+                    reason=f"Execution interrupted ({type(e).__name__}): {e!s}",
+                )
+                raise
 
             last_result = result
 
@@ -244,6 +270,16 @@ class ToolExecutor:
             client_id=client_id,
         )
 
+        # Guaranteed outcome log (covers success, failure and timeout — the
+        # driver signals timeout as success=False with a "timed out" summary)
+        self._log_outcome(
+            task_id=task_id,
+            tool_name="coder_simple_task",
+            success=last_result.success,
+            client_id=client_id,
+            reason=None if last_result.success else last_result.summary,
+        )
+
         # Return CONCISE result (no source code)
         return SimpleTaskResult(
             status="ok" if last_result.success else "error",
@@ -252,6 +288,44 @@ class ToolExecutor:
             logs_ref=last_result.raw_logs_path,
             suspected_touched_paths=last_result.suspected_touched_paths[:10],  # Max 10 paths
         )
+
+    def _log_outcome(
+        self,
+        task_id: str,
+        tool_name: str,
+        success: bool,
+        client_id: str,
+        reason: str | None = None,
+    ) -> None:
+        """Write a guaranteed execution outcome to the structured JSONL log.
+
+        Every tool execution (success, failure, timeout, interruption) must
+        leave exactly one outcome entry in ~/.cache/ninja-mcp/logs/ so that
+        STARTED entries are always paired with an outcome. Best-effort: this
+        never raises, so logging can never break a tool response.
+
+        Args:
+            task_id: Unique execution identifier.
+            tool_name: MCP tool name (e.g. coder_simple_task).
+            success: Whether the execution succeeded.
+            client_id: Client identifier.
+            reason: Error/timeout reason when success is False.
+        """
+        try:
+            self.driver.structured_logger.log_result(
+                success=success,
+                summary=(
+                    f"[{tool_name}] outcome: {'success' if success else 'failure'}"
+                    + (f" - {reason[:300]}" if reason and not success else "")
+                ),
+                task_id=task_id,
+                tool_name=tool_name,
+                client_id=client_id,
+                outcome="success" if success else "failure",
+                error_reason=None if success else (reason or "unknown"),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log outcome for task {task_id}: {e}")
 
     def _record_metrics(
         self,
@@ -317,6 +391,13 @@ class ToolExecutor:
         try:
             validate_repo_root(request.repo_root)
         except ValueError as e:
+            self._log_outcome(
+                task_id=plan_task_id,
+                tool_name="coder_execute_plan_sequential",
+                success=False,
+                client_id=client_id,
+                reason=f"Input validation failed: {e!s}",
+            )
             return PlanExecutionResult(
                 overall_status="failed",
                 steps=[],
@@ -354,12 +435,30 @@ class ToolExecutor:
             )
         except Exception as e:
             logger.error(f"Sequential plan execution failed: {e}")
+            self._log_outcome(
+                task_id=plan_task_id,
+                tool_name="coder_execute_plan_sequential",
+                success=False,
+                client_id=client_id,
+                reason=f"Execution error: {e!s}",
+            )
             return PlanExecutionResult(
                 overall_status="failed",
                 steps=[],
                 files_modified=[],
                 notes=f"❌ Execution error: {e!s}",
             )
+        except BaseException as e:
+            # Guarantee an outcome entry even on interruption (e.g.
+            # CancelledError when the MCP client disconnects mid-flight).
+            self._log_outcome(
+                task_id=plan_task_id,
+                tool_name="coder_execute_plan_sequential",
+                success=False,
+                client_id=client_id,
+                reason=f"Execution interrupted ({type(e).__name__}): {e!s}",
+            )
+            raise
 
         # 4. Parse structured result
         if result.success:
@@ -405,12 +504,21 @@ class ToolExecutor:
             client_id=client_id,
         )
 
+        # Guaranteed outcome log (success, failure and driver-reported timeout)
+        self._log_outcome(
+            task_id=plan_task_id,
+            tool_name="coder_execute_plan_sequential",
+            success=plan_result.overall_status == "success",
+            client_id=client_id,
+            reason=None if plan_result.overall_status == "success" else plan_result.notes,
+        )
+
         return plan_result
 
     def _estimate_sequential_timeout(self, request: SequentialPlanRequest) -> int:
         """Estimate timeout for sequential plan."""
-        base = 300
-        per_step = 60
+        base = 600
+        per_step = 120
         return base + (per_step * len(request.steps))
 
     async def execute_plan_parallel(
@@ -430,6 +538,13 @@ class ToolExecutor:
         try:
             validate_repo_root(request.repo_root)
         except ValueError as e:
+            self._log_outcome(
+                task_id=plan_task_id,
+                tool_name="coder_execute_plan_parallel",
+                success=False,
+                client_id=client_id,
+                reason=f"Input validation failed: {e!s}",
+            )
             return PlanExecutionResult(
                 overall_status="failed",
                 steps=[],
@@ -468,12 +583,30 @@ class ToolExecutor:
             )
         except Exception as e:
             logger.error(f"Parallel plan execution failed: {e}")
+            self._log_outcome(
+                task_id=plan_task_id,
+                tool_name="coder_execute_plan_parallel",
+                success=False,
+                client_id=client_id,
+                reason=f"Execution error: {e!s}",
+            )
             return PlanExecutionResult(
                 overall_status="failed",
                 steps=[],
                 files_modified=[],
                 notes=f"❌ Execution error: {e!s}",
             )
+        except BaseException as e:
+            # Guarantee an outcome entry even on interruption (e.g.
+            # CancelledError when the MCP client disconnects mid-flight).
+            self._log_outcome(
+                task_id=plan_task_id,
+                tool_name="coder_execute_plan_parallel",
+                success=False,
+                client_id=client_id,
+                reason=f"Execution interrupted ({type(e).__name__}): {e!s}",
+            )
+            raise
 
         # 4. Parse structured result
         if result.success:
@@ -519,12 +652,21 @@ class ToolExecutor:
             client_id=client_id,
         )
 
+        # Guaranteed outcome log (success, failure and driver-reported timeout)
+        self._log_outcome(
+            task_id=plan_task_id,
+            tool_name="coder_execute_plan_parallel",
+            success=plan_result.overall_status == "success",
+            client_id=client_id,
+            reason=None if plan_result.overall_status == "success" else plan_result.notes,
+        )
+
         return plan_result
 
     def _estimate_parallel_timeout(self, request: ParallelPlanRequest) -> int:
         """Estimate timeout for parallel plan."""
-        base = 300
-        per_task = 30  # Parallel is faster
+        base = 600
+        per_task = 60  # Parallel is faster
         return base + (per_task * max(1, len(request.steps) // request.fanout))
 
     async def get_agents(

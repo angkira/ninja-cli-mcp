@@ -98,3 +98,85 @@ class TestRequestDeduplicator:
         await dedup.deduplicate("a", fa)
         await dedup.deduplicate("b", fb)
         assert sorted(calls) == ["a", "b"]
+
+    @pytest.mark.asyncio
+    async def test_waiter_gets_real_result_when_creator_cancelled(self) -> None:
+        """Regression: creator cancelled mid-flight (client timeout), waiter
+        must still receive the REAL result — never None — and the shared
+        execution must run to completion exactly once."""
+        dedup = RequestDeduplicator(ttl=60)
+        call_count = 0
+
+        async def slow_factory() -> str:
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(0.15)
+            return "real-result"
+
+        creator = asyncio.create_task(dedup.deduplicate("k", slow_factory))
+        await asyncio.sleep(0.02)  # let creator register the in-flight task
+        waiter = asyncio.create_task(dedup.deduplicate("k", slow_factory))
+        await asyncio.sleep(0.02)  # let waiter coalesce onto the shared task
+
+        # Simulate MCP client timeout/disconnect cancelling the creator call
+        creator.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await creator
+
+        # Waiter must receive the real result, not None
+        result = await waiter
+        assert result == "real-result"
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retry_after_creator_cancel_coalesces_inflight(self) -> None:
+        """Regression: a client retry arriving after the original call was
+        cancelled must coalesce onto the still-running execution instead of
+        spawning a second one."""
+        dedup = RequestDeduplicator(ttl=60)
+        call_count = 0
+
+        async def slow_factory() -> str:
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(0.15)
+            return "real-result"
+
+        creator = asyncio.create_task(dedup.deduplicate("k", slow_factory))
+        await asyncio.sleep(0.02)
+        creator.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await creator
+
+        # Retry (new "session") while execution is still in-flight
+        result = await dedup.deduplicate("k", slow_factory)
+        assert result == "real-result"
+        assert call_count == 1
+
+        # Retry after completion hits the cache — still one execution
+        result2 = await dedup.deduplicate("k", slow_factory)
+        assert result2 == "real-result"
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_waiter_receives_execution_exception(self) -> None:
+        """Duplicates awaiting a failing in-flight execution receive the
+        exception instead of None or a re-execution."""
+        dedup = RequestDeduplicator(ttl=60)
+        call_count = 0
+
+        async def failing() -> str:
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(0.05)
+            raise RuntimeError("boom")
+
+        creator = asyncio.create_task(dedup.deduplicate("k", failing))
+        await asyncio.sleep(0.01)
+        waiter = asyncio.create_task(dedup.deduplicate("k", failing))
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await creator
+        with pytest.raises(RuntimeError, match="boom"):
+            await waiter
+        assert call_count == 1

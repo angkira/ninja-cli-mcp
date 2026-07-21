@@ -184,7 +184,7 @@ async def test_parallel_with_mock_cli(temp_repo: Path, parallel_request: Paralle
     # Verify timeout was estimated
     assert "timeout_sec" in call_kwargs
     timeout = call_kwargs["timeout_sec"]
-    # With fanout=3 and 3 tasks: base(300) + (30 * 3 // 3) = 330s
+    # With fanout=3 and 3 tasks: base(600) + (60 * 3 // 3) = 660s
     assert timeout >= 300
 
     # Verify NO asyncio.gather was used (single call proves this)
@@ -202,10 +202,10 @@ def test_parallel_timeout_estimation():
 
     # Test cases
     test_cases = [
-        (2, 4, 350, 370),  # base(300) + (30 * 4 // 2) = 360
-        (4, 4, 320, 340),  # base(300) + (30 * 4 // 4) = 330
-        (1, 6, 470, 490),  # base(300) + (30 * 6 // 1) = 480
-        (3, 9, 380, 400),  # base(300) + (30 * 9 // 3) = 390
+        (2, 4, 710, 730),  # base(600) + (60 * 4 // 2) = 720
+        (4, 4, 650, 670),  # base(600) + (60 * 4 // 4) = 660
+        (1, 6, 950, 970),  # base(600) + (60 * 6 // 1) = 960
+        (3, 9, 770, 790),  # base(600) + (60 * 9 // 3) = 780
     ]
 
     for fanout, num_tasks, min_expected, max_expected in test_cases:
@@ -457,7 +457,7 @@ async def test_parallel_vs_sequential_timeout_difference():
     parallel_timeout = executor._estimate_parallel_timeout(parallel_request)
     sequential_timeout = executor._estimate_sequential_timeout(sequential_request)
 
-    # Parallel should be faster (base + 30*4//4 = 330) vs (base + 60*4 = 540)
+    # Parallel should be faster (base + 60*4//4 = 660) vs (base + 120*4 = 1080)
     assert parallel_timeout < sequential_timeout, (
         f"Parallel timeout ({parallel_timeout}s) should be less than "
         f"sequential timeout ({sequential_timeout}s) for same tasks"

@@ -651,6 +651,12 @@ class OpenCodeStrategy:
         With daemon mode, use activity-based timeout (see driver.py).
         These are maximum timeouts - actual timeout is based on output activity.
 
+        Each task type can be overridden via environment variable:
+        - ``NINJA_OPENCODE_QUICK_TIMEOUT`` (default 600)
+        - ``NINJA_OPENCODE_SEQUENTIAL_TIMEOUT`` (default 900)
+        - ``NINJA_OPENCODE_PARALLEL_TIMEOUT`` (default 1200)
+        - ``NINJA_OPENCODE_TIMEOUT`` (fallback for unknown task types, default 600)
+
         Args:
             task_type: Type of task ('quick', 'sequential', 'parallel').
 
@@ -658,11 +664,13 @@ class OpenCodeStrategy:
             Timeout in seconds.
         """
         # Daemon mode is much faster but still needs generous timeouts for complex tasks
-        return {
-            "quick": 300,  # 5 minutes (was 180s)
-            "sequential": 900,  # 15 minutes (was 600s)
-            "parallel": 1200,  # 20 minutes (was 900s)
-        }.get(task_type, 600)
+        timeouts = {
+            "quick": ("NINJA_OPENCODE_QUICK_TIMEOUT", 600),
+            "sequential": ("NINJA_OPENCODE_SEQUENTIAL_TIMEOUT", 900),  # 15 minutes
+            "parallel": ("NINJA_OPENCODE_PARALLEL_TIMEOUT", 1200),  # 20 minutes
+        }
+        env_var, default = timeouts.get(task_type, ("NINJA_OPENCODE_TIMEOUT", 600))
+        return int(os.environ.get(env_var, str(default)))
 
     def _is_zai_model(self, model_name: str) -> bool:
         """Check if model is a z.ai model.

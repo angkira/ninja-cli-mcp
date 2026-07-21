@@ -162,13 +162,21 @@ class RateLimiter:
 
 
 class RequestDeduplicator:
-    """Coalesces identical in-flight requests and caches recent results."""
+    """Coalesces identical in-flight requests and caches recent results.
+
+    Each unique key maps to a single shared ``asyncio.Task``. Duplicate
+    callers await the same task (shielded, so a caller disconnecting never
+    cancels the shared execution) and receive its real outcome. Completed
+    outcomes — results AND exceptions, including cancellations — are cached
+    for ``ttl`` seconds so client retries return the stored outcome instead
+    of spawning a second execution.
+    """
 
     def __init__(self, ttl: int | None = None) -> None:
-        self._ttl = ttl or int(os.environ.get("NINJA_DEDUP_TTL", "300"))
+        # NOTE: ttl=0 is a valid explicit value (cache disabled), not "unset"
+        self._ttl = ttl if ttl is not None else int(os.environ.get("NINJA_DEDUP_TTL", "300"))
         self._cache: dict[str, tuple[float, Any]] = {}
-        self._inflight: dict[str, asyncio.Event] = {}
-        self._inflight_results: dict[str, Any] = {}
+        self._inflight: dict[str, asyncio.Task[Any]] = {}
         self._lock = asyncio.Lock()
 
     @staticmethod
@@ -178,14 +186,54 @@ class RequestDeduplicator:
         raw = f"{tool_name}:{canonical}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
+    async def _execute_and_cache(
+        self,
+        key: str,
+        coro_factory: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        """Run coro_factory, always recording the outcome for duplicates.
+
+        The outcome (result or exception) is cached under ``key`` so that
+        coalesced duplicates — and retries arriving shortly after completion —
+        receive a real outcome instead of ``None`` or a second execution.
+        """
+        started = time.time()
+        try:
+            result = await coro_factory()
+        except asyncio.CancelledError:
+            # Execution task itself cancelled (e.g. daemon shutdown). Cache a
+            # real error so late duplicates never observe a missing outcome.
+            async with self._lock:
+                self._cache[key] = (
+                    started,
+                    RuntimeError("In-flight request was cancelled before completion"),
+                )
+            raise
+        except BaseException as exc:
+            async with self._lock:
+                self._cache[key] = (started, exc)
+            raise
+        else:
+            async with self._lock:
+                self._cache[key] = (started, result)
+            return result
+        finally:
+            async with self._lock:
+                # Only evict if we are still the registered task for this key
+                if self._inflight.get(key) is asyncio.current_task():
+                    self._inflight.pop(key, None)
+
     async def deduplicate(
         self,
         key: str,
         coro_factory: Callable[[], Awaitable[Any]],
     ) -> Any:
-        """Execute coro_factory only once per unique key within TTL."""
+        """Execute coro_factory only once per unique key within TTL.
+
+        While a matching request is in-flight, duplicates await the shared
+        task and receive its result instead of re-executing.
+        """
         now = time.time()
-        wait_event: asyncio.Event | None = None
 
         async with self._lock:
             # Lazy eviction
@@ -203,40 +251,29 @@ class RequestDeduplicator:
                     return result
                 del self._cache[key]
 
-            # In-flight duplicate — grab event, wait outside lock
-            if key in self._inflight:
-                wait_event = self._inflight[key]
+            # Atomic check-and-register: either join the in-flight task or
+            # create exactly one shared execution task for this key.
+            task = self._inflight.get(key)
+            if task is None:
+                task = asyncio.create_task(self._execute_and_cache(key, coro_factory))
+                self._inflight[key] = task
+            else:
                 logger.info(f"[dedup] Coalescing duplicate request {key[:12]}...")
 
-        # Wait for in-flight result outside the lock
-        if wait_event is not None:
-            await wait_event.wait()
-            result = self._inflight_results.get(key)
-            if isinstance(result, Exception):
-                raise result
-            return result
-
-        # New request — register in-flight
-        event = asyncio.Event()
-        async with self._lock:
-            self._inflight[key] = event
-
-        # Execute outside the lock
+        # Await the shared task outside the lock. The shield ensures that
+        # cancellation of THIS caller (e.g. MCP client timeout/disconnect)
+        # does not cancel the shared execution — coalesced duplicates must
+        # still receive its outcome.
         try:
-            result = await coro_factory()
-            async with self._lock:
-                self._cache[key] = (now, result)
-                self._inflight_results[key] = result
-            return result
-        except Exception as exc:
-            async with self._lock:
-                self._cache[key] = (now, exc)
-                self._inflight_results[key] = exc
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.cancelled():
+                # The shared execution was cancelled, not us — surface a real
+                # error so callers produce a proper error response.
+                raise RuntimeError(
+                    "In-flight request was cancelled before completion"
+                ) from None
             raise
-        finally:
-            async with self._lock:
-                event.set()
-                self._inflight.pop(key, None)
 
 
 # Global rate limiter instance

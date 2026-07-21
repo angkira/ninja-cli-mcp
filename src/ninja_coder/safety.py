@@ -340,6 +340,7 @@ def validate_task_safety(
     task_description: str,
     context_paths: list[str] | None = None,
     safety_mode: SafetyMode | str | None = None,
+    skip_auto_commit: bool = False,
 ) -> dict[str, Any]:
     """Validate task safety before execution with automatic enforcement.
 
@@ -348,6 +349,10 @@ def validate_task_safety(
         task_description: Task description to analyze.
         context_paths: Files that will be modified.
         safety_mode: Safety enforcement mode (auto-detected from env if None).
+        skip_auto_commit: When True, AUTO mode never creates the
+            [ninja-auto-save] commit on the current branch (used when
+            worktree isolation snapshots the dirty state onto a feature
+            branch instead). The safety tag on HEAD is still created.
 
     Returns:
         Safety validation results with recommendations and enforcement actions.
@@ -395,18 +400,19 @@ def validate_task_safety(
         changed_files = git_check.get("changed_files", [])
 
         if safety_mode == SafetyMode.AUTO:
-            # AUTO: Automatically commit changes; never deny the task
-            logger.info(f"🔒 AUTO MODE: Committing {len(changed_files)} uncommitted file(s)")
-            committed = GitSafetyChecker.auto_commit_changes(
-                repo_root, task_description, changed_files
-            )
-
-            if committed:
-                results["action_taken"] = "auto_committed"
-                results["warnings"].append(
-                    f"✅ Auto-committed {len(changed_files)} file(s) for safety"
+            if skip_auto_commit:
+                # Worktree isolation is active: the dirty state is snapshotted
+                # onto a feature branch in a detached worktree, so the main
+                # repo must NOT get an auto-save commit. Only tag HEAD.
+                logger.info(
+                    f"🔀 AUTO MODE: worktree isolation active, leaving "
+                    f"{len(changed_files)} uncommitted file(s) untouched"
                 )
-                # Create safety tag after commit
+                results["action_taken"] = "worktree_isolation"
+                results["warnings"].append(
+                    f"🔀 Worktree isolation: {len(changed_files)} uncommitted file(s) "
+                    "preserved in the main working tree (snapshot on feature branch)"
+                )
                 tag = GitSafetyChecker.create_safety_tag(repo_root)
                 if tag:
                     results["git_info"]["safety_tag"] = tag
@@ -414,10 +420,29 @@ def validate_task_safety(
                         f"✅ Safety tag created: {tag} (recover with: git reset --hard {tag})"
                     )
             else:
-                results["warnings"].append(
-                    "⚠️ Could not create safety commit — proceeding without a git recovery point"
+                # AUTO: Automatically commit changes; never deny the task
+                logger.info(f"🔒 AUTO MODE: Committing {len(changed_files)} uncommitted file(s)")
+                committed = GitSafetyChecker.auto_commit_changes(
+                    repo_root, task_description, changed_files
                 )
-                # safe stays True — never deny a task due to a dirty worktree
+
+                if committed:
+                    results["action_taken"] = "auto_committed"
+                    results["warnings"].append(
+                        f"✅ Auto-committed {len(changed_files)} file(s) for safety"
+                    )
+                    # Create safety tag after commit
+                    tag = GitSafetyChecker.create_safety_tag(repo_root)
+                    if tag:
+                        results["git_info"]["safety_tag"] = tag
+                        results["warnings"].append(
+                            f"✅ Safety tag created: {tag} (recover with: git reset --hard {tag})"
+                        )
+                else:
+                    results["warnings"].append(
+                        "⚠️ Could not create safety commit — proceeding without a git recovery point"
+                    )
+                    # safe stays True — never deny a task due to a dirty worktree
 
         else:  # WARN mode
             # WARN: Just log warnings

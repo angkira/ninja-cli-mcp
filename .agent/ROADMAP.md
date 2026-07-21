@@ -38,6 +38,33 @@ Refactor the ninja configuration system to use a hierarchical, component-first a
 
 ## Active Tasks
 
+### Task: Worktree-based task isolation for ninja-coder
+**Priority:** CRITICAL
+**Status:** COMPLETED (no git commits, per instructions)
+**Completed:** 2026-07-21
+
+**Description:**
+Stop `[ninja-auto-save]` commits from polluting the user's current branch.
+Each `execute_async` call now creates a feature branch `ninja/<slug>-<ts>-<uid>`
+at HEAD, checks it out into a detached worktree under
+`$XDG_CACHE_HOME/ninja-mcp/worktrees/<repo-hash>/<branch>`, snapshots the dirty
+state onto the feature branch, and runs the CLI subprocess with `cwd=<worktree>`.
+The main working tree and current branch stay byte-for-byte untouched.
+
+**Files Created/Modified:**
+- [x] `src/ninja_coder/worktree.py` - NEW: WorktreeManager, WorktreeInfo, prune()
+- [x] `src/ninja_coder/safety.py` - validate_task_safety gains `skip_auto_commit`
+- [x] `src/ninja_coder/driver.py` - execute_async integration + NinjaResult fields
+- [x] `tests/test_worktree.py` - NEW: 10 tests (manager + safety + driver)
+
+**Follow-ups (backlog):**
+- [ ] Worktree coverage for `execute_async_with_opencode_session` / serve-pool mode
+- [ ] Wire `WorktreeManager.prune()` to daemon maintenance (manual helper today)
+- [ ] Fix pre-existing test debt: TestTimeoutEstimation, TestResultConversion,
+      env-leaking config tests (failing before this session, unrelated)
+
+---
+
 ### Task: Design unified configuration architecture
 **Priority:** High
 **Status:** COMPLETED

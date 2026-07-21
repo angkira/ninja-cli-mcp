@@ -39,6 +39,7 @@ from ninja_coder.models import (
 from ninja_coder.safety import validate_task_safety
 from ninja_coder.sessions import SessionManager
 from ninja_coder.strategies import CLIStrategyRegistry
+from ninja_coder.worktree import WorktreeInfo, WorktreeManager
 from ninja_common.defaults import (
     DEFAULT_CODE_BIN,
     DEFAULT_CODER_MODEL,
@@ -57,6 +58,40 @@ try:
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
+
+
+#: Buffer limit for subprocess stdout/stderr pipes. The asyncio default
+#: (64 KiB) is too small: opencode `--format json` can emit single JSON
+#: lines larger than that, which crashes the reader with
+#: "Separator is found, but chunk is longer than limit".
+SUBPROCESS_STREAM_LIMIT = 16 * 1024 * 1024  # 16 MiB
+
+#: Default inactivity-watchdog thresholds (seconds) per task type.
+_INACTIVITY_TIMEOUT_DEFAULTS: dict[str, float] = {
+    "quick": 60.0,
+    "sequential": 120.0,
+    "parallel": 120.0,
+}
+
+
+def _get_inactivity_timeout(task_type: str) -> float:
+    """Resolve the inactivity-watchdog threshold for a task type.
+
+    ``NINJA_INACTIVITY_TIMEOUT``, when set, overrides every task type.
+    Otherwise per-type defaults apply (quick=60s, sequential/parallel=120s).
+
+    Args:
+        task_type: Type of task ('quick', 'sequential', 'parallel'); the
+            '*_plan' variants inherit their base type's default.
+
+    Returns:
+        Inactivity timeout in seconds.
+    """
+    override = os.environ.get("NINJA_INACTIVITY_TIMEOUT")
+    if override is not None:
+        return float(override)
+    base_type = task_type.removesuffix("_plan")
+    return _INACTIVITY_TIMEOUT_DEFAULTS.get(base_type, _INACTIVITY_TIMEOUT_DEFAULTS["quick"])
 
 
 @dataclass
@@ -141,6 +176,8 @@ class NinjaResult:
     model_used: str = ""
     aider_error_detected: bool = False  # Flag for aider-specific internal errors
     session_id: str | None = None  # Session ID if session was used
+    worktree_branch: str | None = None  # Feature branch when worktree isolation was used
+    worktree_path: str | None = None  # Detached worktree path when isolation was used
 
 
 class InstructionBuilder:
@@ -1385,6 +1422,34 @@ class NinjaDriver:
         stderr = stderr_bytes.decode(errors="replace")
         return stdout, stderr
 
+    @staticmethod
+    def _attach_worktree_info(
+        result: NinjaResult, worktree_info: WorktreeInfo | None
+    ) -> NinjaResult:
+        """Attach worktree isolation details to an execution result.
+
+        Sets the worktree_branch/worktree_path fields and appends a one-line
+        merge hint to the result notes so callers can review and merge the
+        isolated changes. No-op when no worktree was created.
+
+        Args:
+            result: Execution result to enrich.
+            worktree_info: Worktree details, or None when isolation was not used.
+
+        Returns:
+            The same result object, enriched when a worktree was used.
+        """
+        if worktree_info is None:
+            return result
+        result.worktree_branch = worktree_info.branch
+        result.worktree_path = str(worktree_info.path)
+        hint = (
+            f"🔀 Worktree isolation: changes on branch '{worktree_info.branch}' "
+            f"at {worktree_info.path}. Review/merge: git merge {worktree_info.branch}"
+        )
+        result.notes = f"{result.notes}\n{hint}" if result.notes else hint
+        return result
+
     async def execute_async(
         self,
         repo_root: str,
@@ -1409,16 +1474,42 @@ class NinjaDriver:
             Execution result.
         """
         task_logger = create_task_logger(repo_root, step_id)
+        worktree_info: WorktreeInfo | None = None
 
         try:
             # Safety check with automatic enforcement (AUTO mode by default)
             task_desc = instruction.get("task", "")
             context_paths = instruction.get("file_scope", {}).get("context_paths", [])
 
+            # OpenCode serve-pool mode uses a long-running server rooted at
+            # repo_root, so worktree isolation does not apply there.
+            serve_pool_mode = (
+                os.environ.get("NINJA_OPENCODE_SERVE_MODE") == "1"
+                and self._strategy.name == "opencode"
+            )
+
+            # Worktree isolation: run the task in a detached git worktree so
+            # the user's working tree and current branch stay untouched.
+            if not serve_pool_mode and WorktreeManager.is_enabled():
+                worktree_info = WorktreeManager().create(
+                    repo_root=repo_root,
+                    task_hint=task_desc,
+                    step_id=step_id,
+                )
+            execution_dir = str(worktree_info.path) if worktree_info else repo_root
+            if worktree_info:
+                task_logger.info(
+                    f"🔀 Worktree isolation: branch '{worktree_info.branch}' "
+                    f"at {worktree_info.path}"
+                )
+                # The instruction travels with the task; point it at the worktree.
+                instruction = {**instruction, "repo_root": execution_dir}
+
             safety_results = validate_task_safety(
                 repo_root=repo_root,
                 task_description=task_desc,
                 context_paths=context_paths,
+                skip_auto_commit=worktree_info is not None,
             )
 
             # Log all warnings
@@ -1440,13 +1531,16 @@ class NinjaDriver:
                 logs_path = task_logger.save()
                 error_msg = "Safety check failed - refusing to run task"
                 task_logger.error(error_msg)
-                return NinjaResult(
-                    success=False,
-                    summary="❌ Safety check failed",
-                    notes="\n".join(safety_results.get("warnings", [])),
-                    raw_logs_path=logs_path,
-                    exit_code=-2,
-                    model_used=self.config.model,
+                return self._attach_worktree_info(
+                    NinjaResult(
+                        success=False,
+                        summary="❌ Safety check failed",
+                        notes="\n".join(safety_results.get("warnings", [])),
+                        raw_logs_path=logs_path,
+                        exit_code=-2,
+                        model_used=self.config.model,
+                    ),
+                    worktree_info,
                 )
 
             # Store git info for recovery
@@ -1484,7 +1578,7 @@ class NinjaDriver:
             with Path(task_file).open() as f:
                 instruction_data = json.load(f)
 
-            prompt = self._build_prompt_text(instruction_data, repo_root)
+            prompt = self._build_prompt_text(instruction_data, execution_dir)
             file_scope = instruction_data.get("file_scope", {})
             context_paths = file_scope.get("context_paths", [])
 
@@ -1528,10 +1622,8 @@ class NinjaDriver:
             # --- OpenCode serve pool path ---
             # When NINJA_OPENCODE_SERVE_MODE=1 and strategy is opencode,
             # use the long-running server pool instead of spawning a subprocess.
-            if (
-                os.environ.get("NINJA_OPENCODE_SERVE_MODE") == "1"
-                and self._strategy.name == "opencode"
-            ):
+            # (Worktree isolation is disabled in this mode — see above.)
+            if serve_pool_mode:
                 from ninja_coder.strategies.opencode_server_pool import get_pool
 
                 pool = get_pool(bin_path=self.config.bin_path)
@@ -1597,7 +1689,7 @@ class NinjaDriver:
                 }
                 cli_result = self._strategy.build_command_with_multi_agent(
                     prompt=prompt,
-                    repo_root=repo_root,
+                    repo_root=execution_dir,
                     agents=agents,
                     context=context,
                     file_paths=context_paths,
@@ -1609,7 +1701,7 @@ class NinjaDriver:
 
                 cli_result = self._strategy.build_command(
                     prompt=prompt,
-                    repo_root=repo_root,
+                    repo_root=execution_dir,
                     file_paths=context_paths,
                     model=model,
                     additional_flags=additional_flags,
@@ -1643,12 +1735,13 @@ class NinjaDriver:
                 stdin=asyncio.subprocess.DEVNULL,  # Prevent stdin blocking
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=SUBPROCESS_STREAM_LIMIT,  # JSON lines can exceed the 64 KiB default
                 start_new_session=True,  # Own process group — ensures children (pyright etc.) die with parent
             )
 
             try:
                 start_time = asyncio.get_event_loop().time()
-                inactivity_timeout = float(os.environ.get("NINJA_INACTIVITY_TIMEOUT", "60"))
+                inactivity_timeout = _get_inactivity_timeout(task_type)
 
                 task_logger.debug(
                     f"Starting subprocess with {max_timeout}s timeout, "
@@ -1690,32 +1783,53 @@ class NinjaDriver:
                         task_logger.error(f"Failed to force-kill process group: {kill_error}")
                 task_logger.error(f"Task timed out: {e}")
                 logs_path = task_logger.save()
-                return NinjaResult(
+
+                # Structured logging: Timeout (success path logs further below)
+                self.structured_logger.log_result(
                     success=False,
                     summary="⏱️ Task timed out",
-                    notes=str(e),
-                    raw_logs_path=logs_path,
+                    session_id=session_id,
+                    task_id=step_id,
+                    cli_name=self._strategy.name,
+                    model=model,
                     exit_code=-1,
-                    model_used=model,
+                    error_type="TimeoutError",
+                    reason=str(e)[:500],
+                )
+
+                return self._attach_worktree_info(
+                    NinjaResult(
+                        success=False,
+                        summary="⏱️ Task timed out",
+                        notes=str(e),
+                        raw_logs_path=logs_path,
+                        exit_code=-1,
+                        model_used=model,
+                    ),
+                    worktree_info,
                 )
 
             task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
 
-            # Parse output using strategy
-            parsed = self._strategy.parse_output(stdout, stderr, exit_code, repo_root=repo_root)
+            # Parse output using strategy (paths verified against execution_dir,
+            # which is the isolation worktree when worktree mode is active)
+            parsed = self._strategy.parse_output(stdout, stderr, exit_code, repo_root=execution_dir)
 
             # Build result from parsed output
-            result = NinjaResult(
-                success=parsed.success,
-                summary=parsed.summary,
-                notes=parsed.notes,
-                suspected_touched_paths=parsed.touched_paths,
-                raw_logs_path=task_logger.save(),
-                exit_code=exit_code,
-                stdout=stdout,
-                stderr=stderr,
-                model_used=model,
-                aider_error_detected=parsed.retryable_error,  # Generic retryable error flag
+            result = self._attach_worktree_info(
+                NinjaResult(
+                    success=parsed.success,
+                    summary=parsed.summary,
+                    notes=parsed.notes,
+                    suspected_touched_paths=parsed.touched_paths,
+                    raw_logs_path=task_logger.save(),
+                    exit_code=exit_code,
+                    stdout=stdout,
+                    stderr=stderr,
+                    model_used=model,
+                    aider_error_detected=parsed.retryable_error,  # Generic retryable error flag
+                ),
+                worktree_info,
             )
 
             task_logger.info(
@@ -1752,14 +1866,17 @@ class NinjaDriver:
                 bin_path=str(self.config.bin_path),
             )
 
-            return NinjaResult(
-                success=False,
-                summary="❌ Ninja Code CLI not found",
-                notes=f"Could not find executable: {self.config.bin_path}. "
-                f"Install Ninja Code CLI or set NINJA_CODE_BIN environment variable.",
-                raw_logs_path=logs_path,
-                exit_code=-1,
-                model_used=model_used,
+            return self._attach_worktree_info(
+                NinjaResult(
+                    success=False,
+                    summary="❌ Ninja Code CLI not found",
+                    notes=f"Could not find executable: {self.config.bin_path}. "
+                    f"Install Ninja Code CLI or set NINJA_CODE_BIN environment variable.",
+                    raw_logs_path=logs_path,
+                    exit_code=-1,
+                    model_used=model_used,
+                ),
+                worktree_info,
             )
         except Exception as e:
             task_logger.error(f"Unexpected error: {e}")
@@ -1778,13 +1895,16 @@ class NinjaDriver:
                 error_message=str(e)[:500],
             )
 
-            return NinjaResult(
-                success=False,
-                summary="❌ Execution error",
-                notes=str(e)[:200],  # Keep error message concise
-                raw_logs_path=logs_path,
-                exit_code=-1,
-                model_used=model_used,
+            return self._attach_worktree_info(
+                NinjaResult(
+                    success=False,
+                    summary="❌ Execution error",
+                    notes=str(e)[:200],  # Keep error message concise
+                    raw_logs_path=logs_path,
+                    exit_code=-1,
+                    model_used=model_used,
+                ),
+                worktree_info,
             )
 
     async def execute_async_with_opencode_session(
@@ -1956,6 +2076,7 @@ class NinjaDriver:
                 stdin=asyncio.subprocess.DEVNULL,  # Prevent stdin blocking
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=SUBPROCESS_STREAM_LIMIT,  # JSON lines can exceed the 64 KiB default
             )
 
             try:
