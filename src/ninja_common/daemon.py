@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ninja_common.defaults import DEFAULT_PORTS
+from ninja_common.defaults import DEFAULT_PORTS, DEFAULT_ENABLED_MODULES, AVAILABLE_MODULES
 from ninja_common.logging_utils import get_logger
 
 
@@ -211,6 +211,38 @@ class DaemonManager:
 
         return DEFAULT_PORTS.get(module, 8100)
 
+    def _get_enabled_modules(self) -> list[str]:
+        """Get enabled modules from config or environment.
+
+        Resolution order:
+        1. NINJA_ENABLED_MODULES environment variable
+        2. NINJA_ENABLED_MODULES in config file (~/.ninja-mcp.env)
+        3. DEFAULT_ENABLED_MODULES
+
+        Returns:
+            List of enabled module names.
+        """
+        config_file = Path.home() / ".ninja-mcp.env"
+
+        if "NINJA_ENABLED_MODULES" in os.environ:
+            modules = [m.strip() for m in os.environ["NINJA_ENABLED_MODULES"].split(",")]
+            if modules:
+                return modules
+
+        if config_file.exists():
+            try:
+                content = config_file.read_text()
+                for line in content.splitlines():
+                    if line.startswith("NINJA_ENABLED_MODULES="):
+                        value = line.split("=", 1)[1].strip().strip("'\"")
+                        modules = [m.strip() for m in value.split(",")]
+                        if modules:
+                            return modules
+            except OSError:
+                pass
+
+        return list(DEFAULT_ENABLED_MODULES)
+
     def _find_free_port(self, start_port: int = 8100, max_attempts: int = 100) -> int:
         """Find a free port starting from start_port."""
         import socket
@@ -247,6 +279,33 @@ class DaemonManager:
 
         if not found:
             lines.append(f"{env_key}={port}")
+
+        config_file.write_text("\n".join(lines) + "\n")
+
+    def _save_enabled_modules(self, modules: list[str]) -> None:
+        """Save enabled modules to config file."""
+        config_file = Path.home() / ".ninja-mcp.env"
+        env_key = "NINJA_ENABLED_MODULES"
+        value = ",".join(modules)
+
+        lines = []
+        if config_file.exists():
+            lines = config_file.read_text().splitlines()
+
+        found = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith(f"{env_key}="):
+                lines[i] = f"{env_key}={value}"
+                found = True
+                break
+            if stripped.startswith(f"export {env_key}="):
+                lines[i] = f"export {env_key}='{value}'"
+                found = True
+                break
+
+        if not found:
+            lines.append(f"{env_key}={value}")
 
         config_file.write_text("\n".join(lines) + "\n")
 
@@ -607,7 +666,7 @@ class DaemonManager:
             return False
 
         logger.info("Package upgraded, restarting running daemons...")
-        for name in ["coder", "researcher", "secretary", "prompts"]:
+        for name in self.list_modules():
             status = self.status(name)
             if status.get("running"):
                 logger.info(f"Restarting {name}...")
@@ -616,12 +675,12 @@ class DaemonManager:
         return True
 
     def list_modules(self) -> list[str]:
-        """List all available modules.
+        """List enabled modules.
 
         Returns:
-            List of module names
+            List of enabled module names (from NINJA_ENABLED_MODULES config).
         """
-        return ["coder", "researcher", "secretary", "resources", "prompts"]
+        return self._get_enabled_modules()
 
     def status_all(self) -> dict[str, dict[str, Any]]:
         """Get status for all modules.
@@ -642,8 +701,7 @@ def main() -> int:
     start_parser.add_argument(
         "module",
         nargs="?",
-        choices=["coder", "researcher", "secretary", "resources", "prompts"],
-        help="Module name (omit to start all)",
+        help="Module name (omit to start all enabled). See 'module list'.",
     )
 
     # Stop command
@@ -651,8 +709,7 @@ def main() -> int:
     stop_parser.add_argument(
         "module",
         nargs="?",
-        choices=["coder", "researcher", "secretary", "resources", "prompts"],
-        help="Module name (omit to stop all)",
+        help="Module name (omit to stop all enabled). See 'module list'.",
     )
 
     # Restart command
@@ -660,8 +717,7 @@ def main() -> int:
     restart_parser.add_argument(
         "module",
         nargs="?",
-        choices=["coder", "researcher", "secretary", "resources", "prompts"],
-        help="Module name (omit to restart all)",
+        help="Module name (omit to restart all enabled). See 'module list'.",
     )
 
     # Status command
@@ -669,9 +725,23 @@ def main() -> int:
     status_parser.add_argument(
         "module",
         nargs="?",
-        choices=["coder", "researcher", "secretary", "resources", "prompts"],
-        help="Module name (omit for all)",
+        help="Module name (omit for all enabled). See 'module list'.",
     )
+
+    # Module management subcommand
+    module_parser = subparsers.add_parser("module", help="Manage enabled modules")
+    module_sub = module_parser.add_subparsers(dest="module_action", help="Module action")
+
+    module_list_parser = module_sub.add_parser("list", help="List enabled modules and their status")
+    module_list_parser.set_defaults(module_action="list")
+
+    module_enable_parser = module_sub.add_parser("enable", help="Enable and start a module")
+    module_enable_parser.add_argument("name", help="Module name to enable")
+    module_enable_parser.set_defaults(module_action="enable")
+
+    module_disable_parser = module_sub.add_parser("disable", help="Disable and stop a module")
+    module_disable_parser.add_argument("name", help="Module name to disable")
+    module_disable_parser.set_defaults(module_action="disable")
 
     # Upgrade command
     upgrade_parser = subparsers.add_parser("upgrade", help="Upgrade ninja-mcp package")
@@ -682,9 +752,7 @@ def main() -> int:
 
     # Connect command (for MCP clients)
     connect_parser = subparsers.add_parser("connect", help="Connect to daemon socket")
-    connect_parser.add_argument(
-        "module", choices=["coder", "researcher", "secretary", "resources", "prompts"]
-    )
+    connect_parser.add_argument("module", help="Module name to connect to")
 
     args = parser.parse_args()
 
@@ -694,13 +762,86 @@ def main() -> int:
 
     manager = DaemonManager()
 
+    # ── module subcommand ───────────────────────────────────────────────────
+    if args.command == "module":
+        if not hasattr(args, "module_action") or not args.module_action:
+            module_parser.print_help()
+            return 1
+
+        if args.module_action == "list":
+            enabled = manager.list_modules()
+            print(f"Enabled modules ({len(enabled)}):")
+            print()
+            for module in AVAILABLE_MODULES:
+                running = manager.status(module).get("running", False)
+                enabled_mark = "✓" if module in enabled else " "
+                status_str = "running" if running else "stopped"
+                color = "\033[32m" if running else "\033[90m"
+                reset = "\033[0m"
+                print(f"  [{enabled_mark}] {module:15s} {color}{status_str}{reset}")
+            print()
+            print("Use 'module enable <name>' or 'module disable <name>' to change.")
+            return 0
+
+        elif args.module_action == "enable":
+            name = args.name
+            if name not in AVAILABLE_MODULES:
+                print(f"Error: unknown module '{name}'. Available: {', '.join(AVAILABLE_MODULES)}")
+                return 1
+            enabled = manager.list_modules()
+            if name in enabled:
+                print(f"Module '{name}' is already enabled.")
+                return 0
+            enabled.append(name)
+            manager._save_enabled_modules(enabled)
+            print(f"✓ Enabled module '{name}'")
+            print(f"  Starting {name} daemon...")
+            manager.start(name)
+            return 0
+
+        elif args.module_action == "disable":
+            name = args.name
+            if name not in AVAILABLE_MODULES:
+                print(f"Error: unknown module '{name}'. Available: {', '.join(AVAILABLE_MODULES)}")
+                return 1
+            enabled = manager.list_modules()
+            if name not in enabled:
+                print(f"Module '{name}' is not enabled.")
+                return 0
+            enabled.remove(name)
+            manager._save_enabled_modules(enabled)
+            print(f"✓ Disabled module '{name}'")
+            print(f"  Stopping {name} daemon...")
+            manager.stop(name)
+            return 0
+
+        return 1
+
+    # ── module validation helper ────────────────────────────────────────────
+    def _validate_module(mod: str) -> bool:
+        """Check if module name is valid (enabled or an available module)."""
+        enabled = manager.list_modules()
+        if mod not in AVAILABLE_MODULES:
+            print(
+                f"Error: unknown module '{mod}'. Available: {', '.join(AVAILABLE_MODULES)}",
+                file=sys.stderr,
+            )
+            return False
+        if mod not in enabled:
+            print(
+                f"Warning: module '{mod}' is not enabled (NINJA_ENABLED_MODULES). "
+                f"Use 'module enable {mod}' first.",
+                file=sys.stderr,
+            )
+        return True
+
     if args.command == "start":
         if args.module:
-            # Start single module
+            if not _validate_module(args.module):
+                return 1
             success = manager.start(args.module)
             return 0 if success else 1
         else:
-            # Start all modules
             print("Starting all daemons...")
             all_success = True
             for module in manager.list_modules():
@@ -714,11 +855,11 @@ def main() -> int:
 
     elif args.command == "stop":
         if args.module:
-            # Stop single module
+            if not _validate_module(args.module):
+                return 1
             success = manager.stop(args.module)
             return 0 if success else 1
         else:
-            # Stop all modules
             print("Stopping all daemons...")
             all_success = True
             for module in manager.list_modules():
@@ -732,11 +873,11 @@ def main() -> int:
 
     elif args.command == "restart":
         if args.module:
-            # Restart single module
+            if not _validate_module(args.module):
+                return 1
             success = manager.restart(args.module)
             return 0 if success else 1
         else:
-            # Restart all modules
             print("Restarting all daemons...")
             all_success = True
             for module in manager.list_modules():
@@ -750,6 +891,8 @@ def main() -> int:
 
     elif args.command == "status":
         if args.module:
+            if not _validate_module(args.module):
+                return 1
             status = manager.status(args.module)
             print(json.dumps(status, indent=2))
         else:
@@ -775,13 +918,13 @@ def main() -> int:
             print("ninja-mcp (version unknown)")
 
     elif args.command == "connect":
-        # For MCP clients - forward stdio to HTTP/SSE daemon
+        if not _validate_module(args.module):
+            return 1
         status = manager.status(args.module)
         if not status["running"]:
             print(f"Error: {args.module} daemon not running", file=sys.stderr)
             return 1
 
-        # Forward stdio to HTTP/SSE endpoint
         port = manager._get_port(args.module)
         url = f"http://127.0.0.1:{port}/sse"
 

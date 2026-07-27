@@ -286,9 +286,11 @@ DEFAULT_PORTS = {
     "coder": 8100,
     "researcher": 8101,
     "secretary": 8102,
-    "resources": 8106,
-    "prompts": 8107,
 }
+
+DEFAULT_ENABLED_MODULES = ["coder", "researcher"]
+
+AVAILABLE_MODULES = ["coder", "researcher", "secretary"]
 
 # =============================================================================
 # BINARY DEFAULTS
