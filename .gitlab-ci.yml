@@ -1,57 +1,268 @@
 stages:
-  - lint
+  - validate
   - test
   - build
   - publish
+  - release
+
+workflow:
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+([.-].*)?$/'
+    - if: '$CI_MERGE_REQUEST_ID'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
 
 variables:
   UV_CACHE_DIR: .uv-cache
+  PIP_CACHE_DIR: .pip-cache
+  PACKAGE_REGISTRY_NAME: ninja-mcp
 
-cache:
-  key: uv-${CI_COMMIT_REF_SLUG}
-  paths:
-    - .uv-cache/
+default:
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm
+  cache:
+    key: uv-${CI_COMMIT_REF_SLUG}
+    paths:
+      - .uv-cache/
+      - .pip-cache/
+  before_script:
+    - uv --version
+
+# ── Validate stage ────────────────────────────────────────────────────────────
 
 lint:
-  stage: lint
-  image: ghcr.io/astral-sh/uv:python3.12-bookworm
+  stage: validate
   script:
     - uv sync --frozen --all-extras
     - uv run ruff check src/
     - uv run ruff format --check src/
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-    - if: $CI_MERGE_REQUEST_ID
+    - uv run mypy src/ --ignore-missing-imports
 
-test:
-  stage: test
-  image: ghcr.io/astral-sh/uv:python3.12-bookworm
+secrets-scan:
+  stage: validate
+  image: registry.gitlab.com/gitlab-org/security-products/analyzers/secrets:latest
   script:
-    - uv sync --frozen --all-extras
-    - uv run pytest tests/ -x -q --timeout=60
+    - /analyzer run
+  variables:
+    SECRET_DETECTION_HISTORIC_SCAN: "true"
   allow_failure: true
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-    - if: $CI_MERGE_REQUEST_ID
+    - if: '$CI_MERGE_REQUEST_ID'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
 
-build:
+# ── Test stage ────────────────────────────────────────────────────────────────
+
+.python_matrix:
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.11", "3.12", "3.13"]
+
+unit_tests:
+  extends: .python_matrix
+  stage: test
+  image: ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm
+  script:
+    - uv sync --frozen --all-extras
+    - >
+      uv run pytest tests/ -q --timeout=120
+      --ignore=tests/integration
+      --ignore=tests/legacy
+      --ignore=tests/test_integration.py
+      --ignore=tests/test_logging_integration.py
+      --ignore=tests/test_mcp_timeout_integration.py
+      --ignore=tests/test_real_ninja_integration.py
+      --ignore=tests/test_smoke.py
+      --ignore=tests/test_ui_integration.py
+      --ignore=tests/test_coder/test_daemon_integration.py
+      --ignore=tests/test_coder/test_opencode_e2e.py
+      --ignore=tests/test_researcher/test_researcher_integration.py
+      -m "not integration and not e2e and not slow and not agent"
+  artifacts:
+    when: always
+    paths:
+      - htmlcov/
+      - .coverage
+    expire_in: 1 week
+
+coverage:
+  stage: test
+  needs:
+    - unit_tests
+  script:
+    - uv sync --frozen --all-extras
+    - uv run pytest tests/ --cov=src --cov-report=xml --cov-report=term-missing
+      --ignore=tests/integration --ignore=tests/legacy
+      -m "not integration and not e2e and not slow and not agent"
+  coverage: '/TOTAL\s+\d+\s+\d+\s+(\d+%)/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 1 week
+
+# ── Build stage ───────────────────────────────────────────────────────────────
+
+build_python:
   stage: build
-  image: ghcr.io/astral-sh/uv:python3.12-bookworm
+  needs:
+    - lint
+    - unit_tests
   script:
     - uv build
+    - ls -lh dist/
+    - uv pip install dist/*.whl --system
   artifacts:
     paths:
       - dist/
     expire_in: 1 week
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
 
-publish:
-  stage: publish
-  image: ghcr.io/astral-sh/uv:python3.12-bookworm
-  needs: [build]
+build_debian:
+  stage: build
+  needs:
+    - lint
+    - unit_tests
   script:
-    - uv publish --publish-url "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi" --token "job-token:${CI_JOB_TOKEN}" dist/*
+    - apt-get update
+    - apt-get install -y --no-install-recommends dpkg-dev gzip
+    - ./scripts/packaging/build-deb.sh
+    - ls -lh packaging/debian/*.deb
+  artifacts:
+    paths:
+      - packaging/debian/*.deb
+    expire_in: 1 week
   rules:
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+([.-].*)?$/'
+
+build_homebrew:
+  stage: build
+  needs:
+    - job: build_python
+      artifacts: true
+  script:
+    - ./scripts/packaging/build-homebrew.sh
+    - test -f packaging/homebrew/ninja-mcp.rb
+  artifacts:
+    paths:
+      - packaging/homebrew/ninja-mcp.rb
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+([.-].*)?$/'
+
+# ── Integration tests ─────────────────────────────────────────────────────────
+
+integration:
+  stage: test
+  needs:
+    - build_python
+  script:
+    - uv sync --frozen --all-extras
+    - uv run pytest tests/ -m "integration" -v --tb=short
+  variables:
+    OPENROUTER_API_KEY: $OPENROUTER_API_KEY
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+
+# ── Publish stage ─────────────────────────────────────────────────────────────
+
+publish_gitlab_pypi:
+  stage: publish
+  needs:
+    - job: build_python
+      artifacts: true
+  script:
+    - uv publish --publish-url "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi" --username gitlab-ci-token --password "${CI_JOB_TOKEN}" dist/*
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+([.-].*)?$/'
+
+upload_release_assets:
+  stage: publish
+  image: curlimages/curl:8.11.1
+  needs:
+    - job: build_python
+      artifacts: true
+    - job: build_debian
+      artifacts: true
+    - job: build_homebrew
+      artifacts: true
+  before_script: []
+  script:
+    - VERSION="${CI_COMMIT_TAG#v}"
+    - PACKAGE_BASE="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${PACKAGE_REGISTRY_NAME}/${VERSION}"
+    - WHEEL_FILE="$(basename "$(ls dist/*.whl)")"
+    - SDIST_FILE="$(basename "$(ls dist/*.tar.gz)")"
+    - DEB_FILE="$(basename "$(ls packaging/debian/*.deb)")"
+    - BREW_FILE="$(basename "$(ls packaging/homebrew/*.rb)")"
+    - sha256sum "dist/${WHEEL_FILE}" "dist/${SDIST_FILE}" "packaging/debian/${DEB_FILE}" "packaging/homebrew/${BREW_FILE}" > SHA256SUMS
+    - |
+      upload_asset() {
+        file_path="$1"
+        file_name="$(basename "$file_path")"
+        curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$file_path" "${PACKAGE_BASE}/${file_name}"
+      }
+    - upload_asset "dist/${WHEEL_FILE}"
+    - upload_asset "dist/${SDIST_FILE}"
+    - upload_asset "packaging/debian/${DEB_FILE}"
+    - upload_asset "packaging/homebrew/${BREW_FILE}"
+    - upload_asset SHA256SUMS
+    - |
+      {
+        echo "RELEASE_VERSION=${VERSION}"
+        echo "WHEEL_FILE=${WHEEL_FILE}"
+        echo "WHEEL_URL=${PACKAGE_BASE}/${WHEEL_FILE}"
+        echo "SDIST_FILE=${SDIST_FILE}"
+        echo "SDIST_URL=${PACKAGE_BASE}/${SDIST_FILE}"
+        echo "DEB_FILE=${DEB_FILE}"
+        echo "DEB_URL=${PACKAGE_BASE}/${DEB_FILE}"
+        echo "BREW_FILE=${BREW_FILE}"
+        echo "BREW_URL=${PACKAGE_BASE}/${BREW_FILE}"
+        echo "CHECKSUMS_URL=${PACKAGE_BASE}/SHA256SUMS"
+      } > release.env
+  artifacts:
+    reports:
+      dotenv: release.env
+    paths:
+      - SHA256SUMS
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+([.-].*)?$/'
+
+# ── Release stage ─────────────────────────────────────────────────────────────
+
+create_gitlab_release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - job: upload_release_assets
+      artifacts: true
+    - job: publish_gitlab_pypi
+  before_script: []
+  script:
+    - |
+      cat > release-notes.md <<EOF
+      Ninja MCP ${CI_COMMIT_TAG}
+
+      Artifacts are published to the GitLab generic package registry and linked below.
+
+      Install Debian package:
+
+          wget ${DEB_URL}
+          sudo dpkg -i ${DEB_FILE}
+
+      Install Python runtime package:
+
+          pipx install ninja-mcp[runtime]
+      EOF
+    - |
+      release-cli create \
+        --name "Ninja MCP ${CI_COMMIT_TAG}" \
+        --tag-name "${CI_COMMIT_TAG}" \
+        --description "$(cat release-notes.md)" \
+        --assets-link "{\"name\":\"${WHEEL_FILE}\",\"url\":\"${WHEEL_URL}\"}" \
+        --assets-link "{\"name\":\"${SDIST_FILE}\",\"url\":\"${SDIST_URL}\"}" \
+        --assets-link "{\"name\":\"${DEB_FILE}\",\"url\":\"${DEB_URL}\"}" \
+        --assets-link "{\"name\":\"${BREW_FILE}\",\"url\":\"${BREW_URL}\"}" \
+        --assets-link "{\"name\":\"SHA256SUMS\",\"url\":\"${CHECKSUMS_URL}\"}"
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+([.-].*)?$/'

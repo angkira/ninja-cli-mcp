@@ -162,3 +162,8 @@ secrets/
 .opencode.json
 coverage.json
 .claude/commands/
+$GEMINI_MCP_CONFIG
+.gemini/
+
+# Session reports (do not commit)
+.session/
