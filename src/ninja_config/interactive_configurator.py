@@ -83,6 +83,14 @@ class PowerConfigurator:
                 # Parse output to find authenticated providers
                 providers = []
                 output = result.stdout.lower()
+                if "opencode go" in output:
+                    providers.append("opencode-go")
+                if "coding plan" in output or "zai-coding-plan" in output:
+                    providers.append("zai-coding-plan")
+                if "openrouter" in output:
+                    providers.append("openrouter")
+                if "opencode" in output:
+                    providers.append("opencode")
                 if "anthropic" in output:
                     providers.append("anthropic")
                 if "google" in output or "gemini" in output:
@@ -1473,11 +1481,15 @@ class PowerConfigurator:
         authenticated_providers = self._check_opencode_auth()
 
         providers = [
+            ("opencode-go", "OpenCode Go", "opencode auth opencode-go"),
+            ("zai-coding-plan", "Z.AI Coding Plan", "opencode auth zai-coding-plan"),
+            ("zai", "Z.ai / Zhipu AI", "opencode auth zai"),
+            ("openrouter", "OpenRouter", "opencode auth openrouter"),
+            ("opencode", "OpenCode (Free)", "opencode auth opencode"),
             ("anthropic", "Anthropic/Claude", "opencode auth anthropic"),
             ("google", "Google/Gemini", "opencode auth google"),
             ("openai", "OpenAI/GPT", "opencode auth openai"),
             ("github", "GitHub Copilot", "opencode auth github"),
-            ("zai", "Z.ai / Zhipu AI", "opencode auth zai"),
         ]
 
         for provider, name, _ in providers:
@@ -1696,7 +1708,7 @@ def run_power_configurator(config_path: str | None = None) -> int:
                 configure_secretary(config_mgr, config)
             elif choice == "api_keys":
                 manage_api_keys(config_mgr, config)
-            elif choice == "operator":
+            elif choice == "operators":
                 configure_operators(config_mgr, config)
             elif choice == "models":
                 configure_model_slots(config_mgr, config)

@@ -29,6 +29,10 @@ You (specification) -> Ninja Coder -> Aider -> Files Written -> Summary Returned
 ### `coder_quick_task`
 Single code writing task. Best for focused implementations.
 
+**⚠️ For small tasks ONLY.** Runs on the fast `quick` model with a short timeout.
+Do NOT send large multi-part features, MR stabilization, or refactors here — they will time out.
+Use `coder_execute_plan_sequential` instead.
+
 Parameters:
 - `task` (required): Detailed specification of what to code
 - `repo_root` (required): Repository root path

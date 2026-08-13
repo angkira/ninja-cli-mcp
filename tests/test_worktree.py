@@ -18,7 +18,12 @@ if TYPE_CHECKING:
 
 from ninja_coder.driver import NinjaConfig, NinjaDriver
 from ninja_coder.safety import SafetyMode, validate_task_safety
-from ninja_coder.worktree import WORKTREE_MODE_ENV, WorktreeManager
+from ninja_coder.worktree import (
+    SNAPSHOT_EXCLUDED_DIRS,
+    WORKTREE_MAX_AGE_ENV,
+    WORKTREE_MODE_ENV,
+    WorktreeManager,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +161,82 @@ def test_worktree_mode_off_disables_isolation(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setenv(WORKTREE_MODE_ENV, "on")
     assert WorktreeManager.is_enabled() is True
+
+
+# ---------------------------------------------------------------------------
+# Auto-pruning + snapshot exclusions (cache bloat guards)
+# ---------------------------------------------------------------------------
+
+
+def test_max_age_days_default_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_max_age_days() honours NINJA_WORKTREE_MAX_AGE_DAYS."""
+    monkeypatch.delenv(WORKTREE_MAX_AGE_ENV, raising=False)
+    assert WorktreeManager._max_age_days() == 2
+
+    monkeypatch.setenv(WORKTREE_MAX_AGE_ENV, "0")
+    assert WorktreeManager._max_age_days() == 0
+
+    monkeypatch.setenv(WORKTREE_MAX_AGE_ENV, "not-a-number")
+    assert WorktreeManager._max_age_days() == 2
+
+
+def test_prune_removes_old_worktrees_and_keeps_recent(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """prune() drops worktrees older than the threshold, keeps recent ones."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv(WORKTREE_MAX_AGE_ENV, "0")  # everything older than now
+
+    info = WorktreeManager().create(repo_root=str(git_repo), step_id="prune1")
+    assert info is not None and info.path.exists()
+
+    removed = WorktreeManager().prune()
+    # With threshold 0 (cutoff = now), the just-created worktree is already old
+    assert removed == 1
+    assert not info.path.exists()
+
+    # repo_dir is removed once empty
+    assert not info.path.parent.exists()
+
+
+def test_prune_respects_recent_mtime(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Recent worktrees survive pruning (fresh mtime beats threshold)."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv(WORKTREE_MAX_AGE_ENV, "2")
+
+    info = WorktreeManager().create(repo_root=str(git_repo), step_id="fresh1")
+    assert info is not None and info.path.exists()
+
+    removed = WorktreeManager().prune(max_age_days=2)
+    assert removed == 0
+    assert info.path.exists()
+
+
+def test_snapshot_excludes_heavy_dirs(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Heavy/transient dirs (node_modules, .venv, dist) are NOT snapshotted."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+
+    # Untracked heavy dirs (not covered by .gitignore)
+    (git_repo / "node_modules").mkdir()
+    (git_repo / "node_modules" / "dep.js").write_text("// big\n")
+    (git_repo / ".venv").mkdir()
+    (git_repo / ".venv" / "bin").mkdir()
+    (git_repo / ".venv" / "bin" / "python").write_text("# venv\n")
+    (git_repo / "normal.py").write_text("# keep me\n")
+
+    info = WorktreeManager().create(repo_root=str(git_repo), step_id="heavy1")
+    assert info is not None
+
+    assert (info.path / "normal.py").exists()
+    assert not (info.path / "node_modules").exists()
+    assert not (info.path / ".venv").exists()
+    # Heavy dirs are covered by the exclusion list
+    assert "node_modules" in SNAPSHOT_EXCLUDED_DIRS
+    assert ".venv" in SNAPSHOT_EXCLUDED_DIRS
 
 
 # ---------------------------------------------------------------------------

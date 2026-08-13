@@ -201,13 +201,13 @@ class OpenCodeServerPool:
         listener = self._listeners[repo_root]
 
         async with aiohttp.ClientSession() as http:
-            session_id = await self._create_session(http, instance)
+            session_id = await self._create_session(http, instance, model=model)
             logger.info(f"[pool] session {session_id} created for {repo_root}")
 
             # Subscribe BEFORE sending prompt to avoid race
             queue = await listener.subscribe(session_id)
             try:
-                await self._send_prompt(http, instance, session_id, prompt)
+                await self._send_prompt(http, instance, session_id, prompt, model=model)
                 logger.info(f"[pool] prompt sent to session {session_id}")
 
                 result = await self._wait_for_idle(
@@ -216,8 +216,24 @@ class OpenCodeServerPool:
                     session_id,
                     timeout=timeout,
                 )
+            except asyncio.CancelledError:
+                await self._abort_session(http, instance, session_id)
+                raise
+            except Exception:
+                await self._abort_session(http, instance, session_id)
+                raise
             finally:
                 await listener.unsubscribe(session_id)
+
+            # Augment with authoritative VCS diff to catch anything SSE missed.
+            vcs_files, raw_diff = await self._fetch_vcs_diff(http, instance)
+            for f in vcs_files:
+                if f not in result.files_changed:
+                    result.files_changed.append(f)
+            if raw_diff:
+                result.raw_diff = raw_diff
+            if result.files_changed:
+                result.summary = self._build_summary(result.files_changed)
 
             logger.info(f"[pool] session {session_id} completed: {result.summary}")
             return result
@@ -326,11 +342,45 @@ class OpenCodeServerPool:
     # REST API helpers
     # ------------------------------------------------------------------
 
-    async def _create_session(self, http: aiohttp.ClientSession, inst: ServerInstance) -> str:
-        async with http.post(f"{inst.base_url}/session", json={}) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-            return data["id"]
+    @staticmethod
+    def _split_model(model: str | None) -> tuple[str, str] | None:
+        """Split 'provider/model-id' into (providerID, modelID).
+
+        Example: ``openrouter/deepseek/deepseek-v4-flash-0731`` ->
+        ``("openrouter", "deepseek/deepseek-v4-flash-0731")``.
+        Returns None when the model string has no slash separation.
+        """
+        if not model:
+            return None
+        parts = model.split("/", 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            return None
+        return parts[0], parts[1]
+
+    async def _create_session(
+        self, http: aiohttp.ClientSession, inst: ServerInstance, model: str | None = None
+    ) -> str:
+        """Create a session, preferring the v2 ``/api/session`` endpoint.
+
+        Falls back to the legacy ``/session`` endpoint when ``/api/session``
+        is not available on the running opencode version.
+        """
+        body: dict = {}
+        split = self._split_model(model)
+        if split:
+            body["model"] = {"providerID": split[0], "id": split[1]}
+        async with http.post(f"{inst.base_url}/api/session", json=body) as resp:
+            if resp.status in (200, 201):
+                data = await resp.json()
+                session_id = data.get("data", {}).get("id")
+                if session_id:
+                    return session_id
+            # Fallback: legacy /session endpoint
+            async with http.post(f"{inst.base_url}/session", json={}) as resp2:
+                resp2.raise_for_status()
+                data = await resp2.json()
+                session_id = data.get("id") or data.get("data", {}).get("id", "")
+                return session_id
 
     async def _send_prompt(
         self,
@@ -338,14 +388,90 @@ class OpenCodeServerPool:
         inst: ServerInstance,
         session_id: str,
         prompt: str,
+        model: str | None = None,
     ) -> None:
-        body = {"parts": [{"type": "text", "text": prompt}]}
+        body: dict = {"parts": [{"type": "text", "text": prompt}]}
+        split = self._split_model(model)
+        if split:
+            body["model"] = {"providerID": split[0], "modelID": split[1]}
         async with http.post(
             f"{inst.base_url}/session/{session_id}/prompt_async", json=body
         ) as resp:
             if resp.status not in (200, 204):
                 text = await resp.text()
                 raise RuntimeError(f"prompt_async failed ({resp.status}): {text}")
+
+    async def _abort_session(
+        self,
+        http: aiohttp.ClientSession,
+        inst: ServerInstance,
+        session_id: str,
+    ) -> None:
+        """Best-effort abort of a session. Used on timeout/cancellation/error."""
+        try:
+            async with http.post(
+                f"{inst.base_url}/session/{session_id}/abort",
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status < 400:
+                    logger.info(f"[pool] aborted session {session_id}")
+                else:
+                    logger.warning(
+                        f"[pool] abort session {session_id} returned {resp.status}"
+                    )
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            logger.warning(f"[pool] failed to abort session {session_id}: {exc}")
+
+    async def _fetch_vcs_diff(
+        self, http: aiohttp.ClientSession, inst: ServerInstance
+    ) -> tuple[list[str], list[dict] | None]:
+        """Fetch the authoritative VCS diff for the working tree.
+
+        Returns ``(files_changed, raw_diff)``. ``raw_diff`` is ``None`` when
+        the diff is unavailable (not a git repo, old server, or API error) —
+        callers then rely on SSE-collected file events.
+        """
+        try:
+            async with http.get(
+                f"{inst.base_url}/vcs/diff",
+                params={"mode": "git"},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status >= 400:
+                    return [], []
+                data = await resp.json()
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            logger.warning(f"[pool] vcs/diff unavailable: {exc}")
+            return [], []
+        except Exception as exc:
+            logger.warning(f"[pool] vcs/diff parse failed: {exc}")
+            return [], []
+
+        files: list[str] = []
+        if not isinstance(data, list):
+            return [], []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            fpath = entry.get("file") or ""
+            if not fpath:
+                continue
+            try:
+                rel = str(Path(fpath).relative_to(inst.repo_root))
+            except ValueError:
+                rel = fpath
+            if rel not in files:
+                files.append(rel)
+        return files, data
+
+    @staticmethod
+    def _build_summary(files_changed: list[str]) -> str:
+        if not files_changed:
+            return "Task completed (no file changes detected)"
+        flist = ", ".join(files_changed[:5])
+        if len(files_changed) > 5:
+            flist += f" and {len(files_changed) - 5} more"
+        return f"Modified {len(files_changed)} file(s): {flist}"
 
     async def _wait_for_idle(
         self,
@@ -419,18 +545,10 @@ class OpenCodeServerPool:
         if not files_changed and diff:
             files_changed = [d["file"] for d in diff if d.get("file")]
 
-        if files_changed:
-            flist = ", ".join(files_changed[:5])
-            if len(files_changed) > 5:
-                flist += f" and {len(files_changed) - 5} more"
-            summary = f"Modified {len(files_changed)} file(s): {flist}"
-        else:
-            summary = "Task completed (no file changes detected)"
-
         return ExecutionResult(
             success=True,
             files_changed=files_changed,
-            summary=summary,
+            summary=self._build_summary(files_changed),
             session_id=session_id,
             raw_diff=diff if diff else None,
         )

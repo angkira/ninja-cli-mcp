@@ -29,23 +29,96 @@ except ImportError:
 
 
 # OpenCode provider definitions
+# NOTE: This is a STATIC FALLBACK only. The canonical source of providers is
+# dynamic discovery via `opencode models` (see discover_opencode_providers()).
 OPENCODE_PROVIDERS = [
+    ("opencode-go", "OpenCode Go", "OpenCode subscription models (GLM, DeepSeek, Qwen, etc.)"),
+    ("zai-coding-plan", "Z.AI Coding Plan", "GLM models via Coding Plan API"),
+    ("zai", "Z.ai / Zhipu AI", "GLM models - native API"),
+    ("openrouter", "OpenRouter", "Multi-provider API - Qwen, DeepSeek, Llama, etc."),
+    ("opencode", "OpenCode (Free)", "Free OpenCode models - no key required"),
     ("anthropic", "Anthropic", "Claude models - native API"),
     ("google", "Google", "Gemini models - native API"),
     ("openai", "OpenAI", "GPT models - native API"),
     ("github-copilot", "GitHub Copilot", "Via GitHub OAuth"),
-    ("openrouter", "OpenRouter", "Multi-provider API - Qwen, DeepSeek, Llama, etc."),
-    ("zai", "Z.ai / Zhipu AI", "GLM models - native Coding Plan API support"),
 ]
+
+# Friendly display names for providers discovered dynamically.
+PROVIDER_DISPLAY_NAMES: dict[str, str] = {
+    "opencode-go": "OpenCode Go",
+    "zai-coding-plan": "Z.AI Coding Plan",
+    "zai": "Z.ai",
+    "openrouter": "OpenRouter",
+    "opencode": "OpenCode (Free)",
+    "anthropic": "Anthropic",
+    "google": "Google",
+    "openai": "OpenAI",
+    "github-copilot": "GitHub Copilot",
+}
+
+
+def _run_opencode_models() -> list[str]:
+    """Run ``opencode models`` and return the raw model ID lines.
+
+    Returns:
+        List of ``provider/model`` strings, or empty list on failure.
+    """
+    opencode_path = shutil.which("opencode")
+    if not opencode_path:
+        return []
+    try:
+        result = subprocess.run(
+            [opencode_path, "models"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode != 0:
+            return []
+        return [line.strip() for line in result.stdout.split("\n") if line.strip()]
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+
+
+def discover_opencode_providers() -> list[tuple[str, str, str]]:
+    """Dynamically discover OpenCode providers from ``opencode models``.
+
+    Parses the provider prefix of every ``provider/model`` line and returns a
+    list of ``(provider_id, display_name, description)`` tuples. Falls back to
+    the static :data:`OPENCODE_PROVIDERS` list if discovery fails.
+
+    Returns:
+        List of provider tuples.
+    """
+    providers: dict[str, int] = {}
+    for line in _run_opencode_models():
+        provider = line.split("/", 1)[0] if "/" in line else ""
+        if provider:
+            providers[provider] = providers.get(provider, 0) + 1
+
+    if not providers:
+        return OPENCODE_PROVIDERS.copy()
+
+    # Sort by model count (desc) then name — most populated providers first.
+    ordered = sorted(providers.items(), key=lambda kv: (-kv[1], kv[0]))
+    result = []
+    for provider_id, count in ordered:
+        display = PROVIDER_DISPLAY_NAMES.get(provider_id, provider_id.replace("-", " ").title())
+        result.append((provider_id, display, f"{count} models discovered"))
+    return result
 
 
 def get_opencode_providers() -> list[tuple[str, str, str]]:
     """Return list of available OpenCode providers.
 
+    Dynamically discovered via ``opencode models``; falls back to the static
+    fallback list if discovery is unavailable.
+
     Returns:
         List of tuples: (provider_id, display_name, description)
     """
-    return OPENCODE_PROVIDERS.copy()
+    return discover_opencode_providers()
 
 
 def _get_opencode_auth_file() -> Path:
@@ -194,8 +267,6 @@ class Operator:
         # Filter out embedding/non-chat models
         if any(x in model_id.lower() for x in ["embedding", "whisper", "tts", "dall-e"]):
             return False
-
-        # Always show "latest" versions (but not if they're old base models)
         if "latest" in model_id.lower():
             # Exclude old model families even with "latest"
             return not any(x in model_id for x in ["claude-3-5", "gpt-4-turbo", "gemini-1"])
@@ -560,6 +631,23 @@ class Operator:
         return "Available model"
 
 
+def _is_chat_model(model_id: str) -> bool:
+    """Light filter — exclude non-chat models only.
+
+    Unlike :meth:`Operator._is_recent_model`, this does NOT apply date/version
+    heuristics, so brand-new models from an explicitly requested provider
+    (e.g. GLM-5.2, DeepSeek V4) are always shown.
+
+    Args:
+        model_id: Full model ID (provider/model).
+
+    Returns:
+        True if the model is a chat model, False otherwise.
+    """
+    lower = model_id.lower()
+    return not any(x in lower for x in ["embedding", "whisper", "tts", "dall-e", "rerank"])
+
+
 def _get_aider_models(provider: str) -> list[Model]:
     """Get models from Aider CLI.
 
@@ -742,8 +830,10 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
                 continue
             # Model ID format: provider/model-name
             if "/" in output_line:
-                # Filter out ancient models using the same logic
-                if temp_operator._is_recent_model(output_line):
+                # Filter out non-chat models only; the date/version heuristics
+                # in _is_recent_model are too aggressive for explicitly
+                # requested providers (they hide brand-new models like GLM-5.2).
+                if _is_chat_model(output_line):
                     model_ids.append(output_line)
 
         # Sort models: latest first, then by date (newest first), then by version

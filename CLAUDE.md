@@ -84,8 +84,12 @@ This file defines the operating principles for autonomous development sessions i
 - Use `secretary_file_tree` for project structure overview
 
 **CODER MODULE:**
-- Use `coder_execute_plan_sequential` for complex implementation
-- Use `coder_execute_plan_parallel` for independent tasks
+- Use `coder_simple_task` ONLY for small, single-pass tasks (one file / one function / one concern).
+  It runs on the fast `quick` model and its default timeout is short. NEVER use it for
+  large multi-part implementation or MR stabilization work - it will time out.
+- Use `coder_execute_plan_sequential` for complex implementation (heavy model, order matters)
+- Use `coder_execute_plan_parallel` for independent tasks (runs on the fast model but steps are separate)
+- Match the tool to the task size: small → `coder_simple_task`, complex/large → `coder_execute_plan_sequential`
 - Always specify files to modify explicitly
 - Include test steps in execution plans
 

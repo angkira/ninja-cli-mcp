@@ -77,12 +77,15 @@ DEFAULT_MODEL_PARALLEL = "opencode/glm-4.7-free"
 # =============================================================================
 
 OPENCODE_PROVIDERS = [
+    ("opencode-go", "OpenCode Go", "OpenCode subscription models (GLM, DeepSeek, Qwen, etc.)"),
+    ("zai-coding-plan", "Z.AI Coding Plan", "GLM models via Coding Plan API"),
+    ("zai", "Z.ai / Zhipu AI", "GLM models - native API"),
+    ("openrouter", "OpenRouter", "Multi-provider API - Qwen3, DeepSeek, Llama, etc."),
+    ("opencode", "OpenCode (Free)", "Free OpenCode models - no key required"),
     ("anthropic", "Anthropic", "Claude models - native API"),
     ("google", "Google", "Gemini models - native API"),
     ("openai", "OpenAI", "GPT models - native API"),
     ("github-copilot", "GitHub Copilot", "Via GitHub OAuth"),
-    ("openrouter", "OpenRouter", "Multi-provider API - Qwen3, DeepSeek, Llama, etc."),
-    ("zai", "Z.ai / Zhipu AI", "GLM models - native Coding Plan API support"),
 ]
 
 # =============================================================================
@@ -528,12 +531,15 @@ DEFAULT_PREFER_QUALITY = False
 # PROVIDER TO MODEL LIST MAPPING
 # =============================================================================
 
-# Maps OpenCode provider names to their available model lists
+# Maps OpenCode provider names to their available model lists.
+# These are STATIC FALLBACKS ONLY. The canonical source of models and
+# providers is dynamic discovery via `opencode models` (see
+# ninja_config.model_selector.get_provider_models / discover_opencode_providers).
 PROVIDER_MODELS = {
+    "zai": ZAI_MODELS,
     "anthropic": ANTHROPIC_MODELS,
     "google": GOOGLE_MODELS,
     "openai": OPENAI_MODELS,
     "github-copilot": GITHUB_COPILOT_MODELS,
     "openrouter": OPENROUTER_MODELS,
-    "zai": ZAI_MODELS,
 }

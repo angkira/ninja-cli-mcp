@@ -61,7 +61,12 @@ class OperatorDef:
 
 
 OPERATORS: list[OperatorDef] = [
-    OperatorDef("opencode", "OpenCode", "Multi-provider CLI (75+ LLMs)", ("anthropic", "google", "openai", "github-copilot", "openrouter", "zai")),
+    OperatorDef(
+        "opencode",
+        "OpenCode",
+        "Multi-provider CLI (75+ LLMs)",
+        ("opencode-go", "zai-coding-plan", "zai", "openrouter", "opencode", "anthropic", "google", "openai", "github-copilot"),
+    ),
     OperatorDef("aider", "Aider", "OpenRouter-based CLI", ("openrouter",)),
     OperatorDef("claude", "Claude Code", "Anthropic's official CLI", ("anthropic",)),
     OperatorDef("gemini", "Gemini CLI", "Google native CLI", ("google",)),
@@ -71,12 +76,15 @@ OPERATORS: list[OperatorDef] = [
 OPERATOR_MAP: dict[str, OperatorDef] = {op.id: op for op in OPERATORS}
 
 PROVIDER_KEY_URLS: dict[str, str] = {
+    "opencode-go": "https://opencode.ai",
+    "zai-coding-plan": "https://open.bigmodel.cn/usercenter/apikeys",
+    "zai": "https://open.bigmodel.cn/usercenter/apikeys",
+    "opencode": "https://opencode.ai",
     "anthropic": "https://console.anthropic.com/settings/keys",
     "google": "https://aistudio.google.com/app/apikey",
     "openai": "https://platform.openai.com/api-keys",
     "openrouter": "https://openrouter.ai/keys",
     "github-copilot": "https://github.com/settings/copilot",
-    "zai": "https://open.bigmodel.cn/usercenter/apikeys",
 }
 
 TASK_MODEL_DEFAULTS: list[tuple[str, str, str, str]] = [

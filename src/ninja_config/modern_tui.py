@@ -49,11 +49,17 @@ from ninja_config.config_shared import (
     mask_key,
     register_claude_mcp,
 )
+from ninja_config.model_selector import (
+    PROVIDER_DISPLAY_NAMES,
+    discover_opencode_providers,
+    get_provider_models,
+)
 from ninja_config.secrets_store import (
     SecretStore,
     SecretStoreUnavailable,
     default_store,
 )
+from ninja_config.settings_registry import SETTINGS, SettingDef
 
 
 def _ninja_version() -> str:
@@ -281,50 +287,27 @@ class NinjaConfigApp(App):
                     yield Static("")
                     yield Static("  [bold]Quick[/bold] [dim](fast, simple tasks)[/dim]")
                     yield Static(self._current_model("NINJA_MODEL_QUICK", "opencode/glm-4.7-free"), id="lbl-quick")
-                    yield Horizontal(
-                        Button("OpenRouter", id="prov-quick-openrouter"),
-                        Button("Z.ai", id="prov-quick-zai"),
-                        Button("Google", id="prov-quick-google"),
-                        Button("Anthropic", id="prov-quick-anthropic"),
-                    )
+                    yield Horizontal(id="prov-quick")
                     yield ListView(id="list-quick")
                     yield Static("")
                     yield Static("  [bold]Sequential[/bold] [dim](complex, multi-step)[/dim]")
                     yield Static(self._current_model("NINJA_MODEL_SEQUENTIAL", "zai-coding-plan/glm-4.7"), id="lbl-sequential")
-                    yield Horizontal(
-                        Button("OpenRouter", id="prov-seq-openrouter"),
-                        Button("Z.ai", id="prov-seq-zai"),
-                        Button("Google", id="prov-seq-google"),
-                        Button("Anthropic", id="prov-seq-anthropic"),
-                    )
+                    yield Horizontal(id="prov-sequential")
                     yield ListView(id="list-sequential")
                     yield Static("")
                     yield Static("  [bold]Parallel[/bold] [dim](high concurrency)[/dim]")
                     yield Static(self._current_model("NINJA_MODEL_PARALLEL", "opencode/glm-4.7-free"), id="lbl-parallel")
-                    yield Horizontal(
-                        Button("OpenRouter", id="prov-par-openrouter"),
-                        Button("Z.ai", id="prov-par-zai"),
-                        Button("Google", id="prov-par-google"),
-                        Button("Anthropic", id="prov-par-anthropic"),
-                    )
+                    yield Horizontal(id="prov-parallel")
                     yield ListView(id="list-parallel")
                     yield Static("")
                     yield Static("  [bold #88c0d0]── Researcher ──────────────────────[/bold #88c0d0]")
                     yield Static(self._current_model("NINJA_RESEARCHER_MODEL", "sonar"), id="lbl-researcher")
-                    yield Horizontal(
-                        Button("Perplexity", id="prov-res-perplexity"),
-                        Button("OpenRouter", id="prov-res-openrouter"),
-                    )
+                    yield Horizontal(id="prov-researcher")
                     yield ListView(id="list-researcher")
                     yield Static("")
                     yield Static("  [bold #88c0d0]── Secretary ──────────────────────[/bold #88c0d0]")
                     yield Static(self._current_model("NINJA_SECRETARY_MODEL", "opencode/glm-4.7-free"), id="lbl-secretary")
-                    yield Horizontal(
-                        Button("OpenRouter", id="prov-sec-openrouter"),
-                        Button("Z.ai", id="prov-sec-zai"),
-                        Button("Google", id="prov-sec-google"),
-                        Button("Anthropic", id="prov-sec-anthropic"),
-                    )
+                    yield Horizontal(id="prov-secretary")
                     yield ListView(id="list-secretary")
                     yield Static("")
                     yield Static("  [bold]Custom Model ID[/bold]")
@@ -380,6 +363,20 @@ class NinjaConfigApp(App):
                         Button("Perplexity", id="search-perplexity"),
                     )
                     yield Static("")
+                    yield Static("  [bold #88c0d0]── Runtime Constants ────────────────[/bold #88c0d0]")
+                    yield Static("  All tunable runtime settings (timeouts, safety, retries, serve pool).")
+                    yield Static("  Select a setting, edit the value, then press Save.")
+                    yield ListView(id="settings-list")
+                    yield Static("")
+                    yield Input(
+                        placeholder="Edit selected setting value...",
+                        id="settings-input",
+                    )
+                    yield Horizontal(
+                        Button("Save", variant="primary", id="btn-save-setting"),
+                        Button("Reset to Default", id="btn-reset-setting"),
+                    )
+                    yield Static("")
                     yield Static("  [bold #88c0d0]About[/bold #88c0d0]")
                     yield Static(f"  Version: {_ninja_version()}")
                     yield Static("  Config: ~/.ninja-mcp.env")
@@ -392,6 +389,7 @@ class NinjaConfigApp(App):
     def on_mount(self) -> None:
         self._refresh_api_keys()
         self._populate_role_lists()
+        self._refresh_settings_list()
 
     ROLE_MAP: ClassVar[dict[str, tuple[str, str]]] = {
         "quick": ("NINJA_MODEL_QUICK", "opencode/glm-4.7-free"),
@@ -401,7 +399,47 @@ class NinjaConfigApp(App):
         "secretary": ("NINJA_SECRETARY_MODEL", "opencode/glm-4.7-free"),
     }
 
+    def _provider_buttons_for_role(self, role: str) -> list[tuple[str, str]]:
+        """Return (provider_id, display_name) buttons for a role.
+
+        Uses dynamic discovery via ``opencode models``; falls back to the
+        static provider list if the CLI is unavailable.
+        """
+        discovered = discover_opencode_providers()
+        if role == "researcher":
+            # Researcher uses Perplexity directly, plus OpenRouter for models.
+            if any(p == "openrouter" for p, _, _ in discovered):
+                return [("openrouter", "OpenRouter")]
+            return [("openrouter", "OpenRouter")]
+        providers = []
+        for pid, _display, _desc in discovered:
+            display = PROVIDER_DISPLAY_NAMES.get(pid, _display)
+            if pid == "anthropic":
+                continue
+            providers.append((pid, display))
+        return providers
+
+    def _populate_provider_buttons(self) -> None:
+        for role in self.ROLE_MAP:
+            prov_row_id = f"prov-{role}"
+            try:
+                row = self.query_one(f"#{prov_row_id}", Horizontal)
+            except Exception:
+                continue
+            row.remove_children(list(row.children))
+            for pid, display in self._provider_buttons_for_role(role):
+                row.mount(Button(display, id=f"prov-{role}-{pid}"))
+
     def _models_for_role(self, role: str, provider: str) -> list[tuple[str, str, str]]:
+        # Dynamic discovery first — query the actual operator.
+        operator = self.config_manager.get("NINJA_CODE_BIN", "opencode") or "opencode"
+        try:
+            models = get_provider_models(operator, provider)
+        except Exception:
+            models = []
+        if models:
+            return [(m.id, m.name, m.description) for m in models]
+        # Static fallback lists.
         if provider == "perplexity":
             return list(PERPLEXITY_MODELS)
         if provider in PROVIDER_MODELS:
@@ -409,6 +447,7 @@ class NinjaConfigApp(App):
         return list(PROVIDER_MODELS.get("openrouter", []))
 
     def _populate_role_lists(self) -> None:
+        self._populate_provider_buttons()
         cfg = self.config_manager.list_all()
         for role, (env_var, default) in self.ROLE_MAP.items():
             lv_id = f"list-{role}"
@@ -453,12 +492,20 @@ class NinjaConfigApp(App):
         m = model_id.lower()
         if m.startswith("sonar") or "perplexity" in m:
             return "perplexity"
+        if m.startswith("opencode-go/"):
+            return "opencode-go"
+        if m.startswith("zai-coding-plan/"):
+            return "zai-coding-plan"
+        if m.startswith("zai/"):
+            return "zai"
+        if m.startswith("opencode/"):
+            return "opencode"
         if m.startswith("gemini") or "google/" in m:
             return "google"
         if m.startswith("claude") or "anthropic/" in m:
             return "anthropic"
-        if "zai" in m or "glm" in m:
-            return "zai"
+        if m.startswith("gpt") or m.startswith("o1") or m.startswith("o3") or "openai/" in m:
+            return "openai"
         return "openrouter"
 
     # ── helpers ──────────────────────────────────────────────────────────
@@ -568,6 +615,72 @@ class NinjaConfigApp(App):
             return sel.env_var, sel.display_name
         return None
 
+    # ── Runtime constants settings ─────────────────────────────────────
+
+    def _refresh_settings_list(self) -> None:
+        lv = self.query_one("#settings-list", ListView)
+        lv.clear()
+        cfg = self.config_manager.list_all()
+        for sd in SETTINGS:
+            cur = cfg.get(sd.env_var, sd.default) or sd.default
+            if sd.value_type == "bool":
+                shown = "true" if cur in ("true", "1", "yes") else "false"
+            elif sd.value_type == "choice":
+                shown = cur
+            else:
+                shown = cur or sd.default
+            item = ListItem(
+                Static(
+                    f"[bold]{sd.label}[/bold]  [#a3be8c]{shown}[/#a3be8c]\n"
+                    f"  [dim]{sd.env_var} — {sd.description}[/dim]"
+                )
+            )
+            item.setting_env_var = sd.env_var
+            item.setting_def = sd
+            lv.append(item)
+
+    def _selected_setting(self) -> SettingDef | None:
+        lv = self.query_one("#settings-list", ListView)
+        sel = getattr(lv, "highlighted_child", None)
+        if sel is None and getattr(lv, "index", None) is not None:
+            try:
+                sel = lv.children[lv.index]
+            except Exception:
+                sel = None
+        if sel and hasattr(sel, "setting_def"):
+            return sel.setting_def
+        return None
+
+    def _save_setting(self) -> None:
+        sd = self._selected_setting()
+        if not sd:
+            self.notify("Select a setting from the list first.", timeout=3)
+            return
+        inp = self.query_one("#settings-input", Input)
+        value = inp.value.strip()
+        if not value:
+            self.notify("Enter a value before saving.", timeout=3)
+            return
+        if sd.value_type == "choice" and value not in sd.options:
+            self.notify(
+                f"Invalid value for {sd.label}. Options: {', '.join(sd.options)}",
+                timeout=5,
+            )
+            return
+        self.config_manager.set(sd.env_var, value)
+        self.notify(f"{sd.label} set to {value}.", timeout=3)
+        inp.value = ""
+        self._refresh_settings_list()
+
+    def _reset_setting(self) -> None:
+        sd = self._selected_setting()
+        if not sd:
+            self.notify("Select a setting from the list first.", timeout=3)
+            return
+        self.config_manager.set(sd.env_var, sd.default)
+        self.notify(f"{sd.label} reset to default ({sd.default}).", timeout=3)
+        self._refresh_settings_list()
+
     # ── Event handlers ───────────────────────────────────────────────────
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -583,6 +696,10 @@ class NinjaConfigApp(App):
             self._save_key()
         elif bid == "btn-delete-key":
             self._delete_key()
+        elif bid == "btn-save-setting":
+            self._save_setting()
+        elif bid == "btn-reset-setting":
+            self._reset_setting()
         elif bid == "btn-toggle-daemon":
             self._toggle_daemon()
         elif bid == "btn-restart-daemon":
@@ -614,6 +731,11 @@ class NinjaConfigApp(App):
             self.notify("Search: Perplexity", timeout=3)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
+        if hasattr(event.item, "setting_env_var") and hasattr(event.item, "setting_def"):
+            inp = self.query_one("#settings-input", Input)
+            inp.value = self.config_manager.get(event.item.setting_env_var) or ""
+            inp.placeholder = f"Edit {event.item.setting_env_var}..."
+            return
         if hasattr(event.item, "env_var") and hasattr(event.item, "model_id"):
             env_var = event.item.env_var
             model_id = event.item.model_id
@@ -632,12 +754,14 @@ class NinjaConfigApp(App):
             inp.placeholder = f"Enter {event.item.display_name} key..."
 
     def _handle_provider_button(self, bid: str) -> None:
+        # Button IDs are prov-{role}-{provider} where provider may contain dashes.
+        # Strip the known role prefixes to find the role, then the provider is the rest.
         ROLE_PREFIXES = {
             "prov-quick-": "quick",
-            "prov-seq-": "sequential",
-            "prov-par-": "parallel",
-            "prov-res-": "researcher",
-            "prov-sec-": "secretary",
+            "prov-sequential-": "sequential",
+            "prov-parallel-": "parallel",
+            "prov-researcher-": "researcher",
+            "prov-secretary-": "secretary",
         }
         for prefix, role in ROLE_PREFIXES.items():
             if bid.startswith(prefix):

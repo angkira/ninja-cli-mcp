@@ -316,6 +316,10 @@ def select_opencode_provider(config_manager: ConfigManager, config: dict[str, st
 
         # API key URLs for each provider
         api_key_urls = {
+            "opencode-go": "https://opencode.ai",
+            "zai-coding-plan": "https://open.bigmodel.cn/usercenter/apikeys",
+            "zai": "https://open.bigmodel.cn/usercenter/apikeys",
+            "opencode": "https://opencode.ai",
             "anthropic": "https://console.anthropic.com/settings/keys",
             "google": "https://aistudio.google.com/app/apikey",
             "openai": "https://platform.openai.com/api-keys",
@@ -383,11 +387,15 @@ def configure_opencode_auth(config_manager: ConfigManager, config: dict[str, str
     authenticated_providers = check_opencode_auth()
 
     providers = [
+        ("opencode-go", "OpenCode Go", "opencode auth opencode-go"),
+        ("zai-coding-plan", "Z.AI Coding Plan", "opencode auth zai-coding-plan"),
+        ("zai", "Z.ai / Zhipu AI", "opencode auth zai"),
+        ("openrouter", "OpenRouter", "opencode auth openrouter"),
+        ("opencode", "OpenCode (Free)", "opencode auth opencode"),
         ("anthropic", "Anthropic/Claude", "opencode auth anthropic"),
         ("google", "Google/Gemini", "opencode auth google"),
         ("openai", "OpenAI/GPT", "opencode auth openai"),
         ("github", "GitHub Copilot", "opencode auth github"),
-        ("zai", "Z.ai / Zhipu AI", "opencode auth zai"),
     ]
 
     for provider, name, _ in providers:

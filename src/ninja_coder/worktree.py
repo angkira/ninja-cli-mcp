@@ -73,8 +73,39 @@ _GIT_TIMEOUT_SEC = 15
 #: Seconds per day, used by prune() to convert max_age_days to a cutoff.
 _SECONDS_PER_DAY = 86_400
 
-#: Default age threshold for prune().
-_DEFAULT_MAX_AGE_DAYS = 7
+#: Default age threshold for prune() (overridable via NINJA_WORKTREE_MAX_AGE_DAYS).
+_DEFAULT_MAX_AGE_DAYS = 2
+
+#: Env var to tune the automatic worktree pruning age (in days).
+WORKTREE_MAX_AGE_ENV = "NINJA_WORKTREE_MAX_AGE_DAYS"
+
+#: Heavy/build/transient paths NEVER copied into a snapshot worktree. Guards
+#: against node_modules and friends blowing up the cache when they are not
+#: covered by the repo's .gitignore.
+SNAPSHOT_EXCLUDED_DIRS = {
+    "node_modules",
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "htmlcov",
+    ".coverage",
+    "dist",
+    "build",
+    ".cache",
+    ".next",
+    ".turbo",
+    "target",
+    ".idea",
+    ".vscode",
+    ".terraform",
+    "vendor",
+    "bower_components",
+    "coverage",
+}
 
 
 @dataclass
@@ -125,6 +156,10 @@ class WorktreeManager:
                 logger.debug("Worktree isolation skipped: not a git repository")
                 return None
 
+            # Auto-housekeeping: drop worktrees older than the threshold so the
+            # cache cannot grow unbounded (tunable via NINJA_WORKTREE_MAX_AGE_DAYS).
+            self.prune()
+
             if GitSafetyChecker.get_current_commit(repo_root) is None:
                 logger.warning(
                     "Worktree isolation skipped: repository has no commits (missing HEAD); "
@@ -168,11 +203,14 @@ class WorktreeManager:
             logger.warning(f"Worktree isolation unavailable ({e}); falling back to repo_root")
             return None
 
-    def prune(self, max_age_days: int = _DEFAULT_MAX_AGE_DAYS) -> int:
+    def prune(self, max_age_days: int | None = None) -> int:
         """Remove isolation worktrees older than max_age_days.
 
-        Manual housekeeping helper; nothing calls it automatically. Uses
-        ``git worktree remove --force`` when the owning repository can be
+        Called automatically by :meth:`create` before making a new worktree so
+        the cache does not grow unbounded. The threshold comes from
+        ``NINJA_WORKTREE_MAX_AGE_DAYS`` when set, otherwise the default.
+
+        Uses ``git worktree remove --force`` when the owning repository can be
         located (via the worktree's .git file), otherwise falls back to
         deleting the directory.
 
@@ -182,6 +220,9 @@ class WorktreeManager:
         Returns:
             Number of worktree directories removed.
         """
+        if max_age_days is None:
+            max_age_days = self._max_age_days()
+
         removed = 0
         base = get_cache_dir() / "worktrees"
         if not base.exists():
@@ -207,6 +248,18 @@ class WorktreeManager:
                 pass
 
         return removed
+
+    @staticmethod
+    def _max_age_days() -> int:
+        """Return the pruning age threshold (env-tunable).
+
+        Returns:
+            Days from NINJA_WORKTREE_MAX_AGE_DAYS, or the default.
+        """
+        try:
+            return max(0, int(os.environ.get(WORKTREE_MAX_AGE_ENV, _DEFAULT_MAX_AGE_DAYS)))
+        except (TypeError, ValueError):
+            return _DEFAULT_MAX_AGE_DAYS
 
     # ------------------------------------------------------------------
     # Internals
@@ -281,6 +334,10 @@ class WorktreeManager:
                         continue
                     rel_path = line[3:].strip().strip('"')
                     if not rel_path:
+                        continue
+                    # Never copy heavy/transient directories into the snapshot
+                    # (node_modules alone can be >1GB and bloat the cache).
+                    if any(part in SNAPSHOT_EXCLUDED_DIRS for part in rel_path.split("/")):
                         continue
                     source = Path(repo_root) / rel_path
                     if not source.is_file():

@@ -97,6 +97,14 @@ def check_opencode_auth() -> list[str]:
             # Parse output to find authenticated providers
             providers = []
             output = result.stdout.lower()
+            if "opencode go" in output:
+                providers.append("opencode-go")
+            if "coding plan" in output or "zai-coding-plan" in output:
+                providers.append("zai-coding-plan")
+            if "openrouter" in output:
+                providers.append("openrouter")
+            if "opencode" in output:
+                providers.append("opencode")
             if "anthropic" in output:
                 providers.append("anthropic")
             if "google" in output or "gemini" in output:
