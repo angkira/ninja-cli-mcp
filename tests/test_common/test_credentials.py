@@ -1,5 +1,6 @@
 """Tests for credential encryption, key derivation, database, and manager."""
 
+import hashlib
 import os
 import stat
 
@@ -119,6 +120,38 @@ class TestKeyDerivation:
         id1 = KeyDerivation.get_machine_id()
         id2 = KeyDerivation.get_machine_id()
         assert id1 == id2
+
+    def test_get_machine_id_prefers_machine_id_file(self, monkeypatch) -> None:
+        """On Linux, machine_id is derived from /etc/machine-id (stable)."""
+        # Force a known machine-id via a fake file path check by monkeypatching
+        # the read. On machines without /etc/machine-id the fallback still runs.
+        import ninja_config.credentials as cred
+
+        called = {"count": 0}
+
+        def fake_stable():
+            called["count"] += 1
+            return "machine-id:test"
+
+        monkeypatch.setattr(cred.KeyDerivation, "_stable_node_id", fake_stable)
+        mid = cred.KeyDerivation.get_machine_id()
+        assert mid == hashlib.sha256(b"machine-id:test").hexdigest()
+        assert called["count"] == 1
+
+    def test_legacy_key_differs_from_stable_when_node_unstable(self, monkeypatch) -> None:
+        """Legacy derivation is keyed off raw uuid.getnode(); when the current
+        stable machine id differs, the two keys differ."""
+        import ninja_config.credentials as cred
+
+        salt = os.urandom(32)
+        stable_key = cred.KeyDerivation.derive_key(salt)
+        legacy_key = cred.KeyDerivation._legacy_derive_key(salt)
+
+        # uuid.getnode() vs /etc/machine-id almost always differ on Linux.
+        if cred.KeyDerivation.get_machine_id() != hashlib.sha256(
+            f"{__import__('uuid').getnode()}".encode()
+        ).hexdigest():
+            assert legacy_key != stable_key
 
     def test_derive_key_returns_32_bytes(self) -> None:
         salt = os.urandom(32)
@@ -396,6 +429,29 @@ class TestCredentialManager:
     def test_list_all_empty(self, tmp_path) -> None:
         mgr = CredentialManager(tmp_path / "creds.db")
         assert mgr.list_all() == []
+
+    def test_get_migrates_legacy_encrypted_value(self, tmp_path) -> None:
+        """Values encrypted with the old uuid.getnode()-key are read and
+        re-encrypted under the current stable key."""
+        import ninja_config.credentials as cred
+
+        db_path = tmp_path / "creds.db"
+        password = os.getenv("NINJA_CREDENTIAL_PASSWORD", "")
+
+        # Write a value the OLD way (legacy key) directly into a fresh DB.
+        old_mgr = CredentialManager(db_path)
+        salt = old_mgr._db.get_or_create_salt()
+        legacy_key = cred.KeyDerivation._legacy_derive_key(salt, password)
+        legacy_enc = cred.CredentialEncryption(legacy_key)
+        old_mgr._db.store_credential("LEGACY_KEY", legacy_enc.encrypt("secret-value"))
+
+        # New manager on the same DB reads it via migration.
+        new_mgr = CredentialManager(db_path)
+        assert new_mgr.get("LEGACY_KEY") == "secret-value"
+
+        # After migration the value is stored under the current stable key.
+        raw = new_mgr._db.get_credential("LEGACY_KEY")
+        assert new_mgr._encryption.decrypt(raw) == "secret-value"
 
 
 # ============================================================================

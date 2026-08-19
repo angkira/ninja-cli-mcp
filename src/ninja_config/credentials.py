@@ -18,6 +18,8 @@ Architecture:
 import hashlib
 import os
 import sqlite3
+import subprocess
+import sys
 import threading
 import uuid
 from contextlib import contextmanager
@@ -166,12 +168,89 @@ class KeyDerivation:
             This is not cryptographically secure for authentication,
             but sufficient for deriving a machine-specific key.
         """
-        # Use UUID node (based on MAC address)
-        node = uuid.getnode()
+        machine_data = KeyDerivation._stable_node_id()
+        return hashlib.sha256(machine_data.encode()).hexdigest()
 
-        # Create a stable identifier
-        machine_data = f"{node}".encode()
-        return hashlib.sha256(machine_data).hexdigest()
+    @staticmethod
+    def _legacy_derive_key(salt: bytes, password: str = "") -> bytes:
+        """Derive the pre-stability key using raw ``uuid.getnode()``.
+
+        Older versions used ``hashlib.sha256(f\"{uuid.getnode()}\".encode())``
+        directly. On platforms where that value was stable this key is kept so
+        already-stored credentials can still be decrypted and migrated.
+
+        Args:
+            salt: Cryptographic salt.
+            password: Optional user password.
+
+        Returns:
+            32-byte legacy encryption key.
+        """
+        if not salt:
+            raise ValueError("Salt cannot be empty")
+
+        machine_id = hashlib.sha256(f"{uuid.getnode()}".encode()).hexdigest()
+        key_material = f"{machine_id}:{password}".encode()
+
+        return hashlib.pbkdf2_hmac(
+            "sha256",
+            key_material,
+            salt,
+            iterations=CredentialEncryption.ITERATIONS,
+            dklen=CredentialEncryption.KEY_LENGTH,
+        )
+
+    @staticmethod
+    def _stable_node_id() -> str:
+        """Return a node identifier that is STABLE across processes.
+
+        ``uuid.getnode()`` is not reliable: on some platforms/interpreters it
+        falls back to a RANDOM value that changes on every process start, which
+        silently breaks decryption of stored credentials. Prefer stable system
+        identifiers when available:
+
+        1. Linux ``/etc/machine-id``
+        2. macOS ``IOPlatformUUID`` (via system_profiler)
+        3. Fallback: a persisted node id cached in the credential DB dir
+        """
+        machine_id_file = Path("/etc/machine-id")
+        try:
+            if machine_id_file.exists():
+                machine_id = machine_id_file.read_text().strip()
+                if machine_id:
+                    return f"machine-id:{machine_id}"
+        except OSError:
+            pass
+
+        if sys.platform == "darwin":
+            try:
+                result = subprocess.run(
+                    ["system_profiler", "SPHardwareDataType"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                for line in result.stdout.splitlines():
+                    if "IOPlatformUUID" in line:
+                        return f"darwin:{line.split(':')[1].strip()}"
+            except Exception:
+                pass
+
+        # Fallback: persist a generated node id next to the credentials DB so it
+        # is stable across interpreter runs even where uuid.getnode() is random.
+        node = uuid.getnode()
+        persisted = Path.home() / ".ninja" / "machine-id"
+        try:
+            if persisted.exists():
+                saved = persisted.read_text().strip()
+                if saved:
+                    return f"persisted:{saved}"
+            persisted.parent.mkdir(parents=True, exist_ok=True)
+            persisted.write_text(str(node))
+            return f"persisted:{node}"
+        except OSError:
+            return f"node:{node}"
 
     @staticmethod
     def derive_key(salt: bytes, password: str = "") -> bytes:
@@ -545,6 +624,16 @@ class CredentialManager:
         master_key = KeyDerivation.derive_key(salt, password)
         self._encryption = CredentialEncryption(master_key)
 
+        # Legacy key: pre-stability uuid.getnode()-based derivation. Kept so
+        # credentials written by older versions can still be read and migrated.
+        self._legacy_encryption: CredentialEncryption | None = None
+        try:
+            legacy_key = KeyDerivation._legacy_derive_key(salt, password)
+            if legacy_key != master_key:
+                self._legacy_encryption = CredentialEncryption(legacy_key)
+        except Exception:
+            self._legacy_encryption = None
+
     def set(self, name: str, value: str, provider: str | None = None) -> None:
         """
         Store or update a credential.
@@ -584,9 +673,25 @@ class CredentialManager:
         """
         try:
             encrypted_value = self._db.get_credential(name)
-            return self._encryption.decrypt(encrypted_value)
         except CredentialNotFoundError:
             return None
+
+        try:
+            return self._encryption.decrypt(encrypted_value)
+        except EncryptionError:
+            # Migration path: try the legacy (pre-stability) key. When it works,
+            # re-encrypt under the current stable key so future reads succeed.
+            if self._legacy_encryption is None:
+                raise
+            try:
+                plaintext = self._legacy_encryption.decrypt(encrypted_value)
+            except EncryptionError:
+                raise
+            try:
+                self._db.store_credential(name, self._encryption.encrypt(plaintext))
+            except Exception:
+                pass
+            return plaintext
 
     def delete(self, name: str) -> bool:
         """

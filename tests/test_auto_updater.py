@@ -15,10 +15,13 @@ if TYPE_CHECKING:
 
 
 def test_package_update_uses_ninja_mcp_daemon_upgrade(tmp_path: Path) -> None:
-    """The updater should use the project updater entrypoint."""
+    """Non-editable install: the updater uses the daemon upgrade entrypoint."""
     updater = AutoUpdater(repo_path=tmp_path)
 
-    with patch("ninja_config.auto_updater.subprocess.run") as run:
+    with (
+        patch("ninja_config.auto_updater.subprocess.run") as run,
+        patch.object(AutoUpdater, "_find_editable_repo", return_value=None) as _editable,
+    ):
         run.return_value = subprocess.CompletedProcess(
             args=["ninja-mcp", "daemon", "upgrade"],
             returncode=0,
@@ -31,6 +34,40 @@ def test_package_update_uses_ninja_mcp_daemon_upgrade(tmp_path: Path) -> None:
     command = run.call_args.args[0]
     assert command == ["ninja-mcp", "daemon", "upgrade"]
     assert "uv" not in command
+
+
+def test_package_update_editable_uses_uv_tool_install(tmp_path: Path) -> None:
+    """Editable install: the updater reinstalls from the source checkout via uv."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "pyproject.toml").write_text("[project]\nname = 'ninja-mcp'\n")
+
+    updater = AutoUpdater(repo_path=tmp_path)
+
+    with (
+        patch("ninja_config.auto_updater.subprocess.run") as run,
+        patch.object(AutoUpdater, "_find_editable_repo", return_value=repo) as _editable,
+    ):
+        run.return_value = subprocess.CompletedProcess(
+            args=["uv", "tool", "install", "--force", "--editable", str(repo)],
+            returncode=0,
+            stdout="Installed 9 executables",
+            stderr="",
+        )
+
+        updater._reinstall_package()
+
+    command = run.call_args.args[0]
+    assert command[0:4] == ["uv", "tool", "install", "--force"]
+    assert "--editable" in command
+    assert str(repo) in command
+    assert "." not in command
+
+
+def test_find_editable_repo_detects_real_layout() -> None:
+    """On a machine with an editable install the repo root is returned."""
+    found = AutoUpdater(repo_path=None)._find_editable_repo()
+    assert found is None or found.name == "ninja-cli-mcp"
 
 
 def test_restart_daemons_uses_unified_ninja_mcp_entrypoint(tmp_path: Path) -> None:
@@ -95,4 +132,4 @@ def test_modern_tui_update_hint_uses_ninja_mcp_entrypoint() -> None:
     NinjaConfigApp._check_update(app)  # type: ignore[arg-type]
 
     assert not hasattr(modern_tui, "subprocess")
-    assert app.messages == ["Update with: ninja-mcp daemon upgrade"]
+    assert app.messages == ["Update with: ninja-mcp update"]

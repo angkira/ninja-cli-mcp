@@ -580,13 +580,13 @@ def cmd_update(args: argparse.Namespace) -> None:
     except ImportError:
         print_colored("❌ Auto-updater not available in this installation", "red")
         print_colored("Please update manually:", "dim")
-        print_colored("  ninja-mcp daemon upgrade", "dim")
+        print_colored("  ninja-mcp update", "dim")
         print_colored("  ninja-mcp daemon restart", "dim")
         sys.exit(1)
     except Exception as e:
         print_colored(f"❌ Update failed: {e}", "red")
         print_colored("Please update manually:", "dim")
-        print_colored("  ninja-mcp daemon upgrade", "dim")
+        print_colored("  ninja-mcp update", "dim")
         print_colored("  ninja-mcp daemon restart", "dim")
         sys.exit(1)
 

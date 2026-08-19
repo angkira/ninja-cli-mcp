@@ -219,7 +219,18 @@ class AutoUpdater:
         return Path("/dev/null")
 
     def _reinstall_package(self) -> None:
-        """Upgrade the package using the Ninja package updater."""
+        """Reinstall/upgrade the package.
+
+        For editable (source-checkout) installations the package is reinstalled
+        from the local checkout via ``uv tool install --force --editable`` so
+        the running code always matches the freshly pulled sources. For regular
+        installations it delegates to ``ninja-mcp daemon upgrade``.
+        """
+        editable_repo = self._find_editable_repo()
+        if editable_repo is not None:
+            self._reinstall_editable(editable_repo)
+            return
+
         try:
             result = subprocess.run(
                 ["ninja-mcp", "daemon", "upgrade"],
@@ -236,6 +247,77 @@ class AutoUpdater:
             raise UpdateError(f"Package upgrade failed: {e.stderr}") from e
         except subprocess.TimeoutExpired:
             raise UpdateError("Package upgrade timed out after 10 minutes") from None
+
+    def _find_editable_repo(self) -> Path | None:
+        """Detect an editable (source) installation of ninja-mcp.
+
+        Scans the active tool environment for the ``_editable_impl_ninja_mcp.pth``
+        file that uv writes for ``uv tool install --editable``.
+
+        Returns:
+            Path to the editable source checkout, or None when not editable.
+        """
+        import site
+
+        candidates: list[Path] = []
+        try:
+            candidates.extend(Path(p) for p in site.getsitepackages())
+        except Exception:
+            pass
+        try:
+            candidates.append(Path(site.getusersitepackages()))
+        except Exception:
+            pass
+
+        # uv tool environments live under ~/.local/share/uv/tools/<name>.
+        # The interpreter version inside the venv is not known here, so scan
+        # every site-packages directory found under the tool root.
+        tool_root = Path.home() / ".local" / "share" / "uv" / "tools" / "ninja-mcp"
+        if tool_root.exists():
+            for lib in (tool_root / "lib").glob("python*"):
+                sp = lib / "site-packages"
+                if sp.is_dir():
+                    candidates.append(sp)
+
+        seen: set[Path] = set()
+        for sp in candidates:
+            if sp in seen:
+                continue
+            seen.add(sp)
+            pth = sp / "_editable_impl_ninja_mcp.pth"
+            if not pth.exists():
+                continue
+            for raw_line in pth.read_text().splitlines():
+                stripped = raw_line.strip()
+                if not stripped:
+                    continue
+                # uv writes the src dir (or the repo root) — walk up looking
+                # for pyproject.toml to find the actual source checkout.
+                cursor = Path(stripped)
+                while cursor != cursor.parent:
+                    if (cursor / "pyproject.toml").exists():
+                        return cursor
+                    cursor = cursor.parent
+        return None
+
+    def _reinstall_editable(self, repo: Path) -> None:
+        """Reinstall the editable package from its source checkout."""
+        print(f"   i Detected editable install at {repo}")
+        try:
+            result = subprocess.run(
+                ["uv", "tool", "install", "--force", "--editable", str(repo)],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 minute timeout
+            )
+            for line in result.stdout.splitlines():
+                if line.strip():
+                    print(f"   i {line.strip()}")
+        except subprocess.CalledProcessError as e:
+            raise UpdateError(f"Editable reinstall failed: {e.stderr}") from e
+        except subprocess.TimeoutExpired:
+            raise UpdateError("Editable reinstall timed out after 10 minutes") from None
 
     def _run_migration_if_needed(self) -> dict[str, Any] | None:
         """Run migration if needed."""

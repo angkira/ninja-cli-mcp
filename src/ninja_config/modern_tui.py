@@ -800,7 +800,7 @@ class NinjaConfigApp(App):
     # ── Actions ──────────────────────────────────────────────────────────
 
     def _check_update(self) -> None:
-        self.notify("Update with: ninja-mcp daemon upgrade", timeout=5)
+        self.notify("Update with: ninja-mcp update", timeout=5)
 
     def _show_config(self) -> None:
         cfg = self.config_manager.list_all()

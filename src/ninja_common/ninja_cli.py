@@ -25,6 +25,7 @@ _SUBCOMMANDS: dict[str, str] = {
     "config": "ninja_common.config_cli",
     "daemon": "ninja_common.daemon",
     "skill": "ninja_common.skill_cli",
+    "update": "ninja_common.update_cli",
 }
 
 # Commands whose downstream module expects the command name to remain
@@ -143,6 +144,7 @@ def _print_usage() -> None:
     print("  config          Interactive configuration TUI (default)")
     print("  daemon          Daemon process manager")
     print("  skill           Skill packaging")
+    print("  update          Update ninja-mcp to the latest version")
     print("  hooks coder     Code quality hooks (format, lint, pre-commit)")
     print("  hooks secretary Repository hooks (validate-path, session-report, ...)")
     print("  version         Show version")
@@ -155,6 +157,7 @@ def _print_usage() -> None:
     print("  ninja-mcp config              # launch interactive TUI")
     print("  ninja-mcp daemon status")
     print("  ninja-mcp skill package my-skill")
+    print("  ninja-mcp update              # update to the latest version")
 
 
 def _print_version() -> None:
