@@ -92,6 +92,18 @@ class TestModelConfiguration:
         assert "google/gemini-2.0-flash-exp" in result.command
         assert "openrouter/anthropic/claude-sonnet-4-20250514" not in result.command
 
+    def test_litellm_model_passthrough(self, strategy, monkeypatch):
+        """A litellm/ model must be passed through without a provider prefix added."""
+        monkeypatch.delenv("NINJA_CODER_OPENCODE_PROVIDER", raising=False)
+        result = strategy.build_command(
+            prompt="test", repo_root="/tmp/test", model="litellm/gpt-4o"
+        )
+
+        assert "litellm/gpt-4o" in result.command
+        assert "--model" in result.command
+        idx = result.command.index("--model")
+        assert result.command[idx + 1] == "litellm/gpt-4o"
+
 
 class TestSessionSupport:
     """Test explicit session support."""

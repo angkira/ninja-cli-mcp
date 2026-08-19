@@ -210,6 +210,7 @@ class OpenCodeStrategy:
             "cohere",
             "mistral",
             "opencode-go",
+            "litellm",
         ]
         has_provider = any(model_name.startswith(f"{p}/") for p in known_providers)
 
