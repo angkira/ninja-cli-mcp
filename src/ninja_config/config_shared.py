@@ -85,6 +85,7 @@ PROVIDER_KEY_URLS: dict[str, str] = {
     "openai": "https://platform.openai.com/api-keys",
     "openrouter": "https://openrouter.ai/keys",
     "github-copilot": "https://github.com/settings/copilot",
+    "litellm": "",
 }
 
 TASK_MODEL_DEFAULTS: list[tuple[str, str, str, str]] = [

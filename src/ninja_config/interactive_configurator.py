@@ -39,6 +39,12 @@ from ninja_config.config_shared import (
     mask_key,
     register_claude_mcp,
 )
+from ninja_config.litellm import (
+    LITELLM_PROVIDER_ID,
+    is_litellm_configured,
+    read_litellm_config,
+    write_litellm_config,
+)
 from ninja_config.model_selector import (
     OPENCODE_PROVIDERS,
     check_provider_auth,
@@ -530,6 +536,12 @@ class PowerConfigurator:
         if not selected_provider:
             return None
 
+        # LiteLLM is a self-hosted proxy: configure base URL + API key + models
+        # in opencode.json instead of the standard auth.json credentials flow.
+        if selected_provider == LITELLM_PROVIDER_ID:
+            self._configure_litellm_provider()
+            return selected_provider
+
         # Check if provider needs authentication
         is_authenticated = auth_status.get(selected_provider, False)
 
@@ -579,6 +591,65 @@ class PowerConfigurator:
         print(f"\n✅ Provider set to: {selected_provider}")
 
         return selected_provider
+
+    def _configure_litellm_provider(self) -> None:
+        """Configure a self-hosted LiteLLM proxy.
+
+        Prompts for the proxy base URL, API key and served model ids, then
+        writes the ``provider.litellm`` block into the global opencode.json.
+        """
+        print("\n" + "-" * 50)
+        print("  🚀 LITELLM CONFIGURATION")
+        print("-" * 50)
+        print("\n  LiteLLM is a self-hosted OpenAI-compatible proxy.")
+        print("  Point opencode at your proxy and list the models it serves.")
+
+        current = read_litellm_config()
+        if current and current["base_url"]:
+            print(f"\n  Current: {current['base_url']}")
+            print(f"  Models:  {', '.join(current['models']) or 'none'}")
+            reconfigure = inquirer.confirm(
+                message="Reconfigure LiteLLM?",
+                default=True,
+            ).execute()
+            if not reconfigure:
+                print("\n💡 Keeping current LiteLLM config")
+                return
+        elif is_litellm_configured():
+            print("\n  LiteLLM is configured (base URL set).")
+
+        base_url = inquirer.text(
+            message="LiteLLM base URL (e.g. http://localhost:4000/v1):",
+            default=(current or {}).get("base_url", ""),
+        ).execute()
+
+        if not base_url:
+            print("\n💡 No base URL provided, skipping")
+            return
+
+        api_key = inquirer.secret(
+            message="LiteLLM API key (master or virtual key):",
+            default=(current or {}).get("api_key", ""),
+        ).execute()
+
+        models_input = inquirer.text(
+            message="Served model ids (comma-separated, e.g. gpt-4o, deepseek-chat):",
+            default=", ".join((current or {}).get("models", [])),
+        ).execute()
+        models = [m.strip() for m in models_input.split(",") if m.strip()]
+
+        success = write_litellm_config(base_url, api_key, models)
+        if success:
+            print("\n✅ LiteLLM provider configured in opencode.json")
+            print(f"   Base URL: {base_url}")
+            print(f"   Models:   {', '.join(models) or 'none'}")
+            if models:
+                print("\n   Example model ids for ninja-config:")
+                for m in models:
+                    print(f"     litellm/{m}")
+            self._save_config("NINJA_CODER_PROVIDER", LITELLM_PROVIDER_ID)
+        else:
+            print("\n❌ Failed to write LiteLLM config")
 
     def _coder_setup_flow(self) -> None:
         """Complete coder setup flow: operator -> provider -> models."""

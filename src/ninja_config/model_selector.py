@@ -41,6 +41,7 @@ OPENCODE_PROVIDERS = [
     ("google", "Google", "Gemini models - native API"),
     ("openai", "OpenAI", "GPT models - native API"),
     ("github-copilot", "GitHub Copilot", "Via GitHub OAuth"),
+    ("litellm", "LiteLLM", "Self-hosted LiteLLM proxy (OpenAI-compatible)"),
 ]
 
 # Friendly display names for providers discovered dynamically.
@@ -54,6 +55,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "google": "Google",
     "openai": "OpenAI",
     "github-copilot": "GitHub Copilot",
+    "litellm": "LiteLLM",
 }
 
 

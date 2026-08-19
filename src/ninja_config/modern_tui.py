@@ -49,6 +49,10 @@ from ninja_config.config_shared import (
     mask_key,
     register_claude_mcp,
 )
+from ninja_config.litellm import (
+    read_litellm_config,
+    write_litellm_config,
+)
 from ninja_config.model_selector import (
     PROVIDER_DISPLAY_NAMES,
     discover_opencode_providers,
@@ -363,6 +367,18 @@ class NinjaConfigApp(App):
                         Button("Perplexity", id="search-perplexity"),
                     )
                     yield Static("")
+                    yield Static("  [bold #88c0d0]── LiteLLM Proxy ───────────────────[/bold #88c0d0]")
+                    yield Static("  Self-hosted OpenAI-compatible proxy. Configure the")
+                    yield Static("  base URL + key here; models then appear in the picker.")
+                    yield Static(self._litellm_status(), id="lbl-litellm")
+                    yield Input(placeholder="Base URL (e.g. http://localhost:4000/v1)", id="litellm-url")
+                    yield Input(placeholder="API key", id="litellm-key", password=True)
+                    yield Input(placeholder="Models (comma-separated: gpt-4o, deepseek-chat)", id="litellm-models")
+                    yield Horizontal(
+                        Button("Save LiteLLM", variant="primary", id="btn-save-litellm"),
+                        Button("Clear LiteLLM", id="btn-clear-litellm"),
+                    )
+                    yield Static("")
                     yield Static("  [bold #88c0d0]── Runtime Constants ────────────────[/bold #88c0d0]")
                     yield Static("  All tunable runtime settings (timeouts, safety, retries, serve pool).")
                     yield Static("  Select a setting, edit the value, then press Save.")
@@ -586,6 +602,55 @@ class NinjaConfigApp(App):
         cfg = self.config_manager.list_all()
         return f"  Current: [bold]{cfg.get('NINJA_SEARCH_PROVIDER', 'duckduckgo')}[/bold]"
 
+    # ── LiteLLM ─────────────────────────────────────────────────────────
+
+    def _litellm_status(self) -> str:
+        cfg = read_litellm_config()
+        if not cfg or not cfg["base_url"]:
+            return "  [dim]LiteLLM not configured[/dim]"
+        models = ", ".join(cfg["models"]) or "none"
+        return (
+            f"  [bold #a3be8c]Configured:[/bold #a3be8c] {cfg['base_url']}\n"
+            f"  [bold]Models:[/bold] {models}"
+        )
+
+    def _save_litellm(self) -> None:
+        url = self.query_one("#litellm-url", Input).value.strip()
+        key = self.query_one("#litellm-key", Input).value.strip()
+        models_raw = self.query_one("#litellm-models", Input).value.strip()
+        if not url:
+            self.notify("Enter a LiteLLM base URL first.", timeout=3)
+            return
+        models = [m.strip() for m in models_raw.split(",") if m.strip()]
+        if write_litellm_config(url, key, models):
+            try:
+                lbl = self.query_one("#lbl-litellm", Static)
+                lbl.update(self._litellm_status())
+            except Exception:
+                pass
+            for wid in ("litellm-url", "litellm-key", "litellm-models"):
+                try:
+                    self.query_one(f"#{wid}", Input).value = ""
+                except Exception:
+                    pass
+            self.config_manager.set("NINJA_CODER_PROVIDER", "litellm")
+            self.notify("LiteLLM saved. Models appear in the picker.", timeout=4)
+        else:
+            self.notify("Failed to write LiteLLM config.", timeout=3)
+
+    def _clear_litellm(self) -> None:
+        from ninja_config.litellm import remove_litellm_config
+
+        if remove_litellm_config():
+            try:
+                lbl = self.query_one("#lbl-litellm", Static)
+                lbl.update(self._litellm_status())
+            except Exception:
+                pass
+            self.notify("LiteLLM config removed.", timeout=3)
+        else:
+            self.notify("Failed to remove LiteLLM config.", timeout=3)
+
     # ── API Keys ─────────────────────────────────────────────────────────
 
     def _refresh_api_keys(self) -> None:
@@ -700,6 +765,10 @@ class NinjaConfigApp(App):
             self._save_setting()
         elif bid == "btn-reset-setting":
             self._reset_setting()
+        elif bid == "btn-save-litellm":
+            self._save_litellm()
+        elif bid == "btn-clear-litellm":
+            self._clear_litellm()
         elif bid == "btn-toggle-daemon":
             self._toggle_daemon()
         elif bid == "btn-restart-daemon":

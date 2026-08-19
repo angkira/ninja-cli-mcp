@@ -98,6 +98,18 @@ SETTINGS: list[SettingDef] = [
     SettingDef("NINJA_CODER_PORT", "Coder Port", "Daemon port for the coder server", "8100", "int"),
     SettingDef("NINJA_RESEARCHER_PORT", "Researcher Port", "Daemon port for the researcher server", "8101", "int"),
     SettingDef("NINJA_SECRETARY_PORT", "Secretary Port", "Daemon port for the secretary server", "8102", "int"),
+    SettingDef(
+        "NINJA_LITELLM_BASE_URL",
+        "LiteLLM Base URL",
+        "LiteLLM proxy base URL (also written to opencode.json)",
+        "",
+    ),
+    SettingDef(
+        "NINJA_LITELLM_API_KEY",
+        "LiteLLM API Key",
+        "API key for the LiteLLM proxy",
+        "",
+    ),
 ]
 
 
