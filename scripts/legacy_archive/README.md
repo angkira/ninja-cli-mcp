@@ -32,7 +32,7 @@ These scripts are kept for reference only and may not work with current versions
 
 **Update existing installation:**
 ```bash
-./update.sh
+ninja-mcp update
 ```
 
 **Configure after installation:**

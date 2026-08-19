@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `update.sh` script automatically migrates your existing configuration from any old format to the new centralized `~/.ninja-mcp.env` format.
+The `ninja-mcp update` command automatically migrates your existing configuration from any old format to the new centralized `~/.ninja-mcp.env` format.
 
 **All your settings are preserved**: API keys, models, providers, ports, and custom settings.
 
@@ -79,7 +79,7 @@ The script automatically migrates old variable names:
 
 ### Step 1: Update
 ```bash
-./update.sh
+ninja-mcp update
 ```
 
 ### Step 2: What Happens

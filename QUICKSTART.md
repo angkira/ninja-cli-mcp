@@ -14,10 +14,7 @@ OPENROUTER_API_KEY='sk-or-v1-xxx' curl -fsSL https://raw.githubusercontent.com/a
 ### Update Existing Installation
 ```bash
 # Automatically migrates ALL old configs
-./update.sh
-
-# Or remote:
-curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/update.sh | bash
+ninja-mcp update
 ```
 
 **Migration is automatic!** Your API keys, models, and settings are preserved from:

@@ -180,13 +180,16 @@ curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/install.
 ### Update (Automatic Migration)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/angkira/ninja-cli-mcp/main/update.sh | bash
+ninja-mcp update
 ```
 
-**Intelligent configuration migration:**
-- ✅ Searches old configs in 10+ locations
-- ✅ Preserves API keys, models, providers, ports
-- ✅ Migrates old variable names to new format
+**What it does:**
+- ✅ Pulls latest code from the source checkout (when installed editable)
+- ✅ Backs up credentials (`~/.ninja-mcp.env`)
+- ✅ Reinstalls the package (editable-aware via `uv tool install`)
+- ✅ Runs configuration migration if needed
+- ✅ Restarts daemons
+- ✅ Verifies the installation
 - ✅ Creates timestamped backups
 - ✅ Zero configuration loss guaranteed
 

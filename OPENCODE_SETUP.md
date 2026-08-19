@@ -6,10 +6,10 @@ This guide shows how to configure ninja-coder to use OpenCode with multiple AI p
 
 ### Option 1: Automatic (Recommended)
 
-Run the update script, which will automatically detect and configure OpenCode:
+Run the updater, which will automatically detect and configure OpenCode:
 
 ```bash
-./update.sh
+ninja-mcp update
 ```
 
 This will:
