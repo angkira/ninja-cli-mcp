@@ -202,6 +202,7 @@ MCP_SERVER_COMMANDS: dict[str, list[str]] = {
     "ninja-coder": ["ninja-mcp", "daemon", "connect", "coder"],
     "ninja-researcher": ["ninja-researcher"],
     "ninja-secretary": ["ninja-secretary"],
+    "ninja-agent": ["ninja-mcp", "daemon", "connect", "agent"],
 }
 
 

@@ -16,3 +16,8 @@ startup_timeout_sec = 30
 command = "ninja-secretary"
 args = []
 startup_timeout_sec = 30
+
+[mcp_servers.ninja_agent]
+command = "ninja-mcp"
+args = ["daemon", "connect", "agent"]
+startup_timeout_sec = 30

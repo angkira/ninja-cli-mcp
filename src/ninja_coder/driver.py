@@ -103,7 +103,19 @@ def _get_inactivity_timeout(task_type: str, model: str = "") -> float:
     except ValueError:
         agent_timeout = 180.0
 
-    if model and any(tag in model.lower() for tag in ("luna", "grok", "agent")):
+    model_lower = model.lower()
+    if "zai-coding-plan" in model_lower or "coding-plan" in model_lower:
+        # Coding-plan models spend long stretches "thinking" server-side with
+        # no local CPU activity; give them a much more generous window.
+        coding_plan_timeout = os.environ.get("NINJA_INACTIVITY_TIMEOUT_CODING_PLAN", "300")
+        try:
+            return float(coding_plan_timeout)
+        except ValueError:
+            return 300.0
+
+    if model_lower and any(
+        tag in model_lower for tag in ("luna", "grok", "agent")
+    ):
         return agent_timeout
 
     base_type = task_type.removesuffix("_plan")

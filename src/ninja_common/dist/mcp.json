@@ -14,6 +14,11 @@
       "command": "ninja-secretary",
       "args": [],
       "env": {}
+    },
+    "ninja-agent": {
+      "command": "ninja-mcp",
+      "args": ["daemon", "connect", "agent"],
+      "env": {}
     }
   }
 }

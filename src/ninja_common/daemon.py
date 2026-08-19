@@ -606,6 +606,7 @@ class DaemonManager:
             "coder": "ninja_coder",
             "researcher": "ninja_researcher",
             "secretary": "ninja_secretary",
+            "agent": "ninja_agent",
         }
 
         module_name = module_map.get(module)
