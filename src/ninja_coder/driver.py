@@ -74,15 +74,21 @@ _INACTIVITY_TIMEOUT_DEFAULTS: dict[str, float] = {
 }
 
 
-def _get_inactivity_timeout(task_type: str) -> float:
+def _get_inactivity_timeout(task_type: str, model: str = "") -> float:
     """Resolve the inactivity-watchdog threshold for a task type.
 
     ``NINJA_INACTIVITY_TIMEOUT``, when set, overrides every task type.
     Otherwise per-type defaults apply (quick=60s, sequential/parallel=120s).
 
+    Models that delegate work to nested sub-agents (e.g. ``gpt-5.6-luna``)
+    legitimately go silent while a child agent runs, so they get a relaxed
+    threshold via ``NINJA_INACTIVITY_TIMEOUT_AGENT_MODELS`` (default 180s).
+
     Args:
         task_type: Type of task ('quick', 'sequential', 'parallel'); the
             '*_plan' variants inherit their base type's default.
+        model: Resolved model name; used to pick a relaxed threshold for
+            agent-spawning models.
 
     Returns:
         Inactivity timeout in seconds.
@@ -90,6 +96,16 @@ def _get_inactivity_timeout(task_type: str) -> float:
     override = os.environ.get("NINJA_INACTIVITY_TIMEOUT")
     if override is not None:
         return float(override)
+
+    agent_models = os.environ.get("NINJA_INACTIVITY_TIMEOUT_AGENT_MODELS", "180")
+    try:
+        agent_timeout = float(agent_models)
+    except ValueError:
+        agent_timeout = 180.0
+
+    if model and any(tag in model.lower() for tag in ("luna", "grok", "agent")):
+        return agent_timeout
+
     base_type = task_type.removesuffix("_plan")
     return _INACTIVITY_TIMEOUT_DEFAULTS.get(base_type, _INACTIVITY_TIMEOUT_DEFAULTS["quick"])
 
@@ -541,6 +557,7 @@ class NinjaDriver:
             config: Ninja CLI configuration. If None, loads from env.
         """
         self.config = config or NinjaConfig.from_env()
+        self._selector_cache: ModelSelector | None = None
 
         # Get strategy based on binary path
         self._strategy = CLIStrategyRegistry.get_strategy(self.config.bin_path, self.config)
@@ -690,6 +707,16 @@ class NinjaDriver:
         Returns:
             Tuple of (model_name, use_coding_plan_api).
         """
+        # Explicit model class override (smart/balanced/fast) wins over routing
+        model_class = instruction.get("model_class")
+        if model_class:
+            recommendation = self._model_selector().select_by_class(model_class)
+            logger.info(
+                f"Selected model by class '{model_class}': {recommendation.model} "
+                f"(reason: {recommendation.reason})"
+            )
+            return recommendation.model, recommendation.use_coding_plan_api
+
         # Determine task complexity
         if task_type == "parallel":
             complexity = TaskComplexity.PARALLEL
@@ -702,8 +729,7 @@ class NinjaDriver:
             fanout = 1
 
         # Select model using model selector directly
-        model_selector = ModelSelector(default_model=self.config.model)
-        recommendation = model_selector.select_model(
+        recommendation = self._model_selector().select_model(
             complexity,
             fanout=fanout,
         )
@@ -715,6 +741,12 @@ class NinjaDriver:
         )
 
         return recommendation.model, recommendation.use_coding_plan_api
+
+    def _model_selector(self) -> ModelSelector:
+        """Return a configured ModelSelector (cached on the instance)."""
+        if self._selector_cache is None:
+            self._selector_cache = ModelSelector(default_model=self.config.model)
+        return self._selector_cache
 
     def _build_prompt_text(self, instruction: dict[str, Any], repo_root: str) -> str:
         """
@@ -805,7 +837,7 @@ class NinjaDriver:
             "--no-suggest-shell-commands",  # Don't suggest shell commands
             "--no-check-update",  # Don't check for updates
             "--model",
-            f"openrouter/{self.config.model}",  # OpenRouter model
+            self.config.model,  # Model (provider prefix included)
         ]
 
         # Add OpenRouter provider preferences if configured
@@ -823,7 +855,7 @@ class NinjaDriver:
                 providers = [p.strip() for p in provider_order.split(",")]
                 settings = [
                     {
-                        "name": f"openrouter/{self.config.model}",
+                        "name": self.config.model,
                         "extra_params": {
                             "provider": {
                                 "order": providers,
@@ -1450,6 +1482,49 @@ class NinjaDriver:
         result.notes = f"{result.notes}\n{hint}" if result.notes else hint
         return result
 
+    @staticmethod
+    def _remap_context_paths(
+        instruction: dict[str, Any],
+        original_root: str,
+        worktree_root: str,
+    ) -> dict[str, Any]:
+        """Remap absolute context paths from the original repo into a worktree.
+
+        When worktree isolation is active the agent runs inside the worktree,
+        so context paths must point at the worktree copy of the files. Paths
+        that are relative or already inside the worktree are left untouched.
+
+        Args:
+            instruction: Instruction document to mutate.
+            original_root: Path of the main repository.
+            worktree_root: Path of the isolation worktree.
+
+        Returns:
+            The instruction document with remapped context paths.
+        """
+        file_scope = instruction.get("file_scope", {})
+        context_paths = file_scope.get("context_paths", [])
+        if not context_paths:
+            return instruction
+
+        original = Path(original_root).resolve()
+        worktree = Path(worktree_root).resolve()
+        remapped: list[str] = []
+        for path in context_paths:
+            p = Path(path)
+            if not p.is_absolute():
+                remapped.append(path)
+                continue
+            try:
+                rel = p.resolve().relative_to(original)
+            except ValueError:
+                remapped.append(path)
+                continue
+            remapped.append(str(worktree / rel))
+
+        file_scope = {**file_scope, "context_paths": remapped}
+        return {**instruction, "file_scope": file_scope}
+
     async def execute_async(
         self,
         repo_root: str,
@@ -1504,6 +1579,13 @@ class NinjaDriver:
                 )
                 # The instruction travels with the task; point it at the worktree.
                 instruction = {**instruction, "repo_root": execution_dir}
+                # Remap context paths from the original repo into the worktree so
+                # the agent focuses on files that actually exist in the execution
+                # directory instead of absolute paths pointing at the main repo.
+                instruction = self._remap_context_paths(
+                    instruction, repo_root, execution_dir
+                )
+                context_paths = instruction.get("file_scope", {}).get("context_paths", [])
 
             safety_results = validate_task_safety(
                 repo_root=repo_root,
@@ -1741,7 +1823,7 @@ class NinjaDriver:
 
             try:
                 start_time = asyncio.get_event_loop().time()
-                inactivity_timeout = _get_inactivity_timeout(task_type)
+                inactivity_timeout = _get_inactivity_timeout(task_type, model=model)
 
                 task_logger.debug(
                     f"Starting subprocess with {max_timeout}s timeout, "

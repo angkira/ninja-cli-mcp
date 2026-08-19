@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from ninja_coder.driver import NinjaConfig, NinjaDriver
+from ninja_coder.driver import NinjaConfig, NinjaDriver, _get_inactivity_timeout
 
 
 class TestNinjaConfig:
@@ -199,6 +199,88 @@ class TestNinjaDriver:
         assert len(result.summary) < 10000
 
     # _write_task_file test removed - method signature changed
+
+
+class TestRemapContextPaths:
+    """Test worktree context path remapping."""
+
+    def _make_instruction(self, paths):
+        return {
+            "version": "1.0",
+            "type": "quick_task",
+            "repo_root": "/repo",
+            "task": "task",
+            "mode": "quick",
+            "file_scope": {"context_paths": paths, "allowed_globs": [], "deny_globs": []},
+            "instructions": "",
+            "guarantees": {},
+        }
+
+    def test_absolute_paths_remapped_to_worktree(self):
+        """Absolute paths inside the original repo are rewritten to the worktree."""
+        instruction = self._make_instruction(["/repo/src/main.py", "/repo/tests/test_main.py"])
+
+        result = NinjaDriver._remap_context_paths(instruction, "/repo", "/tmp/worktree")
+
+        paths = result["file_scope"]["context_paths"]
+        assert paths == ["/tmp/worktree/src/main.py", "/tmp/worktree/tests/test_main.py"]
+
+    def test_relative_paths_untouched(self):
+        """Relative paths are left as-is (they resolve against the worktree cwd)."""
+        instruction = self._make_instruction(["src/main.py"])
+
+        result = NinjaDriver._remap_context_paths(instruction, "/repo", "/tmp/worktree")
+
+        assert result["file_scope"]["context_paths"] == ["src/main.py"]
+
+    def test_paths_outside_repo_untouched(self):
+        """Paths outside the original repo are preserved (external references)."""
+        instruction = self._make_instruction(["/other/src/main.py"])
+
+        result = NinjaDriver._remap_context_paths(instruction, "/repo", "/tmp/worktree")
+
+        assert result["file_scope"]["context_paths"] == ["/other/src/main.py"]
+
+    def test_empty_paths_noop(self):
+        """Instruction without context paths is returned unchanged."""
+        instruction = self._make_instruction([])
+
+        result = NinjaDriver._remap_context_paths(instruction, "/repo", "/tmp/worktree")
+
+        assert result is instruction or result["file_scope"]["context_paths"] == []
+
+
+class TestInactivityTimeout:
+    """Test model-aware inactivity watchdog thresholds."""
+
+    def test_default_quick_timeout(self, monkeypatch):
+        monkeypatch.delenv("NINJA_INACTIVITY_TIMEOUT", raising=False)
+        assert _get_inactivity_timeout("quick") == 60.0
+
+    def test_sequential_default(self, monkeypatch):
+        monkeypatch.delenv("NINJA_INACTIVITY_TIMEOUT", raising=False)
+        assert _get_inactivity_timeout("sequential") == 120.0
+
+    def test_plan_variant_inherits_base(self, monkeypatch):
+        monkeypatch.delenv("NINJA_INACTIVITY_TIMEOUT", raising=False)
+        assert _get_inactivity_timeout("parallel_plan") == 120.0
+
+    def test_global_override(self, monkeypatch):
+        monkeypatch.setenv("NINJA_INACTIVITY_TIMEOUT", "30")
+        assert _get_inactivity_timeout("quick") == 30.0
+
+    def test_agent_model_gets_relaxed_timeout(self, monkeypatch):
+        monkeypatch.delenv("NINJA_INACTIVITY_TIMEOUT", raising=False)
+        monkeypatch.delenv("NINJA_INACTIVITY_TIMEOUT_AGENT_MODELS", raising=False)
+        assert _get_inactivity_timeout("quick", model="opencode-go/gpt-5.6-luna") == 180.0
+
+    def test_agent_timeout_configurable(self, monkeypatch):
+        monkeypatch.setenv("NINJA_INACTIVITY_TIMEOUT_AGENT_MODELS", "300")
+        assert _get_inactivity_timeout("quick", model="opencode-go/gpt-5.6-luna") == 300.0
+
+    def test_normal_model_unaffected(self, monkeypatch):
+        monkeypatch.delenv("NINJA_INACTIVITY_TIMEOUT", raising=False)
+        assert _get_inactivity_timeout("quick", model="opencode-go/deepseek-v4-flash") == 60.0
 
 
 if __name__ == "__main__":

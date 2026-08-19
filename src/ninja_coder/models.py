@@ -28,6 +28,22 @@ class TaskComplexity(str, Enum):
     QUICK = "quick"  # Single-pass simple task
 
 
+class ModelClass(str, Enum):
+    """Model capability tiers for abstract model selection.
+
+    Callers pick a tier instead of a concrete model id, so routing stays
+    configurable without code changes:
+
+    - SMART: strongest model for complex/high-stakes work
+    - BALANCED: default tier for ordinary code tasks
+    - FAST: cheapest/fastest for trivial or high-volume work
+    """
+
+    SMART = "smart"
+    BALANCED = "balanced"
+    FAST = "fast"
+
+
 class TestPlan(BaseModel):
     """Test commands to run for validation."""
 
@@ -103,6 +119,11 @@ class SimpleTaskRequest(BaseModel):
     mode: Literal["quick"] = Field(
         default="quick",
         description="Execution mode (future-proof)",
+    )
+    model_class: ModelClass | None = Field(
+        default=None,
+        description="Model tier: smart, balanced, or fast. If unset, the default "
+        "routing for the task type is used.",
     )
 
 

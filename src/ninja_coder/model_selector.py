@@ -18,6 +18,20 @@ from ninja_common.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
+# Environment variables mapping model tiers to concrete model ids.
+# Overridable per-installation; defaults fall back to sensible picks.
+MODEL_CLASS_ENV = {
+    "smart": "NINJA_MODEL_CLASS_SMART",
+    "balanced": "NINJA_MODEL_CLASS_BALANCED",
+    "fast": "NINJA_MODEL_CLASS_FAST",
+}
+
+MODEL_CLASS_DEFAULTS = {
+    "smart": "opencode-go/glm-5.3",
+    "balanced": "opencode-go/deepseek-v4-flash",
+    "fast": "opencode-go/gpt-5.6-luna",
+}
+
 
 @dataclass
 class ModelRecommendation:
@@ -54,6 +68,31 @@ class ModelSelector:
         """
         self.default_model = default_model
         self.model_db = MODEL_DATABASE
+
+    def select_by_class(self, model_class: str) -> ModelRecommendation:
+        """Resolve a model tier (smart/balanced/fast) to a concrete model.
+
+        Prefers the per-class env var override, then the hardcoded default.
+        This lets operators re-point tiers without touching code.
+
+        Args:
+            model_class: One of 'smart', 'balanced', 'fast'.
+
+        Returns:
+            ModelRecommendation for the resolved model.
+
+        Raises:
+            ValueError: If the class name is unknown.
+        """
+        key = model_class.lower()
+        if key not in MODEL_CLASS_ENV:
+            raise ValueError(
+                f"Unknown model class '{model_class}'. "
+                f"Expected one of: {', '.join(MODEL_CLASS_ENV)}"
+            )
+
+        model = os.environ.get(MODEL_CLASS_ENV[key]) or MODEL_CLASS_DEFAULTS[key]
+        return self._recommend_specific_model(model, f"model class '{key}'")
 
     def select_model(
         self,
@@ -241,12 +280,12 @@ class ModelSelector:
         Returns:
             ModelRecommendation for default model.
         """
-        model = self.default_model or "openrouter/anthropic/claude-haiku-4.5"
+        model = self.default_model or "opencode-go/deepseek-v4-flash"
         info = self.model_db.get(model, {})
 
         return ModelRecommendation(
             model=model,
-            provider=info.get("provider", "openrouter"),
+            provider=info.get("provider", "opencode-go"),
             reason="User-configured default model",
             cost_estimate="Varies",
             use_coding_plan_api=False,

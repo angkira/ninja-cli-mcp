@@ -98,6 +98,11 @@ class AiderStrategy:
         """
         model_name = model or self.config.model
 
+        # Provider prefix: default to opencode-go unless the model already has one
+        provider = os.environ.get("NINJA_CODER_OPENCODE_PROVIDER", "opencode-go")
+        prefixed_model = (
+            model_name if "/" in model_name else f"{provider}/{model_name}"
+        )
         cmd = [
             self.bin_path,
             "--yes",  # Auto-accept changes
@@ -108,7 +113,7 @@ class AiderStrategy:
             "--no-suggest-shell-commands",  # Don't suggest shell commands
             "--no-check-update",  # Don't check for updates
             "--model",
-            f"openrouter/{model_name}",  # OpenRouter model
+            prefixed_model,
         ]
 
         # For plan execution tasks, add architect mode
@@ -130,7 +135,7 @@ class AiderStrategy:
                 providers = [p.strip() for p in provider_order.split(",")]
                 settings = [
                     {
-                        "name": f"openrouter/{model_name}",
+                        "name": prefixed_model,
                         "extra_params": {
                             "provider": {
                                 "order": providers,

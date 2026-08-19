@@ -237,13 +237,42 @@ def test_aider_build_command_basic():
     assert "--no-auto-commits" in result.command
     assert "--model" in result.command
 
-    # Find model value - should have openrouter/ prefix
+    # Model already carries a provider prefix -> left untouched
     model_idx = result.command.index("--model")
-    assert "openrouter/" in result.command[model_idx + 1]
-    assert "claude-haiku-4.5" in result.command[model_idx + 1]
+    assert result.command[model_idx + 1] == "anthropic/claude-haiku-4.5"
 
     # Check for API key flag
     assert "--api-key" in result.command
+
+
+def test_aider_build_command_prepends_opencode_go(monkeypatch):
+    """Model without a provider prefix gets the opencode-go provider added."""
+    monkeypatch.delenv("NINJA_CODER_OPENCODE_PROVIDER", raising=False)
+    config = NinjaConfig(bin_path="aider", model="deepseek-v4-flash", openai_api_key="test-key")
+    strategy = AiderStrategy("aider", config)
+
+    result = strategy.build_command(
+        prompt="Fix the bug in main.py",
+        repo_root="/tmp/test-repo",
+    )
+
+    model_idx = result.command.index("--model")
+    assert result.command[model_idx + 1] == "opencode-go/deepseek-v4-flash"
+
+
+def test_aider_build_command_provider_env_override(monkeypatch):
+    """NINJA_CODER_OPENCODE_PROVIDER controls the prepended provider."""
+    monkeypatch.setenv("NINJA_CODER_OPENCODE_PROVIDER", "zai-coding-plan")
+    config = NinjaConfig(bin_path="aider", model="glm-4.7", openai_api_key="test-key")
+    strategy = AiderStrategy("aider", config)
+
+    result = strategy.build_command(
+        prompt="Fix the bug in main.py",
+        repo_root="/tmp/test-repo",
+    )
+
+    model_idx = result.command.index("--model")
+    assert result.command[model_idx + 1] == "zai-coding-plan/glm-4.7"
 
 
 def test_aider_build_command_with_files():
@@ -692,6 +721,63 @@ def test_parse_result_extracts_file_paths():
 
     # Should extract at least some file paths
     assert isinstance(parsed.touched_paths, list)
+
+
+def test_opencode_json_tool_use_paths_extracted():
+    """JSON --format output: real edit tool calls must be detected."""
+    config = NinjaConfig(bin_path="opencode", model="test/model", openai_api_key="test")
+    strategy = OpenCodeStrategy("opencode", config)
+
+    stdout = "\n".join(
+        [
+            '{"type":"step_start","timestamp":1,"sessionID":"s1","part":{"id":"p","type":"step-start"}}',
+            '{"type":"tool_use","timestamp":2,"sessionID":"s1","part":{"type":"tool","tool":"read",'
+            '"callID":"c1","state":{"status":"completed","input":{"filePath":"/repo/src/readme.md"}}}}',
+            '{"type":"tool_use","timestamp":3,"sessionID":"s1","part":{"type":"tool","tool":"edit",'
+            '"callID":"c2","state":{"status":"completed","input":{"filePath":"/repo/src/user.py"}}}}',
+            '{"type":"tool_use","timestamp":4,"sessionID":"s1","part":{"type":"tool","tool":"write",'
+            '"callID":"c3","state":{"status":"completed","input":{"filePath":"/repo/src/new_module.py"}}}}',
+            '{"type":"step_finish","timestamp":5,"sessionID":"s1","part":{"id":"p","reason":"stop"}}',
+        ]
+    )
+
+    parsed = strategy.parse_output(stdout, "", 0)
+
+    assert parsed.success is True
+    assert "/repo/src/user.py" in parsed.touched_paths
+    assert "/repo/src/new_module.py" in parsed.touched_paths
+    # read tool is not a modification, must be ignored
+    assert not any("readme.md" in p for p in parsed.touched_paths)
+
+
+def test_opencode_json_ignores_failed_edit_tools():
+    """Edits with non-completed status must not count as modifications."""
+    config = NinjaConfig(bin_path="opencode", model="test/model", openai_api_key="test")
+    strategy = OpenCodeStrategy("opencode", config)
+
+    stdout = (
+        '{"type":"tool_use","timestamp":1,"sessionID":"s1","part":{"type":"tool","tool":"edit",'
+        '"callID":"c1","state":{"status":"error","input":{"filePath":"/repo/src/user.py"}}}}'
+    )
+
+    paths = strategy._extract_json_tool_paths(stdout)
+    assert paths == []
+
+
+def test_opencode_no_files_modified_is_retryable():
+    """Model answered with text instead of editing -> must be retryable."""
+    config = NinjaConfig(bin_path="opencode", model="test/model", openai_api_key="test")
+    strategy = OpenCodeStrategy("opencode", config)
+
+    stdout = (
+        "I will now implement the requested change by writing the update "
+        "to the source file and adding unit tests for the new behavior."
+    )
+
+    parsed = strategy.parse_output(stdout, "", 0)
+
+    assert parsed.success is False
+    assert parsed.retryable_error is True
 
 
 if __name__ == "__main__":

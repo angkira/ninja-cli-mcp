@@ -128,5 +128,65 @@ class TestFileContext:
         assert "Focus on these files:" in prompt
 
 
+class TestParseOutput:
+    """Test output parsing (JSON event stream + retry handling)."""
+
+    def test_json_edit_tool_paths_detected(self, strategy):
+        """Real edit/write tool calls in --format json must count as changes."""
+        stdout = "\n".join(
+            [
+                '{"type":"tool_use","timestamp":1,"sessionID":"s1","part":{"type":"tool","tool":"read",'
+                '"callID":"c1","state":{"status":"completed","input":{"filePath":"/repo/readme.md"}}}}',
+                '{"type":"tool_use","timestamp":2,"sessionID":"s1","part":{"type":"tool","tool":"edit",'
+                '"callID":"c2","state":{"status":"completed","input":{"filePath":"/repo/src/user.py"}}}}',
+                '{"type":"tool_use","timestamp":3,"sessionID":"s1","part":{"type":"tool","tool":"write",'
+                '"callID":"c3","state":{"status":"completed","input":{"filePath":"/repo/src/new.py"}}}}',
+            ]
+        )
+
+        parsed = strategy.parse_output(stdout, "", 0)
+
+        assert parsed.success is True
+        assert "/repo/src/user.py" in parsed.touched_paths
+        assert "/repo/src/new.py" in parsed.touched_paths
+        assert not any("readme.md" in p for p in parsed.touched_paths)
+
+    def test_json_failed_edit_ignored(self, strategy):
+        """Edit tool calls that errored must not count as modifications."""
+        stdout = (
+            '{"type":"tool_use","timestamp":1,"sessionID":"s1","part":{"type":"tool","tool":"edit",'
+            '"callID":"c1","state":{"status":"error","input":{"filePath":"/repo/src/user.py"}}}}'
+        )
+
+        parsed = strategy.parse_output(stdout, "", 0)
+
+        # No completed edits -> treated as a retryable failure, not a success.
+        assert parsed.success is False
+        assert parsed.touched_paths == []
+        assert parsed.retryable_error is True
+
+    def test_no_files_modified_is_retryable(self, strategy):
+        """Model answering with text (no edits) -> retryable failure."""
+        stdout = (
+            "I will now write the implementation to the source file and add "
+            "unit tests covering the new behavior."
+        )
+
+        parsed = strategy.parse_output(stdout, "", 0)
+
+        assert parsed.success is False
+        assert parsed.retryable_error is True
+
+    def test_touched_files_are_not_retryable(self, strategy):
+        """A run that actually modified files is a real success."""
+        stdout = '{"type":"tool_use","timestamp":1,"sessionID":"s1","part":{"type":"tool","tool":"edit",' \
+                 '"callID":"c1","state":{"status":"completed","input":{"filePath":"/repo/src/a.py"}}}}'
+
+        parsed = strategy.parse_output(stdout, "", 0)
+
+        assert parsed.success is True
+        assert parsed.retryable_error is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

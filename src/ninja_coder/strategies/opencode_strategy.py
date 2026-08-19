@@ -195,7 +195,7 @@ class OpenCodeStrategy:
         # Model format: provider/model (e.g., anthropic/claude-sonnet-4-5, openrouter/qwen/qwen3-coder)
 
         # Add provider prefix if not already present
-        opencode_provider = os.environ.get("NINJA_CODER_OPENCODE_PROVIDER", "openrouter")
+        opencode_provider = os.environ.get("NINJA_CODER_OPENCODE_PROVIDER", "opencode-go")
 
         # Check if model already has a known provider prefix
         known_providers = [
@@ -205,9 +205,11 @@ class OpenCodeStrategy:
             "google",
             "zhipu",
             "zai",
+            "zai-coding-plan",
             "deepseek",
             "cohere",
             "mistral",
+            "opencode-go",
         ]
         has_provider = any(model_name.startswith(f"{p}/") for p in known_providers)
 
@@ -325,6 +327,43 @@ class OpenCodeStrategy:
             additional_flags={"enable_multi_agent": True},
         )
 
+    @staticmethod
+    def _extract_json_tool_paths(combined_output: str) -> list[str]:
+        """Extract file paths from OpenCode JSON event stream.
+
+        When run with ``--format json`` OpenCode emits newline-delimited JSON
+        objects. Tool calls carry the real edited file paths under
+        ``part.state.input.filePath`` for ``edit``/``write``/``NotebookEdit``.
+
+        Args:
+            combined_output: Full stdout+stderr of the CLI run.
+
+        Returns:
+            List of file paths touched by edit/write tool calls.
+        """
+        paths: list[str] = []
+        write_tools = {"edit", "write", "notebookedit"}
+        for raw_line in combined_output.splitlines():
+            line = raw_line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            part = event.get("part") or {}
+            if part.get("type") != "tool":
+                continue
+            if str(part.get("tool", "")).lower() not in write_tools:
+                continue
+            state = part.get("state") or {}
+            if state.get("status") != "completed":
+                continue
+            file_path = ((state.get("input") or {}).get("filePath")) or ""
+            if file_path and ("/" in file_path or "." in file_path):
+                paths.append(file_path)
+        return paths
+
     def parse_output(
         self,
         stdout: str,
@@ -421,6 +460,13 @@ class OpenCodeStrategy:
                 if match and ("/" in match or "." in match):
                     suspected_paths.append(match)
 
+        # Parse OpenCode JSON event stream (--format json): extract the
+        # filePath of every real edit/write/NotebookEdit tool call. Text-only
+        # regex patterns frequently miss these, causing false "no files were
+        # modified" failures.
+        json_paths = self._extract_json_tool_paths(combined_output)
+        suspected_paths.extend(json_paths)
+
         # Deduplicate paths
         suspected_paths = list(set(suspected_paths))
 
@@ -452,6 +498,11 @@ class OpenCodeStrategy:
                         # Skip hidden directories (including .git, .cache, etc.)
                         dirs[:] = [d for d in dirs if not d.startswith(".")]
                         for file in files:
+                            # Skip hidden files (dotfiles like .git, .actrc, etc.)
+                            # and other metadata that tooling touches during a run —
+                            # they pollute the "modified files" report.
+                            if file.startswith("."):
+                                continue
                             file_path = Path(root) / file
                             try:
                                 if file_path.stat().st_mtime > cutoff_time:
@@ -544,6 +595,9 @@ class OpenCodeStrategy:
                 notes = (
                     "CLI exited successfully but no file changes detected. Check logs for details."
                 )
+                # Retryable: small/quick models sometimes answer with text instead
+                # of calling edit tools. A retry frequently succeeds.
+                retryable_error = True
                 logger.warning("Suspicious success: exit_code=0 but no files touched")
 
         return ParsedResult(

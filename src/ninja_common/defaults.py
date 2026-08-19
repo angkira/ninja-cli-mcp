@@ -10,16 +10,14 @@ Do not hardcode defaults elsewhere - import from here.
 # =============================================================================
 
 # Default model for code generation tasks
-DEFAULT_CODER_MODEL = "opencode/glm-4.7-free"
+DEFAULT_CODER_MODEL = "opencode-go/deepseek-v4-flash"
 
 # Fallback models if primary is unavailable (in order of preference)
 FALLBACK_CODER_MODELS = [
-    "openrouter/anthropic/claude-haiku-4.5",
-    "openrouter/anthropic/claude-3-5-haiku-20241022",
-    "openrouter/anthropic/claude-sonnet-4-20250514",
-    "openrouter/openai/gpt-4o-mini",
-    "opencode/gpt-5-nano",
-    "google/gemini-2.5-flash",
+    "opencode-go/glm-5.3",
+    "opencode-go/deepseek-v4-flash",
+    "opencode-go/gpt-5.6-luna",
+    "opencode-go/deepseek-v4-pro",
 ]
 
 # Recommended models for different use cases
@@ -68,9 +66,9 @@ RECOMMENDED_MODELS = {
 # =============================================================================
 
 # Default models for different task types
-DEFAULT_MODEL_QUICK = "opencode/glm-4.7-free"
-DEFAULT_MODEL_SEQUENTIAL = "zai-coding-plan/glm-4.7"
-DEFAULT_MODEL_PARALLEL = "opencode/glm-4.7-free"
+DEFAULT_MODEL_QUICK = "opencode-go/deepseek-v4-flash"
+DEFAULT_MODEL_SEQUENTIAL = "opencode-go/glm-5.3"
+DEFAULT_MODEL_PARALLEL = "opencode-go/deepseek-v4-flash"
 
 # =============================================================================
 # OPENCODE PROVIDERS
@@ -335,6 +333,22 @@ MODEL_DATABASE = {
         "concurrent_limit": 5,
         "cost": "medium",
         "livebench_score": 84.9,
+        "supports_coding_plan_api": True,
+    },
+    "zai-coding-plan/glm-5.2": {
+        "provider": "z.ai",
+        "best_for": ["sequential"],
+        "concurrent_limit": 5,
+        "cost": "medium",
+        "livebench_score": 87.0,
+        "supports_coding_plan_api": True,
+    },
+    "zai-coding-plan/glm-5.3": {
+        "provider": "z.ai",
+        "best_for": ["sequential"],
+        "concurrent_limit": 5,
+        "cost": "medium",
+        "livebench_score": 88.0,
         "supports_coding_plan_api": True,
     },
     "zai/glm-4.0": {

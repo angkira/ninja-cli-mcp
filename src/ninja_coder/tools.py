@@ -184,6 +184,8 @@ class ToolExecutor:
             allowed_globs=request.allowed_globs,
             deny_globs=request.deny_globs,
         )
+        if request.model_class is not None:
+            instruction["model_class"] = request.model_class.value
 
         # Retry configuration (configurable via environment variables)
         max_retries = int(os.environ.get("NINJA_MAX_RETRIES", "2"))

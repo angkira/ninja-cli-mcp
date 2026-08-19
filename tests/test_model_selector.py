@@ -222,6 +222,43 @@ def test_model_selector_handles_no_suitable_models():
     assert rec.provider is not None
 
 
+@pytest.mark.parametrize("model_class,expected_tag", [
+    ("smart", "glm-5.3"),
+    ("balanced", "deepseek"),
+    ("fast", "luna"),
+])
+def test_select_by_class_defaults(model_class, expected_tag):
+    """Test that each model tier resolves to the expected default model."""
+    selector = ModelSelector()
+    rec = selector.select_by_class(model_class)
+    assert expected_tag in rec.model.lower()
+    assert rec.provider == "opencode-go"
+
+
+def test_select_by_class_env_override(monkeypatch):
+    """Test that NINJA_MODEL_CLASS_* env vars override the defaults."""
+    monkeypatch.setenv("NINJA_MODEL_CLASS_SMART", "opencode-go/glm-5.2")
+    selector = ModelSelector()
+    rec = selector.select_by_class("smart")
+    assert rec.model == "opencode-go/glm-5.2"
+
+
+def test_select_by_class_invalid_raises():
+    """Test that unknown tiers are rejected loudly."""
+    selector = ModelSelector()
+    with pytest.raises(ValueError):
+        selector.select_by_class("ultra")
+
+
+def test_select_by_class_case_insensitive():
+    """Test that tier names are case-insensitive."""
+    selector = ModelSelector()
+    rec_smart = selector.select_by_class("SMART")
+    rec_fast = selector.select_by_class("Fast")
+    assert rec_smart.model == rec_fast.model or "glm" in rec_smart.model
+    assert rec_fast.model == "opencode-go/gpt-5.6-luna"
+
+
 if __name__ == "__main__":
     # Run tests
     pytest.main([__file__, "-v"])
