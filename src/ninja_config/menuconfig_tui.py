@@ -93,28 +93,29 @@ class MenuScreen(Screen):
         # Breadcrumb
         if self.breadcrumb:
             yield Static(
-                f"[dim]Ninja MCP[/dim] [cyan]>[/cyan] {self.breadcrumb}",
+                f"[dim]Ninja MCP[/dim] [#88C0D0]>[/#88C0D0] {self.breadcrumb}",
                 id="breadcrumb",
             )
 
         # Title
-        yield Static(f"[bold cyan]{self.title}[/bold cyan]", id="menu-title")
+        yield Static(f"[bold #88C0D0]{self.title}[/bold #88C0D0]", id="menu-title")
 
-        # Menu items
+        # Menu items (children passed to the constructor: a ListView
+        # cannot be appended to before it is mounted).
+        items: list[ListItem] = []
+        for item in self.items:
+            # Create list item with description
+            if item.description:
+                content = f"[bold]{item.label}[/bold]\n[dim]{item.description}[/dim]"
+            else:
+                content = f"[bold]{item.label}[/bold]"
+
+            list_item = ListItem(Static(content))
+            list_item.item_data = item  # Store item data
+            items.append(list_item)
+
         with VerticalScroll(id="menu-container"):
-            list_view = ListView(id="menu-list")
-            for item in self.items:
-                # Create list item with description
-                if item.description:
-                    content = f"[bold]{item.label}[/bold]\n[dim]{item.description}[/dim]"
-                else:
-                    content = f"[bold]{item.label}[/bold]"
-
-                list_item = ListItem(Static(content))
-                list_item.item_data = item  # Store item data
-                list_view.append(list_item)
-
-            yield list_view
+            yield ListView(*items, id="menu-list")
 
         # Status bar
         yield Static(
@@ -293,56 +294,9 @@ class MainMenuScreen(MenuScreen):
 
 
 class MenuConfigApp(App):
-    """MenuConfig-style TUI application."""
+    """MenuConfig-style TUI application (Nord theme, shared with modern_tui)."""
 
-    CSS = """
-    Screen {
-        background: $surface;
-        padding: 1 2;
-    }
-
-    #breadcrumb {
-        height: 1;
-        margin-bottom: 1;
-        color: $text-muted;
-    }
-
-    #menu-title {
-        height: 3;
-        content-align: center middle;
-        text-style: bold;
-    }
-
-    #menu-container {
-        height: 1fr;
-        border: solid cyan;
-        padding: 1;
-    }
-
-    #menu-list {
-        background: $surface;
-    }
-
-    ListView > ListItem {
-        padding: 1 2;
-        height: auto;
-    }
-
-    ListView > ListItem:hover {
-        background: $boost;
-    }
-
-    ListView > ListItem.-active {
-        background: $primary;
-    }
-
-    #status-bar {
-        height: 1;
-        margin-top: 1;
-        content-align: center middle;
-        color: $text-muted;
-    }
-    """
+    CSS_PATH = "ui/theme.tcss"
 
     BINDINGS: ClassVar[list] = [
         Binding("q", "quit", "Quit", priority=True),

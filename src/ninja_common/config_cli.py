@@ -361,23 +361,35 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print()
 
 
-def cmd_install(_args: argparse.Namespace) -> None:
+def cmd_install(args: argparse.Namespace) -> None:
     """
     Run the TUI installer for initial setup.
 
     This is the primary installation entry point, launched by install.sh.
     Collects API keys, selects models, configures IDE integrations.
+
+    Flags --skip-keys / --skip-models / --non-interactive allow a fast
+    install with defaults; missing pieces are finished later via
+    `ninja-config configure`.
     """
+    skip_keys = bool(
+        getattr(args, "skip_keys", False) or getattr(args, "non_interactive", False)
+    )
+    skip_models = bool(
+        getattr(args, "skip_models", False) or getattr(args, "non_interactive", False)
+    )
     try:
         from ninja_config.tui_installer import run_tui_installer
 
-        sys.exit(run_tui_installer())
+        sys.exit(run_tui_installer(skip_keys=skip_keys, skip_models=skip_models))
     except ImportError:
         print_colored("TUI installer not available (InquirerPy missing).", "red")
         print_colored("Install with: pip install InquirerPy", "dim")
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\n\nInstallation cancelled.")
+        print("\n\nQuick install interrupted — nothing was broken.")
+        print_colored("Fast path: ninja-config install --skip-keys --skip-models", "dim")
+        print_colored("Then finish later with: ninja-config configure", "dim")
         sys.exit(1)
 
 
@@ -711,6 +723,9 @@ Examples:
    # Initial setup (TUI installer - API keys, models, IDE)
    ninja-config install
 
+   # Fast install (skip keys/models, finish later via configure)
+   ninja-config install --skip-keys --skip-models
+
    # Full interactive configuration (RECOMMENDED)
    ninja-config configure
 
@@ -750,9 +765,26 @@ Examples:
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # Install command (TUI installer)
-    subparsers.add_parser(
+    install_parser = subparsers.add_parser(
         "install",
         help="Run TUI installer for initial setup (API keys, models, IDE)",
+    )
+    install_parser.add_argument(
+        "--skip-keys",
+        action="store_true",
+        help="Skip API-key prompts (finish later via ninja-config configure)",
+    )
+    install_parser.add_argument(
+        "--skip-models",
+        action="store_true",
+        help="Keep default models, skip model selection",
+    )
+    install_parser.add_argument(
+        "--non-interactive",
+        "--yes",
+        dest="non_interactive",
+        action="store_true",
+        help="Non-interactive install: skip keys and model prompts, use defaults",
     )
 
     # Configure command (MAIN ENTRY POINT)

@@ -12,6 +12,11 @@ from InquirerPy.separator import Separator
 
 from ninja_common.defaults import OPENROUTER_MODELS, PERPLEXITY_MODELS, ZAI_MODELS
 from ninja_config.model_selector import check_provider_auth, get_provider_models
+from ninja_config.ui.theme import get_nord_inquirer_style
+
+
+#: Nord styling for all model-picker prompts in this module.
+_NORD_STYLE = get_nord_inquirer_style()
 
 
 def configure_models(config_manager, config: dict) -> None:
@@ -59,6 +64,7 @@ def configure_models(config_manager, config: dict) -> None:
         message="Select module to configure:",
         choices=choices,
         pointer="►",
+        style=_NORD_STYLE,
     ).execute()
 
     if not selected:
@@ -100,6 +106,7 @@ def configure_models(config_manager, config: dict) -> None:
         message=f"Select model for {desc}:",
         choices=model_choices,
         pointer="►",
+        style=_NORD_STYLE,
         default=current_model if current_model in [m[0] for m in available_models] else None,
     ).execute()
 
@@ -178,6 +185,7 @@ def configure_task_based_models(config_manager, config: dict) -> None:
         message="What would you like to configure?",
         choices=choices,
         pointer="►",
+        style=_NORD_STYLE,
     ).execute()
 
     if not selected:
@@ -262,6 +270,7 @@ def configure_single_task_model(
         message=f"Select model for {name}:",
         choices=choices,
         pointer="►",
+        style=_NORD_STYLE,
     ).execute()
 
     if selected:
@@ -297,6 +306,7 @@ def configure_model_preferences(config_manager, config: dict) -> None:
         message="Select preference:",
         choices=choices,
         pointer="►",
+        style=_NORD_STYLE,
         default=current,
     ).execute()
 
@@ -413,6 +423,7 @@ def configure_models_with_dynamic_loading(
         message=f"Select model for {module}:",
         choices=model_choices,
         pointer="►",
+        style=_NORD_STYLE,
         default=current_model if current_model else None,
         height="70%",
     ).execute()
@@ -466,6 +477,7 @@ def configure_model_slots(config_manager, config: dict) -> None:
             message="Select a model slot to configure:",
             choices=choices,
             pointer="►",
+            style=_NORD_STYLE,
         ).execute()
 
         if not selected:
@@ -548,6 +560,7 @@ def _pick_model_for_slot(
         message=f"Select model for {slot_name}:",
         choices=model_choices,
         pointer="►",
+        style=_NORD_STYLE,
         default=current_model if current_model else None,
         height="70%",
     ).execute()
@@ -602,6 +615,7 @@ def _display_and_pick_static(
         message=f"Select model for {slot_name}:",
         choices=model_choices,
         pointer="►",
+        style=_NORD_STYLE,
         default=current_model if current_model else None,
     ).execute()
 

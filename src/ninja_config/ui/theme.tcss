@@ -1,0 +1,311 @@
+/* ─────────────────────────────────────────────────────────────
+   Ninja MCP — Nord theme (shared by modern_tui + menuconfig_tui).
+   Palette lives in ui/theme.py; hex values below mirror it:
+   Polar Night #2E3440 #3B4252 #434C5E #4C566A · Snow Storm
+   #D8DEE9 #E5E9F0 #ECEFF4 · Frost #8FBCBB #88C0D0 #81A1C1
+   #5E81AC · Aurora #BF616A #D08770 #EBCB8B #A3BE8C #B48EAD
+   ───────────────────────────────────────────────────────────── */
+
+/* ── Base ─────────────────────────────────────────────────── */
+Screen {
+    background: #2E3440;
+    color: #D8DEE9;
+}
+Header {
+    background: #3B4252;
+    color: #ECEFF4;
+}
+Footer {
+    background: #3B4252;
+    color: #D8DEE9;
+}
+TabbedContent {
+    height: 1fr;
+}
+TabbedContent Tabs {
+    background: #3B4252;
+}
+TabbedContent Tabs Tab {
+    background: #3B4252;
+    color: #D8DEE9;
+}
+TabbedContent Tabs Tab.-active {
+    background: #434C5E;
+    color: #88C0D0;
+    text-style: bold;
+}
+TabPane {
+    padding: 1 2;
+    background: #2E3440;
+}
+VerticalScroll {
+    height: 1fr;
+    scrollbar-color: #4C566A;
+    scrollbar-background: #2E3440;
+    scrollbar-corner-color: #2E3440;
+}
+Horizontal {
+    height: auto;
+}
+Vertical {
+    height: auto;
+}
+Static {
+    color: #D8DEE9;
+}
+Label {
+    color: #D8DEE9;
+}
+
+/* ── Gradient section headers + rules ─────────────────────── */
+.section-header {
+    text-style: bold;
+    margin-top: 1;
+}
+Rule {
+    color: #4C566A;
+}
+
+/* ── Inputs (focus ring instead of flat fill) ─────────────── */
+Input {
+    background: #3B4252;
+    color: #ECEFF4;
+    border: tall #434C5E;
+    margin: 0 0 1 0;
+}
+Input:focus {
+    border: tall #88C0D0;
+}
+Input:disabled {
+    color: #4C566A;
+}
+
+/* ── Buttons: outline (contour) style ─────────────────────── */
+Button {
+    margin: 0 1 1 0;
+    height: 3;
+    min-height: 3;
+    max-height: 3;
+    padding: 0 2;
+    background: transparent;
+    color: #D8DEE9;
+    border: round #4C566A;
+}
+Button:hover {
+    background: #3B4252;
+    color: #ECEFF4;
+    border: round #88C0D0;
+}
+Button:focus {
+    border: heavy #88C0D0;
+    text-style: bold;
+}
+Button.-primary {
+    background: transparent;
+    color: #88C0D0;
+    border: round #5E81AC;
+}
+Button.-primary:hover {
+    background: #3B4252;
+    color: #ECEFF4;
+    border: double #88C0D0;
+}
+Button.-default {
+    background: transparent;
+    color: #D8DEE9;
+    border: round #4C566A;
+}
+Button.-default:hover {
+    background: #3B4252;
+    color: #ECEFF4;
+    border: round #88C0D0;
+}
+Button.-error {
+    background: transparent;
+    color: #BF616A;
+    border: round #BF616A;
+}
+Button.-error:hover {
+    background: #3B4252;
+    color: #EBCB8B;
+    border: double #D08770;
+}
+Button.-success {
+    background: transparent;
+    color: #A3BE8C;
+    border: round #A3BE8C;
+}
+Button.-success:hover {
+    background: #3B4252;
+    color: #ECEFF4;
+    border: double #8FBCBB;
+}
+/* Provider picker row: compact outline buttons */
+.provider-row Button {
+    height: 3;
+    min-height: 3;
+    max-height: 3;
+    margin: 0 1 1 0;
+    border: round #4C566A;
+}
+.provider-row Button:hover {
+    border: round #88C0D0;
+    background: #3B4252;
+}
+
+/* ── Select (provider picker): same contour language as buttons ── */
+Select {
+    background: #3B4252;
+    color: #ECEFF4;
+    border: round #4C566A;
+    margin: 0 0 1 0;
+}
+Select:focus {
+    border: heavy #88C0D0;
+    text-style: bold;
+}
+Select > SelectCurrent {
+    background: #3B4252;
+    color: #ECEFF4;
+}
+SelectOverlay {
+    background: #3B4252;
+    border: round #5E81AC;
+}
+
+/* ── Model autocomplete picker (per-role Provider + Input + dropdown) ─ */
+.model-picker {
+    margin: 0 0 1 0;
+    padding: 0 1;
+    border: round #3B4252;
+}
+.model-picker:focus-within {
+    border: round #5E81AC;
+}
+.model-status {
+    color: #4C566A;
+    height: auto;
+    margin: 0 0 1 0;
+}
+.model-loading {
+    height: 1;
+    margin: 0 0 1 0;
+    color: #88C0D0;
+}
+.model-suggest {
+    max-height: 12;
+    border: round transparent;
+}
+.model-suggest:focus {
+    border: round #5E81AC;
+}
+.model-placeholder {
+    padding: 0 1;
+    color: #4C566A;
+}
+
+/* ── Lists focus ring (keyboard navigation must stay visible) ─────── */
+ListView:focus {
+    scrollbar-color: #88C0D0;
+}
+ListView > ListItem:focus {
+    background: #434C5E;
+}
+
+/* ── Lists + model cards ──────────────────────────────────── */
+ListView {
+    height: auto;
+    max-height: 14;
+    background: #2E3440;
+    scrollbar-color: #4C566A;
+    scrollbar-background: #2E3440;
+}
+ListView > ListItem {
+    padding: 0 1;
+    color: #D8DEE9;
+}
+ListView > ListItem:hover {
+    background: #3B4252;
+}
+ListView > ListItem.--highlight {
+    background: #434C5E;
+}
+/* Card-style model rows: bordered, padded, current badge tint */
+.model-card {
+    border: round #3B4252;
+    padding: 0 1;
+    margin: 0 0 1 0;
+    background: #2E3440;
+}
+.model-card:hover {
+    border: round #5E81AC;
+    background: #3B4252;
+}
+.model-card.--highlight {
+    border: heavy #88C0D0;
+    background: #3B4252;
+}
+.model-card.current {
+    border: round #A3BE8C;
+}
+
+/* ── Collapsible role sections ────────────────────────────── */
+Collapsible {
+    border: round #3B4252;
+    background: #2E3440;
+    margin: 0 0 1 0;
+    padding: 0 1;
+}
+CollapsibleTitle {
+    color: #88C0D0;
+    text-style: bold;
+}
+Collapsible:focus-within {
+    border: round #5E81AC;
+}
+
+/* ── App-specific ids ─────────────────────────────────────── */
+#main-tabs {
+    height: 1fr;
+}
+#secrets-error-banner {
+    color: #BF616A;
+    height: auto;
+}
+#api-key-list {
+    max-height: 16;
+}
+#settings-list {
+    max-height: 16;
+}
+
+/* ── menuconfig_tui ids (same Nord theme, no solid cyan) ──── */
+#breadcrumb {
+    height: 1;
+    margin-bottom: 1;
+    color: #4C566A;
+}
+#menu-title {
+    height: 3;
+    content-align: center middle;
+    text-style: bold;
+    color: #88C0D0;
+}
+#menu-container {
+    height: 1fr;
+    border: round #4C566A;
+    padding: 1;
+    background: #2E3440;
+}
+#menu-container:focus-within {
+    border: round #5E81AC;
+}
+#menu-list {
+    background: #2E3440;
+}
+#status-bar {
+    height: 1;
+    margin-top: 1;
+    content-align: center middle;
+    color: #4C566A;
+}

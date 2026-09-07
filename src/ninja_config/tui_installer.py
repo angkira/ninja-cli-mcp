@@ -48,6 +48,30 @@ def _exec(result: Any) -> Any:
     return result.execute() if hasattr(result, "execute") else result
 
 
+def _confirm(message: str, default: bool = False) -> bool:
+    """Ask a yes/no question; True only on an explicit confirmation.
+
+    Strict ``is True`` comparison keeps unmocked ``MagicMock`` answers
+    (used in unit tests) from accidentally skipping configuration steps.
+    """
+    return _exec(inquirer.confirm(message=message, default=default)) is True
+
+
+#: API key required up-front for each operator (lazy prompting: only the key
+#: for the selected operator is asked during install).
+OPERATOR_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
+    "aider": ("OPENROUTER_API_KEY",),
+    "opencode": ("OPENROUTER_API_KEY",),
+    "gemini": ("GOOGLE_API_KEY",),
+    "claude": ("ANTHROPIC_API_KEY",),
+    "cursor": ("OPENAI_API_KEY",),
+}
+
+#: Local providers never require a key during install; they stay available
+#: in `ninja-config configure`.
+OPTIONAL_INSTALL_KEYS = frozenset({"OLLAMA_API_KEY", "LMSTUDIO_API_KEY"})
+
+
 class TUIInstaller:
     def __init__(self) -> None:
         self.config_mgr = ConfigManager()
@@ -66,7 +90,14 @@ class TUIInstaller:
 
     # ── System checks ────────────────────────────────────────────────
 
-    def run(self) -> int:
+    def run(self, skip_keys: bool = False, skip_models: bool = False) -> int:
+        """Run the installation wizard.
+
+        Args:
+            skip_keys: Skip all API-key prompts (configure later via
+                ``ninja-config configure``).
+            skip_models: Keep default models, skip model selection.
+        """
         self._header()
 
         if not check_python():
@@ -91,12 +122,15 @@ class TUIInstaller:
             return 1
 
         if "coder" in self.modules:
-            self._configure_coder()
+            self._configure_coder(skip_keys=skip_keys)
 
         if "researcher" in self.modules:
-            self._configure_researcher()
+            self._configure_researcher(skip_keys=skip_keys)
 
-        self._configure_models()
+        if skip_models:
+            print("\n  ⏭ Models: keeping defaults (--skip-models).")
+        else:
+            self._configure_models()
         self._configure_daemon()
         selected_ides = self._configure_ide()
         self._register_ides(selected_ides)
@@ -169,7 +203,7 @@ class TUIInstaller:
 
     # ── Coder config ─────────────────────────────────────────────────
 
-    def _configure_coder(self) -> None:
+    def _configure_coder(self, skip_keys: bool = False) -> None:
         print("\n" + "─" * 50)
         print("  💻 CODER MODULE")
         print("─" * 50)
@@ -206,9 +240,33 @@ class TUIInstaller:
                 capture_output=True, text=True, check=False,
             )
 
+        if skip_keys:
+            print("  ⏭ API keys skipped (--skip-keys). Add them later via `ninja-config configure`.")
+            return
+
         print("\n  🔑 Coder API Keys")
-        for key_def in CODER_API_KEYS:
-            self._ask_key(key_def)
+        if not _confirm("  Configure API keys now?", default=False):
+            print("  ⏭ Skipped. Add keys later via `ninja-config configure`.")
+            return
+
+        # Lazy prompting: only the key for the selected operator is required.
+        # (Provider auth itself lives in `select_opencode_provider`; the
+        # installer only collects the matching API key, no duplication.)
+        by_var = {k.env_var: k for k in CODER_API_KEYS}
+        asked: set[str] = set()
+        for env_var in OPERATOR_REQUIRED_KEYS.get(code_cli, ()):
+            key_def = by_var.get(env_var)
+            if key_def is not None:
+                self._ask_key(key_def)
+                asked.add(env_var)
+
+        remaining = [
+            k for k in CODER_API_KEYS
+            if k.env_var not in asked and k.env_var not in OPTIONAL_INSTALL_KEYS
+        ]
+        if remaining and _confirm("  Configure additional API keys?", default=False):
+            for key_def in remaining:
+                self._ask_key(key_def)
 
     def _ask_key(self, key_def: APIKeyDef) -> None:
         existing = get_secret(key_def.env_var)
@@ -231,7 +289,7 @@ class TUIInstaller:
 
     # ── Researcher config ────────────────────────────────────────────
 
-    def _configure_researcher(self) -> None:
+    def _configure_researcher(self, skip_keys: bool = False) -> None:
         print("\n" + "─" * 50)
         print("  🔬 RESEARCHER MODULE")
         print("─" * 50)
@@ -248,6 +306,10 @@ class TUIInstaller:
         provider = _exec(result)
         self._save("NINJA_SEARCH_PROVIDER", provider)
 
+        if skip_keys:
+            print("  ⏭ API keys skipped (--skip-keys). Add them later via `ninja-config configure`.")
+            return
+
         for key_def in RESEARCHER_API_KEYS:
             needed = (
                 (provider == "serper" and key_def.env_var == "SERPER_API_KEY")
@@ -262,6 +324,10 @@ class TUIInstaller:
         print("\n" + "─" * 50)
         print("  🤖 MODEL SELECTION")
         print("─" * 50)
+
+        if _confirm("  Leave default models?", default=True):
+            print("  ⏭ Keeping defaults. Change them later via `ninja-config configure`.")
+            return
 
         for module in self.modules:
             if module not in ("coder", "researcher", "secretary"):
@@ -390,8 +456,14 @@ def _get_env(key: str) -> str:
     return os.environ.get(key, "")
 
 
-def run_tui_installer() -> int:
-    return TUIInstaller().run()
+def run_tui_installer(skip_keys: bool = False, skip_models: bool = False) -> int:
+    """Entry point for the TUI installer.
+
+    Args:
+        skip_keys: Skip all API-key prompts.
+        skip_models: Keep default models, skip model selection.
+    """
+    return TUIInstaller().run(skip_keys=skip_keys, skip_models=skip_models)
 
 
 if __name__ == "__main__":

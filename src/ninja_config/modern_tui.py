@@ -16,20 +16,21 @@ import os
 import shutil
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
-from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import (
     Button,
+    Collapsible,
     Footer,
     Header,
     Input,
     ListItem,
     ListView,
+    Rule,
     Static,
     TabbedContent,
     TabPane,
@@ -53,17 +54,24 @@ from ninja_config.litellm import (
     read_litellm_config,
     write_litellm_config,
 )
-from ninja_config.model_selector import (
-    PROVIDER_DISPLAY_NAMES,
-    discover_opencode_providers,
-    get_provider_models,
-)
+from ninja_config.model_selector import PROVIDER_DISPLAY_NAMES
 from ninja_config.secrets_store import (
     SecretStore,
     SecretStoreUnavailable,
     default_store,
 )
 from ninja_config.settings_registry import SETTINGS, SettingDef
+from ninja_config.ui.model_autocomplete import ModelRolePicker
+from ninja_config.ui.model_cache import (
+    cached_discover_providers,
+    cached_get_provider_models,
+    clear_model_cache,
+)
+from ninja_config.ui.theme import GRADIENT_FROST, gradient_text
+
+
+if TYPE_CHECKING:
+    from rich.text import Text
 
 
 def _ninja_version() -> str:
@@ -74,29 +82,24 @@ def _ninja_version() -> str:
 
 
 def _gradient_logo() -> Text:
-    colors = [
-        "#88c0d0", "#81a1c1", "#8fbcbb", "#5e81ac",
-        "#88c0d0", "#81a1c1", "#8fbcbb", "#5e81ac",
-        "#88c0d0", "#81a1c1", "#8fbcbb", "#5e81ac",
-    ]
+    # Large block-letter NINJA (6 rows) — unambiguous brand mark.
+    # Pure █ letterforms so it reads as NINJA in any monospace terminal
+    # (the previous abstract █-art was misread as "PICO").
+    # Colored with the Frost gradient (#88C0D0→#81A1C1→#8FBCBB→#5E81AC).
     lines = [
-        " ███▀▀███  ▀███▀  ▀████▀  ████▀▀████",
-        " █▀    ▀█    █      █     █▀      ▀█",
-        " █      █    █      █     █        █",
-        " █     ▄▀    █      █     █▄      ▄█",
-        " ███▀▀▀     ▄█▄    ▄████▄  ███▀▀████",
+        "██     ██  █████  ██     ██      ███     ███",
+        "███    ██    █    ███    ██       ██    ██ ██",
+        "████   ██    █    ████   ██       ██   ██   ██",
+        "██ ██  ██    █    ██ ██  ██       ██   █████████",
+        "██  ██ ██    █    ██  ██ ██  ██   ██   ██     ██",
+        "██   ████  █████  ██   ████   █████    ██     ██",
     ]
-    logo = Text()
-    for row_idx, line in enumerate(lines):
-        for col, ch in enumerate(line):
-            if ch != " ":
-                ci = min(col * len(colors) // max(len(line), 1), len(colors) - 1)
-                logo.append(ch, style=colors[ci])
-            else:
-                logo.append(" ")
-        if row_idx < len(lines) - 1:
-            logo.append("\n")
-    return logo
+    return gradient_text("\n".join(lines), GRADIENT_FROST)
+
+
+def section_header(title: str) -> Static:
+    """Gradient section header (Frost gradient + rule-friendly text)."""
+    return Static(gradient_text(f"── {title} ──"), classes="section-header")
 
 
 class AppNotification(Message):
@@ -200,78 +203,109 @@ class SecretsPanel(Vertical):
         self.app.notify(f"{name} deleted.", timeout=3)
 
 
+class ModelCard(ListItem):
+    """Card-style model row: bordered, padded, with a current-model badge.
+
+    Keeps the ``model_id`` / ``role`` / ``env_var`` attributes that
+    ``on_list_view_selected`` relies on.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        model_id: str,
+        description: str,
+        role: str,
+        env_var: str,
+        current: bool = False,
+    ) -> None:
+        self.model_id = model_id
+        self.role = role
+        self.env_var = env_var
+        badge = "[#a3be8c]✓ current[/#a3be8c]" if current else "[dim]○[/dim]"
+        super().__init__(
+            Static(f"[bold]{name}[/bold]  {badge}\n[dim]{model_id} — {description}[/dim]"),
+            classes="model-card current" if current else "model-card",
+        )
+
+
 class NinjaConfigApp(App):
     TITLE = "Ninja MCP"
     SUB_TITLE = f"v{_ninja_version()} — Configuration"
 
-    CSS = """
-    Screen { background: #2e3440; }
-    Header { background: #3b4252; color: #eceff4; }
-    Footer { background: #3b4252; color: #d8dee9; }
-    TabbedContent { height: 1fr; }
-    TabbedContent Tabs { background: #3b4252; }
-    TabbedContent Tabs Tab { background: #3b4252; color: #d8dee9; }
-    TabbedContent Tabs Tab.-active { background: #434c5e; color: #88c0d0; text-style: bold; }
-    TabPane { padding: 1 2; background: #2e3440; }
-    VerticalScroll { height: 1fr; }
-    ListView { height: auto; max-height: 12; }
-    Horizontal { height: auto; }
-    Static { color: #d8dee9; }
-    Label { color: #d8dee9; }
-    Input { background: #3b4252; color: #eceff4; border: tall #434c5e; }
-    Input:focus { border: tall #88c0d0; }
-    Button { margin: 0 1; height: 3; min-height: 3; max-height: 3; padding: 0 2; }
-    Button.-primary { background: #5e81ac; color: #eceff4; }
-    Button.-primary:hover { background: #88c0d0; color: #2e3440; }
-    Button.-default { background: #434c5e; color: #d8dee9; }
-    Button.-default:hover { background: #4c566a; color: #eceff4; }
-    Button.-error { background: #bf616a; color: #eceff4; }
-    Button.-error:hover { background: #d08770; color: #2e3440; }
-    Button.-success { background: #a3be8c; color: #2e3440; }
-    Button.-success:hover { background: #8fbcbb; color: #2e3440; }
-    #main-tabs { height: 1fr; }
-    """
+    CSS_PATH = "ui/theme.tcss"
 
     BINDINGS: ClassVar[list] = [
         Binding("q", "quit", "Quit", priority=True),
         Binding("ctrl+r", "refresh", "Refresh"),
+        Binding("/", "focus_search", "Search"),
+        Binding("s", "save_current", "Save"),
+        Binding("1", "goto_tab(0)", "Overview"),
+        Binding("2", "goto_tab(1)", "Keys"),
+        Binding("3", "goto_tab(2)", "Models"),
+        Binding("4", "goto_tab(3)", "Daemon"),
+        Binding("5", "goto_tab(4)", "IDE"),
+        Binding("6", "goto_tab(5)", "Settings"),
+        Binding("escape", "escape_focus", "Back", show=False),
+    ]
+
+    ROLE_MAP: ClassVar[dict[str, tuple[str, str]]] = {
+        "quick": ("NINJA_MODEL_QUICK", "opencode/glm-4.7-free"),
+        "sequential": ("NINJA_MODEL_SEQUENTIAL", "zai-coding-plan/glm-4.7"),
+        "parallel": ("NINJA_MODEL_PARALLEL", "opencode/glm-4.7-free"),
+        "researcher": ("NINJA_RESEARCHER_MODEL", "sonar"),
+        "secretary": ("NINJA_SECRETARY_MODEL", "opencode/glm-4.7-free"),
+    }
+
+    TAB_ORDER: ClassVar[list[str]] = [
+        "tab-overview",
+        "tab-keys",
+        "tab-models",
+        "tab-daemon",
+        "tab-ide",
+        "tab-settings",
     ]
 
     def __init__(self, config_path: str | None = None) -> None:
         super().__init__()
         self.config_manager = ConfigManager(config_path)
+        self._models_loaded = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
 
         with TabbedContent(id="main-tabs"):
-            with TabPane("Overview"):
+            with TabPane("Overview", id="tab-overview"):
                 with VerticalScroll():
                     yield Static(_gradient_logo())
                     yield Static("")
-                    yield Static(f"  [bold #eceff4]Ninja MCP[/bold #eceff4]  [dim]v{_ninja_version()}[/dim]")
+                    yield Static(
+                        f"[bold #eceff4]Ninja MCP[/bold #eceff4]  [dim]v{_ninja_version()}[/dim]"
+                    )
                     yield Static("")
-                    yield Static("  [bold #88c0d0]── System ──────────────────────────[/bold #88c0d0]")
+                    yield section_header("System")
+                    yield Rule()
                     yield Static(self._system_status())
-                    yield Static("")
-                    yield Static("  [bold #88c0d0]── Configuration ────────────────────[/bold #88c0d0]")
+                    yield section_header("Configuration")
+                    yield Rule()
                     yield Static(self._config_summary())
-                    yield Static("")
-                    yield Static("  [bold #88c0d0]── Quick Actions ───────────────────[/bold #88c0d0]")
+                    yield section_header("Quick Actions")
+                    yield Rule()
                     yield Horizontal(
                         Button("Check Updates", variant="primary", id="btn-update"),
                         Button("Run Doctor", id="btn-doctor"),
                         Button("Show Config", id="btn-show-config"),
                     )
 
-            with TabPane("API Keys"):
+            with TabPane("API Keys", id="tab-keys"):
                 with VerticalScroll():
-                    yield Static("  [bold #88c0d0]API Key Management[/bold #88c0d0]")
-                    yield Static("  [dim]Keys are stored via OS keyring → encrypted SQLite.[/dim]")
+                    yield section_header("API Key Management")
+                    yield Rule()
+                    yield Static("[dim]Keys are stored via OS keyring → encrypted SQLite.[/dim]")
                     yield Static("")
                     yield ListView(id="api-key-list")
                     yield Static("")
-                    yield Static("  [bold]Set / Update Key[/bold]")
+                    yield Static("[bold]Set / Update Key[/bold]")
                     yield Input(
                         placeholder="Select key above, then enter value...",
                         id="api-key-input",
@@ -282,40 +316,55 @@ class NinjaConfigApp(App):
                         Button("Delete", variant="error", id="btn-delete-key"),
                     )
 
-            with TabPane("Models"):
+            with TabPane("Models", id="tab-models"):
                 with VerticalScroll():
-                    yield Static("  [bold #88c0d0]Model Selection[/bold #88c0d0]")
-                    yield Static("")
-                    yield Static("  [bold #88c0d0]── Coder ────────────────────────────[/bold #88c0d0]")
-                    yield Static("  Select model for each coder task type.")
-                    yield Static("")
-                    yield Static("  [bold]Quick[/bold] [dim](fast, simple tasks)[/dim]")
-                    yield Static(self._current_model("NINJA_MODEL_QUICK", "opencode/glm-4.7-free"), id="lbl-quick")
-                    yield Horizontal(id="prov-quick")
-                    yield ListView(id="list-quick")
-                    yield Static("")
-                    yield Static("  [bold]Sequential[/bold] [dim](complex, multi-step)[/dim]")
-                    yield Static(self._current_model("NINJA_MODEL_SEQUENTIAL", "zai-coding-plan/glm-4.7"), id="lbl-sequential")
-                    yield Horizontal(id="prov-sequential")
-                    yield ListView(id="list-sequential")
-                    yield Static("")
-                    yield Static("  [bold]Parallel[/bold] [dim](high concurrency)[/dim]")
-                    yield Static(self._current_model("NINJA_MODEL_PARALLEL", "opencode/glm-4.7-free"), id="lbl-parallel")
-                    yield Horizontal(id="prov-parallel")
-                    yield ListView(id="list-parallel")
-                    yield Static("")
-                    yield Static("  [bold #88c0d0]── Researcher ──────────────────────[/bold #88c0d0]")
-                    yield Static(self._current_model("NINJA_RESEARCHER_MODEL", "sonar"), id="lbl-researcher")
-                    yield Horizontal(id="prov-researcher")
-                    yield ListView(id="list-researcher")
-                    yield Static("")
-                    yield Static("  [bold #88c0d0]── Secretary ──────────────────────[/bold #88c0d0]")
-                    yield Static(self._current_model("NINJA_SECRETARY_MODEL", "opencode/glm-4.7-free"), id="lbl-secretary")
-                    yield Horizontal(id="prov-secretary")
-                    yield ListView(id="list-secretary")
-                    yield Static("")
-                    yield Static("  [bold]Custom Model ID[/bold]")
-                    yield Input(placeholder="e.g. openrouter/qwen/qwen3-32b", id="custom-model-input")
+                    yield section_header("Model Selection")
+                    yield Rule()
+                    yield Static(
+                        "[dim]Pick a provider, type 2+ chars to search. "
+                        "↓/↑ + Enter picks, Enter on raw text saves custom.[/dim]"
+                    )
+                    with Collapsible(title="Coder · Quick (fast, simple tasks)", collapsed=False):
+                        yield ModelRolePicker(
+                            role="quick",
+                            env_var="NINJA_MODEL_QUICK",
+                            default="opencode/glm-4.7-free",
+                            config=self.config_manager,
+                        )
+                    with Collapsible(
+                        title="Coder · Sequential (complex, multi-step)", collapsed=True
+                    ):
+                        yield ModelRolePicker(
+                            role="sequential",
+                            env_var="NINJA_MODEL_SEQUENTIAL",
+                            default="zai-coding-plan/glm-4.7",
+                            config=self.config_manager,
+                        )
+                    with Collapsible(title="Coder · Parallel (high concurrency)", collapsed=True):
+                        yield ModelRolePicker(
+                            role="parallel",
+                            env_var="NINJA_MODEL_PARALLEL",
+                            default="opencode/glm-4.7-free",
+                            config=self.config_manager,
+                        )
+                    with Collapsible(title="Researcher", collapsed=True):
+                        yield ModelRolePicker(
+                            role="researcher",
+                            env_var="NINJA_RESEARCHER_MODEL",
+                            default="sonar",
+                            config=self.config_manager,
+                        )
+                    with Collapsible(title="Secretary", collapsed=True):
+                        yield ModelRolePicker(
+                            role="secretary",
+                            env_var="NINJA_SECRETARY_MODEL",
+                            default="opencode/glm-4.7-free",
+                            config=self.config_manager,
+                        )
+                    yield Static("[bold]Custom Model ID[/bold]")
+                    yield Input(
+                        placeholder="e.g. openrouter/qwen/qwen3-32b", id="custom-model-input"
+                    )
                     yield Horizontal(
                         Button("Set Coder Quick", id="set-quick"),
                         Button("Set Coder Seq", id="set-seq"),
@@ -324,9 +373,10 @@ class NinjaConfigApp(App):
                         Button("Set Secretary", id="set-sec"),
                     )
 
-            with TabPane("Daemon"):
+            with TabPane("Daemon", id="tab-daemon"):
                 with VerticalScroll():
-                    yield Static("  [bold #88c0d0]Daemon Configuration[/bold #88c0d0]")
+                    yield section_header("Daemon Configuration")
+                    yield Rule()
                     yield Static(self._daemon_status())
                     yield Static("")
                     yield Horizontal(
@@ -334,54 +384,62 @@ class NinjaConfigApp(App):
                         Button("Restart Daemon", id="btn-restart-daemon"),
                     )
                     yield Static("")
-                    yield Static("  [bold]Ports[/bold]")
+                    yield Static("[bold]Ports[/bold]")
                     yield Static(self._daemon_ports())
                     yield Static("")
-                    yield Static("  [dim]Changes require daemon restart.[/dim]")
+                    yield Static("[dim]Changes require daemon restart.[/dim]")
 
-            with TabPane("IDE"):
+            with TabPane("IDE", id="tab-ide"):
                 with VerticalScroll():
-                    yield Static("  [bold #88c0d0]IDE Integration[/bold #88c0d0]")
-                    yield Static("")
+                    yield section_header("IDE Integration")
+                    yield Rule()
                     yield Static(self._ide_status())
                     yield Static("")
-                    yield Static("  [bold]Actions[/bold]")
+                    yield Static("[bold]Actions[/bold]")
                     yield Button("Register Claude Code MCP", variant="primary", id="btn-claude-mcp")
                     yield Button("Register OpenCode MCP", id="btn-opencode-mcp")
 
-            with TabPane("Settings"):
+            with TabPane("Settings", id="tab-settings"):
                 with VerticalScroll():
-                    yield Static("  [bold #88c0d0]Settings[/bold #88c0d0]")
-                    yield Static("")
-                    yield Static("  [bold]Operator[/bold]")
+                    yield section_header("Settings")
+                    yield Rule()
+                    yield Static("[bold]Operator[/bold]")
                     yield Static(self._operator_status())
                     yield Static("")
-                    yield Static("  [bold]Detected Operators[/bold]")
+                    yield Static("[bold]Detected Operators[/bold]")
                     yield Static(self._operator_buttons())
                     yield Static("")
-                    yield Static("  [bold]Search Provider[/bold]")
+                    yield Static("[bold]Search Provider[/bold]")
                     yield Static(self._search_status())
                     yield Horizontal(
                         Button("DuckDuckGo", id="search-duckduckgo"),
                         Button("Serper", id="search-serper"),
                         Button("Perplexity", id="search-perplexity"),
                     )
-                    yield Static("")
-                    yield Static("  [bold #88c0d0]── LiteLLM Proxy ───────────────────[/bold #88c0d0]")
-                    yield Static("  Self-hosted OpenAI-compatible proxy. Configure the")
-                    yield Static("  base URL + key here; models then appear in the picker.")
+                    yield section_header("LiteLLM Proxy")
+                    yield Rule()
+                    yield Static("Self-hosted OpenAI-compatible proxy. Configure the")
+                    yield Static("base URL + key here; models then appear in the picker.")
                     yield Static(self._litellm_status(), id="lbl-litellm")
-                    yield Input(placeholder="Base URL (e.g. http://localhost:4000/v1)", id="litellm-url")
+                    yield Input(
+                        placeholder="Base URL (e.g. http://localhost:4000/v1)", id="litellm-url"
+                    )
                     yield Input(placeholder="API key", id="litellm-key", password=True)
-                    yield Input(placeholder="Models (comma-separated: gpt-4o, deepseek-chat)", id="litellm-models")
+                    yield Input(
+                        placeholder="Models (comma-separated: gpt-4o, deepseek-chat)",
+                        id="litellm-models",
+                    )
                     yield Horizontal(
                         Button("Save LiteLLM", variant="primary", id="btn-save-litellm"),
                         Button("Clear LiteLLM", id="btn-clear-litellm"),
                     )
                     yield Static("")
-                    yield Static("  [bold #88c0d0]── Runtime Constants ────────────────[/bold #88c0d0]")
-                    yield Static("  All tunable runtime settings (timeouts, safety, retries, serve pool).")
-                    yield Static("  Select a setting, edit the value, then press Save.")
+                    yield section_header("Runtime Constants")
+                    yield Rule()
+                    yield Static(
+                        "All tunable runtime settings (timeouts, safety, retries, serve pool)."
+                    )
+                    yield Static("Select a setting, edit the value, then press Save.")
                     yield ListView(id="settings-list")
                     yield Static("")
                     yield Input(
@@ -393,35 +451,43 @@ class NinjaConfigApp(App):
                         Button("Reset to Default", id="btn-reset-setting"),
                     )
                     yield Static("")
-                    yield Static("  [bold #88c0d0]About[/bold #88c0d0]")
-                    yield Static(f"  Version: {_ninja_version()}")
-                    yield Static("  Config: ~/.ninja-mcp.env")
-                    yield Static("  Secrets: OS keyring → encrypted SQLite")
+                    yield Static("[bold #88c0d0]About[/bold #88c0d0]")
+                    yield Static(f"Version: {_ninja_version()}")
+                    yield Static("Config: ~/.ninja-mcp.env")
+                    yield Static("Secrets: OS keyring → encrypted SQLite")
                     yield Static("")
                     yield Button("Check for Updates", variant="primary", id="btn-update-settings")
 
         yield Footer()
 
     def on_mount(self) -> None:
+        # Light mount only: Header/Tabs/Footer + skeleton. Heavy provider/model
+        # discovery runs in background workers after the Models tab opens, so
+        # the first frame paints in <0.5s instead of ~14s of empty screen.
         self._refresh_api_keys()
-        self._populate_role_lists()
         self._refresh_settings_list()
 
-    ROLE_MAP: ClassVar[dict[str, tuple[str, str]]] = {
-        "quick": ("NINJA_MODEL_QUICK", "opencode/glm-4.7-free"),
-        "sequential": ("NINJA_MODEL_SEQUENTIAL", "zai-coding-plan/glm-4.7"),
-        "parallel": ("NINJA_MODEL_PARALLEL", "opencode/glm-4.7-free"),
-        "researcher": ("NINJA_RESEARCHER_MODEL", "sonar"),
-        "secretary": ("NINJA_SECRETARY_MODEL", "opencode/glm-4.7-free"),
-    }
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        pane = getattr(event, "pane", None)
+        if (getattr(pane, "id", "") or "") != "tab-models":
+            return
+        if self._models_loaded:
+            return
+        self._models_loaded = True
+        for picker in self.query(ModelRolePicker):
+            try:
+                picker.load_providers()
+            except Exception:
+                continue
 
     def _provider_buttons_for_role(self, role: str) -> list[tuple[str, str]]:
         """Return (provider_id, display_name) buttons for a role.
 
-        Uses dynamic discovery via ``opencode models``; falls back to the
+        Uses cached dynamic discovery via ``opencode models`` (one subprocess
+        per process lifetime, shared across roles); falls back to the
         static provider list if the CLI is unavailable.
         """
-        discovered = discover_opencode_providers()
+        discovered = cached_discover_providers()
         if role == "researcher":
             # Researcher uses Perplexity directly, plus OpenRouter for models.
             if any(p == "openrouter" for p, _, _ in discovered):
@@ -442,15 +508,24 @@ class NinjaConfigApp(App):
                 row = self.query_one(f"#{prov_row_id}", Horizontal)
             except Exception:
                 continue
-            row.remove_children(list(row.children))
-            for pid, display in self._provider_buttons_for_role(role):
-                row.mount(Button(display, id=f"prov-{role}-{pid}"))
+            wanted = list(self._provider_buttons_for_role(role))
+            wanted_ids = [f"prov-{role}-{pid}" for pid, _ in wanted]
+            current_ids = [c.id for c in row.children]
+            if current_ids == wanted_ids:
+                continue  # Already populated — skip (mount is not idempotent).
+            # Providers changed mid-session: drop stale buttons and mount only
+            # genuinely new ids. Child removal is async, so re-mounting a
+            # still-registered id would raise DuplicateIds.
+            row.remove_children([c for c in row.children if c.id not in wanted_ids])
+            for bid, (_pid, display) in zip(wanted_ids, wanted):
+                if bid not in current_ids:
+                    row.mount(Button(display, id=bid))
 
     def _models_for_role(self, role: str, provider: str) -> list[tuple[str, str, str]]:
-        # Dynamic discovery first — query the actual operator.
+        # Cached dynamic discovery first — query the actual operator.
         operator = self.config_manager.get("NINJA_CODE_BIN", "opencode") or "opencode"
         try:
-            models = get_provider_models(operator, provider)
+            models = cached_get_provider_models(operator, provider)
         except Exception:
             models = []
         if models:
@@ -476,12 +551,12 @@ class NinjaConfigApp(App):
             provider = self._guess_provider(cur)
             models = self._models_for_role(role, provider)
             for mid, name, desc in models:
-                marker = " ◄" if mid == cur else ""
-                item = ListItem(Static(f"[bold]{name}[/bold]{marker}\n  [dim]{mid} — {desc}[/dim]"))
-                item.model_id = mid
-                item.role = role
-                item.env_var = env_var
-                lv.append(item)
+                lv.append(ModelCard(name, mid, desc, role, env_var, current=(mid == cur)))
+        for picker in self.query(ModelRolePicker):
+            try:
+                picker.refresh_label()
+            except Exception:
+                continue
 
     def _populate_role_for_provider(self, role: str, provider: str) -> None:
         cfg = self.config_manager.list_all()
@@ -495,12 +570,7 @@ class NinjaConfigApp(App):
         cur = cfg.get(env_var, default)
         models = self._models_for_role(role, provider)
         for mid, name, desc in models:
-            marker = " ◄" if mid == cur else ""
-            item = ListItem(Static(f"[bold]{name}[/bold]{marker}\n  [dim]{mid} — {desc}[/dim]"))
-            item.model_id = mid
-            item.role = role
-            item.env_var = env_var
-            lv.append(item)
+            lv.append(ModelCard(name, mid, desc, role, env_var, current=(mid == cur)))
 
     def _guess_provider(self, model_id: str) -> str:
         if not model_id:
@@ -530,9 +600,9 @@ class NinjaConfigApp(App):
         tools = detect_tools()
         ides = detect_ides()
         return (
-            f"  Tools: {', '.join(tools.keys()) if tools else '[dim]none[/dim]'}\n"
-            f"  IDEs:  {', '.join(ides.keys()) if ides else '[dim]none[/dim]'}\n"
-            f"  OS:    {os.uname().sysname} {os.uname().machine}"
+            f"Tools: {', '.join(tools.keys()) if tools else '[dim]none[/dim]'}\n"
+            f"IDEs:  {', '.join(ides.keys()) if ides else '[dim]none[/dim]'}\n"
+            f"OS:    {os.uname().sysname} {os.uname().machine}"
         )
 
     def _config_summary(self) -> str:
@@ -541,20 +611,20 @@ class NinjaConfigApp(App):
         daemon = cfg.get("NINJA_ENABLE_DAEMON", "true")
         keys = sum(1 for k in API_KEYS if cfg.get(k.env_var) or os.environ.get(k.env_var))
         return (
-            f"  Operator: {op}\n"
-            f"  Daemon:   {'enabled' if daemon == 'true' else 'disabled'}\n"
-            f"  API Keys: {keys}/{len(API_KEYS)} configured"
+            f"Operator: {op}\n"
+            f"Daemon:   {'enabled' if daemon == 'true' else 'disabled'}\n"
+            f"API Keys: {keys}/{len(API_KEYS)} configured"
         )
 
     def _current_model(self, env_var: str, default: str) -> str:
         cfg = self.config_manager.list_all()
         cur = cfg.get(env_var, default)
-        return f"  Current: [#a3be8c]{cur}[/#a3be8c]"
+        return f"Current: [#a3be8c]{cur}[/#a3be8c]"
 
     def _daemon_status(self) -> str:
         cfg = self.config_manager.list_all()
         on = cfg.get("NINJA_ENABLE_DAEMON", "true") == "true"
-        return f"  Status: {'[#a3be8c]enabled[/#a3be8c]' if on else '[#ebcb8b]disabled[/#ebcb8b]'}"
+        return f"Status: {'[#a3be8c]enabled[/#a3be8c]' if on else '[#ebcb8b]disabled[/#ebcb8b]'}"
 
     def _daemon_ports(self) -> str:
         cfg = self.config_manager.list_all()
@@ -565,14 +635,15 @@ class NinjaConfigApp(App):
                 continue
             cur = cfg.get(key, val)
             name = key.replace("NINJA_", "").replace("_PORT", "").title()
-            lines.append(f"  {name:12} {cur}")
+            lines.append(f"{name:12} {cur}")
         return "\n".join(lines)
 
     def _ide_status(self) -> str:
         from ninja_config.config_shared import IDES as IDE_DEFS
+
         ides = detect_ides()
         if not ides:
-            return "  [dim]No IDE configurations detected.[/dim]"
+            return "[dim]No IDE configurations detected.[/dim]"
         lines = []
         for ide_id, path in ides.items():
             name = ide_id.title()
@@ -580,38 +651,38 @@ class NinjaConfigApp(App):
                 if d.id == ide_id:
                     name = d.display_name
                     break
-            lines.append(f"  [#a3be8c]✓[/#a3be8c] {name}: {path}")
+            lines.append(f"[#a3be8c]✓[/#a3be8c] {name}: {path}")
         return "\n".join(lines)
 
     def _operator_status(self) -> str:
         cfg = self.config_manager.list_all()
-        return f"  Current: [bold]{cfg.get('NINJA_CODE_BIN', 'not set')}[/bold]"
+        return f"Current: [bold]{cfg.get('NINJA_CODE_BIN', 'not set')}[/bold]"
 
     def _operator_buttons(self) -> str:
         tools = detect_tools()
         if not tools:
-            return "  [dim]No operators detected.[/dim]"
+            return "[dim]No operators detected.[/dim]"
         lines = []
         for tid in tools:
             op = OPERATOR_MAP.get(tid)
             if op:
-                lines.append(f"  [bold]{op.display_name}[/bold] — {op.description}")
+                lines.append(f"[bold]{op.display_name}[/bold] — {op.description}")
         return "\n".join(lines)
 
     def _search_status(self) -> str:
         cfg = self.config_manager.list_all()
-        return f"  Current: [bold]{cfg.get('NINJA_SEARCH_PROVIDER', 'duckduckgo')}[/bold]"
+        return f"Current: [bold]{cfg.get('NINJA_SEARCH_PROVIDER', 'duckduckgo')}[/bold]"
 
     # ── LiteLLM ─────────────────────────────────────────────────────────
 
     def _litellm_status(self) -> str:
         cfg = read_litellm_config()
         if not cfg or not cfg["base_url"]:
-            return "  [dim]LiteLLM not configured[/dim]"
+            return "[dim]LiteLLM not configured[/dim]"
         models = ", ".join(cfg["models"]) or "none"
         return (
-            f"  [bold #a3be8c]Configured:[/bold #a3be8c] {cfg['base_url']}\n"
-            f"  [bold]Models:[/bold] {models}"
+            f"[bold #a3be8c]Configured:[/bold #a3be8c] {cfg['base_url']}\n"
+            f"[bold]Models:[/bold] {models}"
         )
 
     def _save_litellm(self) -> None:
@@ -813,7 +884,7 @@ class NinjaConfigApp(App):
             lbl_id = f"lbl-{role}"
             try:
                 lbl = self.query_one(f"#{lbl_id}", Static)
-                lbl.update(f"  Current: [#a3be8c]{model_id}[/#a3be8c]")
+                lbl.update(f"Current: [#a3be8c]{model_id}[/#a3be8c]")
             except Exception:
                 pass
             self._populate_role_lists()
@@ -834,7 +905,7 @@ class NinjaConfigApp(App):
         }
         for prefix, role in ROLE_PREFIXES.items():
             if bid.startswith(prefix):
-                provider = bid[len(prefix):]
+                provider = bid[len(prefix) :]
                 self._populate_role_for_provider(role, provider)
                 return
 
@@ -856,7 +927,7 @@ class NinjaConfigApp(App):
         self.config_manager.set(env_var, inp.value)
         try:
             lbl = self.query_one(f"#lbl-{role}", Static)
-            lbl.update(f"  Current: [#a3be8c]{inp.value}[/#a3be8c]")
+            lbl.update(f"Current: [#a3be8c]{inp.value}[/#a3be8c]")
         except Exception:
             pass
         self._populate_role_lists()
@@ -873,7 +944,7 @@ class NinjaConfigApp(App):
 
     def _show_config(self) -> None:
         cfg = self.config_manager.list_all()
-        lines = [f"  {k} = {mask_key(v) if 'KEY' in k else v}" for k, v in sorted(cfg.items())]
+        lines = [f"{k} = {mask_key(v) if 'KEY' in k else v}" for k, v in sorted(cfg.items())]
         self.notify("\n".join(lines[:25]), timeout=8)
 
     def _save_key(self) -> None:
@@ -917,12 +988,86 @@ class NinjaConfigApp(App):
         cur = cfg.get("NINJA_ENABLE_DAEMON", "true")
         new = "false" if cur == "true" else "true"
         self.config_manager.set("NINJA_ENABLE_DAEMON", new)
-        self.notify(f"Daemon {'enabled' if new == 'true' else 'disabled'}. Restart to apply.", timeout=3)
+        self.notify(
+            f"Daemon {'enabled' if new == 'true' else 'disabled'}. Restart to apply.", timeout=3
+        )
 
     def action_refresh(self) -> None:
+        clear_model_cache()
         self._refresh_api_keys()
-        self._populate_role_lists()
+        self._refresh_settings_list()
+        for picker in self.query(ModelRolePicker):
+            try:
+                picker.refresh_label()
+                if self._models_loaded:
+                    picker.refresh_providers()
+            except Exception:
+                continue
         self.notify("Refreshed.", timeout=2)
+
+    # ── Keyboard-first navigation (all actions wired to BINDINGS above) ──
+
+    def action_goto_tab(self, index: int) -> None:
+        """Jump to tab by number (``1``-``6``)."""
+        try:
+            tabs = self.query_one("#main-tabs", TabbedContent)
+            tabs.active = self.TAB_ORDER[int(index)]
+        except Exception:
+            pass
+
+    def _active_tab_id(self) -> str:
+        try:
+            return str(self.query_one("#main-tabs", TabbedContent).active or "")
+        except Exception:
+            return ""
+
+    def action_focus_search(self) -> None:
+        """``/`` — focus the search/autocomplete input of the active tab."""
+        active = self._active_tab_id()
+        candidates: list[str] = []
+        if active == "tab-models":
+            candidates = [f"#model-input-{role}" for role in self.ROLE_MAP]
+        elif active == "tab-keys":
+            candidates = ["#api-key-input"]
+        elif active == "tab-settings":
+            candidates = ["#settings-input"]
+        else:
+            candidates = ["#api-key-input", "#settings-input", "#model-input-quick"]
+        for selector in candidates:
+            try:
+                self.query_one(selector, Input).focus()
+                return
+            except Exception:
+                continue
+
+    def action_save_current(self) -> None:
+        """``s`` — save from wherever the focus is (model input/API key/setting)."""
+        focused = self.focused
+        fid = str(getattr(focused, "id", "") or "")
+        if fid.startswith("model-input-"):
+            role = fid[len("model-input-") :]
+            for picker in self.query(ModelRolePicker):
+                if picker.role == role:
+                    try:
+                        picker.save_current_input()
+                    except Exception:
+                        pass
+                    return
+            return
+        if fid == "api-key-input" or self._active_tab_id() == "tab-keys":
+            self._save_key()
+            return
+        if fid in ("settings-input", "settings-list") or self._active_tab_id() == "tab-settings":
+            self._save_setting()
+            return
+        self.notify("Focus a model/key/setting input, then press s to save.", timeout=3)
+
+    def action_escape_focus(self) -> None:
+        """``Esc`` fallback — drop focus when no dropdown/input consumes it."""
+        try:
+            self.set_focus(None)
+        except Exception:
+            pass
 
 
 def run_modern_tui(config_path: str | None = None) -> int:
