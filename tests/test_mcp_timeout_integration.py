@@ -1,6 +1,3 @@
-import pytest
-
-
 """Integration test for ninja-coder timeout fixes using MCP tools.
 
 This test simulates real user scenarios by:
@@ -20,10 +17,8 @@ import tempfile
 import time
 from pathlib import Path
 
-
-# Add src to path
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
+from ninja_coder.models import PlanStep, SequentialPlanRequest, SimpleTaskRequest, StepConstraints
+from ninja_coder.tools import get_executor
 
 
 async def test_mcp_simple_task():
@@ -54,18 +49,16 @@ async def test_mcp_simple_task():
         print("Timeout: 30 seconds")
         print("Expected: Complete or timeout properly (no hanging)\n")
 
-        # Import the actual tool function
-        from ninja_coder.tools import coder_simple_task
-
         start_time = time.time()
 
         try:
-            # Call the actual MCP tool
-            result = await coder_simple_task(
-                task="Create a file called test.py with a function hello() that prints 'Hello'",
-                repo_root=str(repo_root),
-                mode="quick",
-                constraints={"time_budget_sec": 30},
+            # Call the current public MCP tool implementation API.
+            result = await get_executor().simple_task(
+                SimpleTaskRequest(
+                    task="Create a file called test.py with a function hello() that prints 'Hello'",
+                    repo_root=str(repo_root),
+                    mode="quick",
+                )
             )
 
             elapsed = time.time() - start_time
@@ -130,28 +123,30 @@ async def test_mcp_sequential_tasks():
         print("Timeout: 60 seconds total")
         print("Expected: Complete or timeout properly (no hanging)\n")
 
-        from ninja_coder.tools import coder_execute_plan_sequential
-
         steps = [
-            {
-                "id": "step1",
-                "title": "Create utils",
-                "task": "Create utils.py with add(a, b) function",
-            },
-            {
-                "id": "step2",
-                "title": "Create main",
-                "task": "Create main.py that uses add from utils",
-            },
+            PlanStep(
+                id="step1",
+                title="Create utils",
+                task="Create utils.py with add(a, b) function",
+                constraints=StepConstraints(time_budget_sec=30),
+            ),
+            PlanStep(
+                id="step2",
+                title="Create main",
+                task="Create main.py that uses add from utils",
+                constraints=StepConstraints(time_budget_sec=30),
+            ),
         ]
 
         start_time = time.time()
 
         try:
-            result = await coder_execute_plan_sequential(
-                repo_root=str(repo_root),
-                steps=steps,
-                mode="quick",
+            result = await get_executor().execute_plan_sequential(
+                SequentialPlanRequest(
+                    repo_root=str(repo_root),
+                    steps=steps,
+                    mode="quick",
+                )
             )
 
             elapsed = time.time() - start_time
@@ -210,7 +205,7 @@ sys.stderr.close()
 time.sleep(3600)
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(hang_script)
         script_path = f.name
 
@@ -250,6 +245,7 @@ time.sleep(3600)
             except TimeoutError:
                 print("   ⚠️  Process required SIGKILL")
                 import signal
+
                 try:
                     process.send_signal(signal.SIGKILL)
                     await asyncio.wait_for(process.wait(), timeout=1)
@@ -321,6 +317,7 @@ async def main():
     except Exception as e:
         print(f"\n\n❌ TEST SUITE FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
