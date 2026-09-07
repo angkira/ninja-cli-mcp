@@ -251,6 +251,7 @@ async def test_activity_based_timeout_max_timeout_reached(driver, tmp_path, monk
 
         process = MagicMock()
         process.returncode = 0
+        process.pid = 99999
 
         # Create mock streams that produce data every 1s (well within inactivity timeout)
         mock_stdout = AsyncMock()
@@ -292,6 +293,10 @@ async def test_activity_based_timeout_max_timeout_reached(driver, tmp_path, monk
         "asyncio.create_subprocess_exec",
         mock_subprocess,
     )
+
+    # Mock process group kill (used by timeout handler)
+    monkeypatch.setattr("os.killpg", lambda *a, **kw: None)
+    monkeypatch.setattr("os.getpgid", lambda pid: pid)
 
     # Disable safety checks
     monkeypatch.setattr(
