@@ -46,6 +46,7 @@ SETTINGS: list[SettingDef] = [
     SettingDef("NINJA_RESEARCHER_MODEL", "Researcher Model", "Model for web research", "sonar-reasoning"),
     SettingDef("NINJA_RESOURCES_MODEL", "Resources Model", "Model for resource templates", ""),
     SettingDef("NINJA_PROMPTS_MODEL", "Prompts Model", "Model for prompt management", ""),
+    SettingDef("NINJA_AGENT_MODEL", "Agent Model", "Model for agent orchestration", "opencode/glm-4.7-free"),
     # ── Operator / provider ──────────────────────────────────────────────
     SettingDef("NINJA_CODE_BIN", "Code Operator", "Which AI coding CLI to use (opencode, aider, ...)", "opencode"),
     SettingDef("NINJA_CODER_PROVIDER", "Coder Provider", "Default OpenCode provider", "openrouter"),

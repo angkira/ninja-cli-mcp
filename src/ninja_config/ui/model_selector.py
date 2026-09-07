@@ -456,6 +456,7 @@ def configure_model_slots(config_manager, config: dict) -> None:
         ("Coder - Parallel", "NINJA_MODEL_PARALLEL", "High-concurrency parallel tasks", "openrouter"),
         ("Researcher", "NINJA_RESEARCHER_MODEL", "Web research engine", "perplexity"),
         ("Secretary", "NINJA_SECRETARY_MODEL", "Documentation & analysis", "openrouter"),
+        ("Agent", "NINJA_AGENT_MODEL", "Orchestrator planning & delegation", "openrouter"),
         ("Resources", "NINJA_RESOURCES_MODEL", "Resource templates", "openrouter"),
         ("Prompts", "NINJA_PROMPTS_MODEL", "Prompt management", "openrouter"),
     ]

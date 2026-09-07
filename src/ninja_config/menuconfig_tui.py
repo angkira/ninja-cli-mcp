@@ -73,6 +73,9 @@ class MenuScreen(Screen):
     BINDINGS: ClassVar[list] = [
         Binding("escape", "pop_screen", "Back", priority=True),
         Binding("q", "quit_app", "Quit", priority=True),
+        # RU (ЙЦУКЕН) duplicates: same physical key as q, hidden from Footer.
+        Binding("й", "quit_app", "Quit", show=False, priority=True),
+        Binding("Й", "quit_app", "Quit", show=False, priority=True),
     ]
 
     def __init__(
@@ -300,6 +303,9 @@ class MenuConfigApp(App):
 
     BINDINGS: ClassVar[list] = [
         Binding("q", "quit", "Quit", priority=True),
+        # RU (ЙЦУКЕН) duplicate: same physical key as q, hidden from Footer.
+        Binding("й", "quit", "Quit", show=False, priority=True),
+        Binding("Й", "quit", "Quit", show=False, priority=True),
     ]
 
     def __init__(self, config_path: str | None = None):

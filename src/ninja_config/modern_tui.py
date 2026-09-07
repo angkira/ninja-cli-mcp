@@ -247,6 +247,20 @@ class NinjaConfigApp(App):
         Binding("5", "goto_tab(4)", "IDE"),
         Binding("6", "goto_tab(5)", "Settings"),
         Binding("escape", "escape_focus", "Back", show=False),
+        # ── RU (ЙЦУКЕН) duplicates: same physical keys, hidden from Footer ──
+        # Textual matches BINDINGS by character (event.key), not scancode,
+        # so RU layout yields different characters: q→й, s→ы, /→.
+        # Digits 1-6, Tab/Esc/arrows are layout-independent (no dups needed).
+        # ctrl+r is normally layout-independent, ctrl+к covers terminals
+        # that localize Ctrl combos.
+        Binding("й", "quit", "Quit", show=False, priority=True),
+        Binding("Й", "quit", "Quit", show=False, priority=True),
+        Binding("ы", "save_current", "Save", show=False),
+        Binding("Ы", "save_current", "Save", show=False),
+        Binding(".", "focus_search", "Search", show=False),
+        Binding("ctrl+к", "refresh", "Refresh", show=False),
+        # U+041A CYRILLIC CAPITAL KA as escape (RUF001 flags the literal).
+        Binding("ctrl+\u041a", "refresh", "Refresh", show=False),
     ]
 
     ROLE_MAP: ClassVar[dict[str, tuple[str, str]]] = {
@@ -255,6 +269,7 @@ class NinjaConfigApp(App):
         "parallel": ("NINJA_MODEL_PARALLEL", "opencode/glm-4.7-free"),
         "researcher": ("NINJA_RESEARCHER_MODEL", "sonar"),
         "secretary": ("NINJA_SECRETARY_MODEL", "opencode/glm-4.7-free"),
+        "agent": ("NINJA_AGENT_MODEL", "opencode/glm-4.7-free"),
     }
 
     TAB_ORDER: ClassVar[list[str]] = [
@@ -361,6 +376,13 @@ class NinjaConfigApp(App):
                             default="opencode/glm-4.7-free",
                             config=self.config_manager,
                         )
+                    with Collapsible(title="Agent (orchestrator)", collapsed=True):
+                        yield ModelRolePicker(
+                            role="agent",
+                            env_var="NINJA_AGENT_MODEL",
+                            default="opencode/glm-4.7-free",
+                            config=self.config_manager,
+                        )
                     yield Static("[bold]Custom Model ID[/bold]")
                     yield Input(
                         placeholder="e.g. openrouter/qwen/qwen3-32b", id="custom-model-input"
@@ -371,6 +393,7 @@ class NinjaConfigApp(App):
                         Button("Set Coder Par", id="set-par"),
                         Button("Set Researcher", id="set-res"),
                         Button("Set Secretary", id="set-sec"),
+                        Button("Set Agent", id="set-agent"),
                     )
 
             with TabPane("Daemon", id="tab-daemon"):
@@ -902,6 +925,7 @@ class NinjaConfigApp(App):
             "prov-parallel-": "parallel",
             "prov-researcher-": "researcher",
             "prov-secretary-": "secretary",
+            "prov-agent-": "agent",
         }
         for prefix, role in ROLE_PREFIXES.items():
             if bid.startswith(prefix):
@@ -916,6 +940,7 @@ class NinjaConfigApp(App):
             "par": ("NINJA_MODEL_PARALLEL", "parallel"),
             "res": ("NINJA_RESEARCHER_MODEL", "researcher"),
             "sec": ("NINJA_SECRETARY_MODEL", "secretary"),
+            "agent": ("NINJA_AGENT_MODEL", "agent"),
         }
         if role_key not in ROLE_KEY_MAP:
             return
