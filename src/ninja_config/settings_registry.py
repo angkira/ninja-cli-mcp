@@ -21,6 +21,9 @@ from ninja_common.defaults import (
     DEFAULT_TIMEOUT_SEC,
     DEFAULT_WORKTREE_MAX_AGE_DAYS,
     DEFAULT_WORKTREE_MODE,
+    DEFAULT_WORKTREE_PARALLEL,
+    DEFAULT_WORKTREE_QUICK,
+    DEFAULT_WORKTREE_SEQUENTIAL,
 )
 
 
@@ -80,10 +83,34 @@ SETTINGS: list[SettingDef] = [
     SettingDef(
         "NINJA_WORKTREE_MODE",
         "Worktree Mode",
-        "Run tasks in an isolated git worktree",
+        "Global worktree isolation switch (off disables isolation for all task types)",
         DEFAULT_WORKTREE_MODE,
         "choice",
         ("on", "off"),
+    ),
+    SettingDef(
+        "NINJA_WORKTREE_QUICK",
+        "Worktree for Quick Tasks",
+        "Worktree isolation for simple tasks: off = in-place + safety-commit (default); on = isolate; auto = follow global mode",
+        DEFAULT_WORKTREE_QUICK,
+        "choice",
+        ("off", "on", "auto"),
+    ),
+    SettingDef(
+        "NINJA_WORKTREE_SEQUENTIAL",
+        "Worktree for Sequential Plans",
+        "Worktree isolation for long multi-step sequential plans (default on; auto = follow global mode)",
+        DEFAULT_WORKTREE_SEQUENTIAL,
+        "choice",
+        ("on", "off", "auto"),
+    ),
+    SettingDef(
+        "NINJA_WORKTREE_PARALLEL",
+        "Worktree for Parallel Plans",
+        "Worktree isolation for parallel plans (default on; auto = follow global mode)",
+        DEFAULT_WORKTREE_PARALLEL,
+        "choice",
+        ("on", "off", "auto"),
     ),
     SettingDef(
         "NINJA_WORKTREE_MAX_AGE_DAYS",

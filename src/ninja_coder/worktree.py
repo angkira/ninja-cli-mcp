@@ -28,6 +28,9 @@ Limitations (deliberate, to keep the change minimal):
   behavior; the long-running server is rooted at the user's repo_root.
 - ``NINJA_WORKTREE_MODE=off`` disables isolation entirely and preserves the
   legacy AUTO-mode behavior (auto-commit on the user's current branch).
+- Per-type policy: ``NINJA_WORKTREE_QUICK`` (default ``off`` → in-place +
+  safety-commit), ``NINJA_WORKTREE_SEQUENTIAL``/``NINJA_WORKTREE_PARALLEL``
+  (default ``on`` → isolated worktree). Values on/off/auto (auto = global mode).
 - ``prune()`` runs automatically before each new worktree (via ``create()``).
 """
 
@@ -44,7 +47,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ninja_coder.safety import GitSafetyChecker
-from ninja_common.defaults import DEFAULT_WORKTREE_MAX_AGE_DAYS, DEFAULT_WORKTREE_MODE
+from ninja_common.defaults import (
+    DEFAULT_WORKTREE_MAX_AGE_DAYS,
+    DEFAULT_WORKTREE_MODE,
+    DEFAULT_WORKTREE_PARALLEL,
+    DEFAULT_WORKTREE_QUICK,
+    DEFAULT_WORKTREE_SEQUENTIAL,
+)
 from ninja_common.logging_utils import get_logger
 from ninja_common.path_utils import get_cache_dir
 
@@ -53,6 +62,11 @@ logger = get_logger(__name__)
 
 #: Environment variable that disables worktree isolation when set to "off".
 WORKTREE_MODE_ENV = "NINJA_WORKTREE_MODE"
+
+#: Per-task-type overrides: on/off/auto (auto = fall back to NINJA_WORKTREE_MODE).
+WORKTREE_QUICK_ENV = "NINJA_WORKTREE_QUICK"
+WORKTREE_SEQUENTIAL_ENV = "NINJA_WORKTREE_SEQUENTIAL"
+WORKTREE_PARALLEL_ENV = "NINJA_WORKTREE_PARALLEL"
 
 #: Prefix for feature branches created for task isolation.
 _BRANCH_PREFIX = "ninja/"
@@ -127,22 +141,78 @@ class WorktreeManager:
     """
 
     @staticmethod
-    def is_enabled() -> bool:
-        """Check whether worktree isolation is enabled.
+    def normalize_task_type(task_type: str | None) -> str:
+        """Normalize a task_type to its base type for policy/model routing.
 
-        Default is ON (see ninja_common.defaults.DEFAULT_WORKTREE_MODE);
-        returns False only when NINJA_WORKTREE_MODE is set to "off".
+        Strips the ``_plan`` suffix (``sequential_plan`` → ``sequential``,
+        ``parallel_plan`` → ``parallel``); unknown/empty values fall back
+        to ``quick``.
+
+        Args:
+            task_type: Raw task type (e.g. "quick", "sequential_plan").
 
         Returns:
-            True unless NINJA_WORKTREE_MODE is set to "off".
+            One of "quick", "sequential", "parallel".
         """
-        return os.environ.get(WORKTREE_MODE_ENV, DEFAULT_WORKTREE_MODE).strip().lower() != "off"
+        base = (task_type or "quick").strip().lower().removesuffix("_plan")
+        if base in ("quick", "sequential", "parallel"):
+            return base
+        return "quick"
+
+    @staticmethod
+    def should_isolate(task_type: str | None) -> bool:
+        """Return True when the given task type should run in a worktree.
+
+        Policy (per-type env, default: quick=off, sequential/parallel=on):
+        - ``NINJA_WORKTREE_<TYPE>`` = on/off/auto (auto = global mode).
+        - Global ``NINJA_WORKTREE_MODE=off`` disables isolation entirely
+          (legacy AUTO safety-commit behavior), regardless of per-type values.
+
+        Args:
+            task_type: Raw task type ("quick", "sequential", "sequential_plan",
+                "parallel", "parallel_plan", ...).
+
+        Returns:
+            True if a worktree should be created for this task type.
+        """
+        if os.environ.get(WORKTREE_MODE_ENV, DEFAULT_WORKTREE_MODE).strip().lower() == "off":
+            return False
+        base = WorktreeManager.normalize_task_type(task_type)
+        per_type = {
+            "quick": (WORKTREE_QUICK_ENV, DEFAULT_WORKTREE_QUICK),
+            "sequential": (WORKTREE_SEQUENTIAL_ENV, DEFAULT_WORKTREE_SEQUENTIAL),
+            "parallel": (WORKTREE_PARALLEL_ENV, DEFAULT_WORKTREE_PARALLEL),
+        }
+        env_var, default = per_type[base]
+        value = os.environ.get(env_var, default).strip().lower()
+        if value == "auto":
+            return os.environ.get(WORKTREE_MODE_ENV, DEFAULT_WORKTREE_MODE).strip().lower() != "off"
+        return value == "on"
+
+    @staticmethod
+    def is_enabled(task_type: str | None = None) -> bool:
+        """Check whether worktree isolation is enabled.
+
+        Args:
+            task_type: Optional task type. When given, the per-type policy
+                (NINJA_WORKTREE_QUICK/SEQUENTIAL/PARALLEL, default
+                off/on/on) decides; otherwise the global NINJA_WORKTREE_MODE
+                decides (default ON, see ninja_common.defaults).
+
+        Returns:
+            True unless disabled globally ("off") or per-type policy says so.
+        """
+        if task_type is None:
+            return os.environ.get(WORKTREE_MODE_ENV, DEFAULT_WORKTREE_MODE).strip().lower() != "off"
+        return WorktreeManager.should_isolate(task_type)
 
     def create(
         self,
         repo_root: str,
         task_hint: str = "",
         step_id: str = "",
+        task_type: str | None = None,
+        force: bool = False,
     ) -> WorktreeInfo | None:
         """Create a feature branch and detached worktree for task isolation.
 
@@ -150,12 +220,24 @@ class WorktreeManager:
             repo_root: Repository root path (main working tree).
             task_hint: Task description used for the branch slug/commit message.
             step_id: Step identifier used for the branch slug.
+            task_type: Task type for policy check (quick → in-place by
+                default, sequential/parallel → worktree). Ignored when
+                ``force`` is True.
+            force: Bypass the per-type policy (still requires a git repo
+                with HEAD).
 
         Returns:
             WorktreeInfo on success, None on any fallback condition (not a git
-            repo, no commits yet, worktree creation failure).
+            repo, no commits yet, policy says in-place, worktree creation failure).
         """
         try:
+            if (
+                task_type is not None
+                and not force
+                and not WorktreeManager.should_isolate(task_type)
+            ):
+                logger.debug(f"Worktree isolation skipped by policy (task_type={task_type})")
+                return None
             if not GitSafetyChecker.is_git_repo(repo_root):
                 logger.debug("Worktree isolation skipped: not a git repository")
                 return None

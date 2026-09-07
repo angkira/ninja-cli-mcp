@@ -26,11 +26,14 @@ You (specification) -> Ninja Coder -> Aider -> Files Written -> Summary Returned
 
 ## Available Tools
 
-### `coder_quick_task`
-Single code writing task. Best for focused implementations.
+### `coder_simple_task`
+REALLY simple edits ONLY: 1-2 lines, a tiny fix in ONE file/function
+(add a field, fix a typo, small bugfix). Runs IN-PLACE with safety-commit,
+WITHOUT worktree.
 
-**⚠️ For small tasks ONLY.** Runs on the fast `quick` model with a short timeout.
-Do NOT send large multi-part features, MR stabilization, or refactors here — they will time out.
+**⚠️ For REALLY simple tasks ONLY.** Runs on the fast `quick` model with a short timeout.
+Do NOT send class rewrites, large multi-part features, MR stabilization, multi-file
+work, or refactors here — they will time out.
 Use `coder_execute_plan_sequential` instead.
 
 Parameters:
@@ -41,22 +44,22 @@ Parameters:
 - `deny_globs`: Files ninja cannot touch
 
 ### `coder_execute_plan_sequential`
-Multi-step implementation where order matters.
+Long multi-step plans where order matters. Runs ISOLATED in a `ninja/*`
+worktree (heavy model). Use for multi-file features, class rewrites, big refactors.
 
 ### `coder_execute_plan_parallel`
-Independent tasks that can run simultaneously.
+Independent tasks at once (atomic steps, non-overlapping file scopes).
+Two modes via `complexity`: `simple` = trivial edits (1-2 lines per step),
+IN-PLACE without worktree; `complex` (default) = real implementation work,
+ISOLATED in a `ninja/*` worktree. Never mix — split a mixed batch into two calls.
 
 ## Example Usage
 
 ### Simple Task
 ```
-Use coder_quick_task to create a User model:
+Use coder_simple_task for a tiny fix (1-2 lines, one file/function):
 
-Task: "Create src/models/user.py with:
-- User dataclass with fields: id (int), email (str), created_at (datetime)
-- validate_email() method that checks email format
-- to_dict() method for serialization
-- Include type hints and docstrings"
+Task: "In src/models/user.py, fix the email regex in validate_email() to accept '+' in the local part"
 ```
 
 ### Multi-Step Implementation

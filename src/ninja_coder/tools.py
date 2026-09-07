@@ -574,14 +574,25 @@ class ToolExecutor:
             deny_globs=request.global_deny_globs,
         )
 
-        # 3. Execute ONCE
+        # 3. Execute ONCE (complexity routes isolation via task_type:
+        # "simple" -> "quick" = in-place, no worktree; "complex" ->
+        # "parallel_plan" = isolated ninja/* worktree). Fail fast on garbage.
+        if request.complexity == "simple":
+            task_type = "quick"
+        elif request.complexity == "complex":
+            task_type = "parallel_plan"
+        else:  # Defensive: pydantic Literal already rejects this.
+            raise ValueError(
+                f"Invalid complexity {request.complexity!r}: "
+                'expected "simple" or "complex"'
+            )
         try:
             result = await self.driver.execute_async(
                 repo_root=request.repo_root,
                 step_id=f"parallel_plan_{plan_task_id[:8]}",
                 instruction=instruction,
                 timeout_sec=self._estimate_parallel_timeout(request),
-                task_type="parallel_plan",
+                task_type=task_type,
             )
         except Exception as e:
             logger.error(f"Parallel plan execution failed: {e}")
@@ -666,9 +677,17 @@ class ToolExecutor:
         return plan_result
 
     def _estimate_parallel_timeout(self, request: ParallelPlanRequest) -> int:
-        """Estimate timeout for parallel plan."""
-        base = 600
-        per_task = 60  # Parallel is faster
+        """Estimate timeout for parallel plan.
+
+        Simple batches (in-place quick model) get a short budget;
+        complex batches (isolated worktree) keep the full budget.
+        """
+        if request.complexity == "simple":
+            base = 300
+            per_task = 30
+        else:
+            base = 600
+            per_task = 60  # Parallel is faster
         return base + (per_task * max(1, len(request.steps) // request.fanout))
 
     async def get_agents(

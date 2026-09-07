@@ -4,24 +4,31 @@
 
 Ninja-coder now includes **automatic safety protection** to prevent file overwrites and data loss. This system runs by default on every task execution.
 
-> **Default since worktree isolation: `NINJA_WORKTREE_MODE=on` (worktree instead
-> of safety commits).** `NinjaDriver.execute_async` runs each task in a detached
+> **Default: worktrees ONLY for long sequential/parallel plans.**
+> `NinjaDriver.execute_async` isolates `sequential`/`parallel` plans in a detached
 > git worktree on a `ninja/<slug>-<timestamp>-<uid>` branch (outside the repo,
-> under `$XDG_CACHE_HOME/ninja-mcp/worktrees/`). The main working tree and
-> current branch stay byte-for-byte untouched: only a lightweight recovery tag
-> (`ninja-safety-TIMESTAMP`) is created in the main repo — **no
-> `[ninja-auto-save]` commit is made there**. The dirty-state snapshot commit
-> (`[ninja-auto-save]`) happens **inside the worktree** on the feature branch
-> (via `validate_task_safety(..., skip_auto_commit=True)`). Review and merge
-> when ready (see "Worktree mode" below). Set `NINJA_WORKTREE_MODE=off` to get
-> the legacy behavior described in the rest of this doc (auto-commit on your
-> current branch).
+> under `$XDG_CACHE_HOME/ninja-mcp/worktrees/`). Simple (`quick`) tasks run
+> IN-PLACE on your current branch with the legacy AUTO safety-commit
+> (`[ninja-auto-save]`) and NO worktree. Tune per type with
+> `NINJA_WORKTREE_QUICK` (default `off`), `NINJA_WORKTREE_SEQUENTIAL` (default
+> `on`), `NINJA_WORKTREE_PARALLEL` (default `on`); each accepts
+> `on/off/auto` (`auto` = follow global `NINJA_WORKTREE_MODE`). Global
+> `NINJA_WORKTREE_MODE=off` disables isolation for ALL types.
 
-## Worktree mode (default: on)
+## Worktree mode (per task type)
+
+| Task type | Default | Behavior |
+|-----------|---------|----------|
+| `quick` (coder_simple_task) | in-place, NO worktree | AUTO safety-commit (`[ninja-auto-save]`) on your current branch |
+| `sequential` (coder_execute_plan_sequential) | worktree `ninja/*` | Main tree untouched; snapshot commit inside worktree; merge branch when ready |
+| `parallel` (coder_execute_plan_parallel, multi-agent) | worktree `ninja/*` | Same as sequential |
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NINJA_WORKTREE_MODE` | `on` | `on` = isolated worktree per `execute_async` call; `off` = legacy auto-commit |
+| `NINJA_WORKTREE_MODE` | `on` | Global switch: `off` disables isolation for ALL types (legacy auto-commit everywhere) |
+| `NINJA_WORKTREE_QUICK` | `off` | `on` = isolate quick tasks; `off` = in-place + safety-commit; `auto` = follow global |
+| `NINJA_WORKTREE_SEQUENTIAL` | `on` | Same values; `on` = isolate long sequential plans |
+| `NINJA_WORKTREE_PARALLEL` | `on` | Same values; `on` = isolate parallel plans |
 | `NINJA_WORKTREE_MAX_AGE_DAYS` | `2` | Auto-prune isolation worktrees older than this (tuned at `WorktreeManager.create()`) |
 
 ```bash
@@ -239,7 +246,10 @@ ninja-coder simple_task --task "Add error handling" --context-paths "src/api/han
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NINJA_SAFETY_MODE` | `auto` | Safety enforcement mode (auto/strict/warn/off) |
-| `NINJA_WORKTREE_MODE` | `on` | Worktree isolation (on/off) — see "Worktree mode" above |
+| `NINJA_WORKTREE_MODE` | `on` | Global worktree switch (off = legacy auto-commit everywhere) |
+| `NINJA_WORKTREE_QUICK` | `off` | Per-type: quick tasks in-place + safety-commit by default |
+| `NINJA_WORKTREE_SEQUENTIAL` | `on` | Per-type: sequential plans isolated by default |
+| `NINJA_WORKTREE_PARALLEL` | `on` | Per-type: parallel plans isolated by default |
 | `NINJA_WORKTREE_MAX_AGE_DAYS` | `2` | Auto-prune threshold for isolation worktrees |
 
 ## Integration with MCP

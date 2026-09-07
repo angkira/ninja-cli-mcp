@@ -22,6 +22,9 @@ from ninja_coder.worktree import (
     SNAPSHOT_EXCLUDED_DIRS,
     WORKTREE_MAX_AGE_ENV,
     WORKTREE_MODE_ENV,
+    WORKTREE_PARALLEL_ENV,
+    WORKTREE_QUICK_ENV,
+    WORKTREE_SEQUENTIAL_ENV,
     WorktreeManager,
 )
 
@@ -161,6 +164,100 @@ def test_worktree_mode_off_disables_isolation(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setenv(WORKTREE_MODE_ENV, "on")
     assert WorktreeManager.is_enabled() is True
+
+
+# ---------------------------------------------------------------------------
+# Per-task-type policy — should_isolate / is_enabled(task_type)
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_task_type_strips_plan_suffix() -> None:
+    """*_plan suffixes normalize to base types; unknown → quick."""
+    assert WorktreeManager.normalize_task_type("quick") == "quick"
+    assert WorktreeManager.normalize_task_type("sequential") == "sequential"
+    assert WorktreeManager.normalize_task_type("sequential_plan") == "sequential"
+    assert WorktreeManager.normalize_task_type("parallel") == "parallel"
+    assert WorktreeManager.normalize_task_type("parallel_plan") == "parallel"
+    assert WorktreeManager.normalize_task_type(None) == "quick"
+    assert WorktreeManager.normalize_task_type("") == "quick"
+    assert WorktreeManager.normalize_task_type("whatever") == "quick"
+
+
+def test_should_isolate_defaults_quick_inplace_plans_worktree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defaults: quick → in-place (False), sequential/parallel → worktree (True)."""
+    for var in (WORKTREE_MODE_ENV, WORKTREE_QUICK_ENV, WORKTREE_SEQUENTIAL_ENV, WORKTREE_PARALLEL_ENV):
+        monkeypatch.delenv(var, raising=False)
+
+    assert WorktreeManager.should_isolate("quick") is False
+    assert WorktreeManager.should_isolate("sequential") is True
+    assert WorktreeManager.should_isolate("sequential_plan") is True
+    assert WorktreeManager.should_isolate("parallel") is True
+    assert WorktreeManager.should_isolate("parallel_plan") is True
+    # Legacy no-arg form still reflects the global switch
+    assert WorktreeManager.is_enabled() is True
+    assert WorktreeManager.is_enabled("quick") is False
+    assert WorktreeManager.is_enabled("sequential_plan") is True
+
+
+def test_should_isolate_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Per-type env vars override defaults; auto follows the global mode."""
+    monkeypatch.setenv(WORKTREE_QUICK_ENV, "on")
+    assert WorktreeManager.should_isolate("quick") is True
+
+    monkeypatch.setenv(WORKTREE_SEQUENTIAL_ENV, "off")
+    assert WorktreeManager.should_isolate("sequential") is False
+    assert WorktreeManager.should_isolate("sequential_plan") is False
+
+    monkeypatch.setenv(WORKTREE_PARALLEL_ENV, "off")
+    assert WorktreeManager.should_isolate("parallel_plan") is False
+
+    # auto = follow global
+    monkeypatch.setenv(WORKTREE_QUICK_ENV, "auto")
+    monkeypatch.setenv(WORKTREE_MODE_ENV, "on")
+    assert WorktreeManager.should_isolate("quick") is True
+    monkeypatch.setenv(WORKTREE_MODE_ENV, "off")
+    assert WorktreeManager.should_isolate("quick") is False
+
+
+def test_global_off_beats_per_type_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """NINJA_WORKTREE_MODE=off disables isolation even when per-type is on."""
+    monkeypatch.setenv(WORKTREE_MODE_ENV, "off")
+    monkeypatch.setenv(WORKTREE_QUICK_ENV, "on")
+    monkeypatch.setenv(WORKTREE_SEQUENTIAL_ENV, "on")
+    monkeypatch.setenv(WORKTREE_PARALLEL_ENV, "on")
+    assert WorktreeManager.should_isolate("quick") is False
+    assert WorktreeManager.should_isolate("sequential_plan") is False
+    assert WorktreeManager.should_isolate("parallel_plan") is False
+    assert WorktreeManager.is_enabled("sequential") is False
+
+
+def test_create_respects_task_type_policy(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """create(task_type=...): quick → None (in-place), sequential → worktree."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    for var in (WORKTREE_MODE_ENV, WORKTREE_QUICK_ENV, WORKTREE_SEQUENTIAL_ENV, WORKTREE_PARALLEL_ENV):
+        monkeypatch.delenv(var, raising=False)
+
+    assert (
+        WorktreeManager().create(repo_root=str(git_repo), step_id="q1", task_type="quick")
+        is None
+    )
+
+    info = WorktreeManager().create(
+        repo_root=str(git_repo), step_id="s1", task_type="sequential_plan"
+    )
+    assert info is not None
+    assert info.path.exists()
+
+    # force=True bypasses the quick in-place policy
+    forced = WorktreeManager().create(
+        repo_root=str(git_repo), step_id="q2", task_type="quick", force=True
+    )
+    assert forced is not None
+    assert forced.path.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +407,7 @@ def _mock_cli(monkeypatch: pytest.MonkeyPatch, captured: dict[str, str]) -> None
 async def test_execute_async_runs_in_worktree_and_leaves_main_untouched(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """execute_async: subprocess cwd is the worktree; main repo is untouched."""
+    """execute_async sequential: subprocess cwd is the worktree; main untouched."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.delenv(WORKTREE_MODE_ENV, raising=False)
     _make_dirty(git_repo)
@@ -328,7 +425,7 @@ async def test_execute_async_runs_in_worktree_and_leaves_main_untouched(
             "task": "Modify the README",
             "file_scope": {"context_paths": ["README.md"]},
         },
-        task_type="quick",
+        task_type="sequential",
     )
 
     assert result.success is True
@@ -348,6 +445,71 @@ async def test_execute_async_runs_in_worktree_and_leaves_main_untouched(
     assert _git(git_repo, "status", "--porcelain").stdout == status_before
     main_log = _git(git_repo, "log", "--format=%s").stdout
     assert "ninja-auto-save" not in main_log
+
+
+@pytest.mark.asyncio
+async def test_execute_async_quick_runs_inplace_with_safety_commit(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """execute_async quick: in-place run + legacy AUTO safety-commit, NO worktree."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.delenv(WORKTREE_MODE_ENV, raising=False)
+    for var in (WORKTREE_QUICK_ENV, WORKTREE_SEQUENTIAL_ENV, WORKTREE_PARALLEL_ENV):
+        monkeypatch.delenv(var, raising=False)
+    _make_dirty(git_repo)
+
+    captured: dict[str, str] = {}
+    _mock_cli(monkeypatch, captured)
+
+    driver = _build_driver()
+    result = await driver.execute_async(
+        repo_root=str(git_repo),
+        step_id="test_step_quick",
+        instruction={
+            "task": "Modify the README",
+            "file_scope": {"context_paths": ["README.md"]},
+        },
+        task_type="quick",
+    )
+
+    assert result.success is True
+    assert result.worktree_branch is None
+    assert result.worktree_path is None
+
+    # In-place: subprocess ran in the main repo, dirty state auto-committed
+    assert captured["cwd"] == str(git_repo)
+    main_log = _git(git_repo, "log", "-1", "--format=%s").stdout
+    assert "ninja-auto-save" in main_log
+    assert _git(git_repo, "status", "--porcelain").stdout == ""
+
+
+@pytest.mark.asyncio
+async def test_execute_async_parallel_and_plan_suffix_use_worktree(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """parallel / sequential_plan task types run isolated in a worktree."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.delenv(WORKTREE_MODE_ENV, raising=False)
+
+    for task_type in ("parallel", "parallel_plan", "sequential_plan"):
+        captured: dict[str, str] = {}
+        _mock_cli(monkeypatch, captured)
+
+        driver = _build_driver()
+        result = await driver.execute_async(
+            repo_root=str(git_repo),
+            step_id=f"test_step_{task_type}",
+            instruction={
+                "task": "Modify the README",
+                "file_scope": {"context_paths": ["README.md"]},
+            },
+            task_type=task_type,
+        )
+
+        assert result.success is True
+        assert result.worktree_branch is not None
+        assert result.worktree_path is not None
+        assert captured["cwd"] == result.worktree_path
 
 
 @pytest.mark.asyncio

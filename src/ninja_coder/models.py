@@ -159,10 +159,27 @@ class SequentialPlanRequest(BaseModel):
     steps: list[PlanStep] = Field(..., description="Plan steps to execute in order")
 
 
+#: Complexity selector for parallel plans. Kept as a Literal alias (not a
+#: member of TaskComplexity) to avoid collisions: TaskComplexity routes
+#: models (quick/sequential/parallel), while this routes isolation
+#: (simple=in-place, complex=worktree).
+ParallelPlanComplexity = Literal["simple", "complex"]
+
+
 class ParallelPlanRequest(BaseModel):
     """Request for parallel plan execution."""
 
     repo_root: str = Field(..., description="Absolute path to repository root")
+    complexity: ParallelPlanComplexity = Field(
+        default="complex",
+        description=(
+            "REQUIRED choice, default 'complex'. 'simple' = trivial edits "
+            "(1-2 lines, tiny fix per step), runs IN-PLACE without worktree "
+            "(task_type=quick). 'complex' = real implementation work, runs "
+            "ISOLATED in a ninja/* worktree (task_type=parallel_plan). "
+            "Never mix: split a mixed batch into two calls."
+        ),
+    )
     mode: ExecutionMode = Field(
         default=ExecutionMode.QUICK,
         description="Execution mode",

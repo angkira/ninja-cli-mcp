@@ -333,6 +333,13 @@ DEFAULT_CREATE_SAFETY_TAGS = True
 # - "off": legacy behavior — AUTO safety commits on the user's current branch.
 DEFAULT_WORKTREE_MODE = "on"
 
+# Per-task-type worktree policy (values: on/off/auto; auto = global NINJA_WORKTREE_MODE).
+# Quick/simple tasks run in-place + safety-commit (no worktree); long
+# sequential/parallel plans run isolated in a ninja/* worktree.
+DEFAULT_WORKTREE_QUICK = "off"
+DEFAULT_WORKTREE_SEQUENTIAL = "on"
+DEFAULT_WORKTREE_PARALLEL = "on"
+
 # Default age threshold (days) for automatic pruning of isolation worktrees.
 # Tunable at runtime via NINJA_WORKTREE_MAX_AGE_DAYS.
 DEFAULT_WORKTREE_MAX_AGE_DAYS = 2

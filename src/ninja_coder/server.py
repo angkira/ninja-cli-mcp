@@ -85,12 +85,14 @@ TOOLS: list[Tool] = [
             "Delegate CODE WRITING to Ninja AI agent using SIMPLE task specification. "
             "Ninja ONLY writes/edits code files based on your specification. "
             "\n\n"
-            "✅ USE FOR SMALL, single-pass tasks ONLY: one file / one function / one concern "
-            "(writing a small utility, adding a field, fixing a small bug). "
+            "✅ USE FOR REALLY simple edits ONLY: 1-2 lines, a tiny fix in ONE "
+            "file/function (add a field, fix a typo, small bugfix). "
+            "Runs IN-PLACE on your current branch with safety-commit, WITHOUT worktree. "
             "\n\n"
             "⚠️ WARNING: Runs on the fast 'quick' model with a short timeout. "
-            "NEVER use for large multi-part implementations, MR stabilization, big refactors, "
-            "or multi-file features - it will time out. Use coder_execute_plan_sequential instead. "
+            "NEVER use for rewriting a class, multi-file features, large "
+            "implementations, MR stabilization or big refactors - it will time out. "
+            "Use coder_execute_plan_sequential instead. "
             "\n\n"
             "❌ NEVER USE FOR: Running commands, executing tests, checking output, bash/shell operations, "
             "reading file contents (you should read files yourself if needed for planning). "
@@ -148,10 +150,11 @@ TOOLS: list[Tool] = [
             "Execute a multi-step CODE WRITING plan sequentially. "
             "Each step delegates code writing to Ninja AI agent. "
             "\n\n"
-            "✅ USE FOR: LARGE / COMPLEX implementations where order matters and the work is too "
+            "✅ USE FOR: LONG multi-step plans where order matters and the work is too "
             "big for coder_simple_task: multi-file features, MR stabilization, big refactors, "
-            "multi-step implementations. Each step writes code based on your specification. "
-            "Heavy model, longer timeout. "
+            "multi-step implementations, rewriting a class. Each step writes code based on your specification. "
+            "Heavy model, longer timeout. Runs ISOLATED in a ninja/* worktree "
+            "(main branch stays untouched; merge the branch when ready). "
             "\n\n"
             "📋 DIALOGUE MODE (OpenCode CLI only):\n"
             "When sequential steps are closely related (same module, feature, files, scope), "
@@ -268,19 +271,21 @@ TOOLS: list[Tool] = [
     Tool(
         name="coder_execute_plan_parallel",
         description=(
-            "Execute SIMPLE, ATOMIC CODE WRITING steps in parallel with configurable concurrency. "
+            "Execute independent CODE WRITING steps in parallel with configurable concurrency. "
             "Each step delegates code writing to Ninja AI agent. "
+            "You MUST consciously choose `complexity` on every call: "
+            "'simple' for TRULY trivial edits (1-2 lines, tiny fix per step — "
+            "runs IN-PLACE on your branch with safety-commit, NO worktree, "
+            "fast quick-model, short timeout), 'complex' for real implementation "
+            "work (runs ISOLATED in a ninja/* worktree). "
+            "NEVER mix: split a mixed batch into TWO calls (simple separately, "
+            "complex separately). "
+            "Keep each step ATOMIC with non-overlapping file scopes to avoid conflicts. "
             "\n\n"
-            "✅ USE FOR: Simple, independent, atomic code writing tasks that can happen simultaneously "
-            "(e.g., creating separate utility functions, small helper modules, individual test files). "
-            "Each step should be QUICK and MINIMAL - no elaborate implementations. "
+            "Examples: {repo_root, complexity: 'simple', steps: [{id, title, task: 'fix typo'}]} "
+            "vs {repo_root, complexity: 'complex', steps: [{id, title, task: 'implement feature'}]}. "
             "\n\n"
-            "❌ NEVER USE FOR: Running tests, executing commands, tasks with dependencies, "
-            "complex features requiring detailed implementations. "
-            "Steps should have non-overlapping file scopes to avoid conflicts. "
-            "\n\n"
-            "⚡ IMPORTANT: Tasks should complete quickly (<90s). Keep tasks simple and focused. "
-            "For complex work, use sequential mode instead. "
+            "❌ NEVER USE FOR: Running tests, executing commands, tasks with dependencies. "
             "\n\n"
             "Returns summary of each step plus merge report. "
             "NO source code is returned - Ninja writes directly to files."
@@ -291,6 +296,17 @@ TOOLS: list[Tool] = [
                 "repo_root": {
                     "type": "string",
                     "description": "Absolute path to the repository root",
+                },
+                "complexity": {
+                    "type": "string",
+                    "enum": ["simple", "complex"],
+                    "description": (
+                        "REQUIRED choice: 'simple' = trivial edits (1-2 lines per step), "
+                        "in-place without worktree; 'complex' = real implementation, "
+                        "isolated ninja/* worktree. Never mix in one call — split mixed "
+                        "batches into two calls."
+                    ),
+                    "default": "complex",
                 },
                 "mode": {
                     "type": "string",
@@ -536,15 +552,19 @@ def create_server() -> Server:
 🔧 AVAILABLE TOOLS:
 
 • coder_simple_task
-  Single code writing task. Use for most implementations.
-  Returns: Summary only (files changed, brief description)
+  REALLY simple edits only: 1-2 lines, tiny fix in one file/function.
+  In-place + safety-commit, WITHOUT worktree. NEVER for class rewrites
+  or multi-file work — use sequential. Returns: Summary only (files changed, brief description)
 
 • coder_execute_plan_sequential
-  Multi-step code writing where order matters.
+  Long multi-step plans where order matters. WITH ninja/* worktree, heavy model.
   Returns: Summary per step
 
 • coder_execute_plan_parallel
-  Independent code writing tasks (non-overlapping files).
+  Independent tasks at once (atomic steps, non-overlapping files).
+  complexity='simple' = trivial edits, IN-PLACE without worktree;
+  complexity='complex' (default) = real work, WITH ninja/* worktree.
+  Never mix in one call — split into two calls.
   Returns: Summary per step + merge report
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
