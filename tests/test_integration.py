@@ -1,7 +1,3 @@
-from __future__ import annotations
-import pytest
-
-
 """
 Integration tests that verify end-to-end functionality with real API calls.
 
@@ -14,8 +10,10 @@ These tests require:
 Run with: pytest tests/test_integration.py -v -s
 """
 
+from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -25,14 +23,13 @@ from ninja_coder.models import TaskComplexity
 
 
 pytestmark = pytest.mark.integration
+OPENCODE_AVAILABLE = shutil.which("opencode") is not None
 
 
 @pytest.fixture
 def skip_if_no_api_key():
     """Skip test if no API key is configured."""
-    has_key = bool(
-        os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    )
+    has_key = bool(os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY"))
     if not has_key:
         pytest.skip("No API key configured - set OPENROUTER_API_KEY or OPENAI_API_KEY")
 
@@ -83,6 +80,7 @@ if __name__ == "__main__":
 
     # Initialize git repo
     import subprocess
+
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
     subprocess.run(
         ["git", "config", "user.email", "test@test.com"],
@@ -157,6 +155,7 @@ def test_model_selection_for_task_types(skip_if_no_api_key, real_driver):
     assert parallel_rec.model is not None
 
 
+@pytest.mark.skipif(not OPENCODE_AVAILABLE, reason="opencode CLI is not installed")
 @pytest.mark.slow
 @pytest.mark.asyncio
 async def test_quick_task_execution(skip_if_no_api_key, real_driver, test_repo):
@@ -211,6 +210,7 @@ async def test_quick_task_execution(skip_if_no_api_key, real_driver, test_repo):
     print(example_content)
 
 
+@pytest.mark.skipif(not OPENCODE_AVAILABLE, reason="opencode CLI is not installed")
 @pytest.mark.slow
 @pytest.mark.asyncio
 async def test_multi_agent_task_execution(
@@ -267,6 +267,7 @@ async def test_multi_agent_task_execution(
     print("  Error handling: division by zero implemented")
 
 
+@pytest.mark.skipif(not OPENCODE_AVAILABLE, reason="opencode CLI is not installed")
 @pytest.mark.slow
 @pytest.mark.asyncio
 async def test_session_continuation(skip_if_no_api_key, real_driver, test_repo):
@@ -321,6 +322,7 @@ async def test_session_continuation(skip_if_no_api_key, real_driver, test_repo):
     print("\n✓ Session continuation successful!")
 
 
+@pytest.mark.skipif(not OPENCODE_AVAILABLE, reason="opencode CLI is not installed")
 @pytest.mark.asyncio
 async def test_structured_logging_integration(skip_if_no_api_key, real_driver, test_repo):
     """Test that structured logging works during task execution."""
@@ -364,7 +366,9 @@ async def test_structured_logging_integration(skip_if_no_api_key, real_driver, t
 
     # Verify file was modified (OpenCode may add docstring instead of comment)
     example_content = (test_repo / "example.py").read_text()
-    assert ('"""' in example_content or "#" in example_content or "comment" in example_content.lower())
+    assert (
+        '"""' in example_content or "#" in example_content or "comment" in example_content.lower()
+    )
     print("\n✓ File modified successfully")
     print("\n✓ Logging integration successful!")
 
