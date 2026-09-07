@@ -250,6 +250,91 @@ class TestRemapContextPaths:
         assert result is instruction or result["file_scope"]["context_paths"] == []
 
 
+class TestWorktreePromptSanitization:
+    """Main-repo root must not leak into the model prompt under worktree isolation."""
+
+    def _make_instruction(self, main: str) -> dict:
+        return {
+            "version": "1.0",
+            "type": "quick_task",
+            "timestamp": "2026-01-01T00:00:00+00:00",
+            "repo_root": main,
+            "task": (
+                "# SEQUENTIAL EXECUTION PLAN\n"
+                f"- **Repository**: {main}\n"
+                f"Edit `{main}/src/app.py` now."
+            ),
+            "mode": "quick",
+            "file_scope": {
+                "context_paths": [f"{main}/src/app.py"],
+                "allowed_globs": ["**/*"],
+                "deny_globs": [],
+            },
+            "instructions": (f"You are Ninja.\nRepository root: {main}\nWork in {main}/src only."),
+            "test_plan": {"unit": [f"pytest {main}/tests/test_app.py"], "e2e": []},
+            "guarantees": {},
+        }
+
+    def test_worktree_prompt_contains_only_worktree_path(self):
+        """End-to-end at unit level: remap + prompt build leaves no main path."""
+        main = "/tmp/e2e-main-repo"
+        worktree = "/tmp/ninja-wt/e2e-branch"
+
+        instruction = self._make_instruction(main)
+        instruction = {**instruction, "repo_root": worktree}
+        instruction = NinjaDriver._remap_context_paths(instruction, main, worktree)
+        instruction = NinjaDriver._remap_instruction_text_roots(instruction, main, worktree)
+
+        driver = NinjaDriver(config=NinjaConfig(bin_path="opencode", openai_api_key="k", model="m"))
+        prompt = driver._build_prompt_text(instruction, worktree)
+        prompt = NinjaDriver._rewrite_path_in_text(prompt, main, worktree)
+
+        assert worktree in prompt
+        assert main not in prompt
+        assert f"{worktree}/src/app.py" in prompt
+        assert f"pytest {worktree}/tests/test_app.py" in prompt
+
+    def test_no_worktree_prompt_unchanged(self):
+        """Without isolation no rewrite runs: the prompt keeps the main root."""
+        main = "/tmp/e2e-main-repo"
+
+        driver = NinjaDriver(config=NinjaConfig(bin_path="opencode", openai_api_key="k", model="m"))
+        prompt = driver._build_prompt_text(self._make_instruction(main), main)
+
+        assert main in prompt
+
+    def test_rewrite_is_path_boundary_exact(self):
+        """Sibling paths sharing a string prefix must not be corrupted."""
+        text = "see /tmp/main-repo-other/f.py and /tmp/main-repo/f.py"
+        result = NinjaDriver._rewrite_path_in_text(text, "/tmp/main-repo", "/cache/wt/branch")
+
+        assert "/tmp/main-repo-other/f.py" in result
+        assert "/cache/wt/branch/f.py" in result
+
+    def test_rewrite_same_root_noop(self):
+        """Identical roots mean no isolation: text is returned unchanged."""
+        text = "Repository root: /repo\nWork in /repo/src."
+        assert NinjaDriver._rewrite_path_in_text(text, "/repo", "/repo") == text
+
+    def test_remap_text_roots_covers_step_task(self):
+        """Plan-step task text is rewritten, merge-hint-agnostic fields kept."""
+        main = "/repo"
+        worktree = "/tmp/worktree"
+        instruction = {
+            "repo_root": main,
+            "task": f"do it in {main}",
+            "instructions": f"work in {main}/src",
+            "step": {"id": "s1", "title": "t", "task": f"edit {main}/a.py"},
+        }
+
+        result = NinjaDriver._remap_instruction_text_roots(instruction, main, worktree)
+
+        assert main not in result["task"]
+        assert worktree in result["task"]
+        assert main not in result["instructions"]
+        assert result["step"]["task"] == f"edit {worktree}/a.py"
+
+
 class TestInactivityTimeout:
     """Test model-aware inactivity watchdog thresholds."""
 

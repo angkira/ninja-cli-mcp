@@ -729,11 +729,12 @@ class NinjaDriver:
             )
             return recommendation.model, recommendation.use_coding_plan_api
 
-        # Determine task complexity
-        if task_type == "parallel":
+        # Determine task complexity (normalize *_plan suffixes to base types)
+        base_type = task_type.removesuffix("_plan")
+        if base_type == "parallel":
             complexity = TaskComplexity.PARALLEL
             fanout = instruction.get("parallel_context", {}).get("total_steps", 1)
-        elif task_type == "sequential":
+        elif base_type == "sequential":
             complexity = TaskComplexity.SEQUENTIAL
             fanout = 1
         else:
@@ -1516,26 +1517,153 @@ class NinjaDriver:
         """
         file_scope = instruction.get("file_scope", {})
         context_paths = file_scope.get("context_paths", [])
-        if not context_paths:
-            return instruction
+        result_instruction = instruction
 
-        original = Path(original_root).resolve()
-        worktree = Path(worktree_root).resolve()
-        remapped: list[str] = []
-        for path in context_paths:
-            p = Path(path)
-            if not p.is_absolute():
-                remapped.append(path)
-                continue
-            try:
-                rel = p.resolve().relative_to(original)
-            except ValueError:
-                remapped.append(path)
-                continue
-            remapped.append(str(worktree / rel))
+        if context_paths:
+            original = Path(original_root).resolve()
+            # NOTE: the worktree spelling is preserved verbatim (no resolve()):
+            # the prompt must contain the exact execution_dir/cwd string, not
+            # its canonicalized twin (/tmp vs /private/tmp on macOS).
+            worktree_base = Path(worktree_root)
+            # Raw spellings for a string-prefix fallback (covers paths that
+            # do not exist on disk and /tmp vs /private/tmp canonicalization
+            # mismatches where resolve() cannot align them).
+            raw_spellings = [
+                s for s in (original_root.rstrip(os.sep), str(original).rstrip(os.sep)) if s
+            ]
+            remapped: list[str] = []
+            for path in context_paths:
+                p = Path(path)
+                if not p.is_absolute():
+                    remapped.append(path)
+                    continue
+                try:
+                    rel = p.resolve().relative_to(original)
+                except ValueError:
+                    rel = None
+                if rel is not None:
+                    remapped.append(str(worktree_base / rel))
+                    continue
+                # Fallback: exact prefix match on path boundaries.
+                replaced = False
+                for spelling in sorted(raw_spellings, key=len, reverse=True):
+                    if path == spelling or path.startswith(spelling + os.sep):
+                        remapped.append(worktree_root.rstrip(os.sep) + path[len(spelling) :])
+                        replaced = True
+                        break
+                if not replaced:
+                    remapped.append(path)
 
-        file_scope = {**file_scope, "context_paths": remapped}
-        return {**instruction, "file_scope": file_scope}
+            file_scope = {**file_scope, "context_paths": remapped}
+            result_instruction = {**result_instruction, "file_scope": file_scope}
+
+        # Test commands may embed absolute main-repo paths
+        # (e.g. `pytest /tmp/main/tests/...`). Rewrite those as text so the
+        # agent runs them against the worktree copy.
+        test_plan = result_instruction.get("test_plan")
+        if isinstance(test_plan, dict) and test_plan:
+            new_plan: dict[str, Any] = {}
+            changed = False
+            for key, value in test_plan.items():
+                if isinstance(value, list):
+                    new_items = [
+                        NinjaDriver._rewrite_path_in_text(str(v), original_root, worktree_root)
+                        if isinstance(v, str)
+                        else v
+                        for v in value
+                    ]
+                    changed = changed or new_items != value
+                    new_plan[key] = new_items
+                elif isinstance(value, str):
+                    new_value = NinjaDriver._rewrite_path_in_text(
+                        value, original_root, worktree_root
+                    )
+                    changed = changed or new_value != value
+                    new_plan[key] = new_value
+                else:
+                    new_plan[key] = value
+            if changed:
+                result_instruction = {**result_instruction, "test_plan": new_plan}
+
+        return result_instruction
+
+    @staticmethod
+    def _rewrite_path_in_text(text: str, original_root: str, worktree_root: str) -> str:
+        """Rewrite absolute main-repo paths to the worktree in free text.
+
+        Exact path-boundary replacement (not a blind substring replace): the
+        match must end at a path boundary (``/``, whitespace, quote, backtick,
+        colon, newline or end of string). Both the raw ``original_root``
+        spelling and its canonically resolved form (``Path.resolve()``, e.g.
+        ``/tmp`` vs ``/private/tmp`` on macOS) are rewritten, so
+        cwd-canonicalization differences cannot leak the main-repo path into
+        the prompt.
+
+        Args:
+            text: Free-form text (prompt, task, instructions, test command).
+            original_root: Path of the main repository.
+            worktree_root: Path of the isolation worktree.
+
+        Returns:
+            Text with main-repo paths replaced by the worktree path.
+        """
+        if not text or not original_root or not worktree_root:
+            return text
+        spellings: list[str] = []
+        for candidate in (original_root, str(Path(original_root).resolve())):
+            normalized = candidate.rstrip(os.sep) or candidate
+            if normalized and normalized not in spellings:
+                spellings.append(normalized)
+        # Longest first so the resolved spelling wins when nested.
+        spellings.sort(key=len, reverse=True)
+        result = text
+        for spelling in spellings:
+            if spelling == worktree_root.rstrip(os.sep):
+                continue
+            pattern = re.compile(rf"{re.escape(spelling)}(?=[/\s'\"`:,\n]|$)")
+            result = pattern.sub(worktree_root.rstrip(os.sep), result)
+        return result
+
+    @staticmethod
+    def _remap_instruction_text_roots(
+        instruction: dict[str, Any],
+        original_root: str,
+        worktree_root: str,
+    ) -> dict[str, Any]:
+        """Point embedded main-repo paths in instruction text at the worktree.
+
+        ``execute_async`` creates the worktree *after* ``tools.py`` bakes the
+        plan prompt (``PromptBuilder`` embeds ``- **Repository**: <main>`` and
+        absolute context paths into ``task``/``instructions``). Updating only
+        the ``repo_root`` key leaves those baked strings pointing at the main
+        repo, and the model then writes files outside the worktree. This
+        rewrites the free-text fields (``task``, ``instructions``,
+        ``step.task``) with exact path-boundary matching.
+
+        Args:
+            instruction: Instruction document to sanitize.
+            original_root: Path of the main repository.
+            worktree_root: Path of the isolation worktree.
+
+        Returns:
+            The instruction document with text roots remapped.
+        """
+        instruction = dict(instruction)
+        for key in ("task", "instructions"):
+            value = instruction.get(key)
+            if isinstance(value, str) and value:
+                instruction[key] = NinjaDriver._rewrite_path_in_text(
+                    value, original_root, worktree_root
+                )
+        step = instruction.get("step")
+        if isinstance(step, dict) and isinstance(step.get("task"), str):
+            instruction["step"] = {
+                **step,
+                "task": NinjaDriver._rewrite_path_in_text(
+                    step["task"], original_root, worktree_root
+                ),
+            }
+        return instruction
 
     async def execute_async(
         self,
@@ -1575,13 +1703,15 @@ class NinjaDriver:
                 and self._strategy.name == "opencode"
             )
 
-            # Worktree isolation: run the task in a detached git worktree so
-            # the user's working tree and current branch stay untouched.
-            if not serve_pool_mode and WorktreeManager.is_enabled():
+            # Worktree isolation: only long sequential/parallel plans run in a
+            # detached git worktree; quick/simple tasks run in-place with the
+            # legacy AUTO safety-commit (per-type policy, see worktree.py).
+            if not serve_pool_mode and WorktreeManager.is_enabled(task_type):
                 worktree_info = WorktreeManager().create(
                     repo_root=repo_root,
                     task_hint=task_desc,
                     step_id=step_id,
+                    task_type=task_type,
                 )
             execution_dir = str(worktree_info.path) if worktree_info else repo_root
             if worktree_info:
@@ -1595,6 +1725,13 @@ class NinjaDriver:
                 # the agent focuses on files that actually exist in the execution
                 # directory instead of absolute paths pointing at the main repo.
                 instruction = self._remap_context_paths(
+                    instruction, repo_root, execution_dir
+                )
+                # The plan prompt text (baked by PromptBuilder in tools.py before
+                # the worktree existed) embeds `- **Repository**: <main>` and
+                # absolute main-repo paths. Rewrite those to the worktree so the
+                # model writes files inside the isolation worktree, not main.
+                instruction = self._remap_instruction_text_roots(
                     instruction, repo_root, execution_dir
                 )
                 context_paths = instruction.get("file_scope", {}).get("context_paths", [])
@@ -1673,6 +1810,11 @@ class NinjaDriver:
                 instruction_data = json.load(f)
 
             prompt = self._build_prompt_text(instruction_data, execution_dir)
+            if worktree_info is not None:
+                # Belt-and-braces: any main-repo path that survived the
+                # instruction rewrite (e.g. baked plan-prompt text) must not
+                # reach the model — it writes files wherever the prompt points.
+                prompt = self._rewrite_path_in_text(prompt, repo_root, execution_dir)
             file_scope = instruction_data.get("file_scope", {})
             context_paths = file_scope.get("context_paths", [])
 
