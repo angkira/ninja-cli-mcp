@@ -67,6 +67,10 @@ def detect_installed_tools() -> dict[str, str]:
     if shutil.which("claude"):
         tools["claude"] = shutil.which("claude")
 
+    # Check for junie (JetBrains Junie, host-auth)
+    if shutil.which("junie"):
+        tools["junie"] = shutil.which("junie")
+
     # Check for cursor
     if shutil.which("cursor"):
         tools["cursor"] = shutil.which("cursor")

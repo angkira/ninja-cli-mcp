@@ -181,6 +181,7 @@ def configure_operators(config_manager: ConfigManager, config: dict[str, str]) -
         ),
         "gemini": ("Gemini CLI", "Google native CLI", ["google"]),
         "claude": ("Claude Code", "Anthropic's official CLI", ["anthropic"]),
+        "junie": ("Junie", "JetBrains coding agent CLI (host-auth)", ["junie"]),
         "cursor": ("Cursor", "AI code editor", ["openai", "anthropic"]),
     }
 
@@ -228,6 +229,9 @@ def configure_operators(config_manager: ConfigManager, config: dict[str, str]) -
         select_opencode_provider(config_manager, config)
     elif selected == "claude":
         print("\n💡 Run 'claude auth' to authenticate with Anthropic")
+    elif selected == "junie":
+        print("\n💡 Junie is already authorized via JetBrains Account — just launching.")
+        print("   If login is needed, run 'junie' interactively once.")
     elif selected == "aider":
         print("\n💡 Set OPENROUTER_API_KEY in 'API Key Management'")
 

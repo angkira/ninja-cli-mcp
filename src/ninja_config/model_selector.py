@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ninja_common.config_manager import ConfigManager
+from ninja_common.defaults import JUNIE_MODELS
 from ninja_config.config_shared import MCP_SERVER_COMMANDS
 
 
@@ -350,6 +351,8 @@ class Operator:
             return self._load_gemini_models()
         elif self.id == "claude":
             return self._load_claude_models()
+        elif self.id == "junie":
+            return self._load_junie_models()
 
         return False
 
@@ -562,6 +565,21 @@ class Operator:
 
         return True
 
+    def _load_junie_models(self) -> bool:
+        """Load models for Junie CLI (static list, host-auth — no network probe)."""
+        for model_id, name, desc in JUNIE_MODELS:
+            self.models.append(
+                Model(
+                    id=model_id,
+                    name=name,
+                    description=desc,
+                    provider="junie",
+                    recommended=(model_id == "deepseek-v4-flash"),
+                )
+            )
+
+        return True
+
     def _format_model_name(self, model_id: str) -> str:
         """Format a model ID into a human-readable name."""
         # Remove provider prefix
@@ -764,6 +782,24 @@ def _get_gemini_models() -> list[Model]:
     ]
 
 
+def _get_junie_models() -> list[Model]:
+    """Get models for Junie CLI (static list, host-auth via JetBrains Account).
+
+    Returns:
+        List of Model objects (Junie flat model ids).
+    """
+    return [
+        Model(
+            id=model_id,
+            name=name,
+            description=f"{desc} (via Junie)",
+            provider="junie",
+            recommended=(model_id == "deepseek-v4-flash"),
+        )
+        for model_id, name, desc in JUNIE_MODELS
+    ]
+
+
 def get_provider_models(operator: str, provider: str) -> list[Model]:
     """Get models for a specific provider from an operator.
 
@@ -772,6 +808,7 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
     - aider: runs `aider --list-models {provider}`
     - claude: returns Claude-specific models
     - gemini: returns Gemini-specific models
+    - junie: returns static Junie models (host-auth, no network probe)
 
     Args:
         operator: The operator ID (e.g., 'opencode', 'aider', 'claude', 'gemini')
@@ -785,6 +822,7 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
         "aider": lambda p: _get_aider_models(p),
         "claude": lambda _p: _get_claude_models(),
         "gemini": lambda _p: _get_gemini_models(),
+        "junie": lambda _p: _get_junie_models(),
     }
 
     # Check if operator has a dedicated handler
@@ -888,6 +926,12 @@ OPERATORS = [
         name="Claude Code",
         binary_name="claude",
         description="Anthropic's official CLI - native Claude integration",
+    ),
+    Operator(
+        id="junie",
+        name="Junie",
+        binary_name="junie",
+        description="JetBrains coding agent CLI - host-auth via JetBrains Account",
     ),
 ]
 
@@ -1000,6 +1044,25 @@ def check_operator_auth(operator: Operator) -> dict[str, bool]:
             auth_status["anthropic"] = result.returncode == 0
         except Exception:
             auth_status["anthropic"] = False
+
+    elif operator.id == "junie":
+        # Junie is host-authorized via JetBrains Account — just check the
+        # binary exists and responds to a lightweight --help (no network).
+        junie_bin = operator.binary_path or shutil.which("junie")
+        if not junie_bin:
+            auth_status["junie"] = False
+        else:
+            try:
+                result = subprocess.run(
+                    [junie_bin, "--help"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                auth_status["junie"] = result.returncode == 0
+            except Exception:
+                auth_status["junie"] = False
 
     return auth_status
 

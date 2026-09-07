@@ -97,6 +97,19 @@ CLAUDE_CODE_MODELS = [
 ]
 
 # =============================================================================
+# JUNIE MODELS (JetBrains Junie CLI, host-auth — flat --model ids)
+# =============================================================================
+
+JUNIE_MODELS = [
+    ("deepseek-v4-flash", "DeepSeek V4 Flash", "Fast default model"),
+    ("sonnet", "Sonnet", "Claude Sonnet via Junie"),
+    ("opus", "Opus", "Claude Opus via Junie"),
+    ("gpt", "GPT", "OpenAI model via Junie"),
+    ("gemini-flash", "Gemini Flash", "Google fast model via Junie"),
+    ("grok", "Grok", "xAI model via Junie"),
+]
+
+# =============================================================================
 # ANTHROPIC MODELS (Native API)
 # =============================================================================
 
@@ -519,6 +532,15 @@ MODEL_DATABASE = {
         "supports_coding_plan_api": False,
         "operator": "claude",
     },
+    "deepseek-v4-flash": {
+        "provider": "junie",
+        "best_for": ["quick", "parallel"],
+        "concurrent_limit": 10,
+        "cost": "low",
+        "livebench_score": None,
+        "supports_coding_plan_api": False,
+        "operator": "junie",
+    },
     # Perplexity models (for researcher)
     "sonar": {
         "provider": "perplexity",
@@ -567,4 +589,5 @@ PROVIDER_MODELS = {
     "openai": OPENAI_MODELS,
     "github-copilot": GITHUB_COPILOT_MODELS,
     "openrouter": OPENROUTER_MODELS,
+    "junie": JUNIE_MODELS,
 }

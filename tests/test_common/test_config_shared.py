@@ -181,8 +181,8 @@ class TestDetectTools:
     def test_all_tools_found(self, mock_which):
         mock_which.side_effect = lambda n: f"/usr/local/bin/{n}"
         result = detect_tools()
-        assert len(result) == 5
-        for name in ("aider", "opencode", "gemini", "claude", "cursor"):
+        assert len(result) == 6
+        for name in ("aider", "opencode", "gemini", "claude", "junie", "cursor"):
             assert name in result
 
 

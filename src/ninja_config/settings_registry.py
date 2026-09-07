@@ -48,7 +48,7 @@ SETTINGS: list[SettingDef] = [
     SettingDef("NINJA_PROMPTS_MODEL", "Prompts Model", "Model for prompt management", ""),
     SettingDef("NINJA_AGENT_MODEL", "Agent Model", "Model for agent orchestration", "opencode/glm-4.7-free"),
     # ── Operator / provider ──────────────────────────────────────────────
-    SettingDef("NINJA_CODE_BIN", "Code Operator", "Which AI coding CLI to use (opencode, aider, ...)", "opencode"),
+    SettingDef("NINJA_CODE_BIN", "Code Operator", "Which AI coding CLI to use (opencode, aider, claude, gemini, junie, ...)", "opencode"),
     SettingDef("NINJA_CODER_PROVIDER", "Coder Provider", "Default OpenCode provider", "openrouter"),
     SettingDef("NINJA_CODER_OPENCODE_PROVIDER", "OpenCode Provider", "Provider passed to the opencode strategy", "openrouter"),
     SettingDef("NINJA_SECRETARY_OPERATOR", "Secretary Operator", "Operator for the secretary module", "opencode"),
@@ -64,6 +64,7 @@ SETTINGS: list[SettingDef] = [
     SettingDef("NINJA_AIDER_TIMEOUT", "Aider Timeout (s)", "Timeout for the Aider strategy", "300", "int"),
     SettingDef("NINJA_CLAUDE_TIMEOUT", "Claude Timeout (s)", "Timeout for the Claude strategy", "600", "int"),
     SettingDef("NINJA_GEMINI_TIMEOUT", "Gemini Timeout (s)", "Timeout for the Gemini strategy", "600", "int"),
+    SettingDef("NINJA_JUNIE_TIMEOUT", "Junie Timeout (s)", "Timeout for the Junie strategy", "600", "int"),
     # ── Retries ──────────────────────────────────────────────────────────
     SettingDef("NINJA_MAX_RETRIES", "Max Retries", "Retry count for tool calls", "2", "int"),
     SettingDef("NINJA_RETRY_DELAY_SEC", "Retry Delay (s)", "Delay between retries", "5", "int"),

@@ -12,6 +12,7 @@ from ninja_coder.strategies.base import (
     ParsedResult,
 )
 from ninja_coder.strategies.claude_strategy import ClaudeStrategy
+from ninja_coder.strategies.junie_strategy import JunieStrategy, check_junie_auth
 from ninja_coder.strategies.registry import CLIStrategyRegistry
 
 
@@ -21,5 +22,7 @@ __all__ = [
     "CLIStrategy",
     "CLIStrategyRegistry",
     "ClaudeStrategy",
+    "JunieStrategy",
     "ParsedResult",
+    "check_junie_auth",
 ]

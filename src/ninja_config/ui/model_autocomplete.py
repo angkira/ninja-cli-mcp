@@ -76,6 +76,8 @@ def guess_provider(model_id: str) -> str:
         return "opencode"
     if low.startswith("gemini") or "google/" in low:
         return "google"
+    if low.startswith("junie/"):
+        return "junie"
     if low.startswith("claude") or "anthropic/" in low:
         return "anthropic"
     if low.startswith("gpt") or low.startswith("o1") or low.startswith("o3") or "openai/" in low:
@@ -472,7 +474,7 @@ class ModelRolePicker(Vertical):
 
     def _operator(self) -> str:
         raw = (self._config.get("NINJA_CODE_BIN") or "opencode").strip().lower()
-        for known in ("aider", "claude", "gemini", "opencode"):
+        for known in ("aider", "claude", "gemini", "junie", "opencode"):
             if known in raw:
                 return known
         return "opencode"
