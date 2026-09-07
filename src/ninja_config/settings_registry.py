@@ -17,7 +17,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ninja_common.defaults import DEFAULT_TIMEOUT_SEC
+from ninja_common.defaults import (
+    DEFAULT_TIMEOUT_SEC,
+    DEFAULT_WORKTREE_MAX_AGE_DAYS,
+    DEFAULT_WORKTREE_MODE,
+)
 
 
 @dataclass(frozen=True)
@@ -75,9 +79,16 @@ SETTINGS: list[SettingDef] = [
         "NINJA_WORKTREE_MODE",
         "Worktree Mode",
         "Run tasks in an isolated git worktree",
-        "on",
+        DEFAULT_WORKTREE_MODE,
         "choice",
         ("on", "off"),
+    ),
+    SettingDef(
+        "NINJA_WORKTREE_MAX_AGE_DAYS",
+        "Worktree Max Age (days)",
+        "Auto-prune isolation worktrees older than this (0 prunes everything older than now)",
+        str(DEFAULT_WORKTREE_MAX_AGE_DAYS),
+        "int",
     ),
     # ── Serve pool (opencode serve) ──────────────────────────────────────
     SettingDef(

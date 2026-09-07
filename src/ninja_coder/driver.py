@@ -2016,6 +2016,10 @@ class NinjaDriver:
         This method is specifically for OpenCode CLI's --session and --continue flags.
         For Python-based session management, use execute_with_session().
 
+        Legacy path: runs in-place in repo_root with classic safety commits
+        (no worktree isolation), because per-call worktrees would break
+        session continuity across steps. See NOTE inside the method body.
+
         Args:
             repo_root: Repository root path.
             step_id: Step identifier.
@@ -2046,6 +2050,16 @@ class NinjaDriver:
         task_logger = create_task_logger(repo_root, step_id)
 
         try:
+            # NOTE: worktree isolation is intentionally NOT applied here.
+            # execute_async_with_opencode_session keeps legacy in-place behavior
+            # because OpenCode native sessions (--session/--continue) are stateful:
+            # a per-call worktree would give every continuation step a new
+            # branch/cwd, breaking session continuity (absolute paths, session
+            # storage rooted at repo_root) and orphaning prior steps' branches.
+            # To isolate session workflows, use execute_async (single-process
+            # plans share one worktree) or set NINJA_WORKTREE_MODE=off to get
+            # the legacy auto-commit behavior everywhere. See worktree.py
+            # module docstring ("Limitations") and docs/AUTOMATIC_SAFETY.md.
             # Safety check with automatic enforcement (AUTO mode by default)
             task_desc = instruction.get("task", "")
             context_paths = instruction.get("file_scope", {}).get("context_paths", [])

@@ -4,6 +4,49 @@
 
 Ninja-coder now includes **automatic safety protection** to prevent file overwrites and data loss. This system runs by default on every task execution.
 
+> **Default since worktree isolation: `NINJA_WORKTREE_MODE=on` (worktree instead
+> of safety commits).** `NinjaDriver.execute_async` runs each task in a detached
+> git worktree on a `ninja/<slug>-<timestamp>-<uid>` branch (outside the repo,
+> under `$XDG_CACHE_HOME/ninja-mcp/worktrees/`). The main working tree and
+> current branch stay byte-for-byte untouched: only a lightweight recovery tag
+> (`ninja-safety-TIMESTAMP`) is created in the main repo — **no
+> `[ninja-auto-save]` commit is made there**. The dirty-state snapshot commit
+> (`[ninja-auto-save]`) happens **inside the worktree** on the feature branch
+> (via `validate_task_safety(..., skip_auto_commit=True)`). Review and merge
+> when ready (see "Worktree mode" below). Set `NINJA_WORKTREE_MODE=off` to get
+> the legacy behavior described in the rest of this doc (auto-commit on your
+> current branch).
+
+## Worktree mode (default: on)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NINJA_WORKTREE_MODE` | `on` | `on` = isolated worktree per `execute_async` call; `off` = legacy auto-commit |
+| `NINJA_WORKTREE_MAX_AGE_DAYS` | `2` | Auto-prune isolation worktrees older than this (tuned at `WorktreeManager.create()`) |
+
+```bash
+# Default — nothing to configure
+ninja-mcp config          # shows Worktree Mode: on, Worktree Max Age (days): 2
+git worktree list         # after a task: main repo + <cache>/worktrees/<hash>/ninja__...
+
+# Review the isolated result, then merge:
+git merge ninja/<slug>-<timestamp>-<uid>
+
+# Clean up old worktrees (also runs automatically before each new worktree):
+git worktree prune
+# or: NINJA_WORKTREE_MAX_AGE_DAYS=0 python -c "from ninja_coder.worktree import WorktreeManager; print(WorktreeManager().prune())"
+
+# Opt out back to legacy safety commits on your current branch:
+export NINJA_WORKTREE_MODE=off
+```
+
+Limitations (deliberate):
+- `execute_async_with_opencode_session` keeps legacy in-place behavior — per-call
+  worktrees would break OpenCode native session continuity (`--session`/`--continue`).
+- The serve-pool path (`NINJA_OPENCODE_SERVE_MODE=1`) keeps legacy behavior — the
+  long-running server is rooted at `repo_root`.
+- `execute_sync` never creates worktrees (it also never ran safety checks).
+
 ## How It Works
 
 Before executing any task, ninja-coder automatically:
@@ -196,6 +239,8 @@ ninja-coder simple_task --task "Add error handling" --context-paths "src/api/han
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NINJA_SAFETY_MODE` | `auto` | Safety enforcement mode (auto/strict/warn/off) |
+| `NINJA_WORKTREE_MODE` | `on` | Worktree isolation (on/off) — see "Worktree mode" above |
+| `NINJA_WORKTREE_MAX_AGE_DAYS` | `2` | Auto-prune threshold for isolation worktrees |
 
 ## Integration with MCP
 

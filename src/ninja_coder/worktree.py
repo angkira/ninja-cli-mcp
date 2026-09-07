@@ -28,7 +28,7 @@ Limitations (deliberate, to keep the change minimal):
   behavior; the long-running server is rooted at the user's repo_root.
 - ``NINJA_WORKTREE_MODE=off`` disables isolation entirely and preserves the
   legacy AUTO-mode behavior (auto-commit on the user's current branch).
-- ``prune()`` is a manual helper; nothing calls it automatically.
+- ``prune()`` runs automatically before each new worktree (via ``create()``).
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ninja_coder.safety import GitSafetyChecker
+from ninja_common.defaults import DEFAULT_WORKTREE_MAX_AGE_DAYS, DEFAULT_WORKTREE_MODE
 from ninja_common.logging_utils import get_logger
 from ninja_common.path_utils import get_cache_dir
 
@@ -74,7 +75,7 @@ _GIT_TIMEOUT_SEC = 15
 _SECONDS_PER_DAY = 86_400
 
 #: Default age threshold for prune() (overridable via NINJA_WORKTREE_MAX_AGE_DAYS).
-_DEFAULT_MAX_AGE_DAYS = 2
+_DEFAULT_MAX_AGE_DAYS = DEFAULT_WORKTREE_MAX_AGE_DAYS
 
 #: Env var to tune the automatic worktree pruning age (in days).
 WORKTREE_MAX_AGE_ENV = "NINJA_WORKTREE_MAX_AGE_DAYS"
@@ -129,10 +130,13 @@ class WorktreeManager:
     def is_enabled() -> bool:
         """Check whether worktree isolation is enabled.
 
+        Default is ON (see ninja_common.defaults.DEFAULT_WORKTREE_MODE);
+        returns False only when NINJA_WORKTREE_MODE is set to "off".
+
         Returns:
             True unless NINJA_WORKTREE_MODE is set to "off".
         """
-        return os.environ.get(WORKTREE_MODE_ENV, "on").strip().lower() != "off"
+        return os.environ.get(WORKTREE_MODE_ENV, DEFAULT_WORKTREE_MODE).strip().lower() != "off"
 
     def create(
         self,

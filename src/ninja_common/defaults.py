@@ -314,6 +314,16 @@ DEFAULT_SAFETY_MODE = "auto"
 # Whether to create safety tags for recovery
 DEFAULT_CREATE_SAFETY_TAGS = True
 
+# Worktree-based task isolation ("worktree instead of safety commits").
+# - "on": each NinjaDriver.execute_async call runs in a detached git worktree
+#   on a ninja/<slug> branch; the main tree stays untouched (default).
+# - "off": legacy behavior — AUTO safety commits on the user's current branch.
+DEFAULT_WORKTREE_MODE = "on"
+
+# Default age threshold (days) for automatic pruning of isolation worktrees.
+# Tunable at runtime via NINJA_WORKTREE_MAX_AGE_DAYS.
+DEFAULT_WORKTREE_MAX_AGE_DAYS = 2
+
 # =============================================================================
 # MODEL DATABASE FOR INTELLIGENT SELECTION
 # =============================================================================
