@@ -1,6 +1,3 @@
-import pytest
-
-
 """
 Test for OpenCode corruption detection and auto-fix.
 
@@ -32,7 +29,7 @@ def test_corruption_detection_and_fix():
 
         # Verify file is corrupted
         content_before = corrupted_file.read_text()
-        assert content_before.strip().startswith('['), "File should start with ["
+        assert content_before.strip().startswith("["), "File should start with ["
 
         # Create strategy and parse output with the corrupted file in touched_paths
         config = NinjaConfig.from_env()
@@ -44,21 +41,18 @@ def test_corruption_detection_and_fix():
         exit_code = 0
 
         # Parse output - this should detect and fix the corruption
-        result = strategy.parse_output(
-            stdout, stderr, exit_code, repo_root=str(tmpdir_path)
-        )
+        result = strategy.parse_output(stdout, stderr, exit_code, repo_root=str(tmpdir_path))
 
         # Verify the result notes mention corruption
         assert result.success, "Should still be marked as success"
-        assert "CORRUPTION DETECTED & AUTO-FIXED" in result.notes, \
+        assert "CORRUPTION DETECTED & AUTO-FIXED" in result.notes, (
             "Should mention corruption was fixed"
-        assert "1 file(s)" in result.notes, \
-            "Should mention number of files fixed"
+        )
+        assert "1 file(s)" in result.notes, "Should mention number of files fixed"
 
         # Verify file was fixed
         content_after = corrupted_file.read_text()
-        assert not content_after.strip().startswith('['), \
-            "File should no longer start with ["
+        assert not content_after.strip().startswith("["), "File should no longer start with ["
 
         # Verify content was properly joined
         expected_content = """def hello():
@@ -66,8 +60,9 @@ def test_corruption_detection_and_fix():
     Say hello.
     "
     return 'Hello, World!'"""
-        assert content_after == expected_content, \
+        assert content_after == expected_content, (
             f"Content should be joined correctly.\nExpected:\n{expected_content}\n\nGot:\n{content_after}"
+        )
 
 
 def test_no_false_positives():
@@ -94,19 +89,17 @@ def test_no_false_positives():
         exit_code = 0
 
         # Parse output
-        result = strategy.parse_output(
-            stdout, stderr, exit_code, repo_root=str(tmpdir_path)
-        )
+        result = strategy.parse_output(stdout, stderr, exit_code, repo_root=str(tmpdir_path))
 
         # Verify no corruption was detected
         assert result.success
-        assert "CORRUPTION DETECTED" not in (result.notes or ""), \
+        assert "CORRUPTION DETECTED" not in (result.notes or ""), (
             "Should not flag normal Python files as corrupted"
+        )
 
         # Verify file was not modified
         content_after = normal_file.read_text()
-        assert content_after == normal_content, \
-            "Normal file should not be modified"
+        assert content_after == normal_content, "Normal file should not be modified"
 
 
 def test_corruption_with_absolute_path():

@@ -7,6 +7,7 @@ support for z.ai API endpoints including the Coding Plan API.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -572,6 +573,47 @@ class OpenCodeStrategy:
                 error_lines = [line.strip() for line in stderr.split("\n") if line.strip()]
                 if error_lines:
                     notes = error_lines[-1][:200]
+
+        # OpenCode can write a Python representation of a list of source fragments
+        # instead of joining those fragments into the file contents.
+        if success and suspected_paths:
+            corrupted_files: list[str] = []
+            for file_path in suspected_paths:
+                path_obj = Path(file_path)
+                if not path_obj.is_absolute():
+                    if not repo_root:
+                        continue
+                    path_obj = Path(repo_root) / path_obj
+
+                try:
+                    if not path_obj.is_file():
+                        continue
+                    content = path_obj.read_text()
+                    parsed = ast.literal_eval(content.strip())
+                except (OSError, SyntaxError, ValueError):
+                    continue
+
+                if not isinstance(parsed, list) or not parsed:
+                    continue
+                if not all(isinstance(fragment, str) for fragment in parsed):
+                    continue
+
+                try:
+                    path_obj.write_text("".join(parsed))
+                except OSError as error:
+                    logger.warning(f"Failed to auto-fix corrupted file {file_path}: {error}")
+                    continue
+
+                corrupted_files.append(file_path)
+                logger.warning(f"CORRUPTION DETECTED & AUTO-FIXED: {file_path}")
+
+            if corrupted_files:
+                corruption_note = (
+                    f"CORRUPTION DETECTED & AUTO-FIXED: {len(corrupted_files)} file(s) contained "
+                    "Python list literals instead of actual code. "
+                    "Files were repaired by joining the string fragments."
+                )
+                notes = f"{notes}\n{corruption_note}" if notes else corruption_note
 
         # Final validation: If we claim success but no files were touched, it's suspicious
         # NOTE: This only triggers if BOTH regex pattern matching AND filesystem scan found nothing
