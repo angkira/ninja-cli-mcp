@@ -158,7 +158,7 @@ class TUIInstaller:
         install_type = _exec(result)
 
         if install_type == "full":
-            self.modules = ["coder", "researcher", "secretary", "resources", "prompts"]
+            self.modules = ["coder", "researcher", "secretary", "agent", "resources", "prompts"]
         elif install_type == "minimal":
             self.modules = ["coder", "resources"]
         else:
@@ -166,6 +166,7 @@ class TUIInstaller:
                 ("coder", "AI code assistant"),
                 ("researcher", "Web research & search"),
                 ("secretary", "File ops & analysis"),
+                ("agent", "Orchestrator: plan/delegate/review"),
                 ("resources", "Resource templates"),
                 ("prompts", "Prompt management"),
             ]
@@ -330,7 +331,7 @@ class TUIInstaller:
             return
 
         for module in self.modules:
-            if module not in ("coder", "researcher", "secretary"):
+            if module not in ("coder", "researcher", "secretary", "agent"):
                 continue
 
             key = f"NINJA_{module.upper()}_MODEL"
@@ -422,7 +423,7 @@ class TUIInstaller:
 
     def _verify(self) -> None:
         print("\n🔍 Verifying...")
-        for cmd in ("ninja-config", "ninja-coder", "ninja-researcher", "ninja-secretary"):
+        for cmd in ("ninja-config", "ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-agent"):
             if shutil.which(cmd):
                 print(f"  ✓ {cmd}")
             else:
@@ -440,7 +441,7 @@ class TUIInstaller:
         if search:
             print(f"  Search:       {search}")
         for m in self.modules:
-            if m in ("coder", "researcher", "secretary"):
+            if m in ("coder", "researcher", "secretary", "agent"):
                 model = self.config.get(f"NINJA_{m.upper()}_MODEL", "")
                 if model:
                     print(f"  {m:14s}{model}")

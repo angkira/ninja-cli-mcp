@@ -97,6 +97,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         "Coder": [],
         "Researcher": [],
         "Secretary": [],
+        "Agent": [],
         "Other": [],
     }
 
@@ -108,6 +109,8 @@ def cmd_list(args: argparse.Namespace) -> None:
             section = "Researcher"
         elif "SECRETARY" in key:
             section = "Secretary"
+        elif "AGENT" in key:
+            section = "Agent"
         elif "OPENROUTER" in key or "OPENAI" in key:
             section = "Common"
         else:
@@ -122,7 +125,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         sections[section].append((key, display_value))
 
     # Print sections
-    for section_name in ["Common", "Coder", "Researcher", "Secretary", "Other"]:
+    for section_name in ["Common", "Coder", "Researcher", "Secretary", "Agent", "Other"]:
         items = sections[section_name]
         if not items:
             continue
@@ -247,6 +250,7 @@ def cmd_doctor(args: argparse.Namespace) -> None:
             "ninja-coder",
             "ninja-researcher",
             "ninja-secretary",
+            "ninja-agent",
         ]
 
         for server in ninja_servers:
@@ -626,7 +630,7 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
     servers = list(MCP_SERVER_COMMANDS)
 
     # Determine which servers to install
-    if args.all or (not args.coder and not args.researcher and not args.secretary):
+    if args.all or (not args.coder and not args.researcher and not args.secretary and not args.agent):
         servers_to_install = servers
     else:
         servers_to_install = []
@@ -636,6 +640,8 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
             servers_to_install.append("ninja-researcher")
         if args.secretary:
             servers_to_install.append("ninja-secretary")
+        if args.agent:
+            servers_to_install.append("ninja-agent")
 
     # Register servers using claude mcp add
     print()
@@ -867,6 +873,11 @@ Examples:
         "--secretary",
         action="store_true",
         help="Register ninja-secretary server",
+    )
+    setup_claude_parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="Register ninja-agent server",
     )
     setup_claude_parser.add_argument(
         "--all",

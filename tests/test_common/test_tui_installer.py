@@ -381,7 +381,7 @@ class TestVerify:
         inst = _make_installer()
         inst._verify()
         out = capsys.readouterr().out
-        for cmd in ("ninja-config", "ninja-coder", "ninja-researcher", "ninja-secretary"):
+        for cmd in ("ninja-config", "ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-agent"):
             assert cmd in out
 
     @patch("ninja_config.tui_installer.shutil.which", return_value=None)
@@ -390,6 +390,80 @@ class TestVerify:
         inst._verify()
         out = capsys.readouterr().out
         assert "not found" in out
+
+    @patch("ninja_config.tui_installer.shutil.which")
+    def test_verify_checks_ninja_agent(self, mock_which, capsys):
+        mock_which.side_effect = lambda cmd: f"/usr/local/bin/{cmd}" if cmd == "ninja-agent" else None
+        inst = _make_installer()
+        inst._verify()
+        out = capsys.readouterr().out
+        assert "ninja-agent" in out
+        mock_which.assert_any_call("ninja-agent")
+
+
+# ---------------------------------------------------------------------------
+# _select_modules — agent
+# ---------------------------------------------------------------------------
+
+class TestSelectModulesAgent:
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_full_contains_agent(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "full"
+        inst = _make_installer()
+        inst._select_modules()
+        assert "agent" in inst.modules
+
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_minimal_excludes_agent(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "minimal"
+        inst = _make_installer()
+        inst._select_modules()
+        assert "agent" not in inst.modules
+
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_custom_agent_selection(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "custom"
+        mock_inq.checkbox.return_value.execute.return_value = ["coder", "agent"]
+        inst = _make_installer()
+        inst._select_modules()
+        assert inst.modules == ["coder", "agent"]
+
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_custom_choices_include_agent(self, mock_inq):
+        captured = []
+        def capture_checkbox(**kwargs):
+            captured.extend(kwargs.get("choices", []))
+            m = MagicMock()
+            m.execute.return_value = ["agent"]
+            return m
+        mock_inq.select.return_value.execute.return_value = "custom"
+        mock_inq.checkbox.side_effect = capture_checkbox
+        inst = _make_installer()
+        inst._select_modules()
+        values = [c.value for c in captured if hasattr(c, "value")]
+        assert "agent" in values
+
+
+# ---------------------------------------------------------------------------
+# _configure_models — agent
+# ---------------------------------------------------------------------------
+
+class TestConfigureModelsAgent:
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_agent_model_saved(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "openrouter/anthropic/claude-haiku-4.5"
+        inst = _make_installer()
+        inst.modules = ["agent"]
+        inst._configure_models()
+        assert inst.config.get("NINJA_AGENT_MODEL") == "openrouter/anthropic/claude-haiku-4.5"
+
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_agent_not_skipped(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "x"
+        inst = _make_installer()
+        inst.modules = ["agent"]
+        inst._configure_models()
+        mock_inq.select.assert_called()
 
 
 # ---------------------------------------------------------------------------

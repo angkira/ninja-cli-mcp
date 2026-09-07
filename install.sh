@@ -153,13 +153,13 @@ fi
 
 [[ "$INSTALL_SUCCESS" != "true" ]] && die "Installation failed"
 
-for cmd in ninja-mcp ninja-coder ninja-researcher ninja-secretary ninja-config ninja-daemon; do
+for cmd in ninja-mcp ninja-coder ninja-researcher ninja-secretary ninja-agent ninja-config ninja-daemon; do
     if [[ -x "$VENV_DIR/bin/$cmd" ]]; then
         ln -sf "$VENV_DIR/bin/$cmd" "$BIN_DIR/$cmd"
     fi
 done
 
-for cmd in ninja-mcp ninja-coder ninja-researcher ninja-secretary ninja-config ninja-daemon; do
+for cmd in ninja-mcp ninja-coder ninja-researcher ninja-secretary ninja-agent ninja-config ninja-daemon; do
     cmd_path=$(command -v "$cmd" 2>/dev/null || echo "not found")
     if [[ "$cmd_path" == *"/.local/"* ]]; then
         success "$cmd: $cmd_path"
@@ -197,8 +197,11 @@ if [[ "$AUTO_MODE" == "true" ]]; then
         echo "NINJA_SEARCH_PROVIDER=duckduckgo"
         echo "NINJA_ENABLE_DAEMON=true"
         echo "NINJA_ENABLED_MODULES=coder,researcher"
+        echo "# To enable agent orchestrator: ninja-daemon module enable agent"
         echo "NINJA_CODER_PORT=8100"
         echo "NINJA_RESEARCHER_PORT=8101"
+        echo "NINJA_SECRETARY_PORT=8102"
+        echo "NINJA_AGENT_PORT=8103"
         echo ""
         echo "# Set your API keys:"
         echo "# OPENROUTER_API_KEY=sk-or-..."

@@ -126,6 +126,7 @@ def configure_daemon(config_manager, config: dict) -> None:
         "NINJA_CODER_PORT": 8100,
         "NINJA_RESEARCHER_PORT": 8101,
         "NINJA_SECRETARY_PORT": 8102,
+        "NINJA_AGENT_PORT": 8103,
         "NINJA_RESOURCES_PORT": 8106,
         "NINJA_PROMPTS_PORT": 8107,
     }

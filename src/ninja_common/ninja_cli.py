@@ -6,6 +6,7 @@ Usage::
     ninja-mcp config            Configuration manager
     ninja-mcp daemon            Daemon process manager
     ninja-mcp skill             Skill packaging
+    ninja-mcp agent <subcommand> Agent orchestrator (plan, analyze, delegate, review, run)
     ninja-mcp hooks coder       Coder git hooks
     ninja-mcp hooks secretary   Secretary repository hooks
     ninja-mcp version           Show version
@@ -26,6 +27,7 @@ _SUBCOMMANDS: dict[str, str] = {
     "daemon": "ninja_common.daemon",
     "skill": "ninja_common.skill_cli",
     "update": "ninja_common.update_cli",
+    "agent": "ninja_agent.cli",
 }
 
 # Commands whose downstream module expects the command name to remain
@@ -53,6 +55,10 @@ def main() -> NoReturn:
 
     if command == "hooks":
         _delegate_hooks()
+        sys.exit(0)
+
+    if command == "agent":
+        _delegate_agent()
         sys.exit(0)
 
     # ── dispatch to registered subcommands ──────────────────────────────────
@@ -132,6 +138,24 @@ def _delegate_hooks() -> None:
         sys.argv = orig_argv
 
 
+# ── agent ─────────────────────────────────────────────────────────────────────
+
+
+def _delegate_agent() -> None:
+    """Handle ``ninja-mcp agent <subcommand> <args>``.
+
+    Mirrors :func:`_delegate_hooks`: shows agent help when no subcommand is
+    given, otherwise forwards to ``ninja_agent.cli``. Unlike hooks, the
+    agent module needs no kind-mapping, so this is a thin wrapper over
+    :func:`_delegate` (which strips the command before dispatch).
+    """
+    if len(sys.argv) < 3:
+        sys.argv = [*sys.argv, "--help"]
+    elif sys.argv[2] == "help":
+        sys.argv = [sys.argv[0], sys.argv[1], "--help", *sys.argv[3:]]
+    _delegate("ninja_agent.cli", "agent")
+
+
 # ── built-in helpers ──────────────────────────────────────────────────────────
 
 
@@ -145,6 +169,7 @@ def _print_usage() -> None:
     print("  daemon          Daemon process manager")
     print("  skill           Skill packaging")
     print("  update          Update ninja-mcp to the latest version")
+    print("  agent <subcmd>  Agent orchestrator (plan, analyze, delegate, review, run)")
     print("  hooks coder     Code quality hooks (format, lint, pre-commit)")
     print("  hooks secretary Repository hooks (validate-path, session-report, ...)")
     print("  version         Show version")
@@ -158,6 +183,8 @@ def _print_usage() -> None:
     print("  ninja-mcp daemon status")
     print("  ninja-mcp skill package my-skill")
     print("  ninja-mcp update              # update to the latest version")
+    print("  ninja-mcp agent plan --task 'Add feature' --repo-root .")
+    print("  ninja-mcp agent review --repo-root . --files a.py")
 
 
 def _print_version() -> None:

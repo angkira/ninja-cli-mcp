@@ -65,6 +65,7 @@ DEFAULT_DAEMON_PORTS = {
     "coder": 8100,
     "researcher": 8101,
     "secretary": 8102,
+    "agent": 8103,
     "prompts": 8107,
 }
 
@@ -303,7 +304,7 @@ class ModelConfiguration(BaseModel):
 
 class ComponentConfig(BaseModel):
     """
-    Configuration for a single component (coder, researcher, secretary).
+    Configuration for a single component (coder, researcher, secretary, agent).
 
     Each component has an operator, operator-specific settings, and model
     configuration. Some components have additional settings like search_provider.
@@ -390,7 +391,7 @@ class DaemonConfig(BaseModel):
     Examples:
         >>> config = DaemonConfig(
         ...     enabled=True,
-        ...     ports={"coder": 8100, "researcher": 8101, "secretary": 8102, "prompts": 8107},
+        ...     ports={"coder": 8100, "researcher": 8101, "secretary": 8102, "agent": 8103, "prompts": 8107},
         ... )
     """
 
@@ -499,7 +500,7 @@ class NinjaConfig(BaseModel):
     components: dict[str, ComponentConfig] = Field(
         ...,
         min_length=1,
-        description="Component configurations (coder, researcher, secretary)",
+        description="Component configurations (coder, researcher, secretary, agent)",
         examples=[
             {
                 "coder": {
@@ -549,7 +550,7 @@ class NinjaConfig(BaseModel):
             raise ValueError("At least one component must be configured")
 
         # Validate known component names
-        valid_components = {"coder", "researcher", "secretary"}
+        valid_components = {"coder", "researcher", "secretary", "agent"}
         for component_name in v:
             if component_name not in valid_components:
                 raise ValueError(
@@ -611,6 +612,7 @@ class NinjaConfig(BaseModel):
                             "coder": 8100,
                             "researcher": 8101,
                             "secretary": 8102,
+                            "agent": 8103,
                             "prompts": 8107,
                         },
                     },
@@ -680,6 +682,13 @@ def create_default_config() -> NinjaConfig:
                 },
                 models=ModelConfiguration(
                     default="google/gemini-2.0-flash",
+                ),
+            ),
+            "agent": ComponentConfig(
+                operator=OperatorType.OPENCODE,
+                operator_settings={},
+                models=ModelConfiguration(
+                    default="opencode/glm-4.7-free",
                 ),
             ),
         },
