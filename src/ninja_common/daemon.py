@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ninja_common.defaults import DEFAULT_PORTS, DEFAULT_ENABLED_MODULES, AVAILABLE_MODULES
+from ninja_common.defaults import AVAILABLE_MODULES, DEFAULT_ENABLED_MODULES, DEFAULT_PORTS
 from ninja_common.logging_utils import get_logger
 
 

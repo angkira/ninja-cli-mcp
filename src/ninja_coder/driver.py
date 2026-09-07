@@ -41,8 +41,15 @@ from ninja_coder.sessions import SessionManager
 from ninja_coder.strategies import CLIStrategyRegistry
 from ninja_coder.worktree import WorktreeInfo, WorktreeManager
 from ninja_common.defaults import (
+    DEFAULT_ABSOLUTE_TIMEOUT_PARALLEL_SEC,
+    DEFAULT_ABSOLUTE_TIMEOUT_QUICK_SEC,
+    DEFAULT_ABSOLUTE_TIMEOUT_SEC,
+    DEFAULT_ABSOLUTE_TIMEOUT_SEQUENTIAL_SEC,
     DEFAULT_CODE_BIN,
     DEFAULT_CODER_MODEL,
+    DEFAULT_INACTIVITY_TIMEOUT_PARALLEL_SEC,
+    DEFAULT_INACTIVITY_TIMEOUT_QUICK_SEC,
+    DEFAULT_INACTIVITY_TIMEOUT_SEQUENTIAL_SEC,
     DEFAULT_OPENAI_BASE_URL,
     DEFAULT_TIMEOUT_SEC,
     FALLBACK_CODER_MODELS,
@@ -55,6 +62,7 @@ logger = get_logger(__name__)
 
 try:
     import psutil  # noqa: F401
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
@@ -68,9 +76,9 @@ SUBPROCESS_STREAM_LIMIT = 16 * 1024 * 1024  # 16 MiB
 
 #: Default inactivity-watchdog thresholds (seconds) per task type.
 _INACTIVITY_TIMEOUT_DEFAULTS: dict[str, float] = {
-    "quick": 60.0,
-    "sequential": 120.0,
-    "parallel": 120.0,
+    "quick": float(DEFAULT_INACTIVITY_TIMEOUT_QUICK_SEC),
+    "sequential": float(DEFAULT_INACTIVITY_TIMEOUT_SEQUENTIAL_SEC),
+    "parallel": float(DEFAULT_INACTIVITY_TIMEOUT_PARALLEL_SEC),
 }
 
 
@@ -78,7 +86,7 @@ def _get_inactivity_timeout(task_type: str, model: str = "") -> float:
     """Resolve the inactivity-watchdog threshold for a task type.
 
     ``NINJA_INACTIVITY_TIMEOUT``, when set, overrides every task type.
-    Otherwise per-type defaults apply (quick=60s, sequential/parallel=120s).
+    Otherwise per-type defaults apply (quick=90s, sequential/parallel=180s).
 
     Models that delegate work to nested sub-agents (e.g. ``gpt-5.6-luna``)
     legitimately go silent while a child agent runs, so they get a relaxed
@@ -93,9 +101,14 @@ def _get_inactivity_timeout(task_type: str, model: str = "") -> float:
     Returns:
         Inactivity timeout in seconds.
     """
+    base_type = task_type.removesuffix("_plan")
     override = os.environ.get("NINJA_INACTIVITY_TIMEOUT")
     if override is not None:
         return float(override)
+
+    type_override = os.environ.get(f"NINJA_INACTIVITY_TIMEOUT_{base_type.upper()}")
+    if type_override is not None:
+        return float(type_override)
 
     agent_models = os.environ.get("NINJA_INACTIVITY_TIMEOUT_AGENT_MODELS", "180")
     try:
@@ -113,13 +126,33 @@ def _get_inactivity_timeout(task_type: str, model: str = "") -> float:
         except ValueError:
             return 300.0
 
-    if model_lower and any(
-        tag in model_lower for tag in ("luna", "grok", "agent")
-    ):
+    if model_lower and any(tag in model_lower for tag in ("luna", "grok", "agent")):
         return agent_timeout
 
-    base_type = task_type.removesuffix("_plan")
     return _INACTIVITY_TIMEOUT_DEFAULTS.get(base_type, _INACTIVITY_TIMEOUT_DEFAULTS["quick"])
+
+
+def _get_absolute_timeout(task_type: str, explicit_timeout: int | None = None) -> float | None:
+    """Resolve an optional hard wall-clock deadline for a task."""
+    if explicit_timeout is not None:
+        return float(explicit_timeout) if explicit_timeout > 0 else None
+
+    base_type = task_type.removesuffix("_plan")
+    type_defaults = {
+        "quick": DEFAULT_ABSOLUTE_TIMEOUT_QUICK_SEC,
+        "sequential": DEFAULT_ABSOLUTE_TIMEOUT_SEQUENTIAL_SEC,
+        "parallel": DEFAULT_ABSOLUTE_TIMEOUT_PARALLEL_SEC,
+    }
+    type_env = os.environ.get(f"NINJA_ABSOLUTE_TIMEOUT_{base_type.upper()}")
+    if type_env is not None:
+        value = int(type_env)
+    elif "NINJA_ABSOLUTE_TIMEOUT_SEC" in os.environ:
+        value = int(os.environ["NINJA_ABSOLUTE_TIMEOUT_SEC"])
+    elif "NINJA_TIMEOUT_SEC" in os.environ:
+        value = int(os.environ["NINJA_TIMEOUT_SEC"])
+    else:
+        value = type_defaults.get(base_type, DEFAULT_ABSOLUTE_TIMEOUT_SEC)
+    return float(value) if value > 0 else None
 
 
 @dataclass
@@ -1322,7 +1355,7 @@ class NinjaDriver:
     async def _stream_with_activity_timeout(
         self,
         process: asyncio.subprocess.Process,
-        max_timeout: float,
+        max_timeout: float | None,
         inactivity_timeout: float = 60.0,
         cpu_check_threshold: float = 1.0,
     ) -> tuple[str, str]:
@@ -1332,20 +1365,30 @@ class NinjaDriver:
         When no output arrives for inactivity_timeout seconds, checks CPU usage:
         - CPU still active → process is computing, extend inactivity timer
         - CPU idle → process is stuck, raise TimeoutError early
-        Absolute max_timeout still applies as a hard ceiling.
+        Absolute max_timeout, when configured, applies as a hard ceiling.
         """
         import time as _time
 
         stdout_chunks: list[bytes] = []
-        absolute_deadline = _time.monotonic() + max_timeout
+        absolute_deadline = _time.monotonic() + max_timeout if max_timeout is not None else None
         last_activity = _time.monotonic()
+        count_stderr_activity = os.environ.get("NINJA_INACTIVITY_COUNT_STDERR") == "1"
+        stderr_chunks: list[bytes] = []
 
         async def _read_stderr() -> bytes:
+            nonlocal last_activity
             if process.stderr:
-                return await process.stderr.read()
+                while True:
+                    chunk = await process.stderr.read(4096)
+                    if not chunk:
+                        return b"".join(stderr_chunks)
+                    stderr_chunks.append(chunk)
+                    if count_stderr_activity:
+                        last_activity = _time.monotonic()
             return b""
 
         stderr_task = asyncio.create_task(_read_stderr())
+        stream_timed_out = False
 
         assert process.stdout is not None
 
@@ -1353,7 +1396,7 @@ class NinjaDriver:
             while True:
                 now = _time.monotonic()
 
-                if now >= absolute_deadline:
+                if absolute_deadline is not None and now >= absolute_deadline:
                     raise TimeoutError(f"Absolute timeout of {max_timeout:.0f}s exceeded")
 
                 seconds_idle = now - last_activity
@@ -1438,11 +1481,13 @@ class NinjaDriver:
                             f"Process inactive for {seconds_idle:.0f}s with no CPU activity"
                         )
 
-                read_timeout = min(remaining_inactivity, absolute_deadline - now, 5.0)
+                read_timeout = min(remaining_inactivity, 5.0)
+                if absolute_deadline is not None:
+                    read_timeout = min(read_timeout, absolute_deadline - now)
 
                 try:
                     line = await asyncio.wait_for(
-                        process.stdout.readline(),
+                        process.stdout.read(4096),
                         timeout=read_timeout,
                     )
                 except TimeoutError:
@@ -1454,12 +1499,29 @@ class NinjaDriver:
                 else:
                     break  # EOF — process finished writing
 
+        except TimeoutError:
+            stream_timed_out = True
+            raise
         finally:
-            stderr_task.cancel()
-            try:
-                stderr_bytes = await asyncio.wait_for(stderr_task, timeout=5.0)
-            except (TimeoutError, asyncio.CancelledError):
+            if stream_timed_out:
+                stderr_task.cancel()
+                try:
+                    await stderr_task
+                except asyncio.CancelledError:
+                    pass
                 stderr_bytes = b""
+            else:
+                try:
+                    stderr_bytes = await asyncio.wait_for(stderr_task, timeout=5.0)
+                except TimeoutError:
+                    stderr_task.cancel()
+                    try:
+                        await stderr_task
+                    except asyncio.CancelledError:
+                        pass
+                    stderr_bytes = b""
+                except asyncio.CancelledError:
+                    stderr_bytes = b""
 
         await process.wait()
 
@@ -1724,9 +1786,7 @@ class NinjaDriver:
                 # Remap context paths from the original repo into the worktree so
                 # the agent focuses on files that actually exist in the execution
                 # directory instead of absolute paths pointing at the main repo.
-                instruction = self._remap_context_paths(
-                    instruction, repo_root, execution_dir
-                )
+                instruction = self._remap_context_paths(instruction, repo_root, execution_dir)
                 # The plan prompt text (baked by PromptBuilder in tools.py before
                 # the worktree existed) embeds `- **Repository**: <main>` and
                 # absolute main-repo paths. Rewrite those to the worktree so the
@@ -1866,11 +1926,12 @@ class NinjaDriver:
                 task_logger.info("[serve-pool] Using opencode serve pool")
 
                 try:
+                    pool_timeout = _get_absolute_timeout(task_type, timeout_sec)
                     pool_result = await pool.execute(
                         repo_root=repo_root,
                         prompt=prompt,
                         model=model,
-                        timeout=timeout_sec or self._strategy.get_timeout(task_type),
+                        timeout=pool_timeout,
                     )
                 except Exception as pool_exc:
                     task_logger.error(f"[serve-pool] Execution failed: {pool_exc}")
@@ -1961,7 +2022,7 @@ class NinjaDriver:
             )
 
             # Get timeout from strategy
-            max_timeout = timeout_sec or self._strategy.get_timeout(task_type)
+            absolute_timeout = _get_absolute_timeout(task_type, timeout_sec)
 
             # Execute asynchronously using strategy-built command
             process = await asyncio.create_subprocess_exec(
@@ -1980,13 +2041,13 @@ class NinjaDriver:
                 inactivity_timeout = _get_inactivity_timeout(task_type, model=model)
 
                 task_logger.debug(
-                    f"Starting subprocess with {max_timeout}s timeout, "
+                    f"Starting subprocess with absolute timeout={absolute_timeout}s, "
                     f"{inactivity_timeout}s inactivity threshold"
                 )
 
                 stdout, stderr = await self._stream_with_activity_timeout(
                     process,
-                    max_timeout=float(max_timeout),
+                    max_timeout=absolute_timeout,
                     inactivity_timeout=inactivity_timeout,
                 )
                 exit_code = process.returncode or 0
@@ -1995,12 +2056,16 @@ class NinjaDriver:
                 task_logger.info(f"Task completed in {total_time:.1f}s")
 
             except TimeoutError as e:
-                task_logger.warning(f"Task timed out after {max_timeout}s, killing process group")
+                task_logger.warning(f"Task timed out ({e}), killing process group")
                 try:
                     if process.pid:
                         os.killpg(os.getpgid(process.pid), signal.SIGTERM)
                 except (ProcessLookupError, PermissionError):
-                    process.kill()  # fallback
+                    pass
+                try:
+                    process.kill()  # Ensure the direct process is also terminated.
+                except (ProcessLookupError, PermissionError):
+                    pass
                 try:
                     await asyncio.wait_for(process.wait(), timeout=5)
                 except TimeoutError:

@@ -70,7 +70,7 @@ def _merge_toml(existing_text: str, incoming_text: str) -> tuple[str, list[str]]
         if dotted in present:
             conflicts.append(dotted)
         else:
-            existing_doc["mcp_servers"][key] = value  # type: ignore[index]
+            existing_doc["mcp_servers"][key] = value
 
     return tomlkit.dumps(existing_doc), conflicts
 
@@ -122,7 +122,7 @@ def install(args: argparse.Namespace) -> int:
         if not isinstance(existing_doc.get("mcp_servers"), dict):
             existing_doc["mcp_servers"] = tomlkit.table()
         for key, value in incoming_servers.items():
-            existing_doc["mcp_servers"][key] = value  # type: ignore[index]
+            existing_doc["mcp_servers"][key] = value
         merged_text = tomlkit.dumps(existing_doc)
         conflicts = []  # all overwritten
 

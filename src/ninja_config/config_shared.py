@@ -33,19 +33,91 @@ class APIKeyDef:
 
 
 API_KEYS: list[APIKeyDef] = [
-    APIKeyDef("OPENROUTER_API_KEY", "OpenRouter", "https://openrouter.ai/keys", "coder", "For Aider and general AI access"),
-    APIKeyDef("ANTHROPIC_API_KEY", "Anthropic", "https://console.anthropic.com/settings/keys", "coder", "For Claude models (OpenCode)"),
-    APIKeyDef("OPENAI_API_KEY", "OpenAI", "https://platform.openai.com/api-keys", "coder", "For GPT models (OpenCode)"),
-    APIKeyDef("GOOGLE_API_KEY", "Google", "https://aistudio.google.com/app/apikey", "coder", "For Gemini models (OpenCode/Gemini CLI)"),
-    APIKeyDef("AZURE_OPENAI_API_KEY", "Azure OpenAI", "https://portal.azure.com", "coder", "For Azure-hosted OpenAI models"),
-    APIKeyDef("OLLAMA_API_KEY", "Ollama", "http://localhost:11434", "coder", "For local Ollama models (optional)"),
-    APIKeyDef("LMSTUDIO_API_KEY", "LM Studio", "http://localhost:1234", "coder", "For local LM Studio models (optional)"),
-    APIKeyDef("ZAI_API_KEY", "Z.ai / Zhipu AI", "https://open.bigmodel.cn/usercenter/apikeys", "coder", "For GLM models via z.ai"),
+    APIKeyDef(
+        "OPENROUTER_API_KEY",
+        "OpenRouter",
+        "https://openrouter.ai/keys",
+        "coder",
+        "For Aider and general AI access",
+    ),
+    APIKeyDef(
+        "ANTHROPIC_API_KEY",
+        "Anthropic",
+        "https://console.anthropic.com/settings/keys",
+        "coder",
+        "For Claude models (OpenCode)",
+    ),
+    APIKeyDef(
+        "OPENAI_API_KEY",
+        "OpenAI",
+        "https://platform.openai.com/api-keys",
+        "coder",
+        "For GPT models (OpenCode)",
+    ),
+    APIKeyDef(
+        "GOOGLE_API_KEY",
+        "Google",
+        "https://aistudio.google.com/app/apikey",
+        "coder",
+        "For Gemini models (OpenCode/Gemini CLI)",
+    ),
+    APIKeyDef(
+        "AZURE_OPENAI_API_KEY",
+        "Azure OpenAI",
+        "https://portal.azure.com",
+        "coder",
+        "For Azure-hosted OpenAI models",
+    ),
+    APIKeyDef(
+        "OLLAMA_API_KEY",
+        "Ollama",
+        "http://localhost:11434",
+        "coder",
+        "For local Ollama models (optional)",
+    ),
+    APIKeyDef(
+        "LMSTUDIO_API_KEY",
+        "LM Studio",
+        "http://localhost:1234",
+        "coder",
+        "For local LM Studio models (optional)",
+    ),
+    APIKeyDef(
+        "ZAI_API_KEY",
+        "Z.ai / Zhipu AI",
+        "https://open.bigmodel.cn/usercenter/apikeys",
+        "coder",
+        "For GLM models via z.ai",
+    ),
     APIKeyDef("GROQ_API_KEY", "Groq", "https://console.groq.com/keys", "coder", "For Groq models"),
-    APIKeyDef("DEEPSEEK_API_KEY", "DeepSeek", "https://platform.deepseek.com/api_keys", "coder", "For DeepSeek models"),
-    APIKeyDef("MISTRAL_API_KEY", "Mistral", "https://console.mistral.ai/api-keys", "coder", "For Mistral models"),
-    APIKeyDef("PERPLEXITY_API_KEY", "Perplexity", "https://www.perplexity.ai/settings/api", "researcher", "For AI-powered research search"),
-    APIKeyDef("SERPER_API_KEY", "Serper", "https://serper.dev", "researcher", "For Google search integration"),
+    APIKeyDef(
+        "DEEPSEEK_API_KEY",
+        "DeepSeek",
+        "https://platform.deepseek.com/api_keys",
+        "coder",
+        "For DeepSeek models",
+    ),
+    APIKeyDef(
+        "MISTRAL_API_KEY",
+        "Mistral",
+        "https://console.mistral.ai/api-keys",
+        "coder",
+        "For Mistral models",
+    ),
+    APIKeyDef(
+        "PERPLEXITY_API_KEY",
+        "Perplexity",
+        "https://www.perplexity.ai/settings/api",
+        "researcher",
+        "For AI-powered research search",
+    ),
+    APIKeyDef(
+        "SERPER_API_KEY",
+        "Serper",
+        "https://serper.dev",
+        "researcher",
+        "For Google search integration",
+    ),
 ]
 
 CODER_API_KEYS = [k for k in API_KEYS if k.module == "coder"]
@@ -65,7 +137,17 @@ OPERATORS: list[OperatorDef] = [
         "opencode",
         "OpenCode",
         "Multi-provider CLI (75+ LLMs)",
-        ("opencode-go", "zai-coding-plan", "zai", "openrouter", "opencode", "anthropic", "google", "openai", "github-copilot"),
+        (
+            "opencode-go",
+            "zai-coding-plan",
+            "zai",
+            "openrouter",
+            "opencode",
+            "anthropic",
+            "google",
+            "openai",
+            "github-copilot",
+        ),
     ),
     OperatorDef("aider", "Aider", "OpenRouter-based CLI", ("openrouter",)),
     OperatorDef("claude", "Claude Code", "Anthropic's official CLI", ("anthropic",)),
@@ -91,8 +173,18 @@ PROVIDER_KEY_URLS: dict[str, str] = {
 
 TASK_MODEL_DEFAULTS: list[tuple[str, str, str, str]] = [
     ("NINJA_MODEL_QUICK", "Quick Tasks", "Fast simple tasks", DEFAULT_MODEL_QUICK),
-    ("NINJA_MODEL_SEQUENTIAL", "Sequential Tasks", "Complex multi-step tasks", DEFAULT_MODEL_SEQUENTIAL),
-    ("NINJA_MODEL_PARALLEL", "Parallel Tasks", "High concurrency parallel tasks", DEFAULT_MODEL_PARALLEL),
+    (
+        "NINJA_MODEL_SEQUENTIAL",
+        "Sequential Tasks",
+        "Complex multi-step tasks",
+        DEFAULT_MODEL_SEQUENTIAL,
+    ),
+    (
+        "NINJA_MODEL_PARALLEL",
+        "Parallel Tasks",
+        "High concurrency parallel tasks",
+        DEFAULT_MODEL_PARALLEL,
+    ),
 ]
 
 
@@ -119,21 +211,31 @@ class IDEDef:
 
 
 IDES: list[IDEDef] = [
-    IDEDef("claude", "Claude Code", (
-        Path.home() / ".config" / "claude" / "mcp.json",
-        Path.home() / ".claude.json",
-    )),
-    IDEDef("opencode", "OpenCode", (
-        Path.home() / ".opencode.json",
-        Path.home() / ".config" / "opencode" / ".opencode.json",
-    )),
-    IDEDef("vscode", "VS Code", (
-        Path.home() / "Library" / "Application Support" / "Code" / "User" / "settings.json",
-        Path.home() / ".config" / "Code" / "User" / "settings.json",
-    )),
-    IDEDef("zed", "Zed", (
-        Path.home() / ".config" / "zed" / "settings.json",
-    )),
+    IDEDef(
+        "claude",
+        "Claude Code",
+        (
+            Path.home() / ".config" / "claude" / "mcp.json",
+            Path.home() / ".claude.json",
+        ),
+    ),
+    IDEDef(
+        "opencode",
+        "OpenCode",
+        (
+            Path.home() / ".opencode.json",
+            Path.home() / ".config" / "opencode" / ".opencode.json",
+        ),
+    ),
+    IDEDef(
+        "vscode",
+        "VS Code",
+        (
+            Path.home() / "Library" / "Application Support" / "Code" / "User" / "settings.json",
+            Path.home() / ".config" / "Code" / "User" / "settings.json",
+        ),
+    ),
+    IDEDef("zed", "Zed", (Path.home() / ".config" / "zed" / "settings.json",)),
 ]
 
 
@@ -166,11 +268,15 @@ def check_uv() -> bool:
 def install_uv() -> bool:
     result = subprocess.run(
         "curl -LsSf https://astral.sh/uv/install.sh | sh",
-        shell=True, capture_output=True, text=True, check=False,
+        shell=True,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode == 0:
         local_bin = Path.home() / ".local" / "bin"
         import os
+
         os.environ["PATH"] = f"{local_bin}:{os.environ.get('PATH', '')}"
         return True
     return False
@@ -183,11 +289,25 @@ def register_claude_mcp() -> int:
     for server, command in MCP_SERVER_COMMANDS.items():
         subprocess.run(
             ["claude", "mcp", "remove", server, "-s", "user"],
-            capture_output=True, check=False,
+            capture_output=True,
+            check=False,
         )
         result = subprocess.run(
-            ["claude", "mcp", "add", "--scope", "user", "--transport", "stdio", server, "--", *command],
-            capture_output=True, text=True, check=False,
+            [
+                "claude",
+                "mcp",
+                "add",
+                "--scope",
+                "user",
+                "--transport",
+                "stdio",
+                server,
+                "--",
+                *command,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if result.returncode == 0:
             count += 1

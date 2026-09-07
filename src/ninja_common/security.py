@@ -270,9 +270,7 @@ class RequestDeduplicator:
             if task.cancelled():
                 # The shared execution was cancelled, not us — surface a real
                 # error so callers produce a proper error response.
-                raise RuntimeError(
-                    "In-flight request was cancelled before completion"
-                ) from None
+                raise RuntimeError("In-flight request was cancelled before completion") from None
             raise
 
 

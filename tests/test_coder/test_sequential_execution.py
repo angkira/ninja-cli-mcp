@@ -369,8 +369,8 @@ class TestTimeoutEstimation:
 
         timeout = executor._estimate_sequential_timeout(request)
 
-        # Base (300s) + 1 step (60s) = 360s
-        assert timeout == 360
+        # Absolute timeout is resolved by the driver for the task type.
+        assert timeout is None
 
     def test_estimate_sequential_timeout_three_steps(self, executor: ToolExecutor, temp_repo: Path):
         """Test timeout estimation for 3 steps."""
@@ -384,8 +384,7 @@ class TestTimeoutEstimation:
 
         timeout = executor._estimate_sequential_timeout(request)
 
-        # Base (300s) + 3 steps (180s) = 480s
-        assert timeout == 480
+        assert timeout is None
 
     def test_estimate_sequential_timeout_five_steps(self, executor: ToolExecutor, temp_repo: Path):
         """Test timeout estimation for 5 steps."""
@@ -399,8 +398,7 @@ class TestTimeoutEstimation:
 
         timeout = executor._estimate_sequential_timeout(request)
 
-        # Base (300s) + 5 steps (300s) = 600s
-        assert timeout == 600
+        assert timeout is None
 
 
 @pytest.mark.asyncio

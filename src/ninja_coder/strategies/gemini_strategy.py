@@ -362,10 +362,11 @@ class GeminiStrategy:
         """
         base_timeout = int(os.environ.get("NINJA_GEMINI_TIMEOUT", "300"))
 
-        if task_type == "parallel":
+        base_task_type = task_type.removesuffix("_plan")
+        if base_task_type == "parallel":
             # Gemini is fast, can handle parallel efficiently
             return base_timeout
-        elif task_type == "quick":
+        elif base_task_type == "quick":
             # Quick tasks can be faster
             return base_timeout // 2
 

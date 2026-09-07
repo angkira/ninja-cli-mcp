@@ -100,9 +100,7 @@ class AiderStrategy:
 
         # Provider prefix: default to opencode-go unless the model already has one
         provider = os.environ.get("NINJA_CODER_OPENCODE_PROVIDER", "opencode-go")
-        prefixed_model = (
-            model_name if "/" in model_name else f"{provider}/{model_name}"
-        )
+        prefixed_model = model_name if "/" in model_name else f"{provider}/{model_name}"
         cmd = [
             self.bin_path,
             "--yes",  # Auto-accept changes
@@ -498,8 +496,10 @@ class AiderStrategy:
         """
         base_timeout = int(os.environ.get("NINJA_AIDER_TIMEOUT", "300"))
 
+        base_task_type = task_type.removesuffix("_plan")
+
         # Parallel tasks may need more time (multiple API calls)
-        if task_type == "parallel":
+        if base_task_type == "parallel":
             return base_timeout * 2
 
         return base_timeout

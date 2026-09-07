@@ -391,7 +391,13 @@ class DaemonConfig(BaseModel):
     Examples:
         >>> config = DaemonConfig(
         ...     enabled=True,
-        ...     ports={"coder": 8100, "researcher": 8101, "secretary": 8102, "agent": 8103, "prompts": 8107},
+        ...     ports={
+        ...         "coder": 8100,
+        ...         "researcher": 8101,
+        ...         "secretary": 8102,
+        ...         "agent": 8103,
+        ...         "prompts": 8107,
+        ...     },
         ... )
     """
 

@@ -172,12 +172,13 @@ class TUIInstaller:
                 ("prompts", "Prompt management"),
             ]
             choices = [
-                Choice(value=n, name=f"{n.title()}  •  {d}", enabled=True)
-                for n, d in all_mods
+                Choice(value=n, name=f"{n.title()}  •  {d}", enabled=True) for n, d in all_mods
             ]
             result = inquirer.checkbox(
-                message="🎯 Modules:", choices=choices,
-                pointer="►", instruction="Space to toggle, Enter to confirm",
+                message="🎯 Modules:",
+                choices=choices,
+                pointer="►",
+                instruction="Space to toggle, Enter to confirm",
             )
             self.modules = _exec(result) or ["coder", "resources"]
 
@@ -190,6 +191,7 @@ class TUIInstaller:
         extras = f"[{','.join(self.modules)}]"
 
         from pathlib import Path
+
         cwd = Path.cwd()
         if (cwd / "pyproject.toml").exists():
             cmd = ["uv", "tool", "install", "--force", f"{cwd}{extras}"]
@@ -239,11 +241,15 @@ class TUIInstaller:
             print("  Installing aider...")
             subprocess.run(
                 ["pipx", "install", "aider-chat"],
-                capture_output=True, text=True, check=False,
+                capture_output=True,
+                text=True,
+                check=False,
             )
 
         if skip_keys:
-            print("  ⏭ API keys skipped (--skip-keys). Add them later via `ninja-config configure`.")
+            print(
+                "  ⏭ API keys skipped (--skip-keys). Add them later via `ninja-config configure`."
+            )
             return
 
         print("\n  🔑 Coder API Keys")
@@ -263,7 +269,8 @@ class TUIInstaller:
                 asked.add(env_var)
 
         remaining = [
-            k for k in CODER_API_KEYS
+            k
+            for k in CODER_API_KEYS
             if k.env_var not in asked and k.env_var not in OPTIONAL_INSTALL_KEYS
         ]
         if remaining and _confirm("  Configure additional API keys?", default=False):
@@ -309,13 +316,14 @@ class TUIInstaller:
         self._save("NINJA_SEARCH_PROVIDER", provider)
 
         if skip_keys:
-            print("  ⏭ API keys skipped (--skip-keys). Add them later via `ninja-config configure`.")
+            print(
+                "  ⏭ API keys skipped (--skip-keys). Add them later via `ninja-config configure`."
+            )
             return
 
         for key_def in RESEARCHER_API_KEYS:
-            needed = (
-                (provider == "serper" and key_def.env_var == "SERPER_API_KEY")
-                or (provider == "perplexity" and key_def.env_var == "PERPLEXITY_API_KEY")
+            needed = (provider == "serper" and key_def.env_var == "SERPER_API_KEY") or (
+                provider == "perplexity" and key_def.env_var == "PERPLEXITY_API_KEY"
             )
             if needed:
                 self._ask_key(key_def)
@@ -407,7 +415,8 @@ class TUIInstaller:
         ]
         result = inquirer.checkbox(
             message="  Select IDEs to configure:",
-            choices=choices, pointer="►",
+            choices=choices,
+            pointer="►",
         )
         selected = _exec(result)
         return selected if selected else []
@@ -424,7 +433,13 @@ class TUIInstaller:
 
     def _verify(self) -> None:
         print("\n🔍 Verifying...")
-        for cmd in ("ninja-config", "ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-agent"):
+        for cmd in (
+            "ninja-config",
+            "ninja-coder",
+            "ninja-researcher",
+            "ninja-secretary",
+            "ninja-agent",
+        ):
             if shutil.which(cmd):
                 print(f"  ✓ {cmd}")
             else:
@@ -455,6 +470,7 @@ class TUIInstaller:
 
 def _get_env(key: str) -> str:
     import os
+
     return os.environ.get(key, "")
 
 

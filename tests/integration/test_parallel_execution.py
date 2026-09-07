@@ -181,18 +181,16 @@ async def test_parallel_with_mock_cli(temp_repo: Path, parallel_request: Paralle
     call_kwargs = mock_driver.execute_async.call_args.kwargs
     assert call_kwargs["task_type"] == "parallel_plan"
 
-    # Verify timeout was estimated
+    # The driver resolves the absolute deadline by task type.
     assert "timeout_sec" in call_kwargs
-    timeout = call_kwargs["timeout_sec"]
-    # With fanout=3 and 3 tasks: base(600) + (60 * 3 // 3) = 660s
-    assert timeout >= 300
+    assert call_kwargs["timeout_sec"] is None
 
     # Verify NO asyncio.gather was used (single call proves this)
     assert result.overall_status == "success"
 
 
 def test_parallel_timeout_estimation():
-    """Test _estimate_parallel_timeout formula."""
+    """Test that parallel timeout resolution is delegated to the driver."""
     from ninja_coder.models import PlanStep
 
     # Mock driver
@@ -201,14 +199,9 @@ def test_parallel_timeout_estimation():
     executor = ToolExecutor(driver=mock_driver)
 
     # Test cases
-    test_cases = [
-        (2, 4, 710, 730),  # base(600) + (60 * 4 // 2) = 720
-        (4, 4, 650, 670),  # base(600) + (60 * 4 // 4) = 660
-        (1, 6, 950, 970),  # base(600) + (60 * 6 // 1) = 960
-        (3, 9, 770, 790),  # base(600) + (60 * 9 // 3) = 780
-    ]
+    test_cases = [(2, 4), (4, 4), (1, 6), (3, 9)]
 
-    for fanout, num_tasks, min_expected, max_expected in test_cases:
+    for fanout, num_tasks in test_cases:
         steps = [
             PlanStep(
                 id=f"task{i}",
@@ -226,10 +219,7 @@ def test_parallel_timeout_estimation():
 
         timeout = executor._estimate_parallel_timeout(request)
 
-        assert min_expected <= timeout <= max_expected, (
-            f"fanout={fanout}, tasks={num_tasks}: "
-            f"expected {min_expected}-{max_expected}, got {timeout}"
-        )
+        assert timeout is None
 
 
 @pytest.mark.asyncio
@@ -457,11 +447,9 @@ async def test_parallel_vs_sequential_timeout_difference():
     parallel_timeout = executor._estimate_parallel_timeout(parallel_request)
     sequential_timeout = executor._estimate_sequential_timeout(sequential_request)
 
-    # Parallel should be faster (base + 60*4//4 = 660) vs (base + 120*4 = 1080)
-    assert parallel_timeout < sequential_timeout, (
-        f"Parallel timeout ({parallel_timeout}s) should be less than "
-        f"sequential timeout ({sequential_timeout}s) for same tasks"
-    )
+    # Both task types resolve their absolute deadline in the driver.
+    assert parallel_timeout is None
+    assert sequential_timeout is None
 
 
 @pytest.mark.asyncio

@@ -24,9 +24,13 @@ from mcp.types import TextContent, Tool
 
 from ninja_agent.models import (
     AgentAnalyzeRequest,
+    AgentAnalyzeResult,
     AgentDelegateRequest,
+    AgentDelegateResult,
     AgentPlanRequest,
+    AgentPlanResult,
     AgentReviewRequest,
+    AgentReviewResult,
 )
 from ninja_agent.tools import AgentToolExecutor
 from ninja_common.logging_utils import get_logger, setup_logging
@@ -183,24 +187,38 @@ def create_server() -> Server:
             client_id = arguments.get("client_id", "default")
 
             if name == "agent_analyze":
-                request = AgentAnalyzeRequest(**arguments)
-                result = await executor.analyze(request, client_id)
-                return [TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))]
+                analyze_request = AgentAnalyzeRequest(**arguments)
+                analyze_result: AgentAnalyzeResult = await executor.analyze(
+                    analyze_request, client_id
+                )
+                return [
+                    TextContent(type="text", text=json.dumps(analyze_result.model_dump(), indent=2))
+                ]
 
             elif name == "agent_plan":
-                request = AgentPlanRequest(**arguments)
-                result = await executor.plan(request, client_id)
-                return [TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))]
+                plan_request = AgentPlanRequest(**arguments)
+                plan_result: AgentPlanResult = await executor.plan(plan_request, client_id)
+                return [
+                    TextContent(type="text", text=json.dumps(plan_result.model_dump(), indent=2))
+                ]
 
             elif name == "agent_delegate":
-                request = AgentDelegateRequest(**arguments)
-                result = await executor.delegate(request, client_id)
-                return [TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))]
+                delegate_request = AgentDelegateRequest(**arguments)
+                delegate_result: AgentDelegateResult = await executor.delegate(
+                    delegate_request, client_id
+                )
+                return [
+                    TextContent(
+                        type="text", text=json.dumps(delegate_result.model_dump(), indent=2)
+                    )
+                ]
 
             elif name == "agent_review":
-                request = AgentReviewRequest(**arguments)
-                result = await executor.review(request, client_id)
-                return [TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))]
+                review_request = AgentReviewRequest(**arguments)
+                review_result: AgentReviewResult = await executor.review(review_request, client_id)
+                return [
+                    TextContent(type="text", text=json.dumps(review_result.model_dump(), indent=2))
+                ]
 
             else:
                 raise ValueError(f"Unknown tool: {name}")
@@ -250,15 +268,15 @@ async def main_http(host: str, port: int) -> None:
     server = create_server()
     sse = SseServerTransport("/messages")
 
-    async def handle_sse(request):
+    async def handle_sse(request: Any) -> Response:
         async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
             await server.run(streams[0], streams[1], server.create_initialization_options())
         return Response()
 
-    async def handle_messages(scope, receive, send):
+    async def handle_messages(scope: Any, receive: Any, send: Any) -> None:
         await sse.handle_post_message(scope, receive, send)
 
-    async def app(scope, receive, send):
+    async def app(scope: Any, receive: Any, send: Any) -> None:
         path = scope.get("path", "")
         if path == "/sse":
             request = Request(scope, receive, send)

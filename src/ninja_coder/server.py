@@ -648,8 +648,7 @@ You:
                 # Never let a None/invalid result crash with AttributeError —
                 # return a proper MCP error envelope instead.
                 logger.error(
-                    f"[{client_id}] Tool {name} returned invalid result: "
-                    f"{type(result).__name__}"
+                    f"[{client_id}] Tool {name} returned invalid result: {type(result).__name__}"
                 )
                 return [
                     TextContent(

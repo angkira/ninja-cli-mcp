@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any
 
 from ninja_agent.models import (
     AgentAnalyzeRequest,
@@ -35,13 +36,13 @@ logger = get_logger(__name__)
 class AgentToolExecutor:
     """Executor for agent MCP tools (planning, analysis, delegation, review)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the agent tool executor."""
-        self._coder = None
-        self._secretary = None
-        self._researcher = None
+        self._coder: Any = None
+        self._secretary: Any = None
+        self._researcher: Any = None
 
-    def _get_coder(self):
+    def _get_coder(self) -> Any:
         """Lazily import and return the coder tool executor."""
         if self._coder is None:
             from ninja_coder.tools import ToolExecutor as CoderToolExecutor
@@ -49,7 +50,7 @@ class AgentToolExecutor:
             self._coder = CoderToolExecutor()
         return self._coder
 
-    def _get_secretary(self):
+    def _get_secretary(self) -> Any:
         """Lazily import and return the secretary tool executor."""
         if self._secretary is None:
             from ninja_secretary.tools import SecretaryToolExecutor
@@ -57,7 +58,7 @@ class AgentToolExecutor:
             self._secretary = SecretaryToolExecutor()
         return self._secretary
 
-    def _get_researcher(self):
+    def _get_researcher(self) -> Any:
         """Lazily import and return the researcher tool executor."""
         if self._researcher is None:
             from ninja_researcher.tools import ResearchToolExecutor
@@ -134,9 +135,7 @@ class AgentToolExecutor:
         max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
     )
     @monitored
-    async def plan(
-        self, request: AgentPlanRequest, client_id: str = "default"
-    ) -> AgentPlanResult:
+    async def plan(self, request: AgentPlanRequest, client_id: str = "default") -> AgentPlanResult:
         """
         Decompose a task into an execution plan.
 
@@ -155,12 +154,28 @@ class AgentToolExecutor:
         task_lower = request.task.lower()
 
         research_keywords = [
-            "research", "search", "investigate", "find", "look up", "explore",
-            "learn about", "what is", "how does", "compare", "latest",
+            "research",
+            "search",
+            "investigate",
+            "find",
+            "look up",
+            "explore",
+            "learn about",
+            "what is",
+            "how does",
+            "compare",
+            "latest",
         ]
         analysis_keywords = [
-            "analy", "understand the code", "explain", "review", "map",
-            "architecture", "structure", "assess", "audit",
+            "analy",
+            "understand the code",
+            "explain",
+            "review",
+            "map",
+            "architecture",
+            "structure",
+            "assess",
+            "audit",
         ]
 
         is_research = any(k in task_lower for k in research_keywords)
@@ -323,9 +338,7 @@ class AgentToolExecutor:
         from ninja_researcher.models import WebSearchRequest
 
         researcher = self._get_researcher()
-        result = await researcher.web_search(
-            WebSearchRequest(query=request.subtask), client_id
-        )
+        result = await researcher.web_search(WebSearchRequest(query=request.subtask), client_id)
         sources = getattr(result, "results", []) or []
         summary_lines = []
         for s in sources[:5]:

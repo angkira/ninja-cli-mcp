@@ -1,7 +1,3 @@
-from __future__ import annotations
-import pytest
-
-
 """
 Tests for activity-based timeout in NinjaDriver.
 
@@ -9,6 +5,7 @@ Tests the smart timeout functionality that only triggers after 20 seconds
 of no output activity, while still respecting maximum timeout as a safety net.
 """
 
+from __future__ import annotations
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
@@ -28,6 +25,7 @@ def driver(tmp_path, monkeypatch):
     # Ensure serve pool mode is disabled so tests hit subprocess path
     monkeypatch.delenv("NINJA_OPENCODE_SERVE_MODE", raising=False)
     monkeypatch.setenv("NINJA_INACTIVITY_TIMEOUT", "20")
+    monkeypatch.setenv("NINJA_INACTIVITY_COUNT_STDERR", "1")
 
     config = NinjaConfig(
         bin_path="aider",
@@ -60,7 +58,7 @@ async def test_activity_based_timeout_no_output(driver, tmp_path, monkeypatch):
         mock_stderr = AsyncMock()
 
         # readline() will wait forever (simulating hung process)
-        async def never_readline():
+        async def never_readline(*args, **kwargs):
             await asyncio.sleep(100)
             return b""
 
@@ -323,7 +321,7 @@ async def test_activity_based_timeout_max_timeout_reached(driver, tmp_path, monk
     assert process_killed is True
     assert result.success is False
     assert "timed out" in result.summary.lower()
-    assert "maximum timeout" in result.notes.lower()
+    assert "absolute timeout" in result.notes.lower()
     assert result.exit_code == -1
 
     # Verify it was killed around 10s (max timeout), not 20s (inactivity timeout)

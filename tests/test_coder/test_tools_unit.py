@@ -41,8 +41,8 @@ class TestResultConversion:
         assert step_result.id == "step1"
         assert step_result.status == "ok"
         assert step_result.summary == "Task completed"
-        assert step_result.notes == "All good"
-        assert len(step_result.suspected_touched_paths) == 2
+        assert step_result.files_touched == ["file1.py", "file2.py"]
+        assert step_result.error_message is None
 
     def test_result_to_step_result_failure(self, executor):
         """Test converting failed NinjaResult."""
@@ -75,7 +75,8 @@ class TestResultConversion:
         step_result = executor._result_to_step_result("step1", result)
 
         assert step_result.id == "step1"
-        assert step_result.status == "error"
+        assert step_result.status == "fail"
+        assert step_result.error_message == "Exception raised"
 
     def test_result_truncates_long_summary(self, executor):
         """Test that very long summaries are truncated."""
@@ -92,7 +93,7 @@ class TestResultConversion:
 
         # Should be truncated to max 500 chars
         assert len(step_result.summary) <= 500
-        assert len(step_result.notes) <= 300
+        assert len(step_result.error_message or "") <= 300
 
     def test_result_limits_touched_paths(self, executor):
         """Test that touched paths list is limited."""
@@ -108,7 +109,7 @@ class TestResultConversion:
         step_result = executor._result_to_step_result("step1", result)
 
         # Should be limited to max 10 paths
-        assert len(step_result.suspected_touched_paths) == 10
+        assert len(step_result.files_touched) == 10
 
 
 if __name__ == "__main__":

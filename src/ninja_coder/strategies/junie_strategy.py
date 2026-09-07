@@ -313,9 +313,10 @@ class JunieStrategy:
         """
         base_timeout = int(os.environ.get("NINJA_JUNIE_TIMEOUT", "600"))
 
-        if task_type == "parallel":
+        base_task_type = task_type.removesuffix("_plan")
+        if base_task_type == "parallel":
             return base_timeout
-        elif task_type == "quick":
+        elif base_task_type == "quick":
             return base_timeout // 2
 
         return base_timeout

@@ -90,8 +90,9 @@ def test_invalid_complexity_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_simple_timeout_shorter_than_complex(tmp_path: Path) -> None:
-    executor, _ = _executor()
+@pytest.mark.asyncio
+async def test_complexity_routes_worktree_policy_without_tool_timeout(tmp_path: Path) -> None:
+    executor, driver = _executor()
     steps = [
         PlanStep(id=f"t{i}", title=f"T{i}", task="x") for i in range(4)
     ]
@@ -101,6 +102,14 @@ def test_simple_timeout_shorter_than_complex(tmp_path: Path) -> None:
     complex_ = ParallelPlanRequest(
         repo_root=str(tmp_path), complexity="complex", steps=steps
     )
-    assert executor._estimate_parallel_timeout(simple) < executor._estimate_parallel_timeout(
-        complex_
-    )
+
+    await executor.execute_plan_parallel(simple)
+    simple_kwargs = driver.execute_async.call_args.kwargs
+    assert simple_kwargs["task_type"] == "quick"
+    assert simple_kwargs["timeout_sec"] is None
+
+    driver.execute_async.reset_mock()
+    await executor.execute_plan_parallel(complex_)
+    complex_kwargs = driver.execute_async.call_args.kwargs
+    assert complex_kwargs["task_type"] == "parallel_plan"
+    assert complex_kwargs["timeout_sec"] is None

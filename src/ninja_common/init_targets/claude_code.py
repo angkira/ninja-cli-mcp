@@ -36,13 +36,15 @@ def _get_repo_url() -> str:
     import importlib.resources
 
     try:
-        ref = importlib.resources.files("ninja_common").parent.parent
-        marketplace = Path(str(ref)) / ".claude-plugin" / "marketplace.json"
+        package_path = Path(str(importlib.resources.files("ninja_common")))
+        marketplace = package_path.parent.parent / ".claude-plugin" / "marketplace.json"
         if marketplace.exists():
             data = json.loads(marketplace.read_text())
             plugins = data.get("plugins", [])
             if plugins:
-                return plugins[0].get("repository", _FALLBACK_REPO_URL)
+                repository = plugins[0].get("repository")
+                if isinstance(repository, str):
+                    return repository
     except Exception:  # broad: filesystem + JSON + importlib errors all degrade gracefully
         pass
     return _FALLBACK_REPO_URL

@@ -416,9 +416,7 @@ class OpenCodeServerPool:
                 if resp.status < 400:
                     logger.info(f"[pool] aborted session {session_id}")
                 else:
-                    logger.warning(
-                        f"[pool] abort session {session_id} returned {resp.status}"
-                    )
+                    logger.warning(f"[pool] abort session {session_id} returned {resp.status}")
         except (aiohttp.ClientError, TimeoutError) as exc:
             logger.warning(f"[pool] failed to abort session {session_id}: {exc}")
 

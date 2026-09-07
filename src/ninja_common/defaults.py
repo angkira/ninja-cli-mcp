@@ -101,9 +101,7 @@ EXTRA_KNOWN_PROVIDER_PREFIXES = (
 # Union of canonical OPENCODE_PROVIDERS ids + extras above. Strategies must
 # import this instead of hardcoding their own known_providers list.
 KNOWN_MODEL_PROVIDER_PREFIXES: tuple[str, ...] = tuple(
-    sorted(
-        {pid for pid, _, _ in OPENCODE_PROVIDERS} | set(EXTRA_KNOWN_PROVIDER_PREFIXES)
-    )
+    sorted({pid for pid, _, _ in OPENCODE_PROVIDERS} | set(EXTRA_KNOWN_PROVIDER_PREFIXES))
 )
 
 # =============================================================================
@@ -311,6 +309,17 @@ OPENROUTER_PROVIDERS = [
 
 DEFAULT_OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_TIMEOUT_SEC = 600
+
+# Timeout watchdog defaults. Absolute timeout is an optional hard safety
+# deadline; inactivity is the primary timeout and is reset by activity.
+DEFAULT_ABSOLUTE_TIMEOUT_SEC = 7200
+DEFAULT_ABSOLUTE_TIMEOUT_QUICK_SEC = 1800
+DEFAULT_ABSOLUTE_TIMEOUT_SEQUENTIAL_SEC = 7200
+DEFAULT_ABSOLUTE_TIMEOUT_PARALLEL_SEC = 7200
+DEFAULT_INACTIVITY_TIMEOUT_QUICK_SEC = 90
+DEFAULT_INACTIVITY_TIMEOUT_SEQUENTIAL_SEC = 180
+DEFAULT_INACTIVITY_TIMEOUT_PARALLEL_SEC = 180
+DEFAULT_INACTIVITY_COUNT_STDERR = False
 
 # =============================================================================
 # DAEMON DEFAULTS

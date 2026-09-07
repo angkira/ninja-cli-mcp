@@ -718,7 +718,8 @@ class OpenCodeStrategy:
             "sequential": ("NINJA_OPENCODE_SEQUENTIAL_TIMEOUT", 900),  # 15 minutes
             "parallel": ("NINJA_OPENCODE_PARALLEL_TIMEOUT", 1200),  # 20 minutes
         }
-        env_var, default = timeouts.get(task_type, ("NINJA_OPENCODE_TIMEOUT", 600))
+        base_task_type = task_type.removesuffix("_plan")
+        env_var, default = timeouts.get(base_task_type, ("NINJA_OPENCODE_TIMEOUT", 600))
         return int(os.environ.get(env_var, str(default)))
 
     def _is_zai_model(self, model_name: str) -> bool:

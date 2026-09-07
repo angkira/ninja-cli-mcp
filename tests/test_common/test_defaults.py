@@ -22,19 +22,19 @@ class TestDefaults:
 
     def test_default_coder_model_is_opencode_free(self):
         """Test that DEFAULT_CODER_MODEL is set to opencode free model."""
-        assert DEFAULT_CODER_MODEL == "opencode/glm-4.7-free"
+        assert DEFAULT_CODER_MODEL == "opencode-go/deepseek-v4-flash"
 
     def test_default_model_quick_is_opencode_free(self):
         """Test that DEFAULT_MODEL_QUICK is set to opencode free model."""
-        assert DEFAULT_MODEL_QUICK == "opencode/glm-4.7-free"
+        assert DEFAULT_MODEL_QUICK == "opencode-go/deepseek-v4-flash"
 
     def test_default_model_sequential_is_zai_coding_plan(self):
         """Test that DEFAULT_MODEL_SEQUENTIAL is set to zai coding plan model."""
-        assert DEFAULT_MODEL_SEQUENTIAL == "zai-coding-plan/glm-4.7"
+        assert DEFAULT_MODEL_SEQUENTIAL == "opencode-go/glm-5.3"
 
     def test_default_model_parallel_is_opencode_free(self):
         """Test that DEFAULT_MODEL_PARALLEL is set to opencode free model."""
-        assert DEFAULT_MODEL_PARALLEL == "opencode/glm-4.7-free"
+        assert DEFAULT_MODEL_PARALLEL == "opencode-go/deepseek-v4-flash"
 
     def test_claude_code_models_first_is_haiku(self):
         """Test that the first CLAUDE_CODE_MODELS entry is Haiku."""

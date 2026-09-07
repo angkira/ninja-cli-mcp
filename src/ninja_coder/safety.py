@@ -205,8 +205,10 @@ class GitSafetyChecker:
             if not has_identity:
                 logger.warning("Git identity not configured; using fallback ninja-coder identity")
                 identity_args = [
-                    "-c", "user.name=ninja-coder",
-                    "-c", "user.email=ninja@localhost",
+                    "-c",
+                    "user.name=ninja-coder",
+                    "-c",
+                    "user.email=ninja@localhost",
                 ]
 
             commit_cmd = [

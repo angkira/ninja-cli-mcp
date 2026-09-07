@@ -482,15 +482,20 @@ class ToolExecutor:
                         for step in request.steps
                     ],
                     files_modified=result.suspected_touched_paths,
-                    notes=result.summary[:500],
+                    notes=(result.notes or result.summary)[:500],
                 )
         else:
             plan_result = PlanExecutionResult(
                 overall_status="failed",
                 steps=[],
                 files_modified=[],
-                notes=result.summary[:500],
+                notes=(result.notes or result.summary)[:500],
             )
+
+        if result.notes and result.notes not in plan_result.notes:
+            plan_result.notes = (
+                f"{plan_result.notes}\n{result.notes}" if plan_result.notes else result.notes
+            )[:500]
 
         # 5. Record metrics
         duration = time.time() - start_time
@@ -517,11 +522,9 @@ class ToolExecutor:
 
         return plan_result
 
-    def _estimate_sequential_timeout(self, request: SequentialPlanRequest) -> int:
-        """Estimate timeout for sequential plan."""
-        base = 600
-        per_step = 120
-        return base + (per_step * len(request.steps))
+    def _estimate_sequential_timeout(self, request: SequentialPlanRequest) -> None:
+        """Use the driver's task-type absolute timeout resolution."""
+        return None
 
     async def execute_plan_parallel(
         self, request: ParallelPlanRequest, client_id: str = "default"
@@ -583,8 +586,7 @@ class ToolExecutor:
             task_type = "parallel_plan"
         else:  # Defensive: pydantic Literal already rejects this.
             raise ValueError(
-                f"Invalid complexity {request.complexity!r}: "
-                'expected "simple" or "complex"'
+                f'Invalid complexity {request.complexity!r}: expected "simple" or "complex"'
             )
         try:
             result = await self.driver.execute_async(
@@ -641,15 +643,20 @@ class ToolExecutor:
                         for step in request.steps
                     ],
                     files_modified=result.suspected_touched_paths,
-                    notes=result.summary[:500],
+                    notes=(result.notes or result.summary)[:500],
                 )
         else:
             plan_result = PlanExecutionResult(
                 overall_status="failed",
                 steps=[],
                 files_modified=[],
-                notes=result.summary[:500],
+                notes=(result.notes or result.summary)[:500],
             )
+
+        if result.notes and result.notes not in plan_result.notes:
+            plan_result.notes = (
+                f"{plan_result.notes}\n{result.notes}" if plan_result.notes else result.notes
+            )[:500]
 
         # 5. Record metrics
         duration = time.time() - start_time
@@ -676,19 +683,9 @@ class ToolExecutor:
 
         return plan_result
 
-    def _estimate_parallel_timeout(self, request: ParallelPlanRequest) -> int:
-        """Estimate timeout for parallel plan.
-
-        Simple batches (in-place quick model) get a short budget;
-        complex batches (isolated worktree) keep the full budget.
-        """
-        if request.complexity == "simple":
-            base = 300
-            per_task = 30
-        else:
-            base = 600
-            per_task = 60  # Parallel is faster
-        return base + (per_task * max(1, len(request.steps) // request.fanout))
+    def _estimate_parallel_timeout(self, request: ParallelPlanRequest) -> None:
+        """Use the driver's task-type absolute timeout resolution."""
+        return None
 
     async def get_agents(
         self,

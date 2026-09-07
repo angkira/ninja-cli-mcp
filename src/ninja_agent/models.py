@@ -37,9 +37,7 @@ class AgentAnalyzeResult(BaseModel):
 
     success: bool = Field(..., description="Whether analysis succeeded")
     summary: str = Field(..., description="Concise summary of the codebase")
-    findings: list[str] = Field(
-        default_factory=list, description="List of structured findings"
-    )
+    findings: list[str] = Field(default_factory=list, description="List of structured findings")
     touched_paths: list[str] = Field(
         default_factory=list, description="Paths inspected during analysis"
     )
@@ -63,9 +61,7 @@ class AgentPlanRequest(BaseModel):
 
     task: str = Field(..., description="High-level task description")
     repo_root: str = Field(..., description="Repository root path")
-    context_paths: list[str] = Field(
-        default_factory=list, description="Paths relevant to the task"
-    )
+    context_paths: list[str] = Field(default_factory=list, description="Paths relevant to the task")
     steps_requested: int | None = Field(
         default=None, description="Optional hint for number of steps"
     )
@@ -75,9 +71,7 @@ class AgentPlanResult(BaseModel):
     """Result of plan decomposition."""
 
     success: bool = Field(..., description="Whether planning succeeded")
-    plan: list[AgentPlanStep] = Field(
-        default_factory=list, description="Ordered execution steps"
-    )
+    plan: list[AgentPlanStep] = Field(default_factory=list, description="Ordered execution steps")
     reasoning: str = Field(default="", description="Explanation of the plan")
 
 
@@ -122,16 +116,12 @@ class AgentReviewRequest(BaseModel):
 
     repo_root: str = Field(..., description="Repository root path")
     file_paths: list[str] = Field(..., description="Files to review")
-    review_focus: str | None = Field(
-        default=None, description="Optional area to focus review on"
-    )
+    review_focus: str | None = Field(default=None, description="Optional area to focus review on")
 
 
 class AgentReviewResult(BaseModel):
     """Result of a code review."""
 
     success: bool = Field(..., description="Whether review succeeded")
-    findings: list[AgentReviewFinding] = Field(
-        default_factory=list, description="Review findings"
-    )
+    findings: list[AgentReviewFinding] = Field(default_factory=list, description="Review findings")
     summary: str = Field(default="", description="Overall review summary")

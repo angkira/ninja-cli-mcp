@@ -333,4 +333,4 @@ class ClaudeStrategy:
             "quick": 300,  # 5 minutes
             "sequential": 900,  # 15 minutes
             "parallel": 600,  # 10 minutes (Claude Code is single-threaded)
-        }.get(task_type, 600)
+        }.get(task_type.removesuffix("_plan"), 600)

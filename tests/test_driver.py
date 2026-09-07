@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import sys
+
 import pytest
 
 
@@ -46,7 +49,7 @@ def test_config_creation():
 
 def test_config_from_env(monkeypatch):
     """Test creating config from environment variables."""
-    monkeypatch.setenv("NINJA_CODE_BIN", "/usr/local/bin/aider")
+    monkeypatch.setenv("NINJA_CODE_BIN", sys.executable)
     monkeypatch.setenv("OPENAI_BASE_URL", "https://test.api/v1")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test-123")
     monkeypatch.setenv("NINJA_MODEL", "anthropic/claude-opus-4")
@@ -54,7 +57,7 @@ def test_config_from_env(monkeypatch):
 
     config = NinjaConfig.from_env()
 
-    assert config.bin_path == "/usr/local/bin/aider"
+    assert config.bin_path == sys.executable
     assert config.openai_base_url == "https://test.api/v1"
     assert config.openai_api_key == "sk-test-123"
     assert config.model == "anthropic/claude-opus-4"

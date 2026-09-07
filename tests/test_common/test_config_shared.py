@@ -117,7 +117,7 @@ class TestDaemonConfig:
         assert DAEMON_CONFIG["NINJA_ENABLE_DAEMON"] == "true"
 
     def test_has_port_keys(self):
-        for module in ("CODER", "RESEARCHER", "SECRETARY", "RESOURCES", "PROMPTS"):
+        for module in ("CODER", "RESEARCHER", "SECRETARY", "AGENT"):
             key = f"NINJA_{module}_PORT"
             assert key in DAEMON_CONFIG, f"Missing {key}"
 
@@ -396,8 +396,8 @@ class TestRegisterClaudeMcp:
     def test_registers_all_servers(self, mock_which, mock_run):
         mock_run.return_value = MagicMock(returncode=0)
         result = register_claude_mcp()
-        assert result == 3
-        assert mock_run.call_count == 6  # 3 remove + 3 add
+        assert result == 4
+        assert mock_run.call_count == 8  # 4 remove + 4 add
 
     @patch("ninja_config.config_shared.subprocess.run")
     @patch("ninja_config.config_shared.shutil.which", return_value="/usr/bin/claude")
@@ -433,6 +433,8 @@ class TestRegisterClaudeMcp:
             MagicMock(returncode=1),  # add ninja-researcher → fail
             MagicMock(returncode=0),  # remove ninja-secretary
             MagicMock(returncode=0),  # add ninja-secretary → count=2
+            MagicMock(returncode=0),  # remove ninja-agent
+            MagicMock(returncode=1),  # add ninja-agent → fail
         ]
         result = register_claude_mcp()
         assert result == 2

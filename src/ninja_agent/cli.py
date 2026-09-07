@@ -17,14 +17,23 @@ import argparse
 import asyncio
 import json
 import sys
+from typing import TYPE_CHECKING, Any, cast
+
+
+if TYPE_CHECKING:
+    from collections.abc import Coroutine
 
 from pydantic import ValidationError
 
 from ninja_agent.models import (
     AgentAnalyzeRequest,
+    AgentAnalyzeResult,
     AgentDelegateRequest,
+    AgentDelegateResult,
     AgentPlanRequest,
+    AgentPlanResult,
     AgentReviewRequest,
+    AgentReviewResult,
 )
 from ninja_agent.tools import AgentToolExecutor
 
@@ -50,9 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Paths relevant to the task (repeatable / space-separated)",
     )
-    plan_p.add_argument(
-        "--steps", type=int, default=None, help="Optional hint for number of steps"
-    )
+    plan_p.add_argument("--steps", type=int, default=None, help="Optional hint for number of steps")
     plan_p.add_argument("--json", action="store_true", help="Output JSON format")
 
     # analyze
@@ -97,9 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_p.add_argument("--json", action="store_true", help="Output JSON format")
 
     # Task runner: composition of plan, delegate, and review steps.
-    run_p = subparsers.add_parser(
-        "run", help="Compose plan -> delegate -> review for a task"
-    )
+    run_p = subparsers.add_parser("run", help="Compose plan -> delegate -> review for a task")
     run_p.add_argument("--task", required=True, help="High-level task description")
     run_p.add_argument("--repo-root", required=True, help="Repository root path")
     run_p.add_argument(
@@ -108,9 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Paths relevant to the task (also used as review targets)",
     )
-    run_p.add_argument(
-        "--steps", type=int, default=None, help="Optional hint for number of steps"
-    )
+    run_p.add_argument("--steps", type=int, default=None, help="Optional hint for number of steps")
     run_p.add_argument("--json", action="store_true", help="Output JSON format")
 
     return parser
@@ -127,12 +130,14 @@ def _fail(message: str) -> int:
 
 
 def _print_plan(result: object, as_json: bool) -> None:
-    data = result.model_dump() if hasattr(result, "model_dump") else result  # type: ignore[union-attr]
+    data = result.model_dump() if hasattr(result, "model_dump") else result
     if as_json:
         print(json.dumps(data, indent=2))
         return
     steps = data.get("plan", []) if isinstance(data, dict) else []
-    print(f"Plan ({len(steps)} steps): {data.get('reasoning', '') if isinstance(data, dict) else ''}")
+    print(
+        f"Plan ({len(steps)} steps): {data.get('reasoning', '') if isinstance(data, dict) else ''}"
+    )
     for i, step in enumerate(steps):
         deps = ",".join(str(d) for d in step.get("dependencies", []))
         suffix = f" [depends on {deps}]" if deps else ""
@@ -141,12 +146,12 @@ def _print_plan(result: object, as_json: bool) -> None:
 
 
 def _print_analyze(result: object, as_json: bool) -> None:
-    data = result.model_dump() if hasattr(result, "model_dump") else result  # type: ignore[union-attr]
+    data = result.model_dump() if hasattr(result, "model_dump") else result
     if as_json:
         print(json.dumps(data, indent=2))
         return
     print(data.get("summary", "") if isinstance(data, dict) else "")
-    for finding in (data.get("findings", []) if isinstance(data, dict) else []):
+    for finding in data.get("findings", []) if isinstance(data, dict) else []:
         print(f"  - {finding}")
     touched = data.get("touched_paths", []) if isinstance(data, dict) else []
     if touched:
@@ -156,7 +161,7 @@ def _print_analyze(result: object, as_json: bool) -> None:
 
 
 def _print_delegate(result: object, as_json: bool) -> None:
-    data = result.model_dump() if hasattr(result, "model_dump") else result  # type: ignore[union-attr]
+    data = result.model_dump() if hasattr(result, "model_dump") else result
     if as_json:
         print(json.dumps(data, indent=2))
         return
@@ -166,14 +171,16 @@ def _print_delegate(result: object, as_json: bool) -> None:
 
 
 def _print_review(result: object, as_json: bool) -> None:
-    data = result.model_dump() if hasattr(result, "model_dump") else result  # type: ignore[union-attr]
+    data = result.model_dump() if hasattr(result, "model_dump") else result
     if as_json:
         print(json.dumps(data, indent=2))
         return
     print(data.get("summary", "") if isinstance(data, dict) else "")
-    for finding in (data.get("findings", []) if isinstance(data, dict) else []):
+    for finding in data.get("findings", []) if isinstance(data, dict) else []:
         line = f":{finding.get('line')}" if finding.get("line") is not None else ""
-        print(f"  [{finding.get('severity')}] {finding.get('file_path')}{line}: {finding.get('message')}")
+        print(
+            f"  [{finding.get('severity')}] {finding.get('file_path')}{line}: {finding.get('message')}"
+        )
 
 
 def _cmd_plan(args: argparse.Namespace, as_json: bool) -> int:
@@ -187,7 +194,9 @@ def _cmd_plan(args: argparse.Namespace, as_json: bool) -> int:
     except ValidationError as exc:
         return _fail(str(exc))
     try:
-        result = asyncio.run(AgentToolExecutor().plan(request))
+        result = asyncio.run(
+            cast("Coroutine[Any, Any, AgentPlanResult]", AgentToolExecutor().plan(request))
+        )
     except Exception as exc:
         return _fail(str(exc))
     if not result.success:
@@ -203,7 +212,9 @@ def _cmd_analyze(args: argparse.Namespace, as_json: bool) -> int:
     except ValidationError as exc:
         return _fail(str(exc))
     try:
-        result = asyncio.run(AgentToolExecutor().analyze(request))
+        result = asyncio.run(
+            cast("Coroutine[Any, Any, AgentAnalyzeResult]", AgentToolExecutor().analyze(request))
+        )
     except Exception as exc:
         return _fail(str(exc))
     if not result.success:
@@ -225,7 +236,9 @@ def _cmd_delegate(args: argparse.Namespace, as_json: bool) -> int:
     except ValidationError as exc:
         return _fail(str(exc))
     try:
-        result = asyncio.run(AgentToolExecutor().delegate(request))
+        result = asyncio.run(
+            cast("Coroutine[Any, Any, AgentDelegateResult]", AgentToolExecutor().delegate(request))
+        )
     except Exception as exc:
         return _fail(str(exc))
     if not result.success:
@@ -245,7 +258,9 @@ def _cmd_review(args: argparse.Namespace, as_json: bool) -> int:
     except ValidationError as exc:
         return _fail(str(exc))
     try:
-        result = asyncio.run(AgentToolExecutor().review(request))
+        result = asyncio.run(
+            cast("Coroutine[Any, Any, AgentReviewResult]", AgentToolExecutor().review(request))
+        )
     except Exception as exc:
         return _fail(str(exc))
     if not result.success:
@@ -328,13 +343,12 @@ def _print_run(
 ) -> None:
     if as_json:
         payload = {
-            "plan": plan_result.model_dump() if hasattr(plan_result, "model_dump") else plan_result,  # type: ignore[union-attr]
+            "plan": plan_result.model_dump() if hasattr(plan_result, "model_dump") else plan_result,
             "delegations": [
-                r.model_dump() if hasattr(r, "model_dump") else r  # type: ignore[union-attr]
-                for r in delegate_results
+                r.model_dump() if hasattr(r, "model_dump") else r for r in delegate_results
             ],
             "review": (
-                review_result.model_dump()  # type: ignore[union-attr]
+                review_result.model_dump()
                 if review_result is not None and hasattr(review_result, "model_dump")
                 else review_result
             ),

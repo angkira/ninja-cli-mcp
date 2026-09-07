@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.resources
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 def _dist_path(filename: str) -> Path:
@@ -27,7 +27,7 @@ def load_mcp_json() -> dict[str, Any]:
     """Load dist/mcp.json and return its parsed contents."""
     path = _dist_path("mcp.json")
     with path.open() as fh:
-        return json.load(fh)
+        return cast("dict[str, Any]", json.load(fh))
 
 
 def load_codex_toml_text() -> str:

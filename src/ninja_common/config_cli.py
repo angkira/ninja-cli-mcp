@@ -376,9 +376,7 @@ def cmd_install(args: argparse.Namespace) -> None:
     install with defaults; missing pieces are finished later via
     `ninja-config configure`.
     """
-    skip_keys = bool(
-        getattr(args, "skip_keys", False) or getattr(args, "non_interactive", False)
-    )
+    skip_keys = bool(getattr(args, "skip_keys", False) or getattr(args, "non_interactive", False))
     skip_models = bool(
         getattr(args, "skip_models", False) or getattr(args, "non_interactive", False)
     )
@@ -630,7 +628,9 @@ def cmd_setup_claude(args: argparse.Namespace) -> None:
     servers = list(MCP_SERVER_COMMANDS)
 
     # Determine which servers to install
-    if args.all or (not args.coder and not args.researcher and not args.secretary and not args.agent):
+    if args.all or (
+        not args.coder and not args.researcher and not args.secretary and not args.agent
+    ):
         servers_to_install = servers
     else:
         servers_to_install = []

@@ -453,7 +453,12 @@ def configure_model_slots(config_manager, config: dict) -> None:
         ("Coder - Primary", "NINJA_CODER_MODEL", "Primary model for coding", "openrouter"),
         ("Coder - Quick", "NINJA_MODEL_QUICK", "Fast model for simple tasks", "openrouter"),
         ("Coder - Sequential", "NINJA_MODEL_SEQUENTIAL", "Multi-step complex tasks", "openrouter"),
-        ("Coder - Parallel", "NINJA_MODEL_PARALLEL", "High-concurrency parallel tasks", "openrouter"),
+        (
+            "Coder - Parallel",
+            "NINJA_MODEL_PARALLEL",
+            "High-concurrency parallel tasks",
+            "openrouter",
+        ),
         ("Researcher", "NINJA_RESEARCHER_MODEL", "Web research engine", "perplexity"),
         ("Secretary", "NINJA_SECRETARY_MODEL", "Documentation & analysis", "openrouter"),
         ("Agent", "NINJA_AGENT_MODEL", "Orchestrator planning & delegation", "openrouter"),

@@ -94,8 +94,7 @@ def static_models_for_provider(provider: str) -> list[Model]:
     else:
         triples = list(PROVIDER_MODELS.get("openrouter", []))
     return [
-        Model(id=mid, name=name, description=desc, provider=provider)
-        for mid, name, desc in triples
+        Model(id=mid, name=name, description=desc, provider=provider) for mid, name, desc in triples
     ]
 
 

@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # Provider id used in opencode.json and as the model-id prefix (litellm/...).
 LITELLM_PROVIDER_ID = "litellm"
 
+
 # Default config dir per opencode's own resolution rules.
 def _opencode_config_path() -> Path:
     """Return the path to the global opencode config file."""
@@ -95,9 +96,7 @@ def write_litellm_config(base_url: str, api_key: str, models: list[str]) -> bool
         "baseURL": base_url.rstrip("/") if base_url else "",
         "apiKey": api_key,
     }
-    provider["models"] = {
-        model_id: {"name": model_id} for model_id in models if model_id
-    }
+    provider["models"] = {model_id: {"name": model_id} for model_id in models if model_id}
 
     try:
         path.write_text(json.dumps(data, indent=2))

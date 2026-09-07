@@ -18,6 +18,7 @@ class TestNinjaConfig:
 
     def test_config_from_env_with_openrouter(self, monkeypatch):
         """Test loading config from OPENROUTER environment variables."""
+        monkeypatch.setattr("ninja_coder.driver.shutil.which", lambda _: None)
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
         monkeypatch.setenv("NINJA_MODEL", "anthropic/claude-sonnet-4")
         monkeypatch.setenv("NINJA_CODE_BIN", "/custom/bin/aider")
@@ -340,15 +341,15 @@ class TestInactivityTimeout:
 
     def test_default_quick_timeout(self, monkeypatch):
         monkeypatch.delenv("NINJA_INACTIVITY_TIMEOUT", raising=False)
-        assert _get_inactivity_timeout("quick") == 60.0
+        assert _get_inactivity_timeout("quick") == 90.0
 
     def test_sequential_default(self, monkeypatch):
         monkeypatch.delenv("NINJA_INACTIVITY_TIMEOUT", raising=False)
-        assert _get_inactivity_timeout("sequential") == 120.0
+        assert _get_inactivity_timeout("sequential") == 180.0
 
     def test_plan_variant_inherits_base(self, monkeypatch):
         monkeypatch.delenv("NINJA_INACTIVITY_TIMEOUT", raising=False)
-        assert _get_inactivity_timeout("parallel_plan") == 120.0
+        assert _get_inactivity_timeout("parallel_plan") == 180.0
 
     def test_global_override(self, monkeypatch):
         monkeypatch.setenv("NINJA_INACTIVITY_TIMEOUT", "30")
@@ -365,7 +366,7 @@ class TestInactivityTimeout:
 
     def test_normal_model_unaffected(self, monkeypatch):
         monkeypatch.delenv("NINJA_INACTIVITY_TIMEOUT", raising=False)
-        assert _get_inactivity_timeout("quick", model="opencode-go/deepseek-v4-flash") == 60.0
+        assert _get_inactivity_timeout("quick", model="opencode-go/deepseek-v4-flash") == 90.0
 
 
 if __name__ == "__main__":
