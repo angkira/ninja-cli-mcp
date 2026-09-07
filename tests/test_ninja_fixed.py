@@ -1,5 +1,6 @@
 """Integration tests for the Ninja MCP daemon lifecycle."""
 
+import os
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -12,6 +13,25 @@ from ninja_common.daemon import DaemonManager
 
 
 SERVER_MODULES = ("coder", "researcher", "secretary")
+
+
+def _uses_current_python_environment(process: psutil.Process) -> bool:
+    """Return whether a daemon uses this test's interpreter or virtualenv."""
+    daemon_executable = process.exe()
+    try:
+        if Path(daemon_executable).samefile(sys.executable):
+            return True
+    except FileNotFoundError:
+        return False
+
+    current_virtual_env = os.environ.get("VIRTUAL_ENV")
+    daemon_virtual_env = process.environ().get("VIRTUAL_ENV")
+    return bool(
+        current_virtual_env
+        and daemon_virtual_env
+        and Path(current_virtual_env).resolve() == Path(daemon_virtual_env).resolve()
+        and Path(current_virtual_env).resolve() == Path(sys.prefix).resolve()
+    )
 
 
 @pytest.fixture
@@ -66,7 +86,7 @@ def test_servers_restarted(running_daemons: DaemonManager):
         assert status["running"] is True
 
         process = psutil.Process(status["pid"])
-        assert Path(process.exe()).resolve() == Path(sys.executable).resolve()
+        assert _uses_current_python_environment(process)
         assert f"ninja_{module}.server" in " ".join(process.cmdline())
 
 
