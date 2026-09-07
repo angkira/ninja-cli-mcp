@@ -780,6 +780,96 @@ def test_opencode_no_files_modified_is_retryable():
     assert parsed.retryable_error is True
 
 
+def _opencode_model_arg(strategy, **kwargs):
+    """Build command and return the value passed to --model."""
+    result = strategy.build_command(
+        prompt="Test task",
+        repo_root="/tmp/test-repo",
+        **kwargs,
+    )
+    model_idx = result.command.index("--model")
+    return result.command[model_idx + 1]
+
+
+def test_opencode_does_not_prepend_opencode_prefix(monkeypatch):
+    """Regression: opencode/<id> must not become opencode-go/opencode/<id>."""
+    monkeypatch.delenv("NINJA_CODER_OPENCODE_PROVIDER", raising=False)
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="opencode/nemotron-3.5-lightning-free",
+        openai_api_key="test",
+    )
+    strategy = OpenCodeStrategy("opencode", config)
+
+    assert (
+        _opencode_model_arg(strategy)
+        == "opencode/nemotron-3.5-lightning-free"
+    )
+
+
+def test_opencode_does_not_prepend_openrouter_prefix(monkeypatch):
+    """Nested openrouter/<provider>/<model> ids are left untouched."""
+    monkeypatch.delenv("NINJA_CODER_OPENCODE_PROVIDER", raising=False)
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="openrouter/anthropic/claude-haiku-4.5",
+        openai_api_key="test",
+    )
+    strategy = OpenCodeStrategy("opencode", config)
+
+    assert (
+        _opencode_model_arg(strategy)
+        == "openrouter/anthropic/claude-haiku-4.5"
+    )
+
+
+def test_opencode_prepends_default_provider_for_bare_id(monkeypatch):
+    """Bare model ids get the default opencode-go prefix."""
+    monkeypatch.delenv("NINJA_CODER_OPENCODE_PROVIDER", raising=False)
+    config = NinjaConfig(
+        bin_path="opencode", model="deepseek-v4-flash", openai_api_key="test"
+    )
+    strategy = OpenCodeStrategy("opencode", config)
+
+    assert _opencode_model_arg(strategy) == "opencode-go/deepseek-v4-flash"
+
+
+def test_opencode_does_not_double_prepend_configured_provider(monkeypatch):
+    """Already-prefixed model with the configured provider is not doubled."""
+    monkeypatch.setenv("NINJA_CODER_OPENCODE_PROVIDER", "zai-coding-plan")
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="zai-coding-plan/glm-4.7",
+        openai_api_key="test",
+    )
+    strategy = OpenCodeStrategy("opencode", config)
+
+    assert _opencode_model_arg(strategy) == "zai-coding-plan/glm-4.7"
+
+
+def test_opencode_does_not_double_prepend_custom_provider(monkeypatch):
+    """Custom NINJA_CODER_OPENCODE_PROVIDER prefix is never prepended twice."""
+    monkeypatch.setenv("NINJA_CODER_OPENCODE_PROVIDER", "custom-provider")
+    config = NinjaConfig(
+        bin_path="opencode",
+        model="custom-provider/some-model",
+        openai_api_key="test",
+    )
+    strategy = OpenCodeStrategy("opencode", config)
+
+    assert _opencode_model_arg(strategy) == "custom-provider/some-model"
+
+
+def test_known_prefixes_cover_canonical_providers():
+    """KNOWN_MODEL_PROVIDER_PREFIXES must include every canon provider id."""
+    from ninja_common.defaults import KNOWN_MODEL_PROVIDER_PREFIXES, OPENCODE_PROVIDERS
+
+    canon_ids = {pid for pid, _, _ in OPENCODE_PROVIDERS}
+    assert canon_ids <= set(KNOWN_MODEL_PROVIDER_PREFIXES)
+    assert "opencode" in KNOWN_MODEL_PROVIDER_PREFIXES
+    assert "github-copilot" in KNOWN_MODEL_PROVIDER_PREFIXES
+
+
 if __name__ == "__main__":
     # Run tests
     pytest.main([__file__, "-v"])

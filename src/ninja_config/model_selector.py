@@ -16,6 +16,7 @@ from pathlib import Path
 
 from ninja_common.config_manager import ConfigManager
 from ninja_common.defaults import JUNIE_MODELS
+from ninja_common.defaults import OPENCODE_PROVIDERS as _CANONICAL_OPENCODE_PROVIDERS
 from ninja_config.config_shared import MCP_SERVER_COMMANDS
 
 
@@ -29,21 +30,20 @@ except ImportError:
     HAS_INQUIRERPY = False
 
 
-# OpenCode provider definitions
-# NOTE: This is a STATIC FALLBACK only. The canonical source of providers is
-# dynamic discovery via `opencode models` (see discover_opencode_providers()).
-OPENCODE_PROVIDERS = [
-    ("opencode-go", "OpenCode Go", "OpenCode subscription models (GLM, DeepSeek, Qwen, etc.)"),
-    ("zai-coding-plan", "Z.AI Coding Plan", "GLM models via Coding Plan API"),
-    ("zai", "Z.ai / Zhipu AI", "GLM models - native API"),
-    ("openrouter", "OpenRouter", "Multi-provider API - Qwen, DeepSeek, Llama, etc."),
-    ("opencode", "OpenCode (Free)", "Free OpenCode models - no key required"),
-    ("anthropic", "Anthropic", "Claude models - native API"),
-    ("google", "Google", "Gemini models - native API"),
-    ("openai", "OpenAI", "GPT models - native API"),
-    ("github-copilot", "GitHub Copilot", "Via GitHub OAuth"),
-    ("litellm", "LiteLLM", "Self-hosted LiteLLM proxy (OpenAI-compatible)"),
-]
+# OpenCode provider definitions.
+# NOTE: Canonical source is ``ninja_common.defaults.OPENCODE_PROVIDERS``.
+# This is the static fallback for dynamic discovery via `opencode models`
+# (see discover_opencode_providers()); ``litellm`` is appended here because
+# the configurator supports a self-hosted proxy that is not a builtin
+# OpenCode provider.
+_LITELLM_FALLBACK = (
+    "litellm",
+    "LiteLLM",
+    "Self-hosted LiteLLM proxy (OpenAI-compatible)",
+)
+OPENCODE_PROVIDERS = list(_CANONICAL_OPENCODE_PROVIDERS)
+if all(pid != _LITELLM_FALLBACK[0] for pid, _, _ in OPENCODE_PROVIDERS):
+    OPENCODE_PROVIDERS.append(_LITELLM_FALLBACK)
 
 # Friendly display names for providers discovered dynamically.
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {

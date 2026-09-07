@@ -20,6 +20,7 @@ from ninja_coder.strategies.base import (
     CLICommandResult,
     ParsedResult,
 )
+from ninja_common.defaults import KNOWN_MODEL_PROVIDER_PREFIXES
 from ninja_common.logging_utils import get_logger
 
 
@@ -197,22 +198,15 @@ class OpenCodeStrategy:
         # Add provider prefix if not already present
         opencode_provider = os.environ.get("NINJA_CODER_OPENCODE_PROVIDER", "opencode-go")
 
-        # Check if model already has a known provider prefix
-        known_providers = [
-            "openrouter",
-            "anthropic",
-            "openai",
-            "google",
-            "zhipu",
-            "zai",
-            "zai-coding-plan",
-            "deepseek",
-            "cohere",
-            "mistral",
-            "opencode-go",
-            "litellm",
-        ]
+        # Check if model already has a known provider prefix.
+        # Single source: ninja_common.defaults.KNOWN_MODEL_PROVIDER_PREFIXES
+        # (canonical OPENCODE_PROVIDERS ids + legacy extras). Plus the
+        # configured provider itself, so a custom NINJA_CODER_OPENCODE_PROVIDER
+        # value is never prepended twice either.
+        known_providers = list(KNOWN_MODEL_PROVIDER_PREFIXES)
         has_provider = any(model_name.startswith(f"{p}/") for p in known_providers)
+        if not has_provider and opencode_provider:
+            has_provider = model_name.startswith(f"{opencode_provider}/")
 
         if not has_provider and opencode_provider:
             # Model doesn't have provider prefix, add it

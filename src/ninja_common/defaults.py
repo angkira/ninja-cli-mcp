@@ -86,6 +86,26 @@ OPENCODE_PROVIDERS = [
     ("github-copilot", "GitHub Copilot", "Via GitHub OAuth"),
 ]
 
+# Extra provider prefixes that are valid ``provider/model`` heads but are not
+# selectable OpenCode providers (legacy / passthrough APIs). Kept separate so
+# OPENCODE_PROVIDERS stays the canon for UI selection.
+EXTRA_KNOWN_PROVIDER_PREFIXES = (
+    "zhipu",
+    "deepseek",
+    "cohere",
+    "mistral",
+    "litellm",
+)
+
+# Single source of truth for "model already has a provider prefix" checks.
+# Union of canonical OPENCODE_PROVIDERS ids + extras above. Strategies must
+# import this instead of hardcoding their own known_providers list.
+KNOWN_MODEL_PROVIDER_PREFIXES: tuple[str, ...] = tuple(
+    sorted(
+        {pid for pid, _, _ in OPENCODE_PROVIDERS} | set(EXTRA_KNOWN_PROVIDER_PREFIXES)
+    )
+)
+
 # =============================================================================
 # CLAUDE CODE MODELS (Anthropic native)
 # =============================================================================
