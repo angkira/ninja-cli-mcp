@@ -101,6 +101,12 @@ class TUIInstaller:
         """
         self._header()
 
+        deployment = self._select_deployment()
+        if deployment == "docker":
+            from ninja_config.docker_installer import run_docker_tui
+
+            return run_docker_tui()
+
         if not check_python():
             return 1
         print(f"  ✓ Python {sys.version_info.major}.{sys.version_info.minor}")
@@ -138,6 +144,23 @@ class TUIInstaller:
         self._verify()
         self._summary(selected_ides)
         return 0
+
+    def _select_deployment(self) -> str:
+        """Select native host installation or isolated Docker deployment."""
+        if not sys.stdin.isatty():
+            return "native"
+        selected = _exec(
+            inquirer.select(
+                message="Deployment target:",
+                choices=[
+                    Choice(value="native", name="Native installation"),
+                    Choice(value="docker", name="Docker container (isolated)"),
+                ],
+                pointer="►",
+            )
+        )
+        # Keep compatibility with callers that mock the old first prompt.
+        return selected if selected in {"native", "docker"} else "native"
 
     def _header(self) -> None:
         print("\n" + "═" * 60)

@@ -521,7 +521,7 @@ skill-name/
 ```json
 {
   "name": "ninja-code",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Delegate code writing to Ninja Coder",
   "author": "ninja-mcp contributors",
   "requires": ["ninja-mcp>=0.2.0"],
@@ -533,4 +533,4 @@ skill-name/
 ---
 
 *Last Updated: January 2026*
-*Version: 1.0.0*
+*Version: 1.0.1*

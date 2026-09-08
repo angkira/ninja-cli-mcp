@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ninja-mcp:1.0.0
+    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.1}
     profiles: [coder]
     command: ["ninja-coder", "--http", "--host", "0.0.0.0", "--port", "8100"]
     environment:
@@ -14,12 +14,12 @@ services:
       - NINJA_CODE_BIN
       - NINJA_HEALTHCHECK_PORT=8100
     ports:
-      - "127.0.0.1:8100:8100"
+      - "127.0.0.1:${NINJA_DOCKER_CODER_PORT:-8100}:8100"
     volumes:
-      - ${NINJA_WORKSPACE:-.}:/workspace
+      - ${NINJA_DOCKER_WORKSPACE:-${NINJA_WORKSPACE:-.}}:/workspace:${NINJA_DOCKER_CODER_ACCESS:-rw}
       - ninja-config:/home/ninja/.ninja
       - ninja-cache:/home/ninja/.cache/ninja-mcp
-    networks: [ninja]
+    networks: [ninja, ninja-published]
     healthcheck:
       test: ["CMD", "/usr/local/bin/ninja-healthcheck"]
       interval: 10s
@@ -30,7 +30,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ninja-mcp:1.0.0
+    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.1}
     profiles: [researcher]
     command: ["ninja-researcher", "--http", "--host", "0.0.0.0", "--port", "8101"]
     environment:
@@ -40,12 +40,12 @@ services:
       - NINJA_CREDENTIAL_PASSWORD
       - NINJA_HEALTHCHECK_PORT=8101
     ports:
-      - "127.0.0.1:8101:8101"
+      - "127.0.0.1:${NINJA_DOCKER_RESEARCHER_PORT:-8101}:8101"
     volumes:
-      - ${NINJA_WORKSPACE:-.}:/workspace:ro
+      - ${NINJA_DOCKER_WORKSPACE:-${NINJA_WORKSPACE:-.}}:/workspace:ro
       - ninja-config:/home/ninja/.ninja
       - ninja-cache:/home/ninja/.cache/ninja-mcp
-    networks: [ninja]
+    networks: [ninja, ninja-published]
     healthcheck:
       test: ["CMD", "/usr/local/bin/ninja-healthcheck"]
       interval: 10s
@@ -57,7 +57,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ninja-mcp:1.0.0
+    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.1}
     profiles: [secretary]
     command: ["ninja-secretary", "--http", "--host", "0.0.0.0", "--port", "8102"]
     environment:
@@ -65,12 +65,12 @@ services:
       - NINJA_CREDENTIAL_PASSWORD
       - NINJA_HEALTHCHECK_PORT=8102
     ports:
-      - "127.0.0.1:8102:8102"
+      - "127.0.0.1:${NINJA_DOCKER_SECRETARY_PORT:-8102}:8102"
     volumes:
-      - ${NINJA_WORKSPACE:-.}:/workspace:ro
+      - ${NINJA_DOCKER_WORKSPACE:-${NINJA_WORKSPACE:-.}}:/workspace:ro
       - ninja-config:/home/ninja/.ninja
       - ninja-cache:/home/ninja/.cache/ninja-mcp
-    networks: [ninja]
+    networks: [ninja, ninja-published]
     healthcheck:
       test: ["CMD", "/usr/local/bin/ninja-healthcheck"]
       interval: 10s
@@ -82,7 +82,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ninja-mcp:1.0.0
+    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.1}
     profiles: [agent]
     command: ["ninja-agent", "--http", "--host", "0.0.0.0", "--port", "8103"]
     environment:
@@ -92,12 +92,12 @@ services:
       - NINJA_CREDENTIAL_PASSWORD
       - NINJA_HEALTHCHECK_PORT=8103
     ports:
-      - "127.0.0.1:8103:8103"
+      - "127.0.0.1:${NINJA_DOCKER_AGENT_PORT:-8103}:8103"
     volumes:
-      - ${NINJA_WORKSPACE:-.}:/workspace
+      - ${NINJA_DOCKER_WORKSPACE:-${NINJA_WORKSPACE:-.}}:/workspace:${NINJA_DOCKER_AGENT_ACCESS:-rw}
       - ninja-config:/home/ninja/.ninja
       - ninja-cache:/home/ninja/.cache/ninja-mcp
-    networks: [ninja]
+    networks: [ninja, ninja-published]
     healthcheck:
       test: ["CMD", "/usr/local/bin/ninja-healthcheck"]
       interval: 10s
@@ -112,3 +112,4 @@ volumes:
 networks:
   ninja:
     internal: true
+  ninja-published:

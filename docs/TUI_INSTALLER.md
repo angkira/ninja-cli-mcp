@@ -1,155 +1,73 @@
-# 🥷 Ninja MCP TUI Installer
+# Ninja MCP TUI
 
-The Advanced TUI (Text User Interface) Installer provides a comprehensive setup experience for Ninja MCP with all configuration options in a single interactive session.
+The current configuration UI is started with `ninja-mcp config` or
+`ninja-config configure`. Initial setup uses `ninja-mcp config install` (also
+available as `ninja-config install`). The old `ninja-config tui-install` name
+is not a current entry point.
 
-## 🚀 Quick Start
+## Native Setup
 
 ```bash
-# Run the advanced TUI installer
-ninja-config tui-install
+ninja-mcp config install
+ninja-mcp config configure
 ```
 
-## 🎯 Features
+The installer can skip prompts for automation:
 
-### Comprehensive Setup
-- **Installation Type Selection**: Full, Minimal, or Custom module selection
-- **Module Selection**: Choose specific modules to install (coder, researcher, secretary, resources, prompts)
-- **API Key Collection**: Securely collect all required API keys in one session
-- **Model Selection**: Interactive model selection with recommendations for each module
-- **AI Code CLI Selection**: Choose your preferred AI coding assistant (aider, opencode, gemini, cursor)
-- **Daemon Configuration**: Enable/disable daemon mode for background services
-- **IDE Integration**: Configure multiple IDEs (Claude Code, VS Code, Zed, OpenCode) in one step
-
-### Key Collection
-The TUI installer collects all required API keys:
-- **OpenRouter API Key** (primary) - Required for most AI features
-- **Serper.dev API Key** (optional) - For Google Search integration
-- **Perplexity API Key** (optional) - For AI-powered search
-- **Google API Key** (optional) - For native Gemini integration
-
-### Model Selection
-Interactive model selection with live recommendations from LiveBench benchmarks:
-- **Coder Module**: Models optimized for code generation and editing
-- **Researcher Module**: Models optimized for web research and synthesis
-- **Secretary Module**: Models optimized for documentation and analysis
-
-### IDE Integration
-Configure multiple IDEs in a single session:
-- **Claude Code** - Automatic MCP server registration
-- **VS Code** - Configuration file updates
-- **Zed** - Context server integration
-- **OpenCode** - MCP server registration
-
-## 📋 Usage
-
-### Run the TUI Installer
 ```bash
-# Run the advanced TUI installer
-ninja-config tui-install
+ninja-config install --skip-keys --skip-models
+ninja-config install --non-interactive
 ```
 
-### Installation Types
-1. **Full Installation**: All modules with advanced features
-2. **Minimal Installation**: Core modules only (coder, resources)
-3. **Custom Installation**: Select specific modules
+Native configuration is written to `~/.ninja-mcp.env`; secrets use the OS
+keyring when available and an encrypted-file fallback otherwise.
 
-### Module Selection
-Choose which Ninja MCP modules to install:
-- **🤖 Coder**: AI code assistant with Aider/OpenCode/Gemini support
-- **🔍 Researcher**: Web research with DuckDuckGo/Perplexity
-- **📝 Secretary**: File operations and codebase analysis
-- **📚 Resources**: Resource templates and prompts
-- **💡 Prompts**: Prompt management and chaining
+## Interface
 
-### API Key Management
-The installer securely collects and stores API keys in `~/.ninja-mcp.env`:
+The Textual configuration app uses the Nord palette and a six-row block-letter
+NINJA logo. Tabs are Overview, API Keys, Models, Daemon, IDE, and Settings.
+Digits `1` through `6` switch tabs. `q` quits, `s` saves, `/` focuses search,
+and `Ctrl-R` refreshes. RU-layout bindings mirror the Latin `q`, `s`, and `/`
+actions, so switching keyboard layouts is not required.
+
+The Models tab has a provider selector and a per-role autocomplete input.
+Provider discovery is lazy. After at least two typed characters, suggestions
+are filtered from the cached provider list after a short debounce. Up/Down and
+Enter select a suggestion; Enter on raw text saves a custom model id.
+
+![Current TUI overview](assets/tui-overview.svg)
+
+![Current model picker](assets/tui-models.svg)
+
+## Operators and Authentication
+
+The TUI detects installed operators including `opencode`, `aider`, `claude`,
+`gemini`, and `junie`. A host-authenticated operator does not need a duplicate
+API key:
+
+- Claude uses `claude auth status` and the existing Claude Code login.
+- Junie uses JetBrains Account authentication and flat model ids such as
+  `deepseek-v4-flash`.
+- OpenCode uses its own provider configuration.
+
+API-backed operators still need their provider credentials. The TUI does not
+run a task just to probe authentication.
+
+## Docker Setup
+
+The Docker installer is part of the same flow. Run the normal installer and
+choose `Docker container (isolated)` at the first prompt:
+
 ```bash
-# Example configuration file
-export OPENROUTER_API_KEY="sk-or-..."
-export NINJA_SEARCH_PROVIDER="serper"
-export SERPER_API_KEY="..."
-export GOOGLE_API_KEY="..."  # Optional for Gemini
+./install.sh
 ```
 
-### Model Selection Process
-1. **LiveBench Recommendations**: Fetches latest model benchmarks
-2. **Price/Performance Trade-offs**: Shows cost and speed information
-3. **Custom Model Support**: Enter any model name for advanced users
+It asks for workspace, profiles, unique localhost ports, build/start choices,
+and optional runtime credentials. It generates the Compose project under
+`~/.config/ninja-mcp/docker` and provides the
+`~/.local/bin/ninja-mcp-docker` wrapper.
 
-### AI Code CLI Selection
-Choose your preferred AI coding assistant:
-- **Aider** - OpenRouter integration (installed automatically)
-- **OpenCode** - Multi-provider CLI (manual installation)
-- **Gemini CLI** - Google models (manual installation)
-- **Cursor** - IDE with AI (manual installation)
-- **Custom Path** - Enter path to any AI coding assistant
+![Docker installer flow preview](assets/tui-docker-installer.svg)
 
-## ⚙️ Configuration Options
-
-### Daemon Mode
-Enable daemon mode for better performance:
-- **Background Services**: Modules run as persistent background processes
-- **Faster Response**: No startup delay for subsequent requests
-- **Resource Management**: Automatic process lifecycle management
-
-### IDE Configuration
-Configure multiple IDEs simultaneously:
-- **Automatic Registration**: One-click setup for supported IDEs
-- **Config File Updates**: Direct modification of IDE configuration files
-- **Verification**: Confirm successful integration
-
-## 🛠️ Technical Details
-
-### Requirements
-- **Python 3.11+**
-- **uv package manager**
-- **InquirerPy** for TUI interface
-- **Internet connection** for API key validation
-
-### Configuration Storage
-- **File**: `~/.ninja-mcp.env`
-- **Permissions**: 600 (read/write for owner only)
-- **Format**: Standard shell environment variables
-
-### Installation Process
-1. **System Detection**: OS, architecture, shell
-2. **Dependency Check**: Python, uv, required tools
-3. **Module Installation**: ninja-mcp with selected extras
-4. **Tool Installation**: aider, opencode, etc.
-5. **Configuration Collection**: API keys, models, preferences
-6. **IDE Integration**: Automatic configuration
-7. **Verification**: Component testing and validation
-
-## 🤖 Advanced Usage
-
-### Custom Model Selection
-Enter any model name supported by your provider:
-```bash
-# Examples
-anthropic/claude-opus-4
-openai/gpt-4o
-google/gemini-2.0-flash-exp
-qwen/qwen-2.5-coder-32b-instruct
-```
-
-### Environment Variables
-The installer respects existing environment variables:
-```bash
-# Pre-set API keys are detected automatically
-export OPENROUTER_API_KEY="sk-or-..."
-ninja-config tui-install
-```
-
-### Non-Interactive Mode
-For automated deployments, use the standard installer:
-```bash
-# Standard installer with basic prompts
-ninja-config install
-```
-
-## 📚 See Also
-
-- [Model Selection Guide](MODEL_SELECTION.md)
-- [API Key Management](API_KEYS.md)
-- [IDE Integration](IDE_INTEGRATION.md)
-- [Configuration Reference](CONFIGURATION.md)
+See [Docker Quickstart](container-quickstart.md) for internal automation overrides,
+profile behavior, volumes, and troubleshooting.

@@ -230,7 +230,7 @@ jobs:
       name: pypi
       url: https://pypi.org/project/ninja-mcp/
     permissions:
-      id-token: write
+      contents: read
 
     steps:
       - name: Download Python artifacts
@@ -240,8 +240,19 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [[ -z "${PYPI_API_TOKEN}" ]]; then
+            echo "PYPI_API_TOKEN is required for PyPI publishing." >&2
+            exit 1
+          fi
+
+      - name: Upload distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
   notify-success:

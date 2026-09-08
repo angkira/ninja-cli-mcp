@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 - 2026-09-08
+
+- Fixed the GitHub release workflow to publish to PyPI with the configured API
+  token secret.
+- Updated Docker image defaults and package metadata for the 1.0.1 release.
+
 ## 1.0.0 - 2026-09-08
 
 - Added a non-root Python 3.12 container image with local package installation.

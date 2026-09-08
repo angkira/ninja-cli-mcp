@@ -1,171 +1,83 @@
-# CLI Strategy Architecture
+# CLI Strategies
 
-## Overview
+Ninja Coder selects an operator strategy from `NINJA_CODE_BIN`. The strategy
+builds the command, passes the selected model, inherits the appropriate
+environment, and parses the result.
 
-Ninja-coder now supports multiple CLI tools through a strategy pattern architecture. This allows seamless switching between different code generation tools (Aider, OpenCode, etc.) while maintaining a consistent interface.
+## Supported Operators
 
-## Architecture
+| Binary | Authentication | Model form | Notes |
+| --- | --- | --- | --- |
+| `opencode` | OpenCode/provider configuration | `provider/model` | Supports provider routing and native session flows |
+| `claude` | Claude Code host session | Claude model id | `claude auth status` is used for a lightweight auth check |
+| `junie` | JetBrains Account host session | flat id, default `deepseek-v4-flash` | No API key is required for the normal host-auth path |
+| `aider` | API-backed provider, commonly OpenRouter | provider/model | Requires the credentials expected by Aider |
+| `gemini` | Gemini CLI/provider credentials | provider model id | Uses the Gemini strategy |
 
-### Strategy Pattern
-
-The codebase uses the Strategy pattern to abstract CLI-specific logic:
-
-```
-NinjaDriver
-    ├── CLIStrategy (Protocol)
-    │   ├── AiderStrategy
-    │   ├── OpenCodeStrategy
-    │   └── GenericStrategy (fallback)
-    └── ModelSelector
-```
-
-### Components
-
-#### 1. CLIStrategy Protocol (`src/ninja_coder/strategies/base.py`)
-
-Defines the interface all CLI strategies must implement:
-
-```python
-class CLIStrategy(Protocol):
-    name: str
-    capabilities: CLICapabilities
-
-    def build_command(...) -> CLICommandResult
-    def parse_output(...) -> ParsedResult
-    def should_retry(...) -> bool
-    def get_timeout(task_type: str) -> int
-```
-
-#### 2. Concrete Strategies
-
-**AiderStrategy** (`src/ninja_coder/strategies/aider_strategy.py`):
-- Supports OpenRouter models
-- Provider preference via YAML settings
-- 13 error detection patterns
-- Retry logic for summarization failures
-
-**OpenCodeStrategy** (`src/ninja_coder/strategies/opencode_strategy.py`):
-- Native z.ai support
-- Coding Plan API integration
-- Optimized for parallel tasks
-- Simpler error patterns
-
-#### 3. Strategy Registry (`src/ninja_coder/strategies/registry.py`)
-
-Automatically selects the appropriate strategy based on binary name:
-
-```python
-# Detects "aider" in binary name → AiderStrategy
-# Detects "opencode" in binary name → OpenCodeStrategy
-# Default → GenericStrategy
-```
-
-## Using Different CLI Tools
-
-### Aider (Default)
+The old “Aider is always the default” description is legacy documentation. The
+TUI detects installed operators, stores the selected `NINJA_CODE_BIN`, and the
+current configuration defaults are defined in the settings registry. Verify a
+machine's choice with:
 
 ```bash
-NINJA_CODE_BIN=aider
-NINJA_MODEL=anthropic/claude-haiku-4.5
-NINJA_OPENROUTER_PROVIDERS=google-vertex  # Optional provider preference
+ninja-mcp config list
+ninja-mcp config get NINJA_CODE_BIN
 ```
 
-### OpenCode with Z.ai
+## Junie
+
+Junie is host-authenticated through a JetBrains Account. Ninja checks that the
+`junie` binary exists and that `junie --help` succeeds; it does not run a task
+or make a network probe during discovery. The generated command is:
 
 ```bash
-NINJA_CODE_BIN=opencode
-NINJA_MODEL=glm-4.7
-OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-OPENAI_API_KEY=your-zai-key
+junie --model deepseek-v4-flash --output-format text -p . \
+  --skip-update-check --task "Implement the requested change"
 ```
 
-## Provider Preferences (Aider)
+Set `NINJA_JUNIE_TIMEOUT` to change Junie's operator timeout. A caller may
+explicitly supply `--auth`, but Ninja does not inject a secret into the normal
+host-auth path.
 
-For models available on multiple providers, you can specify preferences:
+## Host-Authenticated Operators
+
+Claude Code, Junie, and OpenCode can use an existing host login. There is no
+mandatory `OPENROUTER_API_KEY` when the selected operator does not need one.
+The operator still needs to be installed and authenticated, and the TUI may
+show a provider-specific model list. Docker does not copy these host sessions;
+use an API-backed configuration or a deliberately extended image there.
+
+## Models and Providers
+
+Model ids are passed through to the selected strategy. OpenCode models normally
+use `provider/model`; Junie models are flat ids; Claude maps short names such as
+`sonnet` to the corresponding Claude Code model. The modern TUI loads providers
+lazily when the Models tab opens and filters cached models after a short
+debounce. Typing at least two characters shows suggestions; Enter also accepts
+a custom model id.
 
 ```bash
-# Use Google Vertex for faster throughput (100 t/s vs 30 t/s)
-export NINJA_OPENROUTER_PROVIDERS="google-vertex"
-
-# Multiple providers with fallback
-export NINJA_OPENROUTER_PROVIDERS="google-vertex,together"
+NINJA_CODE_BIN=opencode NINJA_MODEL=opencode/glm-4.7 ninja-coder
+NINJA_CODE_BIN=claude NINJA_MODEL=claude-sonnet-4 ninja-coder
+NINJA_CODE_BIN=junie NINJA_MODEL=deepseek-v4-flash ninja-coder
 ```
 
-This creates a YAML model settings file that Aider uses for routing.
+Provider routing for Aider is still available with
+`NINJA_OPENROUTER_PROVIDERS`. Operator-specific timeout settings include
+`NINJA_OPENCODE_TIMEOUT`, `NINJA_CLAUDE_TIMEOUT`, and
+`NINJA_JUNIE_TIMEOUT`.
 
-## Error Handling
+## Routing and Timeouts
 
-Each strategy implements its own error detection and retry logic:
+The public coder routes are `quick`, `sequential`, and `parallel`. Worktree
+isolation is enabled by default for sequential and parallel plans, while quick
+tasks are in place with an automatic safety commit. All routes use the
+inactivity-first watchdog; see [Automatic Safety](AUTOMATIC_SAFETY.md).
 
-- **AiderStrategy**: 13 error patterns for summarization failures, threading errors, etc.
-- **OpenCodeStrategy**: Simpler patterns for API errors, rate limits, timeouts
+## Legacy Notes
 
-Retryable errors trigger automatic retry (configurable via `NINJA_MAX_RETRIES`).
-
-## Extending with New CLIs
-
-To add support for a new CLI tool:
-
-1. Create a new strategy class implementing `CLIStrategy`
-2. Register it in `CLIStrategyRegistry._strategies`
-3. Update detection logic in `get_strategy()`
-
-Example:
-
-```python
-from ninja_coder.strategies.base import CLIStrategy, CLICapabilities
-
-class MyCustomStrategy:
-    def __init__(self, bin_path: str, config: NinjaConfig):
-        self.bin_path = bin_path
-        self.config = config
-        self._capabilities = CLICapabilities(...)
-
-    @property
-    def name(self) -> str:
-        return "mycli"
-
-    def build_command(...) -> CLICommandResult:
-        # CLI-specific command building
-        ...
-
-    # Implement other required methods
-```
-
-## Configuration Reference
-
-### CLI Selection
-
-- `NINJA_CODE_BIN`: Path to CLI binary (default: "aider")
-
-### Aider-Specific
-
-- `NINJA_AIDER_TIMEOUT`: Timeout in seconds (default: 300)
-- `NINJA_OPENROUTER_PROVIDERS`: Comma-separated provider list
-
-### OpenCode-Specific
-
-- `NINJA_OPENCODE_TIMEOUT`: Timeout in seconds (default: 600)
-- `NINJA_ZAI_CODING_PLAN`: Use Coding Plan API (auto/true/false, default: auto)
-
-### Model Configuration
-
-- `NINJA_MODEL`: Model to use (default: anthropic/claude-haiku-4.5)
-- `OPENAI_BASE_URL`: API base URL
-- `OPENAI_API_KEY`: API key
-
-## Benefits
-
-1. **Flexibility**: Easy switching between CLI tools
-2. **Isolation**: CLI-specific logic is encapsulated
-3. **Extensibility**: New CLIs can be added without modifying core code
-4. **Testing**: Strategies can be tested independently
-5. **Maintenance**: Easier to update CLI-specific behavior
-
-## Backward Compatibility
-
-The refactoring maintains full backward compatibility:
-- Default behavior unchanged (`NINJA_CODE_BIN=aider`)
-- Existing environment variables work as before
-- All Aider error patterns preserved
-- Retry logic maintained
+Older sections in this repository describe Ninja Coder 2.0 benchmarks, fixed
+Aider defaults, or provider-specific model scores. They describe historical
+experiments, not a guarantee of the `1.0.1` runtime. Prefer the current TUI,
+`ninja-mcp config list`, and the source strategy registry when diagnosing a
+machine-specific operator or model.

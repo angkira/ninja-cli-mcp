@@ -1,397 +1,109 @@
-# Automatic Safety System
+# Automatic Safety
 
-## Overview
+Ninja Coder `1.0.1` chooses isolation by task type. The important distinction
+is not “safety on/off”, but whether a task is a quick in-place edit or a
+complex plan that should leave the main checkout untouched.
 
-Ninja-coder now includes **automatic safety protection** to prevent file overwrites and data loss. This system runs by default on every task execution.
+## Default Worktree Policy
 
-> **Default: worktrees ONLY for long sequential/parallel plans.**
-> `NinjaDriver.execute_async` isolates `sequential`/`parallel` plans in a detached
-> git worktree on a `ninja/<slug>-<timestamp>-<uid>` branch (outside the repo,
-> under `$XDG_CACHE_HOME/ninja-mcp/worktrees/`). Simple (`quick`) tasks run
-> IN-PLACE on your current branch with the legacy AUTO safety-commit
-> (`[ninja-auto-save]`) and NO worktree. Tune per type with
-> `NINJA_WORKTREE_QUICK` (default `off`), `NINJA_WORKTREE_SEQUENTIAL` (default
-> `on`), `NINJA_WORKTREE_PARALLEL` (default `on`); each accepts
-> `on/off/auto` (`auto` = follow global `NINJA_WORKTREE_MODE`). Global
-> `NINJA_WORKTREE_MODE=off` disables isolation for ALL types.
+| Task type | Public route | Default | Result |
+| --- | --- | --- | --- |
+| `quick` | `coder_simple_task` | in place | An automatic `[ninja-auto-save]` commit protects the current branch |
+| `sequential` | `coder_execute_plan_sequential` | isolated | A detached `ninja/*` worktree under the Ninja cache |
+| `parallel` | `coder_execute_plan_parallel` | isolated | A detached `ninja/*` worktree under the Ninja cache |
 
-## Worktree mode (per task type)
+Sequential and parallel worktrees create a snapshot commit inside the
+worktree. Review the branch and merge it when ready. The main checkout is not
+modified by the normal isolated path.
 
-| Task type | Default | Behavior |
-|-----------|---------|----------|
-| `quick` (coder_simple_task) | in-place, NO worktree | AUTO safety-commit (`[ninja-auto-save]`) on your current branch |
-| `sequential` (coder_execute_plan_sequential) | worktree `ninja/*` | Main tree untouched; snapshot commit inside worktree; merge branch when ready |
-| `parallel` (coder_execute_plan_parallel, multi-agent) | worktree `ninja/*` | Same as sequential |
+Parallel routing also has a complexity choice: `simple` is for independent
+small work, while `complex` uses the full plan/worktree path.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NINJA_WORKTREE_MODE` | `on` | Global switch: `off` disables isolation for ALL types (legacy auto-commit everywhere) |
-| `NINJA_WORKTREE_QUICK` | `off` | `on` = isolate quick tasks; `off` = in-place + safety-commit; `auto` = follow global |
-| `NINJA_WORKTREE_SEQUENTIAL` | `on` | Same values; `on` = isolate long sequential plans |
-| `NINJA_WORKTREE_PARALLEL` | `on` | Same values; `on` = isolate parallel plans |
-| `NINJA_WORKTREE_MAX_AGE_DAYS` | `2` | Auto-prune isolation worktrees older than this (tuned at `WorktreeManager.create()`) |
+## Configuration
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NINJA_WORKTREE_MODE` | `on` | Global switch; `off` disables isolation for all task types |
+| `NINJA_WORKTREE_QUICK` | `off` | `on`, `off`, or `auto` for quick tasks |
+| `NINJA_WORKTREE_SEQUENTIAL` | `on` | Same values for sequential plans |
+| `NINJA_WORKTREE_PARALLEL` | `on` | Same values for parallel plans |
+| `NINJA_WORKTREE_MAX_AGE_DAYS` | `2` | Age threshold for automatic worktree pruning |
+| `NINJA_SAFETY_MODE` | `auto` | Handling of dirty-check safety commits: `auto`, `strict`, `warn`, or `off` |
+
+`auto` for a per-type worktree variable follows
+`NINJA_WORKTREE_MODE`. Setting the global mode to `off` deliberately returns
+all task types to the legacy current-branch safety-commit behavior.
 
 ```bash
-# Default — nothing to configure
-ninja-mcp config          # shows Worktree Mode: on, Worktree Max Age (days): 2
-git worktree list         # after a task: main repo + <cache>/worktrees/<hash>/ninja__...
-
-# Review the isolated result, then merge:
+ninja-mcp config
+git worktree list
 git merge ninja/<slug>-<timestamp>-<uid>
-
-# Clean up old worktrees (also runs automatically before each new worktree):
 git worktree prune
-# or: NINJA_WORKTREE_MAX_AGE_DAYS=0 python -c "from ninja_coder.worktree import WorktreeManager; print(WorktreeManager().prune())"
-
-# Opt out back to legacy safety commits on your current branch:
-export NINJA_WORKTREE_MODE=off
 ```
 
-Limitations (deliberate):
-- `execute_async_with_opencode_session` keeps legacy in-place behavior — per-call
-  worktrees would break OpenCode native session continuity (`--session`/`--continue`).
-- The serve-pool path (`NINJA_OPENCODE_SERVE_MODE=1`) keeps legacy behavior — the
-  long-running server is rooted at `repo_root`.
-- `execute_sync` never creates worktrees (it also never ran safety checks).
+The worktree root is under `$XDG_CACHE_HOME/ninja-mcp/worktrees/` when that
+variable is set, otherwise under the platform cache directory.
 
-## How It Works
+## Inactivity-First Timeout
 
-Before executing any task, ninja-coder automatically:
+Task execution watches for output inactivity rather than treating a fixed wall
+clock as the primary failure condition. CPU activity can extend the watchdog
+while a CLI is computing. Output resets the inactivity timer; stderr is not
+counted unless `NINJA_INACTIVITY_COUNT_STDERR=1`.
 
-1. **Checks for uncommitted changes** in the git repository
-2. **Auto-commits changes** (in AUTO mode) with a timestamped message
-3. **Creates recovery tags** (`ninja-safety-TIMESTAMP`) for easy rollback
-4. **Validates task descriptions** for dangerous patterns
-5. **Enforces safety rules** based on the configured mode
+Defaults are:
 
-## Safety Modes
+| Task type | Inactivity threshold |
+| --- | ---: |
+| quick | 90 seconds |
+| sequential | 180 seconds |
+| parallel | 180 seconds |
 
-Configure via `NINJA_SAFETY_MODE` environment variable:
+Use `NINJA_INACTIVITY_TIMEOUT` for one value across task types, or use
+`NINJA_INACTIVITY_TIMEOUT_QUICK`,
+`NINJA_INACTIVITY_TIMEOUT_SEQUENTIAL`, and
+`NINJA_INACTIVITY_TIMEOUT_PARALLEL`. Absolute deadlines and operator-specific
+timeouts remain separate upper bounds; they are not replacements for the
+inactivity watchdog.
 
-### AUTO (Default) ✅ Recommended
+## Recovery and Cleanup
 
-**Behavior**: Automatically commits uncommitted changes before running tasks.
+For an in-place quick task, inspect the automatic commit:
 
 ```bash
-# Default mode - no configuration needed
-ninja-coder simple_task --task "Add feature" --repo-root .
-
-# Output:
-# 🔒 AUTO MODE: Committing 5 uncommitted file(s)
-# ✅ Auto-committed 5 file(s) for safety
-# ✅ Safety tag created: ninja-safety-1737123456
-# 🔖 Recovery point: git reset --hard ninja-safety-1737123456
+git show --stat HEAD
 ```
 
-**When to use**: Daily development work where you want automatic protection.
-
-### STRICT 🔒 Maximum Safety
-
-**Behavior**: Refuses to run with uncommitted changes.
+For an isolated plan, inspect the worktree branch before merging:
 
 ```bash
-export NINJA_SAFETY_MODE=strict
-ninja-coder simple_task --task "Add feature" --repo-root .
-
-# Output:
-# ❌ STRICT MODE: Refusing to run with 5 uncommitted file(s)
-# 💡 Commit your changes first: git add . && git commit -m 'message'
-# 💡 Or set NINJA_SAFETY_MODE=auto for automatic commits
+git merge --no-ff ninja/<branch>
 ```
 
-**When to use**: Critical projects where you want full control over commits.
-
-### WARN ⚠️ Minimal Protection
-
-**Behavior**: Warns about uncommitted changes but allows execution.
+Pruning is safe only after the result has been reviewed or merged:
 
 ```bash
-export NINJA_SAFETY_MODE=warn
-ninja-coder simple_task --task "Add feature" --repo-root .
-
-# Output:
-# ⚠️  16 uncommitted file(s) - consider committing before running tasks
-# ✅ Safety tag created: ninja-safety-1737123456
-# [task continues...]
 ```
 
-**When to use**: Testing or experimentation where you don't want auto-commits.
-
-### OFF 🚫 Disabled
-
-**Behavior**: Disables all safety checks.
-
-```bash
-export NINJA_SAFETY_MODE=off
-ninja-coder simple_task --task "Add feature" --repo-root .
-```
-
-**When to use**: ⚠️ Not recommended. Only use in non-git repositories or when you have external backup systems.
-
-## Auto-Commit Format
-
-When AUTO mode creates a commit, it uses this format:
-
-```
-[ninja-auto-save] Before task: <task description>
-
-Timestamp: 2024-01-17 10:30:45
-Automatic safety commit by ninja-coder
-```
-
-Example:
-```bash
-git log -1 --oneline
-# c2920c0 [ninja-auto-save] Before task: Add error handling to API endpoint
-```
-
-## Recovery
-
-If something goes wrong, you have multiple recovery options:
-
-### 1. Use the Safety Tag
-
-Every task creates a recovery tag:
-
-```bash
-# List all safety tags
-git tag | grep ninja-safety
-
-# Reset to a specific tag
-git reset --hard ninja-safety-1737123456
-```
-
-### 2. Use Git Reflog
-
-```bash
-# View recent git history
-git reflog
-
-# Reset to a specific point
-git reset --hard HEAD@{1}
-```
-
-### 3. Use the Recovery Script
-
-```bash
-# Interactive recovery menu
-./scripts/ninja-recover.sh
-
-# Options:
-# 1. Show all changed files
-# 2. Show diff for specific file
-# 3. Restore specific file
-# 4. Restore all changed files
-# 5. List safety tags
-# 6. Reset to safety tag
-```
-
-### 4. Restore Individual Files
-
-```bash
-# Restore a single file from last commit
-git checkout HEAD -- path/to/file.py
-
-# Restore from a specific tag
-git checkout ninja-safety-1737123456 -- path/to/file.py
-```
-
-## Additional Safety Features
-
-### Dangerous Keyword Detection
-
-Ninja-coder warns about potentially destructive keywords in task descriptions:
-
-- "rewrite"
-- "replace entire"
-- "start from scratch"
-- "delete everything"
-- "remove all"
-
-```bash
-# This will trigger a warning:
-ninja-coder simple_task --task "Rewrite the authentication module"
-
-# Output:
-# ⚠️  Task contains potentially destructive keyword: 'rewrite'
-# 💡 Consider using more specific edit instructions instead of full rewrites
-```
-
-### Vague Instruction Detection
-
-Warns about vague instructions that might lead to rewrites:
-
-```bash
-# Vague (triggers warning):
-ninja-coder simple_task --task "Fix and update user.py"
-
-# Specific (no warning):
-ninja-coder simple_task --task "In src/auth/user.py, add email validation to the authenticate() method on line 145"
-```
-
-### Context Path Validation
-
-Warns if no `context_paths` are provided:
-
-```bash
-# Will trigger warning:
-ninja-coder simple_task --task "Add error handling"
-
-# Better:
-ninja-coder simple_task --task "Add error handling" --context-paths "src/api/handlers.py"
-```
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NINJA_SAFETY_MODE` | `auto` | Safety enforcement mode (auto/strict/warn/off) |
-| `NINJA_WORKTREE_MODE` | `on` | Global worktree switch (off = legacy auto-commit everywhere) |
-| `NINJA_WORKTREE_QUICK` | `off` | Per-type: quick tasks in-place + safety-commit by default |
-| `NINJA_WORKTREE_SEQUENTIAL` | `on` | Per-type: sequential plans isolated by default |
-| `NINJA_WORKTREE_PARALLEL` | `on` | Per-type: parallel plans isolated by default |
-| `NINJA_WORKTREE_MAX_AGE_DAYS` | `2` | Auto-prune threshold for isolation worktrees |
-
-## Integration with MCP
-
-When using ninja-coder via MCP tools:
-
-```python
-# MCP automatically uses AUTO mode
-await tools.simple_task({
-    "task": "Add validation to User class",
-    "repo_root": "/path/to/repo",
-    "context_paths": ["src/models/user.py"],
-})
-
-# Output in logs:
-# ✅ Auto-committed 3 file(s) for safety
-# ✅ Safety tag created: ninja-safety-1737123456
-```
-
-To override:
-
-```bash
-# Set environment variable before starting MCP server
-export NINJA_SAFETY_MODE=strict
-
-# Or in your MCP configuration
-{
-  "env": {
-    "NINJA_SAFETY_MODE": "strict"
-  }
-}
-```
-
-## Best Practices
-
-1. **Use AUTO mode** (default) for most work - it's safe and convenient
-2. **Use STRICT mode** for critical production code
-3. **Always provide context_paths** - helps prevent full file rewrites
-4. **Use specific task descriptions** - avoid vague keywords
-5. **Review commits** before pushing to remote
-6. **Keep safety tags** - don't delete them immediately
-
-## Disabling Safety (Not Recommended)
-
-If you absolutely must disable safety:
-
-```bash
-# Temporarily disable for one task
-NINJA_SAFETY_MODE=off ninja-coder simple_task ...
-
-# Or globally in your shell profile
-export NINJA_SAFETY_MODE=off
-```
-
-⚠️ **Warning**: Disabling safety removes all protection against file overwrites. Only do this if you have external backup systems in place.
-
-## FAQ
-
-**Q: Will auto-commits clutter my git history?**
-
-A: Auto-commits use the `[ninja-auto-save]` prefix, making them easy to identify and squash later if needed:
-
-```bash
-# Squash auto-commits before pushing
-git rebase -i origin/main
-# Mark all [ninja-auto-save] commits as 'fixup'
-```
-
-**Q: What if auto-commit fails?**
-
-A: Ninja-coder will refuse to run the task and show an error:
-
-```
-❌ Failed to auto-commit changes - cannot proceed safely
-💡 Commit manually: git add . && git commit -m 'message'
-```
-
-**Q: Can I customize the auto-commit message?**
-
-A: Currently no, but the message includes the task description and timestamp for context.
-
-**Q: Does this work in non-git repositories?**
-
-A: Safety checks only work in git repositories. In non-git repos, you'll see:
-
-```
-⚠️  Not a git repository - cannot track changes or recover from overwrites
-```
-
-Consider initializing git: `git init`
-
-**Q: What's the difference from manual commits?**
-
-A: Auto-commits happen automatically before each task. Manual commits give you more control but require discipline. Use AUTO mode for convenience with safety.
-
-## Troubleshooting
-
-### Safety check failed
-
-If you see safety errors:
-
-```bash
-# Check git status
-git status
-
-# Manually commit
-git add .
-git commit -m "Prepare for ninja task"
-
-# Or switch to AUTO mode
-export NINJA_SAFETY_MODE=auto
-```
-
-### Too many auto-commits
-
-If you're running many tasks and getting too many auto-commits:
-
-```bash
-# Option 1: Commit manually before task batch
-git add . && git commit -m "Before batch of tasks"
-
-# Option 2: Squash auto-commits later
-git rebase -i HEAD~10
-```
-
-### Recovery not working
-
-If recovery fails:
-
-```bash
-# Use git reflog to find the right state
-git reflog
-
-# Look for commits before ninja-coder ran
-git show HEAD@{5}
-
-# Reset to that point
-git reset --hard HEAD@{5}
-```
-
-## See Also
-
-- [SAFE_USAGE.md](SAFE_USAGE.md) - Comprehensive guide on preventing file overwrites
-- [CLI_STRATEGIES.md](CLI_STRATEGIES.md) - CLI abstraction architecture
-- [MODEL_SELECTION.md](MODEL_SELECTION.md) - Intelligent model selection
+Ninja also creates safety tags where the configured safety path requires a
+recovery point. Treat `git reset --hard` as a deliberate recovery operation,
+not as a normal cleanup step.
+
+## Deliberate Exceptions
+
+These paths retain in-place behavior because moving them into a per-call
+worktree would break their execution contract:
+
+- OpenCode native session execution, which relies on `--session` or `--continue`;
+- OpenCode serve-pool mode (`NINJA_OPENCODE_SERVE_MODE=1`), rooted at
+  `repo_root`;
+- synchronous `execute_sync`, which does not create worktrees.
+
+## Host Authentication
+
+Worktree isolation changes the checkout location, not the operator's host
+authentication. `claude`, `junie`, and `opencode` inherit the host environment
+and their own authenticated sessions; they do not require a duplicate API key
+just because the task is isolated. Junie uses JetBrains Account authentication
+and the `junie --model <id> ... --task <prompt>` command. Docker is different:
+it intentionally does not mount host home directories or host CLI credentials.

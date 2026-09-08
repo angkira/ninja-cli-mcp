@@ -7,6 +7,7 @@ and the main run() flow. All InquirerPy calls are mocked.
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch
 
 from ninja_config.config_shared import DAEMON_CONFIG, APIKeyDef
@@ -17,10 +18,13 @@ from ninja_config.tui_installer import TUIInstaller, _exec, run_tui_installer
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_installer(**overrides):
-    with patch("ninja_config.tui_installer.ConfigManager") as MockCM, \
-         patch("ninja_config.tui_installer.detect_tools", return_value={}), \
-         patch("ninja_config.tui_installer.detect_ides", return_value={}):
+    with (
+        patch("ninja_config.tui_installer.ConfigManager") as MockCM,
+        patch("ninja_config.tui_installer.detect_tools", return_value={}),
+        patch("ninja_config.tui_installer.detect_ides", return_value={}),
+    ):
         mock_mgr = MagicMock()
         mock_mgr.list_all.return_value = {}
         MockCM.return_value = mock_mgr
@@ -33,6 +37,7 @@ def _make_installer(**overrides):
 # ---------------------------------------------------------------------------
 # _exec helper
 # ---------------------------------------------------------------------------
+
 
 class TestExec:
     def test_returns_value_directly(self):
@@ -48,6 +53,7 @@ class TestExec:
     def test_no_execute_attr(self):
         class NoExec:
             pass
+
         obj = NoExec()
         assert _exec(obj) is obj
 
@@ -56,9 +62,12 @@ class TestExec:
 # Constructor
 # ---------------------------------------------------------------------------
 
+
 class TestConstructor:
     @patch("ninja_config.tui_installer.detect_ides", return_value={"claude": "/path"})
-    @patch("ninja_config.tui_installer.detect_tools", return_value={"aider": "/usr/local/bin/aider"})
+    @patch(
+        "ninja_config.tui_installer.detect_tools", return_value={"aider": "/usr/local/bin/aider"}
+    )
     @patch("ninja_config.tui_installer.ConfigManager")
     def test_creates_config_manager(self, MockCM, mock_tools, mock_ides):
         mock_mgr = MagicMock()
@@ -97,6 +106,7 @@ class TestConstructor:
 # _save / _save_batch
 # ---------------------------------------------------------------------------
 
+
 class TestSave:
     def test_save_calls_config_mgr_set(self):
         inst = _make_installer()
@@ -117,9 +127,16 @@ class TestSave:
 # _ask_key
 # ---------------------------------------------------------------------------
 
+
 class TestAskKey:
-    def _key_def(self, env_var="TEST_KEY", display_name="Test", url="http://x",
-                 module="coder", description="desc"):
+    def _key_def(
+        self,
+        env_var="TEST_KEY",
+        display_name="Test",
+        url="http://x",
+        module="coder",
+        description="desc",
+    ):
         return APIKeyDef(env_var, display_name, url, module, description)
 
     @patch("ninja_config.tui_installer.save_secret")
@@ -164,6 +181,7 @@ class TestAskKey:
 # _configure_coder
 # ---------------------------------------------------------------------------
 
+
 class TestConfigureCoder:
     @patch("ninja_config.tui_installer.save_secret")
     @patch("ninja_config.tui_installer.inquirer")
@@ -193,7 +211,9 @@ class TestConfigureCoder:
         inst._configure_coder()
         mock_sub.run.assert_any_call(
             ["pipx", "install", "aider-chat"],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
 
     @patch("ninja_config.tui_installer.save_secret")
@@ -214,6 +234,7 @@ class TestConfigureCoder:
 # ---------------------------------------------------------------------------
 # _configure_researcher
 # ---------------------------------------------------------------------------
+
 
 class TestConfigureResearcher:
     @patch("ninja_config.tui_installer.inquirer")
@@ -251,6 +272,7 @@ class TestConfigureResearcher:
 # _configure_models
 # ---------------------------------------------------------------------------
 
+
 class TestConfigureModels:
     @patch("ninja_config.tui_installer.inquirer")
     def test_coder_model_saved(self, mock_inq):
@@ -280,20 +302,20 @@ class TestConfigureModels:
     @patch("ninja_config.tui_installer.inquirer")
     def test_coder_choices_include_zai_models(self, mock_inq):
         captured_choices = []
+
         def capture_choices(**kwargs):
             captured_choices.extend(kwargs.get("choices", []))
             m = MagicMock()
             m.execute.return_value = "some_model"
             return m
+
         mock_inq.select.side_effect = capture_choices
         inst = _make_installer()
         inst.modules = ["coder"]
         inst._configure_models()
-        choice_values = [
-            c.value for c in captured_choices
-            if hasattr(c, "value")
-        ]
+        choice_values = [c.value for c in captured_choices if hasattr(c, "value")]
         from ninja_common.defaults import ZAI_MODELS
+
         for mid, _name, _desc in ZAI_MODELS:
             assert mid in choice_values, f"ZAI model {mid} not in coder choices"
 
@@ -309,6 +331,7 @@ class TestConfigureModels:
 # ---------------------------------------------------------------------------
 # _configure_daemon
 # ---------------------------------------------------------------------------
+
 
 class TestConfigureDaemon:
     @patch("ninja_config.tui_installer.inquirer")
@@ -330,6 +353,7 @@ class TestConfigureDaemon:
 # ---------------------------------------------------------------------------
 # _configure_ide
 # ---------------------------------------------------------------------------
+
 
 class TestConfigureIde:
     def test_no_ides_returns_empty(self):
@@ -357,6 +381,7 @@ class TestConfigureIde:
 # _register_ides
 # ---------------------------------------------------------------------------
 
+
 class TestRegisterIdes:
     @patch("ninja_config.tui_installer.register_claude_mcp", return_value=3)
     def test_claude_calls_register(self, mock_reg):
@@ -375,13 +400,20 @@ class TestRegisterIdes:
 # _verify
 # ---------------------------------------------------------------------------
 
+
 class TestVerify:
     @patch("ninja_config.tui_installer.shutil.which", return_value="/usr/local/bin/cmd")
     def test_all_found(self, mock_which, capsys):
         inst = _make_installer()
         inst._verify()
         out = capsys.readouterr().out
-        for cmd in ("ninja-config", "ninja-coder", "ninja-researcher", "ninja-secretary", "ninja-agent"):
+        for cmd in (
+            "ninja-config",
+            "ninja-coder",
+            "ninja-researcher",
+            "ninja-secretary",
+            "ninja-agent",
+        ):
             assert cmd in out
 
     @patch("ninja_config.tui_installer.shutil.which", return_value=None)
@@ -393,7 +425,9 @@ class TestVerify:
 
     @patch("ninja_config.tui_installer.shutil.which")
     def test_verify_checks_ninja_agent(self, mock_which, capsys):
-        mock_which.side_effect = lambda cmd: f"/usr/local/bin/{cmd}" if cmd == "ninja-agent" else None
+        mock_which.side_effect = (
+            lambda cmd: f"/usr/local/bin/{cmd}" if cmd == "ninja-agent" else None
+        )
         inst = _make_installer()
         inst._verify()
         out = capsys.readouterr().out
@@ -404,6 +438,7 @@ class TestVerify:
 # ---------------------------------------------------------------------------
 # _select_modules — agent
 # ---------------------------------------------------------------------------
+
 
 class TestSelectModulesAgent:
     @patch("ninja_config.tui_installer.inquirer")
@@ -431,11 +466,13 @@ class TestSelectModulesAgent:
     @patch("ninja_config.tui_installer.inquirer")
     def test_custom_choices_include_agent(self, mock_inq):
         captured = []
+
         def capture_checkbox(**kwargs):
             captured.extend(kwargs.get("choices", []))
             m = MagicMock()
             m.execute.return_value = ["agent"]
             return m
+
         mock_inq.select.return_value.execute.return_value = "custom"
         mock_inq.checkbox.side_effect = capture_checkbox
         inst = _make_installer()
@@ -447,6 +484,7 @@ class TestSelectModulesAgent:
 # ---------------------------------------------------------------------------
 # _configure_models — agent
 # ---------------------------------------------------------------------------
+
 
 class TestConfigureModelsAgent:
     @patch("ninja_config.tui_installer.inquirer")
@@ -470,11 +508,14 @@ class TestConfigureModelsAgent:
 # run — integration
 # ---------------------------------------------------------------------------
 
+
 class TestRun:
     def _full_installer(self):
-        with patch("ninja_config.tui_installer.ConfigManager") as MockCM, \
-             patch("ninja_config.tui_installer.detect_tools", return_value={}), \
-             patch("ninja_config.tui_installer.detect_ides", return_value={}):
+        with (
+            patch("ninja_config.tui_installer.ConfigManager") as MockCM,
+            patch("ninja_config.tui_installer.detect_tools", return_value={}),
+            patch("ninja_config.tui_installer.detect_ides", return_value={}),
+        ):
             mock_mgr = MagicMock()
             mock_mgr.list_all.return_value = {}
             MockCM.return_value = mock_mgr
@@ -494,15 +535,42 @@ class TestRun:
         mock_inq.secret.return_value.execute.return_value = ""
 
         inst = self._full_installer()
-        with patch.object(inst, "_configure_coder"), \
-             patch.object(inst, "_configure_researcher"), \
-             patch.object(inst, "_configure_models"), \
-             patch.object(inst, "_configure_daemon"), \
-             patch.object(inst, "_configure_ide", return_value=[]), \
-             patch.object(inst, "_register_ides"), \
-             patch.object(inst, "_verify"), \
-             patch.object(inst, "_summary"):
+        with (
+            patch.object(inst, "_configure_coder"),
+            patch.object(inst, "_configure_researcher"),
+            patch.object(inst, "_configure_models"),
+            patch.object(inst, "_configure_daemon"),
+            patch.object(inst, "_configure_ide", return_value=[]),
+            patch.object(inst, "_register_ides"),
+            patch.object(inst, "_verify"),
+            patch.object(inst, "_summary"),
+        ):
             assert inst.run() == 0
+
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_deployment_target_is_first_prompt(self, mock_inq):
+        mock_inq.select.return_value.execute.return_value = "native"
+        inst = self._full_installer()
+        with (
+            patch.object(sys.stdin, "isatty", return_value=True),
+            patch.object(inst, "_select_modules") as modules,
+            patch.object(inst, "_install_package", return_value=False),
+            patch("ninja_config.tui_installer.check_python", return_value=False),
+        ):
+            assert inst.run() == 1
+        prompt = mock_inq.select.call_args_list[0].kwargs
+        assert prompt["message"] == "Deployment target:"
+        assert [choice.value for choice in prompt["choices"]] == ["native", "docker"]
+        modules.assert_not_called()
+
+    @patch("ninja_config.docker_installer.run_docker_tui", return_value=0)
+    @patch("ninja_config.tui_installer.inquirer")
+    def test_docker_target_delegates_to_docker_flow(self, mock_inq, mock_docker):
+        mock_inq.select.return_value.execute.return_value = "docker"
+        inst = self._full_installer()
+        with patch.object(sys.stdin, "isatty", return_value=True):
+            assert inst.run() == 0
+        mock_docker.assert_called_once_with()
 
     @patch("ninja_config.tui_installer.check_python", return_value=False)
     def test_run_fails_on_python(self, mock_py):
@@ -526,20 +594,23 @@ class TestRun:
         mock_inq.select.return_value.execute.return_value = "full"
 
         inst = self._full_installer()
-        with patch.object(inst, "_configure_coder"), \
-             patch.object(inst, "_configure_researcher"), \
-             patch.object(inst, "_configure_models"), \
-             patch.object(inst, "_configure_daemon"), \
-             patch.object(inst, "_configure_ide", return_value=[]), \
-             patch.object(inst, "_register_ides"), \
-             patch.object(inst, "_verify"), \
-             patch.object(inst, "_summary"):
+        with (
+            patch.object(inst, "_configure_coder"),
+            patch.object(inst, "_configure_researcher"),
+            patch.object(inst, "_configure_models"),
+            patch.object(inst, "_configure_daemon"),
+            patch.object(inst, "_configure_ide", return_value=[]),
+            patch.object(inst, "_register_ides"),
+            patch.object(inst, "_verify"),
+            patch.object(inst, "_summary"),
+        ):
             assert inst.run() == 1
 
 
 # ---------------------------------------------------------------------------
 # run_tui_installer entry point
 # ---------------------------------------------------------------------------
+
 
 class TestRunTuiInstaller:
     @patch("ninja_config.tui_installer.TUIInstaller")

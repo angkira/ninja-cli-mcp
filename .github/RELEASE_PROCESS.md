@@ -145,6 +145,11 @@ gh release create v0.3.0 \
 
 ### Publish to PyPI
 
+The release workflow publishes with the `PYPI_API_TOKEN` GitHub secret using
+the `__token__` account. A PyPI Trusted Publisher can be configured instead,
+but it is optional and must match the repository, workflow, and environment
+exactly; the workflow intentionally does not depend on OIDC.
+
 ```bash
 # Using uv
 just publish
