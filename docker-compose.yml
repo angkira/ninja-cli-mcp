@@ -1,0 +1,114 @@
+services:
+  coder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ninja-mcp:1.0.0
+    profiles: [coder]
+    command: ["ninja-coder", "--http", "--host", "0.0.0.0", "--port", "8100"]
+    environment:
+      - OPENROUTER_API_KEY
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - NINJA_CREDENTIAL_PASSWORD
+      - NINJA_CODE_BIN
+      - NINJA_HEALTHCHECK_PORT=8100
+    ports:
+      - "127.0.0.1:8100:8100"
+    volumes:
+      - ${NINJA_WORKSPACE:-.}:/workspace
+      - ninja-config:/home/ninja/.ninja
+      - ninja-cache:/home/ninja/.cache/ninja-mcp
+    networks: [ninja]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/ninja-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  researcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ninja-mcp:1.0.0
+    profiles: [researcher]
+    command: ["ninja-researcher", "--http", "--host", "0.0.0.0", "--port", "8101"]
+    environment:
+      - OPENROUTER_API_KEY
+      - SERPER_API_KEY
+      - PERPLEXITY_API_KEY
+      - NINJA_CREDENTIAL_PASSWORD
+      - NINJA_HEALTHCHECK_PORT=8101
+    ports:
+      - "127.0.0.1:8101:8101"
+    volumes:
+      - ${NINJA_WORKSPACE:-.}:/workspace:ro
+      - ninja-config:/home/ninja/.ninja
+      - ninja-cache:/home/ninja/.cache/ninja-mcp
+    networks: [ninja]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/ninja-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  secretary:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ninja-mcp:1.0.0
+    profiles: [secretary]
+    command: ["ninja-secretary", "--http", "--host", "0.0.0.0", "--port", "8102"]
+    environment:
+      - OPENROUTER_API_KEY
+      - NINJA_CREDENTIAL_PASSWORD
+      - NINJA_HEALTHCHECK_PORT=8102
+    ports:
+      - "127.0.0.1:8102:8102"
+    volumes:
+      - ${NINJA_WORKSPACE:-.}:/workspace:ro
+      - ninja-config:/home/ninja/.ninja
+      - ninja-cache:/home/ninja/.cache/ninja-mcp
+    networks: [ninja]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/ninja-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ninja-mcp:1.0.0
+    profiles: [agent]
+    command: ["ninja-agent", "--http", "--host", "0.0.0.0", "--port", "8103"]
+    environment:
+      - OPENROUTER_API_KEY
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - NINJA_CREDENTIAL_PASSWORD
+      - NINJA_HEALTHCHECK_PORT=8103
+    ports:
+      - "127.0.0.1:8103:8103"
+    volumes:
+      - ${NINJA_WORKSPACE:-.}:/workspace
+      - ninja-config:/home/ninja/.ninja
+      - ninja-cache:/home/ninja/.cache/ninja-mcp
+    networks: [ninja]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/ninja-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  ninja-config:
+  ninja-cache:
+
+networks:
+  ninja:
+    internal: true

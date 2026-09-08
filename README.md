@@ -117,6 +117,9 @@ prompt_chain([
 
 ## 🚀 Installation
 
+Current release: **1.0.0**. For reproducible, non-root local deployment see
+[Container Quickstart](docs/container-quickstart.md).
+
 Choose your preferred installation method:
 
 ### One-Line Install (Recommended)
