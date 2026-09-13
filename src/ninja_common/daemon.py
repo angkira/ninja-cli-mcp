@@ -298,11 +298,9 @@ class DaemonManager:
             if stripped.startswith(f"{env_key}="):
                 lines[i] = f"{env_key}={value}"
                 found = True
-                break
             if stripped.startswith(f"export {env_key}="):
                 lines[i] = f"export {env_key}='{value}'"
                 found = True
-                break
 
         if not found:
             lines.append(f"{env_key}={value}")

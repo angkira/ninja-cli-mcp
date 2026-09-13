@@ -2,6 +2,60 @@
 
 ## Session Information
 
+**Session ID:** tui-module-toggler-20260913
+**Started At:** 2026-09-13
+**Last Updated:** 2026-09-13
+**Session Type:** Feature - Modules tab (toggler + installer) in config TUI + enable ninja-agent
+
+## Current Focus
+
+**Active Task:** Add module toggler + installer to the Textual config TUI; enable/start ninja-agent
+**Priority:** HIGH
+**Status:** COMPLETED (uncommitted, per instructions)
+
+**Delivered:**
+- `src/ninja_config/modern_tui.py` — new **Modules** tab (`tab-modules`, keyboard `7`): ListView of
+  all 4 modules (coder/researcher/secretary/agent) with enabled ✓/○, daemon ●/○, binary ✓/✗, port;
+  buttons Enable/Disable/Start/Stop + "Install Missing Binary". Enable/Disable write
+  `NINJA_ENABLED_MODULES` + start/stop the daemon via `DaemonManager`. Install runs
+  `uv tool install --force ninja-mcp[<module>]` (or local pyproject path) in a background
+  `@work(thread=True)` worker, then enables + starts on success.
+- `src/ninja_common/daemon.py` — bug fix in `_save_enabled_modules`: removed the two `break`
+  statements so BOTH the plain `NINJA_ENABLED_MODULES=` line AND the `export ...` line in
+  `~/.ninja-mcp.env` are updated. Previously only the first match was rewritten, leaving the
+  duplicate export line stale; since `ConfigManager.read_config()` is last-line-wins, the TUI/CLI
+  read the wrong value. Fix verified against the live env file.
+- `tests/test_common/test_daemon_module_config.py` (NEW) + `tests/test_modern_tui_modules.py`
+  (NEW) — 8 regression tests.
+- **Live machine:** ran `ninja-daemon module enable agent` → `NINJA_ENABLED_MODULES=coder,researcher,agent`;
+  normalized the stale duplicate env line; agent daemon now RUNNING on port 8103 (PID 2748196),
+  coder 8100 + researcher 8101 already running.
+
+## Verification
+- ruff: clean on all 4 touched files.
+- mypy (project config, src only): Success — 100 source files, no issues.
+- pytest: `tests/test_common/` + both modern_tui test files = **238 passed**; new daemon-save +
+  TUI-modules tests **8/8**; daemon lifecycle `test_ninja_fixed.py` 2/3 pass.
+- `test_no_old_servers_running` fails ENVIRONMENTALLY (pre-existing): it asserts zero
+  `ninja_*server` processes under `~/.local/share/uv/tools/ninja-mcp/`, but the user's own
+  coder/researcher daemons run from that exact path. Not caused by this change; daemons were
+  running before the session.
+- Live env check: `ConfigManager().get("NINJA_ENABLED_MODULES") == "coder,researcher,agent"`.
+
+## Notes for Next Session
+- `.gitlab-ci.yml`, `docs/superpowers/`, `training/` are from OTHER agents/sessions — untouched.
+- The 4 code changes are UNCOMMITTED on `main` (`git diff` for daemon.py is the 2-break removal;
+  modern_tui.py is +189 lines). Commit only when the user asks.
+- `test_no_old_servers_running` in `tests/test_ninja_fixed.py` conflicts with running uv/tools
+  daemons — consider relaxing it to exclude the user's own modules (backlog).
+- `install.sh` auto-mode still comments `# To enable agent orchestrator: ninja-daemon module enable agent`.
+
+---
+
+# Previous Session (archived below)
+
+## Session Information
+
 **Session ID:** coder-worktree-isolation-20260721
 **Started At:** 2026-07-21
 **Last Updated:** 2026-07-21

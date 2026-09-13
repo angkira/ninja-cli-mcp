@@ -2,6 +2,27 @@
 
 ## Active Milestones
 
+### Task: Module toggler + installer in config TUI
+**Priority:** High
+**Status:** COMPLETED (uncommitted) 2026-09-13
+
+**Description:**
+Add module management to the Textual config TUI so users can enable/disable modules and their
+daemons, and install missing module binaries, without the CLI. Also fixed a config-persistence bug
+that made module state read stale.
+
+**Files:**
+- [x] `src/ninja_config/modern_tui.py` — NEW Modules tab: ListView + Enable/Disable/Start/Stop/Install
+- [x] `src/ninja_common/daemon.py` — `_save_enabled_modules` updates ALL duplicate env lines
+- [x] `tests/test_common/test_daemon_module_config.py` — 3 tests
+- [x] `tests/test_modern_tui_modules.py` — 5 tests
+
+**Follow-ups (backlog):**
+- [ ] Relax `test_no_old_servers_running` to allow the user's own uv/tools daemons
+- [ ] `ninja-*` module config surface parity: add `ninja-agent` to `config/mcp-modules.json`
+
+---
+
 ### Milestone: Configuration System Refactoring
 **Status:** In Progress
 **Priority:** High
