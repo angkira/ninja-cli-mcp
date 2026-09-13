@@ -630,17 +630,8 @@ class DaemonManager:
         return self.start(module)
 
     def upgrade(self, version: str | None = None) -> bool:
-        """Upgrade ninja-mcp from GitLab PyPI registry."""
+        """Upgrade ninja-mcp from PyPI."""
         import subprocess as sp
-
-        registry_url = os.environ.get(
-            "NINJA_REGISTRY_URL",
-            "https://git.mcp-test.dev/api/v4/projects/hars%2Fninja-cli-mcp/packages/pypi/simple",
-        )
-        token = os.environ.get("NINJA_REGISTRY_TOKEN", "")
-
-        if token:
-            registry_url = registry_url.replace("https://", f"https://__token__:{token}@")
 
         pkg_spec = f"ninja-mcp=={version}" if version else "ninja-mcp"
 
@@ -652,8 +643,6 @@ class DaemonManager:
             "--user",
             "--break-system-packages",
             "--upgrade",
-            "--extra-index-url",
-            registry_url,
             pkg_spec,
         ]
 

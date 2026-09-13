@@ -4,24 +4,40 @@ Automatic updater for ninja-mcp.
 Handles the complete update process:
 1. Detects if update is needed
 2. Backs up credentials
-3. Upgrades package through the Ninja daemon manager
+3. Upgrades package through the resolved update channel (github, pypi, brew)
 4. Runs migration
 5. Updates MCP config
 6. Restarts daemons
 7. Verifies everything works
 
 Usage:
-    ninja-config update
+    ninja-config update --channel pypi
 """
 
 import json
+import shutil
 import subprocess
 import sys
+import urllib.request
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Any
 
+from packaging.version import InvalidVersion, Version
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
 from ninja_config.config_migrator import ConfigMigrator
 from ninja_config.credentials import CredentialManager
+
+
+PYPI_JSON_URL = "https://pypi.org/pypi/ninja-mcp/json"
+GITHUB_RELEASES_URL = "https://api.github.com/repos/angkira/ninja-cli-mcp/releases/latest"
+BREW_FORMULA = "ninja-mcp"
+UPDATE_EXTRAS = "runtime"
+CHANNELS = ("auto", "github", "pypi", "brew")
 
 
 class UpdateError(Exception):
@@ -33,14 +49,23 @@ class UpdateError(Exception):
 class AutoUpdater:
     """Automatic updater for ninja-mcp."""
 
-    def __init__(self, repo_path: Path | None = None):
+    def __init__(
+        self,
+        repo_path: Path | None = None,
+        channel: str = "auto",
+        console: Console | None = None,
+    ):
         """
         Initialize the auto-updater.
 
         Args:
             repo_path: Path to ninja-cli-mcp repository (auto-detected if not provided)
+            channel: Update channel (auto, github, pypi, brew)
+            console: Rich console for output (created if not provided)
         """
         self.repo_path = repo_path or self._find_repo_path()
+        self.channel = channel or "auto"
+        self.console = console or Console()
 
     def _find_repo_path(self) -> Path | None:
         """Find the ninja-cli-mcp repository path if this is a source checkout."""
@@ -57,12 +82,120 @@ class AutoUpdater:
 
         return None
 
-    def update(self, force: bool = False) -> dict[str, Any]:
+    def _brew_has_formula(self) -> bool:
+        """Check whether the ninja-mcp Homebrew formula is installed."""
+        try:
+            result = subprocess.run(
+                ["brew", "list", "--formula", BREW_FORMULA],
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0
+
+    def _detect_channel(self) -> str:
+        """Detect the update channel for this installation."""
+        if self._find_editable_repo() is not None or (
+            self.repo_path is not None and (self.repo_path / ".git").exists()
+        ):
+            return "github"
+        if shutil.which("brew") and self._brew_has_formula():
+            return "brew"
+        return "pypi"
+
+    def resolve_channel(self) -> str:
+        """Resolve the effective update channel."""
+        if self.channel != "auto":
+            if self.channel not in ("github", "pypi", "brew"):
+                raise UpdateError(
+                    f"Unknown channel '{self.channel}'. Choose from: github, pypi, brew"
+                )
+            return self.channel
+        return self._detect_channel()
+
+    def _installed_version(self) -> str:
+        """Return the installed ninja-mcp version."""
+        try:
+            installed = pkg_version("ninja-mcp")
+            if installed:
+                return installed
+        except PackageNotFoundError:
+            pass
+        try:
+            from ninja_agent import __version__ as agent_version
+
+            if agent_version:
+                return agent_version
+        except ImportError:
+            pass
+        return "0.0.0-dev"
+
+    def _pypi_latest(self) -> str:
+        """Fetch the latest ninja-mcp version from PyPI."""
+        try:
+            with urllib.request.urlopen(PYPI_JSON_URL, timeout=20) as response:
+                data = json.load(response)
+            return data["info"]["version"]
+        except Exception as e:
+            raise UpdateError(f"Could not fetch latest version from PyPI: {e}") from e
+
+    def _github_latest(self) -> str:
+        """Fetch the latest ninja-mcp version from GitHub releases."""
+        try:
+            request = urllib.request.Request(
+                GITHUB_RELEASES_URL, headers={"User-Agent": "ninja-mcp-update"}
+            )
+            with urllib.request.urlopen(request, timeout=20) as response:
+                data = json.load(response)
+            return data["tag_name"].lstrip("v")
+        except Exception as e:
+            raise UpdateError(f"Could not fetch latest version from GitHub: {e}") from e
+
+    def _brew_latest(self) -> str:
+        """Fetch the latest ninja-mcp version from Homebrew."""
+        try:
+            result = subprocess.run(
+                ["brew", "info", "--json=v2", BREW_FORMULA],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise UpdateError(f"Could not fetch latest version from Homebrew: {result.stderr}")
+            data = json.loads(result.stdout)
+            return data["formulae"][0]["versions"]["stable"]
+        except UpdateError:
+            raise
+        except Exception as e:
+            raise UpdateError(f"Could not fetch latest version from Homebrew: {e}") from e
+
+    def _latest_version(self, channel: str) -> str:
+        """Fetch the latest version for the given channel."""
+        if channel == "pypi":
+            return self._pypi_latest()
+        if channel == "github":
+            return self._github_latest()
+        if channel == "brew":
+            return self._brew_latest()
+        raise UpdateError(f"Unknown channel '{channel}'. Choose from: github, pypi, brew")
+
+    def _needs_update(self, installed: str, latest: str) -> bool:
+        """Compare installed and latest versions."""
+        try:
+            return Version(latest) > Version(installed)
+        except InvalidVersion:
+            return True
+
+    def update(self, force: bool = False, channel: str | None = None) -> dict[str, Any]:
         """
         Perform complete update process.
 
         Args:
             force: Force update even if no updates available
+            channel: Override the update channel for this run
 
         Returns:
             Update result dictionary
@@ -70,90 +203,116 @@ class AutoUpdater:
         Raises:
             UpdateError: If update fails
         """
-        print("\n" + "=" * 70)
-        print("  NINJA-MCP AUTO-UPDATER")
-        print("=" * 70)
-        print()
+        if channel:
+            self.channel = channel
+        ch = self.resolve_channel()
 
-        result = {
+        self.console.print(Panel.fit("[bold]Ninja MCP Updater[/bold]", style="cyan"))
+
+        with self.console.status("Checking versions..."):
+            installed = self._installed_version()
+            latest = self._latest_version(ch)
+
+        self.console.print(f"Channel: {ch}")
+        self.console.print(f"Installed: {installed}")
+        self.console.print(f"Latest: {latest}")
+
+        if not force and not self._needs_update(installed, latest):
+            self.console.print(f"[bold green]Already up to date ({installed})[/bold green]")
+            return {
+                "verified": True,
+                "up_to_date": True,
+                "channel": ch,
+                "installed": installed,
+                "latest": latest,
+                "steps_completed": [],
+                "credentials_backed_up": False,
+                "package_updated": False,
+                "migration_ran": False,
+                "daemons_restarted": False,
+            }
+
+        result: dict[str, Any] = {
             "steps_completed": [],
             "credentials_backed_up": False,
             "package_updated": False,
             "migration_ran": False,
             "daemons_restarted": False,
             "verified": False,
+            "channel": ch,
+            "installed": installed,
+            "latest": latest,
         }
 
         try:
-            # Step 1: Pull latest code
-            print("📥 Step 1: Pulling latest code...")
-            self._git_pull()
-            result["steps_completed"].append("git_pull")
-            print("   ✓ Code updated\n")
-
-            # Step 2: Backup credentials
-            print("💾 Step 2: Backing up credentials...")
-            backup_path = self._backup_credentials()
+            with self.console.status("Backing up credentials..."):
+                backup_path = self._backup_credentials()
             result["credentials_backed_up"] = True
             result["backup_path"] = str(backup_path)
             result["steps_completed"].append("backup")
-            print(f"   ✓ Backed up to: {backup_path}\n")
+            self.console.print(f"✓ Credentials backed up to {backup_path}")
 
-            # Step 3: Upgrade package
-            print("📦 Step 3: Upgrading package...")
-            self._reinstall_package()
+            with self.console.status("Upgrading package..."):
+                self._reinstall_package(ch)
             result["package_updated"] = True
             result["steps_completed"].append("upgrade")
-            print("   ✓ Package updated\n")
+            self.console.print("✓ Package updated")
 
-            # Step 4: Run migration if needed
-            print("🔄 Step 4: Checking for migration...")
-            migration_result = self._run_migration_if_needed()
+            with self.console.status("Checking for migration..."):
+                migration_result = self._run_migration_if_needed()
             if migration_result:
                 result["migration_ran"] = True
                 result["migration_result"] = migration_result
                 result["steps_completed"].append("migration")
-                print(f"   ✓ Migrated {migration_result['credentials_count']} credentials\n")
+                self.console.print(
+                    f"✓ Migrated {migration_result['credentials_count']} credentials"
+                )
             else:
-                print("   i Migration not needed\n")
+                self.console.print("✓ Migration not needed")
 
-            # Step 5: Update MCP config
-            print("⚙️  Step 5: Updating MCP configuration...")
-            self._update_mcp_config()
+            with self.console.status("Updating MCP configuration..."):
+                self._update_mcp_config()
             result["steps_completed"].append("mcp_config")
-            print("   ✓ MCP config updated\n")
+            self.console.print("✓ MCP config updated")
 
-            # Step 6: Restart daemons
-            print("🔄 Step 6: Restarting daemons...")
-            self._restart_daemons()
+            with self.console.status("Restarting daemons..."):
+                self._restart_daemons()
             result["daemons_restarted"] = True
             result["steps_completed"].append("restart_daemons")
-            print("   ✓ Daemons restarted\n")
+            self.console.print("✓ Daemons restarted")
 
-            # Step 7: Verify
-            print("✅ Step 7: Verifying installation...")
-            verification = self._verify()
+            with self.console.status("Verifying installation..."):
+                verification = self._verify()
             result["verified"] = verification["success"]
             result["verification"] = verification
             result["steps_completed"].append("verify")
-            print("   ✓ Verification complete\n")
-
-            print("=" * 70)
-            print("  UPDATE COMPLETED SUCCESSFULLY!")
-            print("=" * 70)
-            print()
-
-            return result
-
+            self.console.print("✓ Verification complete")
         except Exception as e:
-            print(f"\n✗ ERROR: {e}\n")
-            print(f"Steps completed: {', '.join(result['steps_completed'])}")
-            print("\nTo recover:")
+            recovery = [str(e), ""]
             if result.get("backup_path"):
-                print(f"  1. Your credentials backup: {result['backup_path']}")
-            print("  2. Check logs in ~/.cache/ninja-mcp/logs/")
-            print("  3. Run: ninja-mcp daemon status")
+                recovery.append(f"Credentials backup: {result['backup_path']}")
+            recovery.append("Logs: ~/.cache/ninja-mcp/logs/")
+            recovery.append("Run: ninja-mcp daemon status")
+            self.console.print(Panel("\n".join(recovery), title="Update failed", style="red"))
             raise UpdateError(f"Update failed: {e}") from e
+
+        table = Table(title="Update Summary")
+        table.add_column("Step")
+        table.add_column("Result")
+        table.add_row("Backup", "OK")
+        table.add_row("Package", "OK")
+        table.add_row(
+            "Migration",
+            str(result["migration_result"]["credentials_count"])
+            if result["migration_ran"]
+            else "Skipped",
+        )
+        table.add_row("Daemons", "OK")
+        table.add_row("Verification", "OK" if result["verified"] else "Failed")
+        self.console.print(table)
+        self.console.print("[bold green]Update completed successfully[/bold green]")
+
+        return result
 
     def _git_pull(self) -> None:
         """Pull latest code from git."""
@@ -206,7 +365,7 @@ class AutoUpdater:
             import time
 
             timestamp = int(time.time())
-            backup_path = Path.home() / ".ninja" / f"credentials.db.backup-{timestamp}"
+            backup_path = Path.home() / f"credentials.db.backup-{timestamp}"
 
             import shutil
 
@@ -218,35 +377,72 @@ class AutoUpdater:
         # No credentials to backup
         return Path("/dev/null")
 
-    def _reinstall_package(self) -> None:
-        """Reinstall/upgrade the package.
+    def _reinstall_package(self, channel: str | None = None) -> None:
+        """Reinstall/upgrade the package through the resolved update channel.
 
-        For editable (source-checkout) installations the package is reinstalled
-        from the local checkout via ``uv tool install --force --editable`` so
-        the running code always matches the freshly pulled sources. For regular
-        installations it delegates to ``ninja-mcp daemon upgrade``.
+        ``github`` reinstalls from the source checkout (editable when one is
+        detected), ``pypi`` installs from PyPI via uv or pip, and ``brew``
+        upgrades the Homebrew formula.
         """
-        editable_repo = self._find_editable_repo()
-        if editable_repo is not None:
-            self._reinstall_editable(editable_repo)
+        ch = channel or self.resolve_channel()
+
+        if ch == "github":
+            editable_repo = self._find_editable_repo()
+            if editable_repo is not None:
+                self._reinstall_editable(editable_repo)
+                return
+            if self.repo_path is not None and (self.repo_path / ".git").exists():
+                self._git_pull()
+                self._reinstall_editable(self.repo_path)
+                return
+            self._run_install_command(
+                ["uv", "tool", "install", "--force", f"ninja-mcp[{UPDATE_EXTRAS}]"]
+            )
             return
 
+        if ch == "pypi":
+            if shutil.which("uv"):
+                self._run_install_command(
+                    ["uv", "tool", "install", "--force", f"ninja-mcp[{UPDATE_EXTRAS}]"]
+                )
+            else:
+                self._run_install_command(
+                    [
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "--user",
+                        "--upgrade",
+                        f"ninja-mcp[{UPDATE_EXTRAS}]",
+                    ]
+                )
+            return
+
+        if ch == "brew":
+            self._run_install_command(["brew", "update"], timeout=300)
+            self._run_install_command(["brew", "upgrade", BREW_FORMULA])
+            return
+
+        raise UpdateError(f"Unknown channel '{ch}'. Choose from: github, pypi, brew")
+
+    def _run_install_command(self, command: list[str], timeout: int = 600) -> None:
+        """Run a package install command and stream its output."""
         try:
             result = subprocess.run(
-                ["ninja-mcp", "daemon", "upgrade"],
+                command,
                 check=True,
                 capture_output=True,
                 text=True,
-                timeout=600,  # 10 minute timeout
+                timeout=timeout,
             )
-            # Check if version changed
             for line in result.stdout.splitlines():
                 if line.strip():
                     print(f"   i {line.strip()}")
         except subprocess.CalledProcessError as e:
             raise UpdateError(f"Package upgrade failed: {e.stderr}") from e
         except subprocess.TimeoutExpired:
-            raise UpdateError("Package upgrade timed out after 10 minutes") from None
+            raise UpdateError(f"Package upgrade timed out after {timeout // 60} minutes") from None
 
     def _find_editable_repo(self) -> Path | None:
         """Detect an editable (source) installation of ninja-mcp.
@@ -480,11 +676,17 @@ def main():
     parser = argparse.ArgumentParser(description="Auto-update ninja-mcp")
     parser.add_argument("--repo-path", type=Path, help="Path to ninja-cli-mcp repository")
     parser.add_argument("--force", action="store_true", help="Force update")
+    parser.add_argument(
+        "--channel",
+        choices=CHANNELS,
+        default="auto",
+        help="Update channel: auto (detect), github, pypi, brew",
+    )
 
     args = parser.parse_args()
 
     try:
-        updater = AutoUpdater(repo_path=args.repo_path)
+        updater = AutoUpdater(repo_path=args.repo_path, channel=args.channel)
         result = updater.update(force=args.force)
 
         if result["verified"]:

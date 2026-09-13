@@ -35,6 +35,7 @@ dependencies = [
     "tomlkit>=0.13",
     "textual>=0.50.0",
     "rich>=13.0.0",
+    "packaging>=23.0",
 ]
 
 [project.optional-dependencies]

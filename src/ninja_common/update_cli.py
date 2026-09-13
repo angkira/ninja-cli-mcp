@@ -8,6 +8,7 @@ Usage::
 
     ninja-mcp update
     ninja-mcp update --force
+    ninja-mcp update --channel pypi
 """
 
 from __future__ import annotations
@@ -36,11 +37,17 @@ def main() -> int:
         action="store_true",
         help="Force update/reinstall even when already up to date",
     )
+    parser.add_argument(
+        "--channel",
+        choices=["auto", "github", "pypi", "brew"],
+        default="auto",
+        help="Update channel: auto (detect), github, pypi, brew",
+    )
     args = parser.parse_args()
 
     try:
         updater = AutoUpdater(repo_path=args.repo_path)
-        result = updater.update(force=args.force)
+        result = updater.update(force=args.force, channel=args.channel)
 
         if result["verified"]:
             print("\n✅ Update completed successfully!")
