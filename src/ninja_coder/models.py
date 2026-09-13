@@ -7,10 +7,11 @@ All models use strict validation and comprehensive type hints.
 
 from __future__ import annotations
 
+import uuid
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ExecutionMode(str, Enum):
@@ -61,10 +62,23 @@ class StepConstraints(BaseModel):
 
 
 class PlanStep(BaseModel):
-    """A single step in an execution plan."""
+    """A single step in an execution plan.
 
-    id: str = Field(..., description="Unique step identifier")
-    title: str = Field(..., description="Human-readable step title")
+    Only ``task`` is required: it carries the actual instruction for the AI
+    code CLI. ``id`` and ``title`` are optional conveniences — they are
+    auto-derived so a caller cannot fail a whole plan just for omitting a
+    label (this exact failure produced
+    ``Input validation error: 'id' is a required property``).
+    """
+
+    id: str = Field(
+        default="",
+        description="Unique step identifier. Optional — auto-generated as 'step_N' when omitted.",
+    )
+    title: str = Field(
+        default="",
+        description="Human-readable step title. Optional — derived from the first task line when omitted.",
+    )
     task: str = Field(..., description="Detailed task description for the AI code CLI")
     context_paths: list[str] = Field(
         default_factory=list,
@@ -92,6 +106,71 @@ class PlanStep(BaseModel):
         default_factory=StepConstraints,
         description="Resource constraints",
     )
+
+    @model_validator(mode="after")
+    def _fill_optional_defaults(self) -> PlanStep:
+        """Backfill ``id``/``title`` so downstream code always sees strings."""
+        if not self.id.strip():
+            self.id = f"step_{uuid.uuid4().hex[:8]}"
+        if not self.title.strip():
+            stripped = self.task.strip()
+            first_line = stripped.splitlines()[0] if stripped else self.id
+            self.title = first_line[:80]
+        return self
+
+
+def _normalize_plan_steps(steps: Any) -> Any:
+    """Validate and normalize a raw ``steps`` array before ``PlanStep`` parsing.
+
+    Produces a model-readable error naming the offending index instead of the
+    opaque ``Input validation error: '<field>' is a required property`` emitted
+    by schema-level client validation.
+
+    Rules:
+        - ``steps`` must be an array (an empty array remains a valid no-op).
+        - Every element must be a step object (``dict`` or ``PlanStep``).
+        - Every step must carry a non-empty string ``task`` (the only truly
+          required field — the instruction for the AI code CLI).
+        - ``id`` defaults to ``step_<n>`` (1-based); ``title`` defaults to the
+          first line of ``task``.
+
+    Args:
+        steps: Raw value supplied for the ``steps`` field.
+
+    Returns:
+        The (possibly mutated) steps value, suitable for ``PlanStep`` parsing.
+
+    Raises:
+        ValueError: With a precise, indexed message suitable to return to the
+            calling model.
+    """
+    if not isinstance(steps, list):
+        raise ValueError(
+            "'steps' must be an array of step objects (got "
+            f"{type(steps).__name__}). Each step needs a 'task' — the instruction "
+            "for the AI code CLI."
+        )
+    for i, step in enumerate(steps):
+        if isinstance(step, PlanStep):
+            if not step.task.strip():
+                raise ValueError(f"steps[{i}] is missing the required 'task' field.")
+            continue
+        if not isinstance(step, dict):
+            raise ValueError(
+                f"steps[{i}] must be an object, got {type(step).__name__}. "
+                "Each step is e.g. {'id': 's1', 'title': 'Add helper', 'task': '...'}."
+            )
+        task = step.get("task")
+        if not isinstance(task, str) or not task.strip():
+            raise ValueError(
+                f"steps[{i}] is missing the required 'task' field. Put the instruction "
+                f"for the AI code CLI in 'task'. Fields received: {sorted(step.keys())}."
+            )
+        if not step.get("id"):
+            step["id"] = f"step_{i + 1}"
+        if not step.get("title"):
+            step["title"] = task.strip().splitlines()[0][:80]
+    return steps
 
 
 # ============================================================================
@@ -158,6 +237,13 @@ class SequentialPlanRequest(BaseModel):
     )
     steps: list[PlanStep] = Field(..., description="Plan steps to execute in order")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_steps(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "steps" in data:
+            _normalize_plan_steps(data["steps"])
+        return data
+
 
 #: Complexity selector for parallel plans. Kept as a Literal alias (not a
 #: member of TaskComplexity) to avoid collisions: TaskComplexity routes
@@ -199,6 +285,13 @@ class ParallelPlanRequest(BaseModel):
         description="Global deny glob patterns",
     )
     steps: list[PlanStep] = Field(..., description="Plan steps to execute in parallel")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_steps(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "steps" in data:
+            _normalize_plan_steps(data["steps"])
+        return data
 
 
 # ============================================================================

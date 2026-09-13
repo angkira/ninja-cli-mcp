@@ -28,6 +28,7 @@ from mcp.types import (
     TextContent,
     Tool,
 )
+from pydantic import ValidationError
 
 from ninja_coder.models import (
     GetAgentsRequest,
@@ -199,11 +200,17 @@ TOOLS: list[Tool] = [
                     "items": {
                         "type": "object",
                         "properties": {
-                            "id": {"type": "string", "description": "Unique step identifier"},
-                            "title": {"type": "string", "description": "Human-readable step title"},
+                            "id": {
+                                "type": "string",
+                                "description": "Optional unique step id. Auto-generated as 'step_1', 'step_2', … when omitted.",
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Optional human-readable title. Derived from the first line of 'task' when omitted.",
+                            },
                             "task": {
                                 "type": "string",
-                                "description": "DETAILED specification of what code to write in this step",
+                                "description": "REQUIRED. DETAILED specification of what code to write in this step. A step without a non-empty 'task' is rejected.",
                             },
                             "context_paths": {
                                 "type": "array",
@@ -261,7 +268,13 @@ TOOLS: list[Tool] = [
                                 "default": {},
                             },
                         },
-                        "required": ["id", "title", "task"],
+                        # Only 'task' is conceptually required; it is
+                        # enforced server-side with an indexed, model-readable
+                        # error. Keeping this JSON schema permissive lets that
+                        # error reach the model instead of the opaque
+                        # schema-level rejection (e.g. demanding an 'id')
+                        # produced by client-side input validation.
+                        "required": [],
                     },
                 },
             },
@@ -339,11 +352,17 @@ TOOLS: list[Tool] = [
                     "items": {
                         "type": "object",
                         "properties": {
-                            "id": {"type": "string"},
-                            "title": {"type": "string"},
+                            "id": {
+                                "type": "string",
+                                "description": "Optional unique step id. Auto-generated as 'step_1', 'step_2', … when omitted.",
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Optional human-readable title. Derived from the first line of 'task' when omitted.",
+                            },
                             "task": {
                                 "type": "string",
-                                "description": "SIMPLE, FOCUSED specification of what code to write. Keep it minimal and atomic.",
+                                "description": "REQUIRED. SIMPLE, FOCUSED specification of what code to write. Keep it minimal and atomic. A step without a non-empty 'task' is rejected.",
                             },
                             "context_paths": {
                                 "type": "array",
@@ -356,7 +375,13 @@ TOOLS: list[Tool] = [
                             "test_plan": {"type": "object"},
                             "constraints": {"type": "object"},
                         },
-                        "required": ["id", "title", "task"],
+                        # Only 'task' is conceptually required; it is
+                        # enforced server-side with an indexed, model-readable
+                        # error. Keeping this JSON schema permissive lets that
+                        # error reach the model instead of the opaque
+                        # schema-level rejection (e.g. demanding an 'id')
+                        # produced by client-side input validation.
+                        "required": [],
                     },
                 },
             },
@@ -668,6 +693,30 @@ You:
                 f"[{client_id}] Tool {name} completed with status: {result_json.get('status', 'unknown')}"
             )
             return [TextContent(type="text", text=json.dumps(result_json, indent=2))]
+
+        except ValidationError as e:
+            # Surface our friendly, indexed plan errors instead of pydantic's
+            # multi-line dump. `_normalize_plan_steps` raises ValueError, which
+            # pydantic wraps as "Value error, <message>".
+            messages: list[str] = []
+            for err in e.errors():
+                msg = str(err.get("msg", "Invalid input")).replace("Value error, ", "")
+                if msg not in messages:
+                    messages.append(msg)
+            detail = "\n".join(messages) or "Invalid tool input."
+            logger.warning(f"[{client_id}] Tool {name} input rejected: {detail}")
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "status": "error",
+                            "error": detail,
+                            "error_type": "InvalidPlanInput",
+                        }
+                    ),
+                )
+            ]
 
         except ValueError as e:
             if "Unknown tool" in str(e):
