@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from typing import TYPE_CHECKING, ClassVar
@@ -902,11 +901,7 @@ class NinjaConfigApp(App):
             on = module in enabled
             installed = shutil.which(f"ninja-{module}") is not None
             enabled_icon = "[#a3be8c]✓[/#a3be8c]" if on else "[dim]○[/dim]"
-            daemon = (
-                "[#a3be8c]● running[/#a3be8c]"
-                if st.get("running")
-                else "[dim]○ stopped[/dim]"
-            )
+            daemon = "[#a3be8c]● running[/#a3be8c]" if st.get("running") else "[dim]○ stopped[/dim]"
             binary = "[#a3be8c]✓[/#a3be8c]" if installed else "[#ebcb8b]✗[/#ebcb8b]"
             item = ListItem(
                 Static(
@@ -996,6 +991,7 @@ class NinjaConfigApp(App):
     @work(thread=True, group="module-install")
     def _install_worker(self, module: str) -> None:
         """Install one module via ``uv tool install`` in a background thread."""
+        import subprocess
         from pathlib import Path
 
         cwd = Path.cwd()
