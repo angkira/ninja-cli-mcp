@@ -2,7 +2,7 @@
 
 SHELL := /bin/sh
 
-VERSION ?= 1.0.1
+VERSION ?= 1.0.3
 IMAGE ?= ninja-mcp:local-$(VERSION)
 PROFILE ?= coder
 COMPOSE_PROJECT_NAME ?= ninja-mcp
@@ -18,13 +18,13 @@ WRAPPER ?= $(CONFIG_DIR)/ninja-mcp-docker
         version package release-check
 
 help: ## Show categorized targets and examples
-	@printf '%s\n' 'Ninja MCP 1.0.1 make targets'
+	@printf '%s\n' 'Ninja MCP 1.0.3 make targets'
 	@printf '%s\n' '' 'Installation:'
 	@printf '%s\n' '  make install          Run the interactive installer and choose Native/Docker in the TUI'
 	@printf '%s\n' '  make install-native   Use make install; native has no separate non-interactive flow'
 	@printf '%s\n' '  make install-headless Run the hidden Docker backend (NINJA_DOCKER_NONINTERACTIVE=1)'
 	@printf '%s\n' '' 'Docker (requires a TUI-generated config):'
-	@printf '%s\n' '  make docker-build PROFILE=coder IMAGE=ninja-mcp:local-1.0.1'
+	@printf '%s\n' '  make docker-build PROFILE=coder IMAGE=ninja-mcp:local-1.0.3'
 	@printf '%s\n' '  make docker-config PROFILE=researcher'
 	@printf '%s\n' '  make docker-up PROFILE=coder COMPOSE_PROJECT_NAME=ninja-mcp'
 	@printf '%s\n' '  make docker-status | docker-logs | docker-down'

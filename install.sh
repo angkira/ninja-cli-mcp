@@ -118,7 +118,7 @@ install_docker() {
     fi
     cat > "$config_dir/.env" <<EOF
 # Ninja MCP Docker configuration. No API secrets are stored here.
-NINJA_DOCKER_IMAGE=ninja-mcp:local-1.0.1
+NINJA_DOCKER_IMAGE=ninja-mcp:local-1.0.3
 NINJA_DOCKER_WORKSPACE=$workspace
 NINJA_DOCKER_CODER_PORT=${ports[0]}
 NINJA_DOCKER_RESEARCHER_PORT=${ports[1]}

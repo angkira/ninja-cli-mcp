@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.1}
+    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.3}
     profiles: [coder]
     command: ["ninja-coder", "--http", "--host", "0.0.0.0", "--port", "8100"]
     environment:
@@ -30,7 +30,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.1}
+    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.3}
     profiles: [researcher]
     command: ["ninja-researcher", "--http", "--host", "0.0.0.0", "--port", "8101"]
     environment:
@@ -57,7 +57,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.1}
+    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.3}
     profiles: [secretary]
     command: ["ninja-secretary", "--http", "--host", "0.0.0.0", "--port", "8102"]
     environment:
@@ -82,7 +82,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.1}
+    image: ${NINJA_DOCKER_IMAGE:-ninja-mcp:local-1.0.3}
     profiles: [agent]
     command: ["ninja-agent", "--http", "--host", "0.0.0.0", "--port", "8103"]
     environment:

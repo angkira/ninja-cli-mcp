@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.3 - 2026-09-13
+
+- Added a Modules tab to the Textual config TUI (`ninja-config configure`, press `7`):
+  enable/disable/start/stop per-module, plus a uv-based installer for missing
+  module binaries.
+- Fixed `DaemonManager._save_enabled_modules` so it rewrites every matching
+  `NINJA_ENABLED_MODULES` line (plain and `export` forms) in `~/.ninja-mcp.env`,
+  eliminating stale duplicate values.
+- Enabled the `ninja-agent` module on the host (`NINJA_ENABLED_MODULES=coder,researcher,agent`)
+  with its daemon running on port 8103.
+
 ## 1.0.1 - 2026-09-08
 
 - Fixed the GitHub release workflow to publish to PyPI with the configured API
