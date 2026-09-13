@@ -58,6 +58,8 @@ configuration exists; Docker targets use the TUI-generated
 | Stop services | `make docker-down PROFILE=coder` | Non-destructive stop |
 | Quality checks | `make check` | CI-aligned lint, format, typecheck, and tests |
 | Release validation | `make release-check` | Builds locally; never publishes |
+| Local release | `make release VERSION=1.0.5` | Bump, gate, build, tag, push, publish to PyPI |
+| Release dry-run | `make release-dry-run VERSION=1.0.5` | Print the release plan without mutating |
 
 The Make targets are thin wrappers around `install.sh`, `uv`, and Docker
 Compose. `IMAGE`, `PROFILE`, `COMPOSE_PROJECT_NAME`, and `CONFIG_DIR` can be

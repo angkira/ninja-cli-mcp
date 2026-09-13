@@ -99,3 +99,15 @@ package: ## Build Python distributions without publishing
 	uv build
 
 release-check: check package ## Validate and build a release without publishing
+
+release: ## Run the full local release flow (bump, gate, build, tag, publish)
+	./scripts/release.sh $(VERSION) $(RELEASE_FLAGS)
+
+release-dry-run: ## Dry-run the release flow without mutating anything
+	./scripts/release.sh $(VERSION) --dry-run $(RELEASE_FLAGS)
+
+release-tag-only: ## Bump, gate, build, commit and tag without PyPI publish
+	./scripts/release.sh $(VERSION) --skip-publish $(RELEASE_FLAGS)
+
+publish-local: package ## Build and publish the current version to PyPI (local)
+	./scripts/release.sh $(shell grep '^version' pyproject.toml | head -1 | cut -d'"' -f2) --skip-tests --yes

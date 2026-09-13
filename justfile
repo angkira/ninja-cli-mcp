@@ -229,6 +229,22 @@ release-quick VERSION:
     @echo "✓ Release v{{VERSION}} pushed!"
     @echo "Monitor: https://github.com/angkira/ninja-mcp/actions"
 
+# Local release flow: bump, gate, build, tag, publish to PyPI (scripts/release.sh)
+release-local VERSION:
+    ./scripts/release.sh {{VERSION}}
+
+# Dry-run the local release flow without mutating anything
+release-dry-run VERSION:
+    ./scripts/release.sh {{VERSION}} --dry-run
+
+# Bump, gate, build, commit and tag without PyPI publish
+release-tag-only VERSION:
+    ./scripts/release.sh {{VERSION}} --skip-publish
+
+# Publish the current version to PyPI (local) using the all-projects token
+publish-local:
+    ./scripts/release.sh $(grep '^version' pyproject.toml | head -1 | cut -d'"' -f2) --skip-tests --yes
+
 # Build Homebrew formula
 build-homebrew:
     @echo "🍺 Building Homebrew formula..."
