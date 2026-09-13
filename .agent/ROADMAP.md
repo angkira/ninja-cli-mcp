@@ -2,9 +2,60 @@
 
 ## Active Milestones
 
+### Task: Release automation (local publish)
+**Priority:** High
+**Status:** COMPLETED 2026-09-13 (commits `4058142`)
+
+**Description:**
+One-command local release flow. `scripts/release.sh <version>` runs preflight checks,
+bumps every versioned file, runs quality gates, builds, commits/pushes, tags, publishes
+to PyPI locally (all-projects token), and verifies on PyPI. Make/just wrappers.
+
+**Files:**
+- [x] `scripts/release.sh` — full automation (--dry-run/--skip-tests/--skip-publish/--yes)
+- [x] Makefile: release / release-dry-run / release-tag-only / publish-local
+- [x] justfile: release-local / release-dry-run / release-tag-only / publish-local
+- [x] `docs/RELEASING.md` — process doc
+
+---
+
+### Task: Version-aware updater (github/pypi/brew)
+**Priority:** High
+**Status:** COMPLETED 2026-09-13 (commit `4eee54f`)
+
+**Description:**
+`ninja-mcp update` detects install channel (github/pypi/brew), compares installed vs latest
+(PEP 440), only reinstalls when newer unless `--force`. Rich progress UI. Daemon upgrade now
+uses PyPI. Local release 1.0.5 shipped on top of this.
+
+**Files:**
+- [x] `src/ninja_config/auto_updater.py` — channels, version check, Rich UI
+- [x] `src/ninja_common/update_cli.py` — `--channel`
+- [x] `src/ninja_common/daemon.py` — upgrade() → PyPI
+- [x] `tests/test_auto_updater.py` — 20+ tests
+
+---
+
+### Task: Codex CLI strategy + DeepSeek V4.1 default
+**Priority:** High
+**Status:** COMPLETED 2026-09-13 (commit `282d265`)
+
+**Description:**
+OpenAI Codex CLI as host-auth coder strategy (ChatGPT login, no API keys) with native subagents
+via `codex exec --json`. Default model roles switched to `openrouter/deepseek/deepseek-v4.1-flash`.
+Default-model value assertions removed from tests (structural checks only).
+
+**Files:**
+- [x] `src/ninja_coder/strategies/codex_strategy.py` + registry/__init__ wiring
+- [x] config_shared / detect_tools / ui / tui_installer / model_selector wiring
+- [x] `tests/test_codex_strategy.py`
+- [x] defaults.py CODEX_MODELS + NINJA_CODEX_TIMEOUT
+
+---
+
 ### Task: Module toggler + installer in config TUI
 **Priority:** High
-**Status:** COMPLETED (uncommitted) 2026-09-13
+**Status:** COMPLETED 2026-09-13 (commit `9ccd946`)
 
 **Description:**
 Add module management to the Textual config TUI so users can enable/disable modules and their

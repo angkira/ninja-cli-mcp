@@ -8,8 +8,9 @@ This file defines the operating principles for autonomous development sessions i
 1. Read `.agent/STATUS.md` to understand current session context
 2. Read `.agent/ROADMAP.md` to see active milestones and backlog
 3. Read `.agent/ARCHITECT.md` to understand architectural patterns
-4. Check for recent commits or changes using `secretary_codebase_report`
-5. Read any relevant session logs or notes
+4. Read `.agent/ORIENTATION.md` for a quick map of how the repo is organized
+5. Check for recent commits or changes using `secretary_codebase_report`
+6. Read any relevant session logs or notes
 
 **MANDATORY SHUTDOWN PROCEDURES:**
 1. Update `.agent/STATUS.md` with current session state
