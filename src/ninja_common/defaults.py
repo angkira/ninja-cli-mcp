@@ -10,14 +10,13 @@ Do not hardcode defaults elsewhere - import from here.
 # =============================================================================
 
 # Default model for code generation tasks
-DEFAULT_CODER_MODEL = "opencode-go/deepseek-v4-flash"
+DEFAULT_CODER_MODEL = "openrouter/deepseek/deepseek-v4.1-flash"
 
 # Fallback models if primary is unavailable (in order of preference)
 FALLBACK_CODER_MODELS = [
-    "opencode-go/glm-5.3",
-    "opencode-go/deepseek-v4-flash",
-    "opencode-go/gpt-5.6-luna",
+    "openrouter/deepseek/deepseek-v4.1-flash",
     "opencode-go/deepseek-v4-pro",
+    "opencode-go/glm-5.3",
 ]
 
 # Recommended models for different use cases
@@ -44,6 +43,7 @@ RECOMMENDED_MODELS = {
     "openrouter/qwen/qwen3-4b": "Qwen3 4B - lightweight and fast",
     "openrouter/qwen/qwen3-1.7b": "Qwen3 1.7B - ultra-fast for simple tasks",
     # DeepSeek models (via OpenRouter)
+    "openrouter/deepseek/deepseek-v4.1-flash": "DeepSeek V4.1 Flash - latest fast model (exceeds V4 Pro)",
     "openrouter/deepseek/deepseek-chat": "DeepSeek Chat - general purpose",
     "openrouter/deepseek/deepseek-coder": "DeepSeek Coder - specialized for code",
     # Google models (via OpenRouter)
@@ -66,9 +66,9 @@ RECOMMENDED_MODELS = {
 # =============================================================================
 
 # Default models for different task types
-DEFAULT_MODEL_QUICK = "opencode-go/deepseek-v4-flash"
-DEFAULT_MODEL_SEQUENTIAL = "opencode-go/glm-5.3"
-DEFAULT_MODEL_PARALLEL = "opencode-go/deepseek-v4-flash"
+DEFAULT_MODEL_QUICK = "openrouter/deepseek/deepseek-v4.1-flash"
+DEFAULT_MODEL_SEQUENTIAL = "openrouter/deepseek/deepseek-v4.1-flash"
+DEFAULT_MODEL_PARALLEL = "openrouter/deepseek/deepseek-v4.1-flash"
 
 # =============================================================================
 # OPENCODE PROVIDERS
@@ -125,6 +125,17 @@ JUNIE_MODELS = [
     ("gpt", "GPT", "OpenAI model via Junie"),
     ("gemini-flash", "Gemini Flash", "Google fast model via Junie"),
     ("grok", "Grok", "xAI model via Junie"),
+]
+
+# =============================================================================
+# CODEX MODELS (OpenAI Codex CLI, host-auth via ChatGPT login)
+# =============================================================================
+
+CODEX_MODELS = [
+    ("gpt-5.6-luna", "GPT-5.6 Luna", "Fast cost-efficient model (default)"),
+    ("gpt-5.4", "GPT-5.4", "Latest balanced coding agent model"),
+    ("gpt-5.4-mini", "GPT-5.4 Mini", "Fast exploration model for subagents"),
+    ("gpt-5.3-codex-spark", "GPT-5.3 Codex Spark", "Near-instant text-only iteration"),
 ]
 
 # =============================================================================
@@ -262,6 +273,11 @@ OPENROUTER_MODELS = [
         "Large general - Free tier",
     ),
     # DeepSeek models
+    (
+        "openrouter/deepseek/deepseek-v4.1-flash",
+        "DeepSeek V4.1 Flash",
+        "Latest fast model - exceeds V4 Pro",
+    ),
     ("openrouter/deepseek/deepseek-chat", "DeepSeek Chat", "General purpose chat"),
     (
         "openrouter/deepseek/deepseek-chat:free",
@@ -626,4 +642,5 @@ PROVIDER_MODELS = {
     "github-copilot": GITHUB_COPILOT_MODELS,
     "openrouter": OPENROUTER_MODELS,
     "junie": JUNIE_MODELS,
+    "codex": CODEX_MODELS,
 }

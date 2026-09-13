@@ -71,6 +71,10 @@ def detect_installed_tools() -> dict[str, str]:
     if shutil.which("junie"):
         tools["junie"] = shutil.which("junie")
 
+    # Check for codex (OpenAI Codex, host-auth)
+    if shutil.which("codex"):
+        tools["codex"] = shutil.which("codex")
+
     # Check for cursor
     if shutil.which("cursor"):
         tools["cursor"] = shutil.which("cursor")

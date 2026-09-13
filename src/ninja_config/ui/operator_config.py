@@ -182,6 +182,7 @@ def configure_operators(config_manager: ConfigManager, config: dict[str, str]) -
         "gemini": ("Gemini CLI", "Google native CLI", ["google"]),
         "claude": ("Claude Code", "Anthropic's official CLI", ["anthropic"]),
         "junie": ("Junie", "JetBrains coding agent CLI (host-auth)", ["junie"]),
+        "codex": ("Codex", "OpenAI Codex CLI (host-auth, subagents)", ["codex"]),
         "cursor": ("Cursor", "AI code editor", ["openai", "anthropic"]),
     }
 

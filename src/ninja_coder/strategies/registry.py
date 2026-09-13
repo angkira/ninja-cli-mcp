@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from ninja_coder.strategies.aider_strategy import AiderStrategy
 from ninja_coder.strategies.claude_strategy import ClaudeStrategy
+from ninja_coder.strategies.codex_strategy import CodexStrategy
 from ninja_coder.strategies.gemini_strategy import GeminiStrategy
 from ninja_coder.strategies.junie_strategy import JunieStrategy
 from ninja_coder.strategies.opencode_strategy import OpenCodeStrategy
@@ -36,6 +37,7 @@ class CLIStrategyRegistry:
         "gemini": GeminiStrategy,
         "claude": ClaudeStrategy,
         "junie": JunieStrategy,
+        "codex": CodexStrategy,
     }
 
     @classmethod
@@ -78,6 +80,8 @@ class CLIStrategyRegistry:
             strategy_name = "claude"
         elif "junie" in bin_name:
             strategy_name = "junie"
+        elif "codex" in bin_name:
+            strategy_name = "codex"
         else:
             # No specific strategy found - return generic if available
             raise ValueError(

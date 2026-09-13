@@ -231,6 +231,9 @@ SETTINGS: list[SettingDef] = [
     SettingDef(
         "NINJA_JUNIE_TIMEOUT", "Junie Timeout (s)", "Timeout for the Junie strategy", "600", "int"
     ),
+    SettingDef(
+        "NINJA_CODEX_TIMEOUT", "Codex Timeout (s)", "Timeout for the Codex strategy", "600", "int"
+    ),
     # ── Retries ──────────────────────────────────────────────────────────
     SettingDef("NINJA_MAX_RETRIES", "Max Retries", "Retry count for tool calls", "2", "int"),
     SettingDef("NINJA_RETRY_DELAY_SEC", "Retry Delay (s)", "Delay between retries", "5", "int"),

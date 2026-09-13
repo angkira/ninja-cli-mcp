@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ninja_common.config_manager import ConfigManager
-from ninja_common.defaults import JUNIE_MODELS
+from ninja_common.defaults import CODEX_MODELS, JUNIE_MODELS
 from ninja_common.defaults import OPENCODE_PROVIDERS as _CANONICAL_OPENCODE_PROVIDERS
 from ninja_config.config_shared import MCP_SERVER_COMMANDS
 
@@ -353,6 +353,8 @@ class Operator:
             return self._load_claude_models()
         elif self.id == "junie":
             return self._load_junie_models()
+        elif self.id == "codex":
+            return self._load_codex_models()
 
         return False
 
@@ -580,6 +582,21 @@ class Operator:
 
         return True
 
+    def _load_codex_models(self) -> bool:
+        """Load models for Codex CLI (static list, host-auth — no network probe)."""
+        for model_id, name, desc in CODEX_MODELS:
+            self.models.append(
+                Model(
+                    id=model_id,
+                    name=name,
+                    description=desc,
+                    provider="codex",
+                    recommended=(model_id == "gpt-5.6-luna"),
+                )
+            )
+
+        return True
+
     def _format_model_name(self, model_id: str) -> str:
         """Format a model ID into a human-readable name."""
         # Remove provider prefix
@@ -800,6 +817,24 @@ def _get_junie_models() -> list[Model]:
     ]
 
 
+def _get_codex_models() -> list[Model]:
+    """Get models for Codex CLI (static list, host-auth via ChatGPT login).
+
+    Returns:
+        List of Model objects (Codex flat model ids).
+    """
+    return [
+        Model(
+            id=model_id,
+            name=name,
+            description=f"{desc} (via Codex)",
+            provider="codex",
+            recommended=(model_id == "gpt-5.6-luna"),
+        )
+        for model_id, name, desc in CODEX_MODELS
+    ]
+
+
 def get_provider_models(operator: str, provider: str) -> list[Model]:
     """Get models for a specific provider from an operator.
 
@@ -823,6 +858,7 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
         "claude": lambda _p: _get_claude_models(),
         "gemini": lambda _p: _get_gemini_models(),
         "junie": lambda _p: _get_junie_models(),
+        "codex": lambda _p: _get_codex_models(),
     }
 
     # Check if operator has a dedicated handler
@@ -932,6 +968,12 @@ OPERATORS = [
         name="Junie",
         binary_name="junie",
         description="JetBrains coding agent CLI - host-auth via JetBrains Account",
+    ),
+    Operator(
+        id="codex",
+        name="Codex",
+        binary_name="codex",
+        description="OpenAI Codex CLI - host-auth via ChatGPT login, native subagents",
     ),
 ]
 
@@ -1063,6 +1105,25 @@ def check_operator_auth(operator: Operator) -> dict[str, bool]:
                 auth_status["junie"] = result.returncode == 0
             except Exception:
                 auth_status["junie"] = False
+
+    elif operator.id == "codex":
+        # Codex is host-authorized via ChatGPT login — just check the
+        # binary exists and responds to a lightweight --help (no network).
+        codex_bin = operator.binary_path or shutil.which("codex")
+        if not codex_bin:
+            auth_status["codex"] = False
+        else:
+            try:
+                result = subprocess.run(
+                    [codex_bin, "--help"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                auth_status["codex"] = result.returncode == 0
+            except Exception:
+                auth_status["codex"] = False
 
     return auth_status
 

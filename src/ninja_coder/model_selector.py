@@ -27,9 +27,9 @@ MODEL_CLASS_ENV = {
 }
 
 MODEL_CLASS_DEFAULTS = {
-    "smart": "opencode-go/glm-5.3",
-    "balanced": "opencode-go/deepseek-v4-flash",
-    "fast": "opencode-go/gpt-5.6-luna",
+    "smart": "openrouter/deepseek/deepseek-v4.1-flash",
+    "balanced": "openrouter/deepseek/deepseek-v4.1-flash",
+    "fast": "openrouter/deepseek/deepseek-v4.1-flash",
 }
 
 
