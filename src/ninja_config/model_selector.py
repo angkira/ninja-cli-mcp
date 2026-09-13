@@ -978,6 +978,53 @@ OPERATORS = [
 ]
 
 
+#: Operators that expose models under a single fixed provider id instead of
+#: delegating to OpenCode-style dynamic provider discovery. Maps operator id →
+#: the provider id whose models ``get_provider_models`` returns for it.
+#: ``opencode`` and ``aider`` are intentionally absent — both are multi-provider
+#: and rely on discovery.
+NATIVE_OPERATOR_PROVIDERS: dict[str, str] = {
+    "codex": "codex",
+    "junie": "junie",
+    "claude": "anthropic",
+    "gemini": "google",
+}
+
+
+def normalize_operator(raw: str | None) -> str:
+    """Map a ``NINJA_CODE_BIN`` value (id or absolute path) to a known id.
+
+    ``NINJA_CODE_BIN`` may be a bare id (``"codex"``) or a full path
+    (``"/usr/local/bin/codex"``); both resolve to ``"codex"``. Unknown or
+    empty values fall back to ``"opencode"``.
+
+    Args:
+        raw: Raw ``NINJA_CODE_BIN`` value.
+
+    Returns:
+        One of the :data:`OPERATORS` ids.
+    """
+    value = (raw or "").strip().lower()
+    if not value:
+        return "opencode"
+    for op in OPERATORS:
+        if op.id in value:
+            return op.id
+    return "opencode"
+
+
+def native_provider_for_operator(operator: str | None) -> str | None:
+    """Return the native provider id for an operator, if it has one.
+
+    Args:
+        operator: Operator id or raw ``NINJA_CODE_BIN`` value.
+
+    Returns:
+        Provider id (e.g. ``"codex"``) or ``None`` for opencode-style operators.
+    """
+    return NATIVE_OPERATOR_PROVIDERS.get(normalize_operator(operator))
+
+
 # Claude Code models (Anthropic only)
 CLAUDE_CODE_MODELS = [
     ("claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced performance"),

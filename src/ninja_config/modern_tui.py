@@ -49,7 +49,6 @@ from ninja_common.defaults import (
 from ninja_config.config_shared import (
     API_KEYS,
     DAEMON_CONFIG,
-    OPERATOR_MAP,
     detect_ides,
     detect_tools,
     mask_key,
@@ -59,7 +58,14 @@ from ninja_config.litellm import (
     read_litellm_config,
     write_litellm_config,
 )
-from ninja_config.model_selector import PROVIDER_DISPLAY_NAMES
+from ninja_config.model_selector import (
+    OPERATORS,
+    PROVIDER_DISPLAY_NAMES,
+    check_operator_auth,
+    detect_operators,
+    native_provider_for_operator,
+    normalize_operator,
+)
 from ninja_config.secrets_store import (
     SecretStore,
     SecretStoreUnavailable,
@@ -67,6 +73,7 @@ from ninja_config.secrets_store import (
 )
 from ninja_config.settings_registry import SETTINGS, SettingDef
 from ninja_config.ui.model_autocomplete import ModelRolePicker
+from ninja_config.ui.model_autocomplete import guess_provider as model_guess_provider
 from ninja_config.ui.model_cache import (
     cached_discover_providers,
     cached_get_provider_models,
@@ -434,10 +441,12 @@ class NinjaConfigApp(App):
                     yield section_header("Settings")
                     yield Rule()
                     yield Static("[bold]Operator[/bold]")
-                    yield Static(self._operator_status())
+                    yield Static(self._operator_status(), id="lbl-operator-status")
                     yield Static("")
                     yield Static("[bold]Detected Operators[/bold]")
-                    yield Static(self._operator_buttons())
+                    yield Static(self._operator_buttons(), id="lbl-operators")
+                    yield Horizontal(id="operator-buttons")
+                    yield Static("[dim]Checking availability…[/dim]", id="lbl-operator-avail")
                     yield Static("")
                     yield Static("[bold]Search Provider[/bold]")
                     yield Static(self._search_status())
@@ -519,6 +528,8 @@ class NinjaConfigApp(App):
         self._refresh_api_keys()
         self._refresh_settings_list()
         self._refresh_modules()
+        self._populate_operator_buttons()
+        self._check_operator_availability()
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         pane = getattr(event, "pane", None)
@@ -546,6 +557,11 @@ class NinjaConfigApp(App):
             if any(p == "openrouter" for p, _, _ in discovered):
                 return [("openrouter", "OpenRouter")]
             return [("openrouter", "OpenRouter")]
+        # Native operators (codex/junie/…) expose only their own provider —
+        # `opencode models` discovery never lists it.
+        native = native_provider_for_operator(self.config_manager.get("NINJA_CODE_BIN"))
+        if native:
+            return [(native, PROVIDER_DISPLAY_NAMES.get(native, native.replace("-", " ").title()))]
         providers = []
         for pid, _display, _desc in discovered:
             display = PROVIDER_DISPLAY_NAMES.get(pid, _display)
@@ -626,26 +642,8 @@ class NinjaConfigApp(App):
             lv.append(ModelCard(name, mid, desc, role, env_var, current=(mid == cur)))
 
     def _guess_provider(self, model_id: str) -> str:
-        if not model_id:
-            return "openrouter"
-        m = model_id.lower()
-        if m.startswith("sonar") or "perplexity" in m:
-            return "perplexity"
-        if m.startswith("opencode-go/"):
-            return "opencode-go"
-        if m.startswith("zai-coding-plan/"):
-            return "zai-coding-plan"
-        if m.startswith("zai/"):
-            return "zai"
-        if m.startswith("opencode/"):
-            return "opencode"
-        if m.startswith("gemini") or "google/" in m:
-            return "google"
-        if m.startswith("claude") or "anthropic/" in m:
-            return "anthropic"
-        if m.startswith("gpt") or m.startswith("o1") or m.startswith("o3") or "openai/" in m:
-            return "openai"
-        return "openrouter"
+        operator = normalize_operator(self.config_manager.get("NINJA_CODE_BIN"))
+        return model_guess_provider(model_id, operator)
 
     # ── helpers ──────────────────────────────────────────────────────────
 
@@ -708,19 +706,112 @@ class NinjaConfigApp(App):
         return "\n".join(lines)
 
     def _operator_status(self) -> str:
-        cfg = self.config_manager.list_all()
-        return f"Current: [bold]{cfg.get('NINJA_CODE_BIN', 'not set')}[/bold]"
+        raw = self.config_manager.get("NINJA_CODE_BIN") or "not set"
+        op_id = normalize_operator(raw)
+        op = next((o for o in OPERATORS if o.id == op_id), None)
+        name = op.name if op else op_id
+        return f"Current: [bold]{name}[/bold] [dim]({raw})[/dim]"
+
+    def _installed_operators(self) -> list:
+        """Detected (installed) operators — cheap ``shutil.which`` probe only."""
+        try:
+            return detect_operators()
+        except Exception:
+            return []
 
     def _operator_buttons(self) -> str:
-        tools = detect_tools()
-        if not tools:
-            return "[dim]No operators detected.[/dim]"
+        installed = {op.id for op in self._installed_operators()}
+        current = normalize_operator(self.config_manager.get("NINJA_CODE_BIN"))
         lines = []
-        for tid in tools:
-            op = OPERATOR_MAP.get(tid)
-            if op:
-                lines.append(f"[bold]{op.display_name}[/bold] — {op.description}")
-        return "\n".join(lines)
+        for op in OPERATORS:
+            if op.id in installed:
+                mark = "[#a3be8c]✓ installed[/#a3be8c]"
+                auth = "host-auth" if op.id in ("codex", "junie") else "API key"
+            else:
+                mark = "[dim]✗ not installed[/dim]"
+                auth = "[dim]—[/dim]"
+            cur = " [bold #a3be8c]← current[/bold #a3be8c]" if op.id == current else ""
+            lines.append(f"{mark} [bold]{op.name}[/bold] ({auth}){cur}")
+        return "\n".join(lines) if lines else "[dim]No operators detected.[/dim]"
+
+    def _populate_operator_buttons(self) -> None:
+        """Mount one select button per installed operator (current highlighted).
+
+        Idempotent: existing buttons are relabelled in place and stale ones
+        removed, so re-entrant calls never raise ``DuplicateIds`` (child
+        removal is async in Textual).
+        """
+        try:
+            row = self.query_one("#operator-buttons", Horizontal)
+        except Exception:
+            return
+        current = normalize_operator(self.config_manager.get("NINJA_CODE_BIN"))
+        wanted = self._installed_operators()
+        wanted_ids = [f"op-{op.id}" for op in wanted]
+        current_ids = [c.id for c in row.children]
+        row.remove_children([c for c in row.children if c.id not in wanted_ids])
+        for op, bid in zip(wanted, wanted_ids):
+            label = f"{op.name}{' ✓' if op.id == current else ''}"
+            variant = "primary" if op.id == current else "default"
+            if bid in current_ids:
+                try:
+                    btn = row.query_one(f"#{bid}", Button)
+                    btn.label = label
+                    btn.variant = variant
+                except Exception:
+                    pass
+            else:
+                row.mount(Button(label, id=bid, variant=variant))
+
+    @work(thread=True, exclusive=True)
+    def _check_operator_availability(self) -> None:
+        """Probe installed operators for usable auth (background, non-blocking)."""
+        lines = []
+        for op in self._installed_operators():
+            try:
+                auth = check_operator_auth(op)
+            except Exception:
+                auth = {}
+            providers = ", ".join(p for p, ok in auth.items() if ok)
+            host = op.id in ("codex", "junie")
+            usable = bool(providers) or host
+            status = "[#a3be8c]available[/#a3be8c]" if usable else "[#ebcb8b]unavailable[/#ebcb8b]"
+            detail = providers or ("host-auth" if host else "no credentials")
+            lines.append(f"{op.name}: {status} [dim]({detail})[/dim]")
+        self.app.call_from_thread(
+            self._set_operator_avail,
+            "\n".join(lines) if lines else "[dim]No operators installed.[/dim]",
+        )
+
+    def _set_operator_avail(self, text: str) -> None:
+        try:
+            self.query_one("#lbl-operator-avail", Static).update(text)
+        except Exception:
+            pass
+
+    def _select_operator(self, op_id: str) -> None:
+        """Switch the active operator, guarding against uninstalled ones.
+
+        Rebuilds the model pickers' provider lists so the new operator's native
+        provider (e.g. Codex) appears immediately.
+        """
+        installed = {op.id for op in self._installed_operators()}
+        if op_id not in installed:
+            self.notify(f"{op_id} is not installed.", timeout=4, severity="warning")
+            return
+        self.config_manager.set("NINJA_CODE_BIN", op_id)
+        try:
+            self.query_one("#lbl-operator-status", Static).update(self._operator_status())
+            self.query_one("#lbl-operators", Static).update(self._operator_buttons())
+        except Exception:
+            pass
+        self._populate_operator_buttons()
+        for picker in self.query(ModelRolePicker):
+            try:
+                picker.on_operator_changed()
+            except Exception:
+                continue
+        self.notify(f"Operator set to {op_id}. Model providers refreshed.", timeout=3)
 
     def _search_status(self) -> str:
         cfg = self.config_manager.list_all()
@@ -1065,9 +1156,7 @@ class NinjaConfigApp(App):
         elif bid.startswith("prov-"):
             self._handle_provider_button(bid)
         elif bid.startswith("op-"):
-            op_id = bid[3:]
-            self.config_manager.set("NINJA_CODE_BIN", op_id)
-            self.notify(f"Operator set to {op_id}.", timeout=3)
+            self._select_operator(bid[3:])
         elif bid == "search-duckduckgo":
             self.config_manager.set("NINJA_SEARCH_PROVIDER", "duckduckgo")
             self.notify("Search: DuckDuckGo", timeout=3)

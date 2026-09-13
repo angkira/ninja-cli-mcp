@@ -7,6 +7,43 @@
 **Last Updated:** 2026-09-13
 **Session Type:** Release 1.0.5 + release automation + codex strategy + updater
 
+## Latest Session (2026-09-13): Codex models in config + daemon autostart
+
+**Active Task:** Codex models missing from config model picker; operator
+availability checks; daemons not starting with the system. All COMPLETED.
+
+**Root causes found & fixed:**
+1. **Codex models invisible in the Models tab** — `ModelRolePicker._operator()`
+   did not know `codex`, so `NINJA_CODE_BIN=codex` fell back to `opencode`;
+   provider options came only from `opencode models` discovery (never a
+   `codex` provider); `guess_provider("gpt-5.6-luna")` mapped to `openai`.
+   - `src/ninja_config/model_selector.py` — added `NATIVE_OPERATOR_PROVIDERS`,
+     `normalize_operator()`, `native_provider_for_operator()`.
+   - `src/ninja_config/ui/model_autocomplete.py` — operator-aware
+     `guess_provider(model_id, operator)`; native provider offered in
+     `_initial_options`/`_apply_providers`; `on_operator_changed()`;
+     `_operator()` delegates to `normalize_operator`. Also fixed pre-existing
+     **Textual 7.5 crash**: `Select.NULL` → `Select.BLANK`.
+   - `src/ninja_config/modern_tui.py` — operator-aware provider buttons,
+     `_guess_provider`, plus operator status/availability/selection UI.
+2. **Operator installed/available checks** — `_operator_buttons` now lists all
+   operators with installed ✗/✓, host-auth vs API key, and current marker;
+   a background worker `_check_operator_availability` probes `check_operator_auth`
+   and shows available/unavailable; `_populate_operator_buttons` mounts one
+   button per installed operator; `_select_operator` guards uninstalled ones
+   and refreshes all model pickers.
+3. **Daemons did not start with the system** — the installed unit was stale
+   (ran legacy `run_daemon.sh` HTTP :8947, sourced the wrong env file) and was
+   `disabled`. Rewrote `scripts/ninja-cli-mcp.service` as a module-daemon
+   `Type=oneshot`/`RemainAfterExit` unit; added `scripts/run_daemons.sh`
+   (PATH + `~/.ninja-mcp.env` bootstrap) and `scripts/install_service.sh`.
+   Verified: `enabled`, `active`, `Linger=yes`, restart cycle brings all three
+   daemons (coder :8100 / researcher :8101 / agent :8103) back with operator
+   PATH (`~/.opencode/bin`, nvm node bin) inherited.
+
+**Verified live:** TUI headless tests (codex provider options + models +
+operator switch), 107 targeted tests pass, live daemons + systemd restart.
+
 ## Current Focus
 
 **Active Task:** Multi-part session (all COMPLETED and pushed to `origin/main`)

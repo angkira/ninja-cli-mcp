@@ -37,7 +37,13 @@ from textual.widgets import (
 )
 
 from ninja_common.defaults import PERPLEXITY_MODELS, PROVIDER_MODELS
-from ninja_config.model_selector import OPENCODE_PROVIDERS, PROVIDER_DISPLAY_NAMES, Model
+from ninja_config.model_selector import (
+    OPENCODE_PROVIDERS,
+    PROVIDER_DISPLAY_NAMES,
+    Model,
+    native_provider_for_operator,
+    normalize_operator,
+)
 from ninja_config.ui.model_cache import (
     cached_discover_providers,
     cached_get_provider_models,
@@ -59,10 +65,26 @@ DEBOUNCE_DELAY: float = 0.28
 MAX_SUGGESTIONS: int = 30
 
 
-def guess_provider(model_id: str) -> str:
-    """Guess the provider prefix from a stored model id (cheap, no I/O)."""
+def _native_provider_models(provider: str) -> set[str]:
+    """Return the known static model ids for a native provider (codex, junie, …)."""
+    return {mid for mid, _name, _desc in PROVIDER_MODELS.get(provider, [])}
+
+
+def guess_provider(model_id: str, operator: str | None = None) -> str:
+    """Guess the provider prefix from a stored model id (cheap, no I/O).
+
+    Args:
+        model_id: Stored model id.
+        operator: Optional ``NINJA_CODE_BIN`` value. When the id belongs to the
+            operator's native model list (e.g. Codex's flat ``gpt-5.6-luna``),
+            the native provider is returned instead of the generic prefix guess
+            (which would otherwise classify ``gpt*`` as ``openai``).
+    """
     if not model_id:
         return "openrouter"
+    native = native_provider_for_operator(operator) if operator else None
+    if native and model_id in _native_provider_models(native):
+        return native
     low = model_id.lower()
     if low.startswith("sonar") or "perplexity" in low:
         return "perplexity"
@@ -137,7 +159,8 @@ class ModelRolePicker(Vertical):
         self.default = default
         self._config = config
         self._debounce = debounce
-        self._provider = guess_provider(config.get(env_var) or default)
+        operator = normalize_operator(config.get("NINJA_CODE_BIN"))
+        self._provider = guess_provider(config.get(env_var) or default, operator)
         self._providers_ready = False
         self._providers_loading = False
         self._debounce_timer: Timer | None = None
@@ -145,14 +168,24 @@ class ModelRolePicker(Vertical):
 
     # ── compose (sync only — no subprocess, no discovery) ─────────────
 
+    def _native_provider(self) -> str | None:
+        """Native provider id for the configured operator (codex, junie, …)."""
+        return native_provider_for_operator(self._config.get("NINJA_CODE_BIN"))
+
+    @staticmethod
+    def _provider_label(provider: str) -> str:
+        return PROVIDER_DISPLAY_NAMES.get(provider, provider.replace("-", " ").title())
+
     def _initial_options(self) -> list[tuple[str, object]]:
         """Static provider options; always contains the current value (Select crashes otherwise)."""
-        opts: list[tuple[str, object]] = [(display, pid) for pid, display, _ in OPENCODE_PROVIDERS]
+        native = self._native_provider()
+        if native:
+            # Native operators (codex/junie/…) expose only their own models.
+            opts: list[tuple[str, object]] = [(self._provider_label(native), native)]
+        else:
+            opts = [(display, pid) for pid, display, _ in OPENCODE_PROVIDERS]
         if self._provider and all(pid != self._provider for _, pid in opts):
-            label = PROVIDER_DISPLAY_NAMES.get(
-                self._provider, self._provider.replace("-", " ").title()
-            )
-            opts.append((label, self._provider))
+            opts.append((self._provider_label(self._provider), self._provider))
         return opts
 
     def compose(self) -> ComposeResult:
@@ -161,7 +194,7 @@ class ModelRolePicker(Vertical):
         yield Select(
             self._initial_options(),
             prompt="Provider…",
-            value=self._provider if self._provider else Select.NULL,
+            value=self._provider if self._provider else Select.BLANK,
             id=f"prov-select-{self.role}",
         )
         yield Input(
@@ -214,19 +247,18 @@ class ModelRolePicker(Vertical):
                 if not any(p == "openrouter" for p, _ in wanted):
                     wanted.insert(0, ("openrouter", "OpenRouter"))
             else:
-                wanted = [(p, d) for p, d, _ in providers if p != "anthropic"]
-                if not wanted:
-                    wanted = [(p, d) for p, d, _ in OPENCODE_PROVIDERS if p != "anthropic"]
+                # Native operators (codex/junie/…) expose only their own
+                # models — opencode provider discovery never lists them.
+                native = self._native_provider()
+                if native:
+                    wanted = [(native, self._provider_label(native))]
+                else:
+                    wanted = [(p, d) for p, d, _ in providers if p != "anthropic"]
+                    if not wanted:
+                        wanted = [(p, d) for p, d, _ in OPENCODE_PROVIDERS if p != "anthropic"]
             # Select options are (label, value) tuples.
             if self._provider and all(v != self._provider for v, _ in wanted):
-                wanted.append(
-                    (
-                        self._provider,
-                        PROVIDER_DISPLAY_NAMES.get(
-                            self._provider, self._provider.replace("-", " ").title()
-                        ),
-                    )
-                )
+                wanted.append((self._provider, self._provider_label(self._provider)))
             select.set_options([(label, value) for value, label in wanted])
             values = [value for _, value in [(label, value) for value, label in wanted]]
             if self._provider in values:
@@ -245,6 +277,26 @@ class ModelRolePicker(Vertical):
         self._providers_loading = False
         self.load_providers()
 
+    def on_operator_changed(self) -> None:
+        """Re-resolve providers/models after the active operator was switched.
+
+        Recomputes the provider from the stored model under the new operator,
+        rebuilds the Select options (native provider first), and re-discovers.
+        """
+        operator = normalize_operator(self._config.get("NINJA_CODE_BIN"))
+        self._provider = guess_provider(self._config.get(self.env_var) or self.default, operator)
+        self._providers_ready = False
+        self._providers_loading = False
+        try:
+            select = self.query_one(f"#prov-select-{self.role}", Select)
+            select.set_options(self._initial_options())
+            if self._provider:
+                select.value = self._provider
+        except Exception:
+            pass
+        self.clear_suggestions("Provider updated — type ≥2 chars to search.")
+        self.load_providers()
+
     # ── provider switching ────────────────────────────────────────────
 
     @on(Select.Changed)
@@ -253,7 +305,7 @@ class ModelRolePicker(Vertical):
         if event.select.id != select_id:
             return
         value = event.value
-        if value is None or value == Select.NULL:
+        if value is None or value == Select.BLANK:
             return
         new_provider = str(value)
         if new_provider == self._provider:
@@ -472,8 +524,4 @@ class ModelRolePicker(Vertical):
             pass
 
     def _operator(self) -> str:
-        raw = (self._config.get("NINJA_CODE_BIN") or "opencode").strip().lower()
-        for known in ("aider", "claude", "gemini", "junie", "opencode"):
-            if known in raw:
-                return known
-        return "opencode"
+        return normalize_operator(self._config.get("NINJA_CODE_BIN"))
