@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.5 - 2026-09-13
+
+- Reworked `ninja-mcp update`: version-aware with channel detection
+  (github / pypi / brew), PEP 440 comparison, Rich progress UI, and a
+  `--channel` override. The daemon upgrade path now installs from PyPI.
+- Added OpenAI Codex CLI as a host-auth coder strategy (ChatGPT login, no API
+  keys) with native subagent orchestration via `codex exec --json`.
+- Switched the default model roles to `openrouter/deepseek/deepseek-v4.1-flash`.
+
 ## 1.0.3 - 2026-09-13
 
 - Added a Modules tab to the Textual config TUI (`ninja-config configure`, press `7`):
