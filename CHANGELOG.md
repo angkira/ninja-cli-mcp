@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.6 - 2026-09-13
+
+- **Coder plan input is tolerant and self-explanatory.** `PlanStep.id` and
+  `title` are now optional and auto-generated (`step_N` / first task line);
+  only `task` is required. Malformed plans now return an indexed, model-readable
+  error (e.g. `steps[0] is missing the required 'task' field …`) instead of the
+  opaque client-side `Input validation error: 'id' is a required property`.
+- **Codex models now appear in the config model picker**, the operator list
+  shows installed/available status, and switching operator refreshes providers.
+  Also fixed a Textual 7.5 crash (`Select.NULL` → `Select.BLANK`).
+- **Daemons autostart with the system.** New systemd user unit for the module
+  daemons plus `scripts/run_daemons.sh` (PATH + env bootstrap) and
+  `scripts/install_service.sh`.
+- Added local release automation (`scripts/release.sh`, make/just targets,
+  `docs/RELEASING.md`) and live battle E2E scripts
+  (`scripts/e2e_live.sh` / `scripts/e2e_live.py`).
+
 ## 1.0.5 - 2026-09-13
 
 - Reworked `ninja-mcp update`: version-aware with channel detection
