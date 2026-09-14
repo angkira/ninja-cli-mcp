@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.10 - 2026-09-14
+
+- **Per-module operators.** The coding CLI is now configurable per module —
+  coder (`NINJA_CODE_BIN`, shared by quick/sequential/parallel), secretary
+  (`NINJA_SECRETARY_OPERATOR`), agent (`NINJA_AGENT_OPERATOR`, new). Researcher
+  keeps its own search engines. Pick each in its Models-tab section; changing one
+  refreshes only that module's providers.
+- **Secretary and agent execute through their own operator.** `agent.plan`
+  (rationale), `agent.review` (summary), `secretary.codebase_report` (AI
+  Insights) and `analyse_file` (summary) now run the module's operator + model;
+  text tasks run in a throwaway git dir with context embedded, so the real repo
+  is never modified. Heuristic/static fallback when the operator is unavailable.
+- **Config TUI:** the Docker installer creates the workspace directory instead
+  of rejecting a missing path; module/daemon toggles no longer crash when a
+  daemon fails (clear notification + log path); operator pickers verified.
+- Fixes and tests for the above.
+
 ## 1.0.9 - 2026-09-14
 
 - **`ninja-mcp update` no longer silently no-ops.** The uv reinstall now passes
