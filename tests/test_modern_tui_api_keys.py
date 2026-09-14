@@ -1,18 +1,31 @@
+"""Tests for the inline API-key rows on the API Keys tab (no event loop)."""
+
 from __future__ import annotations
 
-from types import SimpleNamespace
-
-from ninja_config.modern_tui import NinjaConfigApp
+from ninja_config.modern_tui import APIKeyRow
 
 
-def test_selected_api_key_uses_textual_highlighted_child_api() -> None:
-    app = NinjaConfigApp()
-    selected = SimpleNamespace(
-        env_var="OPENAI_API_KEY",
-        display_name="OpenAI",
-    )
-    list_view = SimpleNamespace(highlighted_child=selected)
+def _row(value: str = "sk-test-value") -> APIKeyRow:
+    return APIKeyRow("OPENAI_API_KEY", "OpenAI", "coder", value)
 
-    app.query_one = lambda *args, **kwargs: list_view  # type: ignore[method-assign]
 
-    assert app._selected_api_key() == ("OPENAI_API_KEY", "OpenAI")
+def test_api_key_row_exposes_env_var_and_display_name() -> None:
+    """The row carries the env var / display name the save handler needs."""
+    row = _row()
+
+    assert row.env_var == "OPENAI_API_KEY"
+    assert row.display_name == "OpenAI"
+    assert row.module == "coder"
+
+
+def test_api_key_row_header_shows_name_and_masks_secret() -> None:
+    """The row header names the provider but never leaks the raw key."""
+    head = _row("sk-super-secret")._head_text()
+
+    assert "OpenAI" in head
+    assert "sk-super-secret" not in head
+
+
+def test_api_key_row_header_marks_unset() -> None:
+    """An empty value renders as 'not set' rather than a blank row."""
+    assert "not set" in _row("")._head_text()

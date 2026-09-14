@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from ninja_common.defaults import DEFAULT_ENABLED_MODULES
-from ninja_config.modern_tui import NinjaConfigApp
+from ninja_config.modern_tui import DaemonRow, ModuleRow, NinjaConfigApp
 
 
 if TYPE_CHECKING:
@@ -42,19 +41,11 @@ def test_set_enabled_modules_writes(tmp_path: Path) -> None:
     assert app.config_manager.get("NINJA_ENABLED_MODULES") == "coder,researcher,agent"
 
 
-def test_selected_module_uses_highlighted_child(tmp_path: Path) -> None:
-    """_selected_module reads module_name from the highlighted list row."""
-    app = _make_app(tmp_path)
-    list_view = SimpleNamespace(highlighted_child=SimpleNamespace(module_name="agent"))
-    app.query_one = lambda *args, **kwargs: list_view  # type: ignore[method-assign]
-
-    assert app._selected_module() == "agent"
+def test_module_row_exposes_module_name() -> None:
+    """ModuleRow identifies its module for the inline toggle/install handlers."""
+    assert ModuleRow("agent").module_name == "agent"
 
 
-def test_selected_module_none_when_empty(tmp_path: Path) -> None:
-    """Highlighted rows without a module_name attribute yield None."""
-    app = _make_app(tmp_path)
-    list_view = SimpleNamespace(highlighted_child=SimpleNamespace())
-    app.query_one = lambda *args, **kwargs: list_view  # type: ignore[method-assign]
-
-    assert app._selected_module() is None
+def test_daemon_row_exposes_module_name() -> None:
+    """DaemonRow identifies its module for the inline start/stop toggle."""
+    assert DaemonRow("coder").module_name == "coder"
