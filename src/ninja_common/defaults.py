@@ -630,6 +630,33 @@ DEFAULT_PREFER_QUALITY = False
 # PROVIDER TO MODEL LIST MAPPING
 # =============================================================================
 
+# =============================================================================
+# OPERATOR MODEL ROUTING (single source of truth)
+# =============================================================================
+
+# Default model used when an operator is selected but no explicit model is
+# configured. Native operators (codex/junie/claude/gemini) only accept their
+# own model ids, so the coder's OpenRouter default must never leak into them.
+OPERATOR_DEFAULT_MODELS: dict[str, str] = {
+    "opencode": DEFAULT_CODER_MODEL,
+    "aider": DEFAULT_CODER_MODEL,
+    "codex": CODEX_MODELS[0][0],
+    "junie": JUNIE_MODELS[0][0],
+    "claude": "claude-sonnet-4",
+    "gemini": GOOGLE_MODELS[0][0],
+}
+
+# Operator → static model catalogue, used by the config autocomplete fallback
+# when the operator CLI yields no models. Native operators have flat ids;
+# aider is OpenRouter-backed.
+OPERATOR_STATIC_MODELS: dict[str, list[tuple[str, str, str]]] = {
+    "codex": CODEX_MODELS,
+    "junie": JUNIE_MODELS,
+    "claude": CLAUDE_CODE_MODELS,
+    "gemini": GOOGLE_MODELS,
+    "aider": OPENROUTER_MODELS,
+}
+
 # Maps OpenCode provider names to their available model lists.
 # These are STATIC FALLBACKS ONLY. The canonical source of models and
 # providers is dynamic discovery via `opencode models` (see

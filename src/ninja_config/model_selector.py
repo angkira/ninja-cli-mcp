@@ -1013,6 +1013,29 @@ def normalize_operator(raw: str | None) -> str:
     return "opencode"
 
 
+def operator_providers(operator: str | None) -> list[tuple[str, str, str]]:
+    """Return selectable ``(provider_id, display, description)`` for an operator.
+
+    Native operators expose a single fixed provider (codex→codex, claude→
+    anthropic, …); Aider is OpenRouter-backed; OpenCode is multi-provider and
+    uses dynamic discovery.
+
+    Args:
+        operator: Operator id or raw ``NINJA_CODE_BIN`` value.
+
+    Returns:
+        Provider tuples for the operator's model picker.
+    """
+    op = normalize_operator(operator)
+    native = NATIVE_OPERATOR_PROVIDERS.get(op)
+    if native:
+        display = PROVIDER_DISPLAY_NAMES.get(native, native.replace("-", " ").title())
+        return [(native, display, f"Native {op} models")]
+    if op == "aider":
+        return [("openrouter", "OpenRouter", "Aider via OpenRouter")]
+    return discover_opencode_providers()
+
+
 def native_provider_for_operator(operator: str | None) -> str | None:
     """Return the native provider id for an operator, if it has one.
 

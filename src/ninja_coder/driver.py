@@ -55,6 +55,11 @@ from ninja_common.defaults import (
     FALLBACK_CODER_MODELS,
 )
 from ninja_common.logging_utils import create_task_logger, get_logger
+from ninja_common.operator_models import (
+    operator_default_model,
+    operator_from_bin,
+    resolve_operator_model,
+)
 from ninja_common.path_utils import ensure_internal_dirs, safe_join
 
 
@@ -183,16 +188,6 @@ class NinjaConfig:
 
         api_key = get_secret("OPENROUTER_API_KEY") or get_secret("OPENAI_API_KEY") or ""
 
-        # Model priority: <module>_MODEL > NINJA_CODER_MODEL > NINJA_MODEL > … > default
-        model = (
-            (os.environ.get(model_env) if model_env else None)
-            or os.environ.get("NINJA_CODER_MODEL")
-            or os.environ.get("NINJA_MODEL")
-            or os.environ.get("OPENROUTER_MODEL")
-            or os.environ.get("OPENAI_MODEL")
-            or DEFAULT_CODER_MODEL
-        )
-
         # Binary path with auto-detection fallback (module's operator, else global)
         bin_path = os.environ.get(operator_env) or os.environ.get(
             "NINJA_CODE_BIN", DEFAULT_CODE_BIN
@@ -218,6 +213,20 @@ class NinjaConfig:
                         f"Falling back to default: {default_path}"
                     )
                     bin_path = default_path
+
+        # Operator-aware default: module model > NINJA_CODER_MODEL > NINJA_MODEL
+        # > provider model env > the operator's own default. This keeps a
+        # native operator (e.g. Codex) from inheriting an OpenRouter id.
+        operator = operator_from_bin(bin_path)
+        default_model = operator_default_model(operator) or DEFAULT_CODER_MODEL
+        model = (
+            (os.environ.get(model_env) if model_env else None)
+            or os.environ.get("NINJA_CODER_MODEL")
+            or os.environ.get("NINJA_MODEL")
+            or os.environ.get("OPENROUTER_MODEL")
+            or os.environ.get("OPENAI_MODEL")
+            or default_model
+        )
 
         return cls(
             bin_path=bin_path,
@@ -814,7 +823,10 @@ class NinjaDriver:
     def _model_selector(self) -> ModelSelector:
         """Return a configured ModelSelector (cached on the instance)."""
         if self._selector_cache is None:
-            self._selector_cache = ModelSelector(default_model=self.config.model)
+            self._selector_cache = ModelSelector(
+                default_model=self.config.model,
+                operator=self._strategy.name,
+            )
         return self._selector_cache
 
     def _build_prompt_text(self, instruction: dict[str, Any], repo_root: str) -> str:
@@ -2746,7 +2758,9 @@ async def run_operator_text(
         )
         # Pin the module's model so provider-specific model-class/task env vars
         # (e.g. openrouter ids) cannot leak into a different operator (e.g. codex).
-        instruction["model_override"] = config.model
+        instruction["model_override"] = resolve_operator_model(
+            config.model, operator_from_bin(config.bin_path)
+        )
         driver = NinjaDriver(config)
         result = await driver.execute_async(
             repo_root=workdir,

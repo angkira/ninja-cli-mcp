@@ -36,13 +36,14 @@ from textual.widgets import (
     Static,
 )
 
-from ninja_common.defaults import PERPLEXITY_MODELS, PROVIDER_MODELS
+from ninja_common.defaults import OPERATOR_STATIC_MODELS, PERPLEXITY_MODELS, PROVIDER_MODELS
 from ninja_config.model_selector import (
     OPENCODE_PROVIDERS,
     PROVIDER_DISPLAY_NAMES,
     Model,
     native_provider_for_operator,
     normalize_operator,
+    operator_providers,
 )
 from ninja_config.ui.model_cache import (
     cached_discover_providers,
@@ -107,10 +108,17 @@ def guess_provider(model_id: str, operator: str | None = None) -> str:
     return "openrouter"
 
 
-def static_models_for_provider(provider: str) -> list[Model]:
-    """Static fallback models used when the operator CLI yields nothing."""
+def static_models_for_provider(provider: str, operator: str | None = None) -> list[Model]:
+    """Static fallback models used when the operator CLI yields nothing.
+
+    When ``operator`` is a native one, its own catalogue is used so the fallback
+    never suggests another operator's model ids.
+    """
+    op = normalize_operator(operator) if operator else None
     if provider == "perplexity":
         triples = list(PERPLEXITY_MODELS)
+    elif op and op in OPERATOR_STATIC_MODELS:
+        triples = list(OPERATOR_STATIC_MODELS[op])
     elif provider in PROVIDER_MODELS:
         triples = list(PROVIDER_MODELS[provider])
     else:
@@ -186,6 +194,8 @@ class ModelRolePicker(Vertical):
         if native:
             # Native operators (codex/junie/…) expose only their own models.
             opts: list[tuple[str, object]] = [(self._provider_label(native), native)]
+        elif self._operator() == "aider":
+            opts = [("OpenRouter", "openrouter")]
         else:
             opts = [(display, pid) for pid, display, _ in OPENCODE_PROVIDERS]
         if self._provider and all(pid != self._provider for _, pid in opts):
@@ -238,7 +248,13 @@ class ModelRolePicker(Vertical):
 
     @work(thread=True, exclusive=True)
     def _fetch_providers(self) -> None:
-        providers = cached_discover_providers()
+        # Operator-aware: native operators are handled in _apply_providers, but
+        # Aider is OpenRouter-backed (not OpenCode discovery) and must not list
+        # OpenCode providers it cannot run.
+        if self._operator() == "aider":
+            providers = operator_providers("aider")
+        else:
+            providers = cached_discover_providers()
         self.app.call_from_thread(self._apply_providers, providers)
 
     def _apply_providers(self, providers: list[tuple[str, str, str]]) -> None:
@@ -378,7 +394,7 @@ class ModelRolePicker(Vertical):
         operator = self._operator()
         models = cached_get_provider_models(operator, provider)
         if not models:
-            models = static_models_for_provider(provider)
+            models = static_models_for_provider(provider, operator)
         results = filter_models(models, query, MAX_SUGGESTIONS)
         self.app.call_from_thread(self._show_results, query, provider, results)
 

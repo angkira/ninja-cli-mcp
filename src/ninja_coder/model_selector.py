@@ -14,6 +14,11 @@ from typing import Any
 from ninja_coder.models import TaskComplexity
 from ninja_common.defaults import MODEL_DATABASE
 from ninja_common.logging_utils import get_logger
+from ninja_common.operator_models import (
+    is_model_compatible,
+    operator_default_model,
+    operator_from_bin,
+)
 
 
 logger = get_logger(__name__)
@@ -60,14 +65,32 @@ class ModelSelector:
     capabilities, costs, and performance metrics.
     """
 
-    def __init__(self, default_model: str | None = None):
+    def __init__(self, default_model: str | None = None, operator: str | None = None):
         """Initialize model selector.
 
         Args:
             default_model: Default model to use if no preference is set.
+            operator: Active coding-CLI operator id (opencode/aider/codex/…).
+                When set, selections are constrained to models that operator
+                can actually run — an OpenRouter id is never sent to Codex.
         """
         self.default_model = default_model
+        self.operator = (operator or "").lower() or None
         self.model_db = MODEL_DATABASE
+
+    def _enforce_operator(self, model: str, reason: str) -> str:
+        """Return ``model`` if the active operator can run it, else its default."""
+        if is_model_compatible(model, self.operator):
+            return model
+        replacement = operator_default_model(self.operator) or model
+        logger.info(
+            "Model '%s' (%s) is not compatible with operator '%s'; using '%s'",
+            model,
+            reason,
+            self.operator,
+            replacement,
+        )
+        return replacement
 
     def select_by_class(self, model_class: str) -> ModelRecommendation:
         """Resolve a model tier (smart/balanced/fast) to a concrete model.
@@ -92,6 +115,7 @@ class ModelSelector:
             )
 
         model = os.environ.get(MODEL_CLASS_ENV[key]) or MODEL_CLASS_DEFAULTS[key]
+        model = self._enforce_operator(model, f"model class '{key}'")
         return self._recommend_specific_model(model, f"model class '{key}'")
 
     def select_model(
@@ -101,7 +125,7 @@ class ModelSelector:
         prefer_cost: bool = False,
         prefer_quality: bool = False,
     ) -> ModelRecommendation:
-        """Select best model for task.
+        """Select the best operator-compatible model for a task.
 
         Args:
             complexity: Type of task (parallel, sequential, quick).
@@ -112,6 +136,20 @@ class ModelSelector:
         Returns:
             ModelRecommendation with selected model and reasoning.
         """
+        recommendation = self._select_model_raw(complexity, fanout, prefer_cost, prefer_quality)
+        model = self._enforce_operator(recommendation.model, recommendation.reason)
+        if model != recommendation.model:
+            recommendation.model = model
+        return recommendation
+
+    def _select_model_raw(
+        self,
+        complexity: TaskComplexity,
+        fanout: int = 1,
+        prefer_cost: bool = False,
+        prefer_quality: bool = False,
+    ) -> ModelRecommendation:
+        """Unconstrained model selection (operator filter applied by caller)."""
         # Check for task-specific model overrides first
         task_specific_model = None
         if complexity == TaskComplexity.PARALLEL:
@@ -360,4 +398,5 @@ class ModelSelector:
             ModelSelector instance configured from environment.
         """
         default_model = os.environ.get("NINJA_MODEL")
-        return cls(default_model=default_model)
+        operator = operator_from_bin(os.environ.get("NINJA_CODE_BIN"))
+        return cls(default_model=default_model, operator=operator)
