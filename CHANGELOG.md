@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.7 - 2026-09-14
+
+- **Secrets: the encrypted store is now the single source of truth.** API keys
+  (`*_API_KEY`) are never written to `~/.ninja-mcp.env` and never exported into
+  the process environment; they are read on demand from the AES-256-GCM store.
+  Existing plaintext secrets are migrated in and scrubbed.
+- **Cross-platform store-password delivery — never via env:** inherited fd from
+  `daemon start`, systemd `LoadCredential` (Linux), password file (launchd),
+  OS keychain/keyring (macOS Keychain / Secret Service), or interactive prompt.
+  Added `scripts/provision_systemd_credential.sh`.
+- **Config TUI is more compact** — borderless tables, underline inputs, chip
+  buttons, fewer nested borders/paddings — with inline, keyboard-focusable
+  module and daemon toggles and a per-provider inline API-key editor
+  (↑/↓ navigation). Includes encrypted-store password set/change/reset controls.
+- Archived stale report/investigation markdown into `docs/archive/`.
+
 ## 1.0.6 - 2026-09-13
 
 - **Coder plan input is tolerant and self-explanatory.** `PlanStep.id` and
