@@ -768,6 +768,13 @@ class NinjaDriver:
         Returns:
             Tuple of (model_name, use_coding_plan_api).
         """
+        # Pinned model (e.g. a module text task) wins over all routing so the
+        # caller's operator/model choice is never overridden by provider-specific
+        # model-class/task env vars.
+        model_override = instruction.get("model_override")
+        if model_override:
+            return str(model_override), False
+
         # Explicit model class override (smart/balanced/fast) wins over routing
         model_class = instruction.get("model_class")
         if model_class:
@@ -2737,6 +2744,9 @@ async def run_operator_text(
             allowed_globs=[],
             deny_globs=[],
         )
+        # Pin the module's model so provider-specific model-class/task env vars
+        # (e.g. openrouter ids) cannot leak into a different operator (e.g. codex).
+        instruction["model_override"] = config.model
         driver = NinjaDriver(config)
         result = await driver.execute_async(
             repo_root=workdir,
@@ -2770,11 +2780,18 @@ def _extract_operator_text(stdout: str) -> str:
             obj = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if obj.get("type") == "text":
+        obj_type = obj.get("type")
+        if obj_type == "text":
             part = obj.get("part") or {}
             value = part.get("text")
             if value:
                 parts.append(str(value))
+        elif obj_type == "item.completed":
+            item = obj.get("item") or {}
+            if item.get("type") == "agent_message" and item.get("text"):
+                parts.append(str(item["text"]))
+        elif obj_type == "agent_message" and obj.get("text"):
+            parts.append(str(obj["text"]))
     return "\n".join(parts).strip()
 
 
