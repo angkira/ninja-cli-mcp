@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from ninja_config.docker_installer import DockerSetupConfig, validate_port, validate_workspace
+from ninja_config.docker_installer import (
+    DockerSetupConfig,
+    prepare_workspace,
+    validate_port,
+    validate_workspace,
+)
 
 
 ROOT = Path(__file__).parents[1]
@@ -187,6 +192,20 @@ def test_docker_installer_rejects_duplicate_ports_before_build(tmp_path: Path) -
     )
     assert result.returncode != 0
     assert "must be unique" in result.stderr or "must be unique" in result.stdout
+
+
+def test_prepare_workspace_creates_missing_directory(tmp_path: Path) -> None:
+    """The workspace (bind-mounted project dir) is created on demand."""
+    target = tmp_path / "nested" / "workspace"
+    assert prepare_workspace(target) == target.resolve()
+    assert target.is_dir()
+
+
+def test_prepare_workspace_rejects_existing_file(tmp_path: Path) -> None:
+    file_path = tmp_path / "not-a-dir"
+    file_path.write_text("x")
+    with pytest.raises(ValueError):
+        prepare_workspace(file_path)
 
 
 def test_typed_docker_config_validates_workspace_and_ports(tmp_path: Path) -> None:

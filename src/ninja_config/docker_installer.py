@@ -47,6 +47,32 @@ def validate_workspace(value: str | Path) -> Path:
     return path
 
 
+def prepare_workspace(value: str | Path) -> Path:
+    """Resolve ``value`` and create the directory if it does not exist yet.
+
+    The workspace is the host directory bind-mounted into the container as the
+    project the agent edits. Creating it on demand means you do not have to
+    ``mkdir`` it by hand before installing.
+
+    Args:
+        value: User-supplied workspace path.
+
+    Returns:
+        The resolved, existing directory.
+
+    Raises:
+        ValueError: If the path exists as a file or cannot be created.
+    """
+    path = Path(value).expanduser().resolve()
+    if path.exists() and not path.is_dir():
+        raise ValueError(f"{path} exists and is not a directory")
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ValueError(f"could not create workspace {path}: {exc}") from exc
+    return path
+
+
 def validate_port(value: str | int) -> int:
     try:
         port = int(value)
@@ -72,7 +98,16 @@ def _text(message: str, default: str) -> str:
 
 
 def collect_docker_setup() -> DockerSetupConfig:
-    workspace = validate_workspace(_text("Workspace path:", str(Path.cwd())))
+    while True:
+        raw = _text("Workspace path (host dir mounted as the project):", str(Path.cwd()))
+        try:
+            existed = Path(raw).expanduser().exists()
+            workspace = prepare_workspace(raw)
+            if not existed:
+                print(f"  Created workspace directory: {workspace}")
+            break
+        except ValueError as exc:
+            print(f"  Invalid workspace: {exc}; please try again.")
     profiles = (
         _exec(
             inquirer.checkbox(

@@ -15,7 +15,9 @@ From a checkout, run the normal installer and select the Docker target:
 
 The first TUI question selects Docker mode. The prompts then collect:
 
-- an existing absolute workspace directory;
+- the **workspace**: the host directory bind-mounted into the container as the
+  project the agent reads/edits. Give an absolute path; if it does not exist it
+  is created for you (defaults to the current directory);
 - one or more service profiles;
 - a unique host port for each selected profile;
 - whether to build the image and start containers;
