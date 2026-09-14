@@ -246,6 +246,28 @@ class AgentToolExecutor:
             "goes to the researcher; final verification stays with the agent itself."
         )
 
+        # Enrich the rationale via the agent's own operator when configured.
+        # Heuristic steps stay (schema-stable); failures fall back silently.
+        try:
+            from ninja_coder.driver import run_operator_text
+
+            ok, text = await run_operator_text(
+                prompt=(
+                    "You are a planning assistant. In 3-6 sentences, outline an "
+                    "execution plan (analysis, implementation, verification) for the "
+                    "task below. Output text only; do not modify any files.\n\n"
+                    f"Task: {request.task}\nRepository: {request.repo_root}"
+                ),
+                repo_root=request.repo_root,
+                operator_env="NINJA_AGENT_OPERATOR",
+                model_env="NINJA_AGENT_MODEL",
+                timeout_sec=300,
+            )
+            if ok and text:
+                reasoning = text
+        except Exception as e:
+            logger.debug("agent plan operator enrichment skipped: %s", e)
+
         return AgentPlanResult(success=True, plan=steps, reasoning=reasoning)
 
     @rate_balanced(
@@ -375,6 +397,7 @@ class AgentToolExecutor:
         logger.info(f"Reviewing {len(request.file_paths)} files (client: {client_id})")
         findings: list[AgentReviewFinding] = []
         root = Path(request.repo_root)
+        context_parts: list[str] = []
 
         for rel in request.file_paths:
             path = root / rel
@@ -389,6 +412,7 @@ class AgentToolExecutor:
                 continue
 
             text = path.read_text(encoding="utf-8", errors="ignore")
+            context_parts.append(f"### {rel}\n{text[:4000]}")
 
             # Basic line count
             lines = text.splitlines()
@@ -402,6 +426,28 @@ class AgentToolExecutor:
             f"Reviewed {len(request.file_paths)} files, "
             f"found {len(findings)} finding(s). No files modified."
         )
+
+        # Enrich the summary via the agent's own operator when configured.
+        try:
+            from ninja_coder.driver import run_operator_text
+
+            focus = f" Focus: {request.review_focus}." if request.review_focus else ""
+            ok, text = await run_operator_text(
+                prompt=(
+                    "You are a code reviewer. Give a concise review summary (5-10 "
+                    "sentences) for the files below: correctness, quality, risks."
+                    f"{focus} Output text only; do NOT modify any files.\n\n"
+                    + "".join(context_parts)
+                ),
+                repo_root=request.repo_root,
+                operator_env="NINJA_AGENT_OPERATOR",
+                model_env="NINJA_AGENT_MODEL",
+                timeout_sec=300,
+            )
+            if ok and text:
+                summary = f"{summary}\n\n{text}"
+        except Exception as e:
+            logger.debug("agent review operator enrichment skipped: %s", e)
 
         return AgentReviewResult(success=True, findings=findings, summary=summary)
 

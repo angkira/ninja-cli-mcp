@@ -166,23 +166,37 @@ class NinjaConfig:
     timeout_sec: int = DEFAULT_TIMEOUT_SEC
 
     @classmethod
-    def from_env(cls) -> NinjaConfig:
-        """Create config from environment variables with auto-detection fallback."""
+    def from_env(
+        cls,
+        *,
+        operator_env: str = "NINJA_CODE_BIN",
+        model_env: str | None = None,
+    ) -> NinjaConfig:
+        """Create config from environment variables with auto-detection fallback.
+
+        Args:
+            operator_env: Config key holding the coding-CLI operator for this
+                module (coder: ``NINJA_CODE_BIN``; secretary/agent use their own).
+            model_env: Config key holding the module's model id (optional).
+        """
         from ninja_common.secrets import get_secret
 
         api_key = get_secret("OPENROUTER_API_KEY") or get_secret("OPENAI_API_KEY") or ""
 
-        # Model priority: NINJA_CODER_MODEL > NINJA_MODEL > OPENROUTER_MODEL > OPENAI_MODEL > default
+        # Model priority: <module>_MODEL > NINJA_CODER_MODEL > NINJA_MODEL > … > default
         model = (
-            os.environ.get("NINJA_CODER_MODEL")
+            (os.environ.get(model_env) if model_env else None)
+            or os.environ.get("NINJA_CODER_MODEL")
             or os.environ.get("NINJA_MODEL")
             or os.environ.get("OPENROUTER_MODEL")
             or os.environ.get("OPENAI_MODEL")
             or DEFAULT_CODER_MODEL
         )
 
-        # Binary path with auto-detection fallback
-        bin_path = os.environ.get("NINJA_CODE_BIN", DEFAULT_CODE_BIN)
+        # Binary path with auto-detection fallback (module's operator, else global)
+        bin_path = os.environ.get(operator_env) or os.environ.get(
+            "NINJA_CODE_BIN", DEFAULT_CODE_BIN
+        )
 
         # If configured path doesn't exist, try to auto-detect using which
         if not Path(bin_path).exists():
@@ -2649,6 +2663,59 @@ class NinjaDriver:
             )
 
         return result
+
+
+async def run_operator_text(
+    *,
+    prompt: str,
+    repo_root: str,
+    operator_env: str,
+    model_env: str | None = None,
+    timeout_sec: int = 600,
+) -> tuple[bool, str]:
+    """Run a module's operator CLI for a read-only TEXT task.
+
+    Lets secretary/agent execute through their own operator + model instead of
+    local heuristics. The prompt should instruct the CLI to only produce text
+    (no file edits). Callers fall back to their deterministic path when this
+    returns ``(False, "")``.
+
+    Args:
+        prompt: Instruction for the CLI (ask for text output only).
+        repo_root: Repository root for the run.
+        operator_env: Config key for the module's operator.
+        model_env: Config key for the module's model (optional).
+        timeout_sec: Hard timeout for the run.
+
+    Returns:
+        ``(ok, text)`` — ``ok`` False on any failure (missing operator, CLI
+        error, empty output).
+    """
+    try:
+        config = NinjaConfig.from_env(operator_env=operator_env, model_env=model_env)
+        # Run in a throwaway dir so a text task can never modify the real repo;
+        # callers embed any needed context directly in the prompt.
+        workdir = tempfile.mkdtemp(prefix="ninja-operator-text-")
+        instruction = InstructionBuilder(workdir, mode=ExecutionMode.QUICK).build_quick_task(
+            task=prompt,
+            context_paths=[],
+            allowed_globs=[],
+            deny_globs=[],
+        )
+        driver = NinjaDriver(config)
+        result = await driver.execute_async(
+            repo_root=workdir,
+            step_id="operator-text-task",
+            instruction=instruction,
+            timeout_sec=timeout_sec,
+            task_type="quick",
+        )
+    except Exception as e:
+        logger.warning("operator text task failed: %s", e)
+        return False, ""
+
+    text = (result.stdout or "").strip() or (result.notes or "").strip()
+    return bool(result.success and text), text
 
 
 # Backwards compatibility aliases

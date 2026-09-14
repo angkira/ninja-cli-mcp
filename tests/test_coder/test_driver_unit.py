@@ -29,6 +29,24 @@ def _empty_secret_store(monkeypatch):
     monkeypatch.setattr(ss, "default_store", lambda: _EmptyStore())
 
 
+def test_from_env_uses_module_operator_and_model(monkeypatch) -> None:
+    """Per-module operator/model env vars override the global coder defaults."""
+    monkeypatch.setenv("NINJA_CODE_BIN", "opencode")
+    monkeypatch.setenv("NINJA_AGENT_OPERATOR", "codex")
+    monkeypatch.setenv("NINJA_AGENT_MODEL", "gpt-5.6-luna")
+    monkeypatch.setattr(
+        "ninja_coder.driver.shutil.which",
+        lambda name: "/usr/bin/codex" if name == "codex" else None,
+    )
+
+    config = NinjaConfig.from_env(
+        operator_env="NINJA_AGENT_OPERATOR", model_env="NINJA_AGENT_MODEL"
+    )
+
+    assert config.bin_path == "/usr/bin/codex"
+    assert config.model == "gpt-5.6-luna"
+
+
 class TestNinjaConfig:
     """Test NinjaConfig class."""
 

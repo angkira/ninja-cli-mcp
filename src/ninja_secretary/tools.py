@@ -89,6 +89,25 @@ class SecretaryToolExecutor:
                 structure = self._analyse_file_structure(lines, language)
                 result["structure"] = structure
                 result["summary"] = self._generate_file_summary(structure, language)
+                # Enrich the summary via the secretary's own operator when set.
+                try:
+                    from ninja_coder.driver import run_operator_text
+
+                    ok, text = await run_operator_text(
+                        prompt=(
+                            "Summarize this file in 2-4 sentences: its purpose, key "
+                            "parts, and any risks. Output text only; do NOT modify "
+                            f"files.\n\nPath: {request.file_path}\n\n" + "".join(lines[:200])
+                        ),
+                        repo_root=str(file_path.parent),
+                        operator_env="NINJA_SECRETARY_OPERATOR",
+                        model_env="NINJA_SECRETARY_MODEL",
+                        timeout_sec=180,
+                    )
+                    if ok and text:
+                        result["summary"] = text
+                except Exception as e:
+                    logger.debug("secretary file summary enrichment skipped: %s", e)
 
             # Add preview if requested
             if request.include_preview:
@@ -453,6 +472,28 @@ class SecretaryToolExecutor:
                 metrics["dependencies"] = found_deps
 
             report = "".join(report_parts)
+
+            # Add operator-generated insights when the secretary has its own
+            # operator configured (fallback: static report only).
+            try:
+                from ninja_coder.driver import run_operator_text
+
+                ok, text = await run_operator_text(
+                    prompt=(
+                        "You are a codebase analyst. Based on the report below, add 5-10 "
+                        "markdown bullets on architecture, main components, and risks. "
+                        "Output markdown only; do NOT modify any files.\n\n"
+                        f"Repository: {repo_root}\n\n{report}"
+                    ),
+                    repo_root=str(repo_root),
+                    operator_env="NINJA_SECRETARY_OPERATOR",
+                    model_env="NINJA_SECRETARY_MODEL",
+                    timeout_sec=300,
+                )
+                if ok and text:
+                    report = f"{report}\n\n## AI Insights\n\n{text}\n"
+            except Exception as e:
+                logger.debug("secretary report operator enrichment skipped: %s", e)
 
             return CodebaseReportResult(
                 status="ok", report=report, metrics=metrics, file_count=metrics.get("file_count", 0)

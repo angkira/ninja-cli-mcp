@@ -18,12 +18,18 @@ ninja-mcp config models
 The **operator** is the coding CLI ninja delegates to (Opencode, Codex, Claude,
 Aider, …). It is configured **per module**:
 
-| Module | Setting | Notes |
+| Module | Setting | Runs through its operator |
 | --- | --- | --- |
-| Coder (quick/sequential/parallel) | `NINJA_CODE_BIN` | shared by the three coder roles |
-| Secretary | `NINJA_SECRETARY_OPERATOR` | independent of the coder operator |
-| Agent (orchestrator) | `NINJA_AGENT_OPERATOR` | independent of the coder operator |
+| Coder (quick/sequential/parallel) | `NINJA_CODE_BIN` | yes — writes/edits code |
+| Secretary | `NINJA_SECRETARY_OPERATOR` | yes — `codebase_report` AI insights, `analyse_file` summary |
+| Agent (orchestrator) | `NINJA_AGENT_OPERATOR` | yes — `plan` rationale, `review` summary |
 | Researcher | `NINJA_RESEARCHER_OPERATOR` | search **engine** (perplexity/serper/duckduckgo), not a coding CLI |
+
+Each module executes through its **own** operator + model. Text-only operations
+(plan/review/analysis) run the CLI in a throwaway temp directory with the needed
+context embedded in the prompt, so they can never modify your repository. If the
+operator or its key is unavailable, they fall back to the built-in
+heuristic/static output instead of failing.
 
 Pick each module's operator from the dropdown in its **Models** tab section (the
 coder one is at the top of the tab). Only operators actually installed on the
