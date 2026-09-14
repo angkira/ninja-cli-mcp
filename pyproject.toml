@@ -1,6 +1,6 @@
 [project]
 name = "ninja-mcp"
-version = "1.0.7"
+version = "1.0.8"
 description = "Multi-module MCP server: Coder, Researcher, Secretary"
 authors = [{ name = "ninja-mcp contributors" }]
 readme = "README.md"
