@@ -203,25 +203,84 @@ SelectOverlay {
     color: #4C566A;
 }
 
-/* ── Switch: compact inline toggle ────────────────────────── */
-Switch {
-    border: none;
-    padding: 0 1;
+/* ── Module/Daemon tables: borderless, aligned columns ────── */
+.module-row,
+.daemon-row,
+.table-head {
     height: auto;
-    width: auto;
+    margin: 0;
+}
+.m-toggle-spacer {
+    width: 3;
+}
+.m-name {
+    width: 14;
+}
+.m-state {
+    width: 10;
+}
+.m-port {
+    width: 6;
+}
+.m-binary {
+    width: 6;
 }
 
-/* ── Modules tab: one toggle row per module ───────────────── */
-.module-row {
-    height: auto;
-    margin: 0 0 1 0;
+/* Leading toggle-indicator button: light blue when on. */
+.tog {
+    width: 3;
+    min-width: 3;
+    max-width: 3;
+    height: 1;
+    min-height: 1;
+    max-height: 1;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: none;
+    content-align: center middle;
 }
-.module-label {
-    width: 1fr;
-    height: auto;
+.tog.tog-on {
+    color: #88C0D0;
+    text-style: bold;
 }
-.module-row .module-install {
+.tog.tog-off {
+    color: #4C566A;
+}
+.tog:hover {
+    background: #3B4252;
+}
+.tog:focus {
+    background: #434C5E;
+    color: #ECEFF4;
+}
+.module-install {
     margin: 0 0 0 1;
+}
+
+/* ── API Keys tab: inline editor revealed on row focus ────── */
+.api-key-row {
+    height: auto;
+    padding: 0 1;
+    margin: 0;
+    border: none;
+}
+.api-key-row:focus,
+.api-key-row:focus-within {
+    background: #3B4252;
+}
+.key-head {
+    height: auto;
+}
+.key-editor {
+    display: none;
+}
+.api-key-row:focus-within .key-editor {
+    display: block;
+}
+.key-actions {
+    height: auto;
+    margin: 0;
 }
 
 /* ── Lists focus ring (keyboard navigation must stay visible) ─────── */

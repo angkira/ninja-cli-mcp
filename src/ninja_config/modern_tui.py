@@ -33,7 +33,6 @@ from textual.widgets import (
     ListView,
     Rule,
     Static,
-    Switch,
     TabbedContent,
     TabPane,
 )
@@ -49,9 +48,9 @@ from ninja_common.defaults import (
 )
 from ninja_config.config_shared import (
     API_KEYS,
-    DAEMON_CONFIG,
     detect_ides,
     detect_tools,
+    get_secret,
     mask_key,
     register_claude_mcp,
 )
@@ -71,6 +70,9 @@ from ninja_config.secrets_store import (
     SecretStore,
     SecretStoreUnavailable,
     default_store,
+    rekey_and_set_password,
+    reset_encrypted_store,
+    store_password_source,
 )
 from ninja_config.settings_registry import SETTINGS, SettingDef
 from ninja_config.ui.model_autocomplete import ModelRolePicker
@@ -242,11 +244,17 @@ class ModelCard(ListItem):
         )
 
 
-class ModuleRow(Horizontal):
-    """One module with an inline enable toggle, live status and Install action.
+def _set_toggle(button: Button, on: bool) -> None:
+    """Paint a leading toggle-indicator button (light blue when on)."""
+    button.label = "●" if on else "○"
+    button.set_class(on, "tog-on")
+    button.set_class(not on, "tog-off")
 
-    Replaces the old "select a row, then press Enable/Disable/Start/Stop" flow:
-    the :class:`Switch` mirrors ``NINJA_ENABLED_MODULES`` and, when toggled,
+
+class ModuleRow(Horizontal):
+    """One module as a borderless table row: [●] Module  daemon  port  binary.
+
+    The leading toggle button (light blue when on) is keyboard-focusable and
     enables + starts (on) or disables + stops (off) the module's daemon.
     """
 
@@ -255,8 +263,11 @@ class ModuleRow(Horizontal):
         self.module_name = module
 
     def compose(self) -> ComposeResult:
-        yield Static("", id=f"module-info-{self.module_name}", classes="module-label")
-        yield Switch(id=f"module-sw-{self.module_name}")
+        yield Button("○", id=f"module-toggle-{self.module_name}", classes="tog module-toggle")
+        yield Static(self.module_name.title(), classes="m-name")
+        yield Static("", id=f"module-daemon-{self.module_name}", classes="m-state")
+        yield Static("", id=f"module-port-{self.module_name}", classes="m-port")
+        yield Static("", id=f"module-binary-{self.module_name}", classes="m-binary")
         yield Button(
             "Install",
             id=f"module-install-{self.module_name}",
@@ -264,22 +275,111 @@ class ModuleRow(Horizontal):
         )
 
     def set_state(self, *, enabled: bool, running: bool, installed: bool, port: int | None) -> None:
-        """Sync the row with the persisted enabled flag and live daemon state.
-
-        Setting ``Switch.value`` programmatically also posts ``Changed``; the
-        app ignores any change that matches the persisted state, so this stays
-        loop-free.
-        """
-        switch = self.query_one(Switch)
-        if switch.value != enabled:
-            switch.value = enabled
-        daemon = "[#a3be8c]● running[/#a3be8c]" if running else "[dim]○ stopped[/dim]"
-        binary = "[#a3be8c]✓[/#a3be8c]" if installed else "[#ebcb8b]✗ missing[/#ebcb8b]"
-        self.query_one(f"#module-info-{self.module_name}", Static).update(
-            f"[bold]{self.module_name.title()}[/bold]   "
-            f"port {port} · daemon {daemon} · binary {binary}"
+        """Sync the row with the persisted enabled flag and live daemon state."""
+        _set_toggle(self.query_one(".module-toggle", Button), enabled)
+        self.query_one(f"#module-daemon-{self.module_name}", Static).update(
+            "[#a3be8c]running[/#a3be8c]" if running else "[dim]stopped[/dim]"
+        )
+        self.query_one(f"#module-port-{self.module_name}", Static).update(str(port))
+        self.query_one(f"#module-binary-{self.module_name}", Static).update(
+            "[#a3be8c]✓[/#a3be8c]" if installed else "[#ebcb8b]✗[/#ebcb8b]"
         )
         self.query_one(".module-install", Button).display = not installed
+
+
+class DaemonRow(Horizontal):
+    """One module daemon as a borderless table row with a start/stop toggle."""
+
+    def __init__(self, module: str) -> None:
+        super().__init__(classes="daemon-row")
+        self.module_name = module
+
+    def compose(self) -> ComposeResult:
+        yield Button("○", id=f"daemon-toggle-{self.module_name}", classes="tog daemon-toggle")
+        yield Static(self.module_name.title(), classes="m-name")
+        yield Static("", id=f"daemon-state-{self.module_name}", classes="m-state")
+        yield Static("", id=f"daemon-port-{self.module_name}", classes="m-port")
+
+    def set_state(self, *, running: bool, port: int | None) -> None:
+        """Sync the row with the live daemon state."""
+        _set_toggle(self.query_one(".daemon-toggle", Button), running)
+        self.query_one(f"#daemon-state-{self.module_name}", Static).update(
+            "[#a3be8c]running[/#a3be8c]" if running else "[dim]stopped[/dim]"
+        )
+        self.query_one(f"#daemon-port-{self.module_name}", Static).update(str(port))
+
+
+class APIKeyRow(Vertical):
+    """A provider API-key row with an inline editor revealed on focus.
+
+    Tabbing onto the row (or clicking it) shows a password input plus Save /
+    Delete right under that provider — no shared input at the bottom of the tab.
+    """
+
+    can_focus = True
+
+    BINDINGS: ClassVar[list] = [
+        Binding("down", "next_provider", "Next provider", show=False),
+        Binding("up", "prev_provider", "Previous provider", show=False),
+    ]
+
+    def __init__(self, env_var: str, display_name: str, module: str, value: str) -> None:
+        super().__init__(classes="api-key-row")
+        self.env_var = env_var
+        self.display_name = display_name
+        self.module = module
+        self._value = value
+
+    def action_next_provider(self) -> None:
+        """Move focus to the next provider row (``↓``)."""
+        self._focus_sibling_row(1)
+
+    def action_prev_provider(self) -> None:
+        """Move focus to the previous provider row (``↑``)."""
+        self._focus_sibling_row(-1)
+
+    def _focus_sibling_row(self, step: int) -> None:
+        parent = self.parent
+        if parent is None:
+            return
+        rows = [child for child in parent.children if isinstance(child, APIKeyRow)]
+        try:
+            index = rows.index(self)
+        except ValueError:
+            return
+        target = index + step
+        if 0 <= target < len(rows):
+            rows[target].focus()
+
+    def compose(self) -> ComposeResult:
+        yield Static(self._head_text(), classes="key-head")
+        yield Input(
+            placeholder=f"New value for {self.display_name}",
+            password=True,
+            id=f"key-input-{self.env_var}",
+            classes="key-editor",
+        )
+        yield Horizontal(
+            Button("Save", variant="primary", id=f"key-save-{self.env_var}"),
+            Button("Delete", variant="error", id=f"key-delete-{self.env_var}"),
+            classes="key-editor key-actions",
+        )
+
+    def _head_text(self) -> str:
+        icon = "[#a3be8c]✓[/#a3be8c]" if self._value else "[dim]○[/dim]"
+        masked = mask_key(self._value) if self._value else "[dim]not set[/dim]"
+        return f"{icon} [bold]{self.display_name}[/bold]  {masked}  [dim]({self.module})[/dim]"
+
+    def set_value(self, value: str) -> None:
+        """Refresh the masked value shown in the row header."""
+        self._value = value
+        self.query_one(".key-head", Static).update(self._head_text())
+
+    def input_value(self) -> str:
+        return self.query_one(f"#key-input-{self.env_var}", Input).value
+
+    def clear_input(self) -> None:
+        self.query_one(f"#key-input-{self.env_var}", Input).value = ""
 
 
 class NinjaConfigApp(App):
@@ -371,19 +471,43 @@ class NinjaConfigApp(App):
                 with VerticalScroll():
                     yield section_header("API Key Management")
                     yield Rule()
-                    yield Static("[dim]Keys are stored via OS keyring → encrypted SQLite.[/dim]")
+                    yield Static(
+                        "[dim]Keys are stored via OS keyring → encrypted SQLite. "
+                        "Focus a provider to edit its key inline.[/dim]"
+                    )
                     yield Static("")
-                    yield ListView(id="api-key-list")
+                    with Vertical(id="api-key-rows"):
+                        for _k in API_KEYS:
+                            yield APIKeyRow(
+                                _k.env_var,
+                                _k.display_name,
+                                _k.module,
+                                get_secret(_k.env_var) or "",
+                            )
                     yield Static("")
-                    yield Static("[bold]Set / Update Key[/bold]")
+                    yield section_header("Encrypted store")
+                    yield Rule()
+                    yield Static(self._store_status(), id="lbl-store")
+                    yield Static(
+                        "[dim]Password for ~/.ninja/credentials.db — kept in the OS "
+                        "keyring (falls back to the config file if unavailable).[/dim]"
+                    )
                     yield Input(
-                        placeholder="Select key above, then enter value...",
-                        id="api-key-input",
+                        placeholder="New store password",
                         password=True,
+                        id="store-pw",
+                    )
+                    yield Input(
+                        placeholder="Confirm store password",
+                        password=True,
+                        id="store-pw2",
                     )
                     yield Horizontal(
-                        Button("Save", variant="primary", id="btn-save-key"),
-                        Button("Delete", variant="error", id="btn-delete-key"),
+                        Button("Set / Change", variant="primary", id="btn-store-set"),
+                        Button("Reset store", variant="error", id="btn-store-reset"),
+                    )
+                    yield Input(
+                        placeholder="Type DELETE to confirm reset", id="store-reset-confirm"
                     )
 
             with TabPane("Models", id="tab-models"):
@@ -458,14 +582,17 @@ class NinjaConfigApp(App):
                     yield Static(self._daemon_status())
                     yield Static("")
                     yield Horizontal(
-                        Button("Toggle Daemon", variant="primary", id="btn-toggle-daemon"),
-                        Button("Restart Daemon", id="btn-restart-daemon"),
+                        Static("", classes="m-toggle-spacer"),
+                        Static("[dim]Daemon[/dim]", classes="m-name"),
+                        Static("[dim]State[/dim]", classes="m-state"),
+                        Static("[dim]Port[/dim]", classes="m-port"),
+                        classes="table-head",
                     )
+                    with Vertical(id="daemon-rows"):
+                        for module in AVAILABLE_MODULES:
+                            yield DaemonRow(module)
                     yield Static("")
-                    yield Static("[bold]Ports[/bold]")
-                    yield Static(self._daemon_ports())
-                    yield Static("")
-                    yield Static("[dim]Changes require daemon restart.[/dim]")
+                    yield Static("[dim]Toggle a row to start/stop that daemon.[/dim]")
 
             with TabPane("IDE", id="tab-ide"):
                 with VerticalScroll():
@@ -546,6 +673,14 @@ class NinjaConfigApp(App):
                         "[dim]Toggle a module on/off — that enables it and starts/stops "
                         "its daemon. Missing binaries show an Install button.[/dim]"
                     )
+                    yield Horizontal(
+                        Static("", classes="m-toggle-spacer"),
+                        Static("[dim]Module[/dim]", classes="m-name"),
+                        Static("[dim]Daemon[/dim]", classes="m-state"),
+                        Static("[dim]Port[/dim]", classes="m-port"),
+                        Static("[dim]Binary[/dim]", classes="m-binary"),
+                        classes="table-head",
+                    )
                     with Vertical(id="module-rows"):
                         for module in AVAILABLE_MODULES:
                             yield ModuleRow(module)
@@ -561,6 +696,7 @@ class NinjaConfigApp(App):
         self._refresh_api_keys()
         self._refresh_settings_list()
         self._refresh_modules()
+        self._refresh_daemons()
         self._populate_operator_buttons()
         self._check_operator_availability()
 
@@ -569,6 +705,9 @@ class NinjaConfigApp(App):
         pane_id = getattr(pane, "id", "") or ""
         if pane_id == "tab-modules":
             self._refresh_modules()
+            return
+        if pane_id == "tab-daemon":
+            self._refresh_daemons()
             return
         if pane_id != "tab-models":
             return
@@ -713,18 +852,6 @@ class NinjaConfigApp(App):
         cfg = self.config_manager.list_all()
         on = cfg.get("NINJA_ENABLE_DAEMON", "true") == "true"
         return f"Status: {'[#a3be8c]enabled[/#a3be8c]' if on else '[#ebcb8b]disabled[/#ebcb8b]'}"
-
-    def _daemon_ports(self) -> str:
-        cfg = self.config_manager.list_all()
-        skip = {"NINJA_ENABLE_DAEMON", "NINJA_PROMPTS_PORT", "NINJA_RESOURCES_PORT"}
-        lines = []
-        for key, val in DAEMON_CONFIG.items():
-            if key in skip:
-                continue
-            cur = cfg.get(key, val)
-            name = key.replace("NINJA_", "").replace("_PORT", "").title()
-            lines.append(f"{name:12} {cur}")
-        return "\n".join(lines)
 
     def _ide_status(self) -> str:
         from ninja_config.config_shared import IDES as IDE_DEFS
@@ -906,31 +1033,69 @@ class NinjaConfigApp(App):
     # ── API Keys ─────────────────────────────────────────────────────────
 
     def _refresh_api_keys(self) -> None:
-        lv = self.query_one("#api-key-list", ListView)
-        lv.clear()
-        cfg = self.config_manager.list_all()
-        for k in API_KEYS:
-            val = cfg.get(k.env_var) or os.environ.get(k.env_var, "")
-            icon = "[#a3be8c]✓[/#a3be8c]" if val else "[dim]○[/dim]"
-            masked = mask_key(val) if val else "[dim]not set[/dim]"
-            item = ListItem(
-                Static(f"{icon} [bold]{k.display_name}[/bold]  {masked}  [dim]({k.module})[/dim]")
-            )
-            item.env_var = k.env_var
-            item.display_name = k.display_name
-            lv.append(item)
+        # Resolve the effective value (SecretStore -> env -> .env) so the row
+        # preview reflects a key just saved to the keyring.
+        for row in self.query(APIKeyRow):
+            row.set_value(get_secret(row.env_var) or "")
 
-    def _selected_api_key(self) -> tuple[str, str] | None:
-        lv = self.query_one("#api-key-list", ListView)
-        sel = getattr(lv, "highlighted_child", None)
-        if sel is None and getattr(lv, "index", None) is not None:
-            try:
-                sel = lv.children[lv.index]
-            except Exception:
-                sel = None
-        if sel and hasattr(sel, "env_var"):
-            return sel.env_var, sel.display_name
+    def _api_key_row(self, env_var: str) -> APIKeyRow | None:
+        """Return the API-key row for ``env_var``, if mounted."""
+        for row in self.query(APIKeyRow):
+            if row.env_var == env_var:
+                return row
         return None
+
+    def _store_status(self) -> str:
+        """One-line status of the encrypted store password source."""
+        source = store_password_source()
+        label = {
+            "memory": "held in this process (memory)",
+            "fd": "inherited fd (daemon start)",
+            "env": "env var (NINJA_CREDENTIAL_PASSWORD)",
+            "unset": "unset — prompts on first use",
+        }.get(source, source)
+        colour = "#ebcb8b" if source == "unset" else "#a3be8c"
+        return f"Password: [{colour}]{label}[/{colour}]  ·  ~/.ninja/credentials.db"
+
+    def _set_store_password(self) -> None:
+        """Set or change the encrypted-store password (re-encrypts credentials)."""
+        password = self.query_one("#store-pw", Input).value
+        confirm = self.query_one("#store-pw2", Input).value
+        if not password or password != confirm:
+            self.notify("Passwords are empty or do not match.", timeout=4)
+            return
+        try:
+            # persist=True keeps it in the OS keychain (macOS Keychain / Secret
+            # Service) so headless launches can unlock the store without a TTY.
+            count = rekey_and_set_password(password, persist=True)
+        except Exception as e:
+            self.notify(
+                f"Failed to change store password ({e}). Use Reset to start over.",
+                timeout=6,
+            )
+            return
+        for wid in ("store-pw", "store-pw2"):
+            self.query_one(f"#{wid}", Input).value = ""
+        self.query_one("#lbl-store", Static).update(self._store_status())
+        self._refresh_api_keys()
+        self.notify(
+            f"Store password set (keychain); {count} credential(s) re-encrypted.",
+            timeout=5,
+        )
+
+    def _reset_store(self) -> None:
+        """Delete the encrypted store (requires typing DELETE to confirm)."""
+        confirm = self.query_one("#store-reset-confirm", Input).value.strip()
+        if confirm != "DELETE":
+            self.notify("Type DELETE in the confirm field to reset the store.", timeout=4)
+            return
+        if reset_encrypted_store():
+            self.query_one("#store-reset-confirm", Input).value = ""
+            self.query_one("#lbl-store", Static).update(self._store_status())
+            self._refresh_api_keys()
+            self.notify("Encrypted store reset (credentials.db removed).", timeout=5)
+        else:
+            self.notify("Could not remove credentials.db.", timeout=4)
 
     # ── Runtime constants settings ─────────────────────────────────────
 
@@ -1001,12 +1166,16 @@ class NinjaConfigApp(App):
     # ── Modules ──────────────────────────────────────────────────────────
 
     def _enabled_modules(self) -> list[str]:
-        """Return the enabled modules parsed from ``NINJA_ENABLED_MODULES``."""
-        raw = self.config_manager.get("NINJA_ENABLED_MODULES") or ""
-        modules = [m.strip() for m in raw.split(",") if m.strip()]
-        if not modules:
+        """Return the enabled modules parsed from ``NINJA_ENABLED_MODULES``.
+
+        A present-but-empty value means "none enabled"; only an *absent* key
+        falls back to :data:`DEFAULT_ENABLED_MODULES`, so toggling the last
+        module off sticks.
+        """
+        raw = self.config_manager.get("NINJA_ENABLED_MODULES")
+        if raw is None:
             return list(DEFAULT_ENABLED_MODULES)
-        return modules
+        return [m.strip() for m in raw.split(",") if m.strip()]
 
     def _set_enabled_modules(self, modules: list[str]) -> None:
         """Persist the enabled module list to ``NINJA_ENABLED_MODULES``."""
@@ -1038,6 +1207,33 @@ class NinjaConfigApp(App):
                 installed=shutil.which(f"ninja-{module}") is not None,
                 port=st.get("port"),
             )
+
+    def _refresh_daemons(self) -> None:
+        """Sync every daemon row with the live daemon state."""
+        try:
+            rows = self.query_one("#daemon-rows", Vertical)
+        except Exception:
+            return
+        dm = DaemonManager()
+        by_name = {r.module_name: r for r in rows.query(DaemonRow)}
+        for module in AVAILABLE_MODULES:
+            row = by_name.get(module)
+            if row is None:
+                continue
+            st = dm.status(module)
+            row.set_state(running=bool(st.get("running")), port=st.get("port"))
+
+    def _toggle_module_daemon(self, module: str) -> None:
+        """Start or stop ``module``'s daemon (running state only)."""
+        dm = DaemonManager()
+        running = bool(dm.status(module).get("running"))
+        if running:
+            dm.stop(module)
+        else:
+            dm.start(module)
+        self._refresh_daemons()
+        self._refresh_modules()
+        self.notify(f"{module} daemon {'stopped' if running else 'started'}.", timeout=3)
 
     def _enable_module(self, module: str) -> None:
         """Enable ``module`` in config and start its daemon."""
@@ -1110,10 +1306,18 @@ class NinjaConfigApp(App):
             self.notify("Run 'ninja-config doctor' for diagnostics.", timeout=3)
         elif bid == "btn-show-config":
             self._show_config()
-        elif bid == "btn-save-key":
-            self._save_key()
-        elif bid == "btn-delete-key":
-            self._delete_key()
+        elif bid.startswith("key-save-"):
+            row = self._api_key_row(bid[len("key-save-") :])
+            if row is not None:
+                self._save_key(row)
+        elif bid.startswith("key-delete-"):
+            row = self._api_key_row(bid[len("key-delete-") :])
+            if row is not None:
+                self._delete_key(row)
+        elif bid == "btn-store-set":
+            self._set_store_password()
+        elif bid == "btn-store-reset":
+            self._reset_store()
         elif bid == "btn-save-setting":
             self._save_setting()
         elif bid == "btn-reset-setting":
@@ -1122,10 +1326,6 @@ class NinjaConfigApp(App):
             self._save_litellm()
         elif bid == "btn-clear-litellm":
             self._clear_litellm()
-        elif bid == "btn-toggle-daemon":
-            self._toggle_daemon()
-        elif bid == "btn-restart-daemon":
-            self.notify("Run 'ninja-mcp daemon restart' to restart.", timeout=3)
         elif bid == "btn-claude-mcp":
             count = register_claude_mcp()
             self.notify(f"Claude Code MCP: {count}/3 servers registered.", timeout=3)
@@ -1134,6 +1334,14 @@ class NinjaConfigApp(App):
                 self.notify("OpenCode: use 'ninja-config configure' for setup.", timeout=3)
             else:
                 self.notify("OpenCode CLI not found.", timeout=3)
+        elif bid.startswith("module-toggle-"):
+            module = bid[len("module-toggle-") :]
+            if module in self._enabled_modules():
+                self._disable_module(module)
+            else:
+                self._enable_module(module)
+        elif bid.startswith("daemon-toggle-"):
+            self._toggle_module_daemon(bid[len("daemon-toggle-") :])
         elif bid.startswith("module-install-"):
             self._install_module(bid[len("module-install-") :])
         elif bid.startswith("set-"):
@@ -1151,21 +1359,6 @@ class NinjaConfigApp(App):
         elif bid == "search-perplexity":
             self.config_manager.set("NINJA_SEARCH_PROVIDER", "perplexity")
             self.notify("Search: Perplexity", timeout=3)
-
-    def on_switch_changed(self, event: Switch.Changed) -> None:
-        """Handle a module toggle (ignores programmatic state syncs)."""
-        switch_id = event.switch.id or ""
-        if not switch_id.startswith("module-sw-"):
-            return
-        module = switch_id[len("module-sw-") :]
-        # Programmatic sync in ModuleRow.set_state also posts Changed; only act
-        # when the new value actually differs from the persisted state.
-        if event.value == (module in self._enabled_modules()):
-            return
-        if event.value:
-            self._enable_module(module)
-        else:
-            self._disable_module(module)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if hasattr(event.item, "setting_env_var") and hasattr(event.item, "setting_def"):
@@ -1186,9 +1379,6 @@ class NinjaConfigApp(App):
                 pass
             self._populate_role_lists()
             self.notify(f"Model set: {model_id}", timeout=3)
-        elif hasattr(event.item, "env_var"):
-            inp = self.query_one("#api-key-input", Input)
-            inp.placeholder = f"Enter {event.item.display_name} key..."
 
     def _handle_provider_button(self, bid: str) -> None:
         # Button IDs are prov-{role}-{provider} where provider may contain dashes.
@@ -1246,50 +1436,33 @@ class NinjaConfigApp(App):
         lines = [f"{k} = {mask_key(v) if 'KEY' in k else v}" for k, v in sorted(cfg.items())]
         self.notify("\n".join(lines[:25]), timeout=8)
 
-    def _save_key(self) -> None:
-        inp = self.query_one("#api-key-input", Input)
-        if not inp.value:
+    def _save_key(self, row: APIKeyRow) -> None:
+        value = row.input_value()
+        if not value:
+            self.notify(f"Enter a value for {row.display_name} first.", timeout=3)
             return
-        sel = self._selected_api_key()
-        if not sel:
-            self.notify("Select a key from the list first.", timeout=3)
-            return
-        env_var, display_name = sel
         try:
             store = default_store()
-            store.set(env_var, inp.value)
-            self.notify(f"✓ {display_name} saved to secure store.", timeout=3)
+            store.set(row.env_var, value)
+            self.notify(f"✓ {row.display_name} saved to secure store.", timeout=3)
         except SecretStoreUnavailable:
-            self.config_manager.set(env_var, inp.value)
-            self.notify(f"✓ {display_name} saved (keyring unavailable).", timeout=3)
+            self.config_manager.set(row.env_var, value)
+            self.notify(f"✓ {row.display_name} saved (keyring unavailable).", timeout=3)
         except Exception as e:
-            self.config_manager.set(env_var, inp.value)
-            self.notify(f"⚠ {display_name} saved to config ({e}).", timeout=3)
-        inp.value = ""
+            self.config_manager.set(row.env_var, value)
+            self.notify(f"⚠ {row.display_name} saved to config ({e}).", timeout=3)
+        row.clear_input()
         self._refresh_api_keys()
 
-    def _delete_key(self) -> None:
-        sel = self._selected_api_key()
-        if not sel:
-            return
-        env_var, display_name = sel
+    def _delete_key(self, row: APIKeyRow) -> None:
         try:
             store = default_store()
-            store.delete(env_var)
+            store.delete(row.env_var)
         except Exception:
             pass
-        self.config_manager.set(env_var, "")
-        self.notify(f"✓ {display_name} removed.", timeout=3)
+        self.config_manager.set(row.env_var, "")
+        self.notify(f"✓ {row.display_name} removed.", timeout=3)
         self._refresh_api_keys()
-
-    def _toggle_daemon(self) -> None:
-        cfg = self.config_manager.list_all()
-        cur = cfg.get("NINJA_ENABLE_DAEMON", "true")
-        new = "false" if cur == "true" else "true"
-        self.config_manager.set("NINJA_ENABLE_DAEMON", new)
-        self.notify(
-            f"Daemon {'enabled' if new == 'true' else 'disabled'}. Restart to apply.", timeout=3
-        )
 
     def action_refresh(self) -> None:
         clear_model_cache()
@@ -1323,15 +1496,21 @@ class NinjaConfigApp(App):
     def action_focus_search(self) -> None:
         """``/`` — focus the search/autocomplete input of the active tab."""
         active = self._active_tab_id()
-        candidates: list[str] = []
+        if active == "tab-keys":
+            # Focus the inline editor of the first API-key row.
+            for row in self.query(APIKeyRow):
+                try:
+                    row.query_one(Input).focus()
+                    return
+                except Exception:
+                    continue
+            return
         if active == "tab-models":
             candidates = [f"#model-input-{role}" for role in self.ROLE_MAP]
-        elif active == "tab-keys":
-            candidates = ["#api-key-input"]
         elif active == "tab-settings":
             candidates = ["#settings-input"]
         else:
-            candidates = ["#api-key-input", "#settings-input", "#model-input-quick"]
+            candidates = ["#settings-input", "#model-input-quick"]
         for selector in candidates:
             try:
                 self.query_one(selector, Input).focus()
@@ -1353,8 +1532,10 @@ class NinjaConfigApp(App):
                         pass
                     return
             return
-        if fid == "api-key-input" or self._active_tab_id() == "tab-keys":
-            self._save_key()
+        if fid.startswith("key-input-"):
+            row = self._api_key_row(fid[len("key-input-") :])
+            if row is not None:
+                self._save_key(row)
             return
         if fid in ("settings-input", "settings-list") or self._active_tab_id() == "tab-settings":
             self._save_setting()
