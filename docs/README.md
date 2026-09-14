@@ -9,6 +9,7 @@ Start here for the current `1.0.1` behavior:
 - [Model selection and autocomplete](MODEL_SELECTION.md)
 - [TUI installer](TUI_INSTALLER.md)
 - [Configuration reference](CONFIGURATION.md)
+- [Secrets & API keys](SECRETS.md)
 - [Installation modes](INSTALLATION_MODES.md)
 - [MCP architecture](MCP_ARCHITECTURE.md)
 - [Editor integrations](EDITOR_INTEGRATIONS.md)

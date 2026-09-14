@@ -84,9 +84,10 @@ ninja-config install
 ```
 
 The main TUI is also available with `ninja-mcp config` or
-`ninja-config configure`. It writes native configuration to
-`~/.ninja-mcp.env` and uses the OS keyring when available, with an encrypted
-file fallback for headless environments.
+`ninja-config configure`. Non-secret settings are written to `~/.ninja-mcp.env`;
+API keys are kept in an AES-256-GCM encrypted store with the OS keychain as the
+primary backend — never in `.env` or the environment. See
+[docs/SECRETS.md](docs/SECRETS.md).
 
 ### Deployment target
 

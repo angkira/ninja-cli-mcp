@@ -27,15 +27,24 @@ Please follow responsible disclosure practices. Do not exploit vulnerabilities o
 ## Security Best Practices
 
 - Keep dependencies up-to-date (`uv sync --upgrade`)
-- Store API keys securely (e.g., use environment variables)
+- Store API keys in ninja's encrypted store / OS keychain — **not** in environment
+  variables or `~/.ninja-mcp.env` (see [docs/SECRETS.md](docs/SECRETS.md))
 - Use scoped API keys when possible
 - For parallel plan execution, consider using git worktrees for stronger isolation
 
 ## Encryption and Secrets
 
 - Never commit API keys or secrets to the repository
-- Use `.env` or environment variables locally
-- For CI, use GitHub Actions secrets
+- Secrets live in an AES-256-GCM encrypted store (`~/.ninja/credentials.db`) with
+  the OS keychain/keyring as the primary backend; the store password is held in
+  process memory and supplied out-of-band (systemd credential / password file /
+  keychain / prompt) — never via an environment variable
+- Ninja never writes secrets to `~/.ninja-mcp.env` and never exports them into
+  the process environment
+- For CI, use provider/framework secret stores (e.g. GitHub Actions secrets) and
+  let them provide the value for that run only
+
+Full details: [docs/SECRETS.md](docs/SECRETS.md).
 
 ## Questions?
 
