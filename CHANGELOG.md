@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.11 - 2026-09-14
+
+- Fix text tasks (agent `plan`/`review`, secretary `codebase_report`/summary)
+  ignoring the module's operator/model: provider-specific model-class/task env
+  vars were sent to a different operator (e.g. an OpenRouter id to codex),
+  failing the call. The module model is now pinned for text tasks.
+- Parse codex assistant output (`item.completed`/`agent_message`) in addition to
+  opencode's `text` parts. Verified live end-to-end through codex + gpt-5.6-luna.
+
 ## 1.0.10 - 2026-09-14
 
 - **Per-module operators.** The coding CLI is now configurable per module —
