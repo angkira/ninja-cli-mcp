@@ -396,7 +396,7 @@ class AutoUpdater:
                 self._reinstall_editable(self.repo_path)
                 return
             self._run_install_command(
-                ["uv", "tool", "install", "--force", f"ninja-mcp[{UPDATE_EXTRAS}]"]
+                ["uv", "tool", "install", "--force", "--refresh", f"ninja-mcp[{UPDATE_EXTRAS}]"]
             )
             return
 
@@ -440,7 +440,7 @@ class AutoUpdater:
         spec = f"ninja-mcp[{UPDATE_EXTRAS}]"
         method = self._install_method()
         if method == "uv-tool":
-            self._run_install_command(["uv", "tool", "install", "--force", spec])
+            self._run_install_command(["uv", "tool", "install", "--force", "--refresh", spec])
             return
         if method == "pipx":
             self._run_install_command(["pipx", "install", "--force", spec])
@@ -449,7 +449,7 @@ class AutoUpdater:
             self._pip_install(spec)
             return
         # No detectable install method but uv exists — use a uv tool.
-        self._run_install_command(["uv", "tool", "install", "--force", spec])
+        self._run_install_command(["uv", "tool", "install", "--force", "--refresh", spec])
 
     def _pip_install(self, spec: str) -> None:
         """``pip install --upgrade`` with a PEP 668 retry (externally-managed)."""

@@ -36,7 +36,7 @@ def test_package_update_pypi_uses_uv_when_installed_as_uv_tool(tmp_path: Path) -
         updater._reinstall_package()
 
     command = run.call_args.args[0]
-    assert command == ["uv", "tool", "install", "--force", "ninja-mcp[runtime]"]
+    assert command == ["uv", "tool", "install", "--force", "--refresh", "ninja-mcp[runtime]"]
 
 
 def test_package_update_pypi_uses_pip_when_installed_with_pip(tmp_path: Path) -> None:
@@ -115,7 +115,7 @@ def test_package_update_github_without_repo_uses_uv_tool_install(tmp_path: Path)
         updater._reinstall_package()
 
     command = run.call_args.args[0]
-    assert command == ["uv", "tool", "install", "--force", "ninja-mcp[runtime]"]
+    assert command == ["uv", "tool", "install", "--force", "--refresh", "ninja-mcp[runtime]"]
 
 
 def test_package_update_editable_uses_uv_tool_install(tmp_path: Path) -> None:

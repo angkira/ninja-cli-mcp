@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.9 - 2026-09-14
+
+- **`ninja-mcp update` no longer silently no-ops.** The uv reinstall now passes
+  `--refresh`, so a stale local index cache can no longer make `update` report
+  success while leaving the old version installed (the failure seen on some
+  machines).
+- Bootstrap note: versions **≤ 1.0.8** carry the no-op bug, so a machine on an
+  older build may need one manual `uv tool install --force --refresh ninja-mcp`
+  before `ninja-mcp update` starts working.
+
 ## 1.0.8 - 2026-09-14
 
 - **Keys: our key if present, otherwise the operator's own auth.** The child
