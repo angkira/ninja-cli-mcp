@@ -252,7 +252,7 @@ def test_default_store_returns_encrypted_only_when_keyring_is_fail_keyring() -> 
 
 
 def test_default_store_includes_keyring_when_functional() -> None:
-    """When keyring is functional, default_store should include KeyringBackend first."""
+    """Encrypted store is primary; keyring is included as a fallback."""
     store_module._default_store = None
 
     # Use a non-fail keyring class
@@ -269,8 +269,9 @@ def test_default_store_includes_keyring_when_functional() -> None:
 
     assert isinstance(result, ChainBackend)
     backends = result._backends
-    assert isinstance(backends[0], KeyringBackend)
-    assert isinstance(backends[1], EncryptedFileBackend)
+    # Encrypted store is authoritative; the keyring is a fallback, not a shadow.
+    assert isinstance(backends[0], EncryptedFileBackend)
+    assert any(isinstance(b, KeyringBackend) for b in backends)
 
     store_module._default_store = None
 

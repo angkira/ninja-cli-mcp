@@ -1050,7 +1050,11 @@ class NinjaConfigApp(App):
         source = store_password_source()
         label = {
             "memory": "held in this process (memory)",
+            "passwordless": "passwordless (machine-bound)",
             "fd": "inherited fd (daemon start)",
+            "systemd": "systemd credential",
+            "file": "password file",
+            "keyring": "OS keychain",
             "env": "env var (NINJA_CREDENTIAL_PASSWORD)",
             "unset": "unset — prompts on first use",
         }.get(source, source)
@@ -1442,16 +1446,18 @@ class NinjaConfigApp(App):
             self.notify(f"Enter a value for {row.display_name} first.", timeout=3)
             return
         try:
-            store = default_store()
-            store.set(row.env_var, value)
-            self.notify(f"✓ {row.display_name} saved to secure store.", timeout=3)
+            default_store().set(row.env_var, value)
         except SecretStoreUnavailable:
-            self.config_manager.set(row.env_var, value)
-            self.notify(f"✓ {row.display_name} saved (keyring unavailable).", timeout=3)
+            self.notify(
+                f"⚠ {row.display_name}: encrypted store locked — set the store "
+                f"password below, then save again.",
+                timeout=7,
+            )
         except Exception as e:
-            self.config_manager.set(row.env_var, value)
-            self.notify(f"⚠ {row.display_name} saved to config ({e}).", timeout=3)
-        row.clear_input()
+            self.notify(f"⚠ {row.display_name}: save failed ({e}).", timeout=7)
+        else:
+            row.clear_input()
+            self.notify(f"✓ {row.display_name} saved to encrypted store.", timeout=3)
         self._refresh_api_keys()
 
     def _delete_key(self, row: APIKeyRow) -> None:

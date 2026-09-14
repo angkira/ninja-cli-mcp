@@ -791,6 +791,26 @@ class CredentialManager:
 
         return credentials
 
+    def can_decrypt(self) -> bool:
+        """Return True if the current key can decrypt the stored credentials.
+
+        Used to detect a passwordless (or legacy) store before prompting: an
+        empty DB always counts as openable.
+
+        Returns:
+            True when at least one credential decrypts, or the DB is empty.
+        """
+        names = [cred["name"] for cred in self._db.list_credentials()]
+        if not names:
+            return True
+        for name in names:
+            try:
+                self.get(name)
+                return True
+            except (EncryptionError, CredentialNotFoundError):
+                continue
+        return False
+
     def exists(self, name: str) -> bool:
         """
         Check if a credential exists.

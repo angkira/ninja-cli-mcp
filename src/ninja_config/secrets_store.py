@@ -344,16 +344,24 @@ def _get_credential_manager() -> CredentialManager:
     7. Interactive ``getpass`` prompt when stdin is a TTY
     8. Raises ``SecretStoreUnavailable`` otherwise
     """
-    global _credential_manager
+    global _credential_manager, _store_password, _store_password_source
     if _credential_manager is not None:
         return _credential_manager
 
     password = _resolve_store_password()
     if password is None:
+        # Legacy / passwordless store: try an empty password before prompting so
+        # machine-bound stores (and headless daemons) open without a TTY.
+        empty = CredentialManager(password="")
+        if empty.can_decrypt():
+            _store_password = ""
+            _store_password_source = "passwordless"
+            _credential_manager = empty
+            return empty
         if not sys.stdin.isatty():
             raise SecretStoreUnavailable(
                 "EncryptedFileBackend needs the store password: run interactively, "
-                "start daemons via 'ninja-mcp daemon start', provide a systemd "
+                "start daemons via 'ninja-mcp daemon start', provision a systemd "
                 "credential / NINJA_STORE_PASSWORD_FILE, or set "
                 "NINJA_CREDENTIAL_PASSWORD for headless use."
             )
@@ -496,9 +504,11 @@ def default_store() -> ChainBackend:
     if _default_store is not None:
         return _default_store
 
+    # Encrypted store FIRST so it is the single source of truth: the OS keyring
+    # is a fallback and can no longer shadow a newer value in the encrypted DB.
     encrypted = EncryptedFileBackend()
     if _keyring_is_functional():
-        _default_store = ChainBackend([KeyringBackend(), encrypted])
+        _default_store = ChainBackend([encrypted, KeyringBackend()])
     else:
         _default_store = ChainBackend([encrypted])
 

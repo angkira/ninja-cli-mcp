@@ -18,10 +18,13 @@ How ninja-mcp stores provider credentials and how to manage them.
 
 | Location | Notes |
 |---|---|
-| OS keychain/keyring | Primary. macOS **Keychain** / Linux Secret Service (libsecret). |
-| `~/.ninja/credentials.db` | AES-256-GCM encrypted SQLite (PBKDF2-HMAC-SHA256, 100k iters). |
+| `~/.ninja/credentials.db` | **Primary.** AES-256-GCM encrypted SQLite (PBKDF2-HMAC-SHA256, 100k iters). |
+| OS keychain/keyring | Fallback. macOS **Keychain** / Linux Secret Service (libsecret). |
 | `~/.ninja-mcp.env` | **Never contains secrets.** Non-secret settings only. |
 | Process environment | **Never set by ninja.** See "External CLIs" below. |
+
+Reads and writes go to the encrypted store first, so an out-of-date key in the
+keychain can never shadow a newer value in the database.
 
 Secrets are the `*_API_KEY` names (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, `PERPLEXITY_API_KEY`, `ZAI_API_KEY`, `GROQ_API_KEY`,
@@ -36,7 +39,8 @@ first run and the plaintext lines are scrubbed (a
 The encrypted store is unlocked with a password. Resolution order (never env by
 default, never written anywhere by ninja):
 
-1. **Memory** — already unlocked in this process.
+0. **Passwordless store** — if the database opens with an empty password, it is
+   used as-is (machine-bound; no prompt). Set a password to change this.
 2. **Inherited fd** — `ninja-mcp daemon start` prompts once and hands each
    forked daemon a pipe fd; only the fd number (not the secret) is in the child
    environment.

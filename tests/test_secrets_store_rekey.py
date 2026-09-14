@@ -121,6 +121,16 @@ def test_password_file_source(
     assert ss.store_password_source() == "file"
 
 
+def test_passwordless_store_opens_without_prompt(_isolated_store: pathlib.Path) -> None:
+    # A store created without a password (the historical default).
+    CredentialManager(password="").set("OPENROUTER_API_KEY", "sk-or-pwless")
+    ss.clear_store_password()
+    ss._reset_singletons()
+
+    assert ss.EncryptedFileBackend().get("OPENROUTER_API_KEY") == "sk-or-pwless"
+    assert ss.store_password_source() == "passwordless"
+
+
 def test_reset_removes_db_and_password(_isolated_store: pathlib.Path) -> None:
     _seed_store("old-pass")
     db = _isolated_store / ".ninja" / "credentials.db"
