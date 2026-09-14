@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.13 - 2026-09-14
+
+- **Fix `ninja-mcp update` hanging on the encrypted-store password.** With a
+  password-protected store the daemon restart inherited the updater's TTY,
+  found no password, and blocked on a `getpass` prompt until the subprocess
+  timeout — surfacing as "Daemon restart timed out". The updater now resolves
+  (and prompts once for) the store password itself and hands it to the restart
+  via `NINJA_CREDENTIAL_PASSWORD`; the daemon strips it from its child env and
+  passes it through an inherited fd. Restart stdin is closed and the timeout is
+  120s.
+- `secrets_store.ensure_store_unlocked()` added (absent/passwordless/prompt
+  aware) and the updater reuses the resolved password when rewriting MCP config.
+
 ## 1.0.12 - 2026-09-14
 
 - **Models auto-route to the active operator.** A single source of truth
