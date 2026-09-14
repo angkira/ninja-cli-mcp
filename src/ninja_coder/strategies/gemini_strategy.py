@@ -17,6 +17,7 @@ from ninja_coder.strategies.base import (
     CLICapabilities,
     CLICommandResult,
     ParsedResult,
+    subprocess_env,
 )
 from ninja_common.logging_utils import get_logger
 
@@ -110,7 +111,7 @@ class GeminiStrategy:
         cmd.extend(["--message", prompt])
 
         # Build environment
-        env = os.environ.copy()
+        env = subprocess_env(api_key=self.config.openai_api_key)
 
         # Set model for Gemini
         if self.config.openai_base_url:

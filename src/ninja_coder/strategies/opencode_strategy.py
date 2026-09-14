@@ -20,6 +20,7 @@ from ninja_coder.strategies.base import (
     CLICapabilities,
     CLICommandResult,
     ParsedResult,
+    subprocess_env,
 )
 from ninja_common.defaults import KNOWN_MODEL_PROVIDER_PREFIXES
 from ninja_common.logging_utils import get_logger
@@ -250,7 +251,7 @@ class OpenCodeStrategy:
         cmd.append(final_prompt)
 
         # Build environment (inherit current environment)
-        env = os.environ.copy()
+        env = subprocess_env(api_key=self.config.openai_api_key)
 
         # Project-aware LSP config: disable LSPs that will hang on this project type
         lsp_override_config = self._build_lsp_config(repo_root)

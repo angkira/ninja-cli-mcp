@@ -32,6 +32,7 @@ from pathlib import Path
 
 import aiohttp
 
+from ninja_coder.strategies.base import subprocess_env
 from ninja_common.logging_utils import get_logger
 
 
@@ -333,7 +334,13 @@ class OpenCodeServerPool:
 
     @staticmethod
     def _build_env(model: str | None = None) -> dict[str, str]:
-        env = os.environ.copy()
+        # Use ninja's own key when available; otherwise fall back to the
+        # operator's own auth (OpenCode auth.json). Inherited host keys are
+        # stripped so a stale env key can't shadow either.
+        from ninja_common.secrets import get_secret
+
+        api_key = get_secret("OPENROUTER_API_KEY") or get_secret("OPENAI_API_KEY") or ""
+        env = subprocess_env(api_key=api_key)
         if model:
             env["OPENCODE_MODEL"] = model
         return env

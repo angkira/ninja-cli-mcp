@@ -17,6 +17,7 @@ from ninja_coder.strategies.base import (
     CLICapabilities,
     CLICommandResult,
     ParsedResult,
+    subprocess_env,
 )
 from ninja_common.defaults import FALLBACK_CODER_MODELS
 from ninja_common.logging_utils import get_logger
@@ -186,7 +187,7 @@ class AiderStrategy:
         cmd.extend(["--message", prompt])
 
         # Build environment (inherit current environment)
-        env = os.environ.copy()
+        env = subprocess_env(api_key=self.config.openai_api_key)
 
         return CLICommandResult(
             command=cmd,

@@ -17,6 +17,7 @@ from ninja_coder.strategies.base import (
     CLICapabilities,
     CLICommandResult,
     ParsedResult,
+    subprocess_env,
 )
 from ninja_common.logging_utils import get_logger
 
@@ -165,7 +166,7 @@ class ClaudeStrategy:
         cmd.append(final_prompt)
 
         # Build environment (inherit current environment)
-        env = os.environ.copy()
+        env = subprocess_env()
 
         # Claude Code timeout
         base_timeout = int(os.environ.get("NINJA_CLAUDE_TIMEOUT", "600"))

@@ -7,12 +7,60 @@ along with shared data models used across strategies.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+#: Provider API-key env vars that must never be inherited by a spawned CLI from
+#: the host environment (stale/foreign keys). Ninja injects only its own
+#: resolved key, when it has one.
+_SECRET_ENV_NAMES: frozenset[str] = frozenset(
+    {
+        "OPENROUTER_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "PERPLEXITY_API_KEY",
+        "ZAI_API_KEY",
+        "GROQ_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "MISTRAL_API_KEY",
+        "GOOGLE_API_KEY",
+        "SERPER_API_KEY",
+    }
+)
+
+
+def subprocess_env(
+    *, api_key: str | None = None, extra: dict[str, str] | None = None
+) -> dict[str, str]:
+    """Build the environment for a spawned coding CLI.
+
+    Starts from the host environment but strips any inherited provider API keys,
+    so a stale key in the parent shell can neither leak into nor shadow the
+    child. When ``api_key`` is given (ninja's own key from the encrypted store)
+    it is exported for the child; when it is empty, the operator's own auth is
+    used (OpenCode auth.json, Codex/ChatGPT login, Claude auth, …).
+
+    Args:
+        api_key: Ninja's resolved provider key, or empty/None to defer to the
+            operator's own authentication.
+        extra: Additional environment variables (e.g. ``XDG_CONFIG_HOME``).
+
+    Returns:
+        Environment mapping for the subprocess.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in _SECRET_ENV_NAMES}
+    if api_key:
+        env["OPENROUTER_API_KEY"] = api_key
+        env["OPENAI_API_KEY"] = api_key
+    if extra:
+        env.update(extra)
+    return env
 
 
 @dataclass

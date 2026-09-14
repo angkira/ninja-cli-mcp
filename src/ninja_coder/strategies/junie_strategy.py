@@ -18,6 +18,7 @@ from ninja_coder.strategies.base import (
     CLICapabilities,
     CLICommandResult,
     ParsedResult,
+    subprocess_env,
 )
 from ninja_common.logging_utils import get_logger
 
@@ -155,7 +156,7 @@ class JunieStrategy:
 
         # Inherit host environment (JetBrains Account auth lives here);
         # never inject API keys.
-        env = os.environ.copy()
+        env = subprocess_env()
 
         base_timeout = int(os.environ.get("NINJA_JUNIE_TIMEOUT", "600"))
 

@@ -82,6 +82,24 @@ If neither is available on a headless host, the encrypted store cannot be
 unlocked and ninja falls back to any pre-existing environment variables — which
 is why we recommend provisioning the credential instead.
 
+## Key precedence: ninja keys vs operator auth
+
+When ninja spawns a coding CLI it builds a **clean child environment**:
+
+1. **Inherited API keys are stripped** — a stale `OPENROUTER_API_KEY` in your
+   shell can neither leak into nor shadow the CLI.
+2. **If ninja has a key** in the encrypted store, it is exported to the child
+   (`OPENROUTER_API_KEY` + `OPENAI_API_KEY`), so operators that honour the
+   environment use it.
+3. **If ninja has no key**, nothing is exported and the operator's own auth is
+   used — OpenCode `auth.json`, Codex/ChatGPT login, Claude auth. You are not
+   prompted and not blocked.
+4. **Host-auth operators** (Codex, Claude, Junie) never receive an injected key.
+
+So: *our key if present, otherwise the operator's authorization.* One caveat —
+OpenCode prefers its own stored credential over the env value, so keep ninja's
+key and OpenCode's `auth.json` in sync (or just rely on OpenCode's auth).
+
 ## External CLIs have their own auth
 
 `opencode`, `codex`, `claude`, `gemini` and `aider` keep their **own**
