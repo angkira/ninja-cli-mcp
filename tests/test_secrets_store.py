@@ -76,6 +76,7 @@ def test_known_secret_names_contains_expected_keys() -> None:
         "DEEPSEEK_API_KEY",
         "MISTRAL_API_KEY",
         "GOOGLE_API_KEY",
+        "SERPER_API_KEY",
     }
     assert expected == KNOWN_SECRET_NAMES
 

@@ -904,15 +904,18 @@ def _get_config_hash() -> str:
     """
     import hashlib
 
-    # Get all config-relevant env vars
+    from ninja_common.secrets import get_secret
+
+    # Get all config-relevant env vars. Secrets are recorded only as a
+    # presence flag — their value is never read into the hash.
     config_vars = [
         ("NINJA_CODE_BIN", os.getenv("NINJA_CODE_BIN", "")),
         ("NINJA_MODEL", os.getenv("NINJA_MODEL", "")),
         ("OPENROUTER_MODEL", os.getenv("OPENROUTER_MODEL", "")),
         ("OPENAI_MODEL", os.getenv("OPENAI_MODEL", "")),
         ("OPENAI_BASE_URL", os.getenv("OPENAI_BASE_URL", "")),
-        ("OPENROUTER_API_KEY", os.getenv("OPENROUTER_API_KEY", "")),
-        ("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "")),
+        ("OPENROUTER_API_KEY", "set" if get_secret("OPENROUTER_API_KEY") else ""),
+        ("OPENAI_API_KEY", "set" if get_secret("OPENAI_API_KEY") else ""),
         ("NINJA_TIMEOUT_SEC", os.getenv("NINJA_TIMEOUT_SEC", "")),
     ]
 

@@ -12,11 +12,13 @@ from __future__ import annotations
 import getpass
 import os
 import sys
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import keyring
 import keyring.backends.fail
 
+from ninja_common.secrets import KNOWN_SECRET_NAMES
 from ninja_config.credentials import CredentialManager
 
 
@@ -24,21 +26,33 @@ from ninja_config.credentials import CredentialManager
 # Public constants
 # ---------------------------------------------------------------------------
 
-KNOWN_SECRET_NAMES: frozenset[str] = frozenset(
-    {
-        "OPENROUTER_API_KEY",
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "PERPLEXITY_API_KEY",
-        "ZAI_API_KEY",
-        "GROQ_API_KEY",
-        "DEEPSEEK_API_KEY",
-        "MISTRAL_API_KEY",
-        "GOOGLE_API_KEY",
-    }
-)
+__all__ = [
+    "KNOWN_SECRET_NAMES",
+    "ChainBackend",
+    "EncryptedFileBackend",
+    "KeyringBackend",
+    "SecretStore",
+    "SecretStoreUnavailable",
+    "clear_store_password",
+    "default_store",
+    "get_store_password",
+    "prompt_store_password",
+    "rekey_and_set_password",
+    "reset_encrypted_store",
+    "set_store_password",
+    "store_password_source",
+]
 
 _KEYRING_SERVICE = "ninja-mcp"
+
+#: Keyring item holding the store password itself (OS Keychain on macOS).
+_STORE_PASSWORD_ITEM = "__store_password__"
+
+_ENV_PASSWORD_VAR = "NINJA_CREDENTIAL_PASSWORD"
+#: systemd LoadCredential id (Linux): file at $CREDENTIALS_DIRECTORY/<id>.
+_SYSTEMD_CRED_ID = "ninja-store-password"
+#: Explicit password-file override (cross-platform; e.g. launchd on macOS).
+_PASSWORD_FILE_VAR = "NINJA_STORE_PASSWORD_FILE"
 
 # ---------------------------------------------------------------------------
 # Custom exception
@@ -120,33 +134,233 @@ class KeyringBackend:
 _credential_manager: CredentialManager | None = None
 
 
+def _reset_singletons() -> None:
+    """Drop cached store/manager so the next access rebuilds with new settings."""
+    global _credential_manager, _default_store
+    _credential_manager = None
+    _default_store = None
+
+
+#: In-memory copy of the store password (never written to env or config).
+_store_password: str | None = None
+_store_password_source: str = "unset"
+
+#: Env var carrying the *file descriptor number* (not the secret) that a freshly
+#: spawned daemon reads its password from once at startup.
+_CRED_FD_VAR = "NINJA_CREDENTIAL_FD"
+
+
+def _read_fd_password() -> str | None:
+    """Read a one-shot password from the inherited fd in ``NINJA_CREDENTIAL_FD``.
+
+    ``DaemonManager.start`` prompts once in the launcher and hands each child a
+    pipe read-end, so the secret never appears in env/argv. The fd is consumed
+    and closed on first read.
+    """
+    fd_env = os.environ.pop(_CRED_FD_VAR, None)
+    if not fd_env:
+        return None
+    try:
+        fd = int(fd_env)
+    except ValueError:
+        return None
+    try:
+        chunk = os.read(fd, 65536)
+    except OSError:
+        return None
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+    return chunk.decode("utf-8", "replace") or None
+
+
+def _read_systemd_credential() -> str | None:
+    """Read the password from a systemd ``LoadCredential`` file (Linux)."""
+    cred_dir = os.environ.get("CREDENTIALS_DIRECTORY")
+    if not cred_dir:
+        return None
+    try:
+        value = (Path(cred_dir) / _SYSTEMD_CRED_ID).read_text().strip()
+    except OSError:
+        return None
+    return value or None
+
+
+def _read_password_file() -> str | None:
+    """Read the password from ``NINJA_STORE_PASSWORD_FILE`` (any platform)."""
+    path_str = os.environ.get(_PASSWORD_FILE_VAR)
+    if not path_str:
+        return None
+    try:
+        value = Path(path_str).read_text().strip()
+    except OSError:
+        return None
+    return value or None
+
+
+def _read_keyring_password() -> str | None:
+    """Read the persisted store password from the OS keychain/keyring."""
+    try:
+        if _keyring_is_functional():
+            return keyring.get_password(_KEYRING_SERVICE, _STORE_PASSWORD_ITEM)
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_store_password() -> str | None:
+    """Resolve the store password without prompting; cache the first hit.
+
+    Order: memory → inherited fd → systemd credential → password file →
+    OS keychain/keyring → ``NINJA_CREDENTIAL_PASSWORD`` env (CI only). The fd
+    is one-shot, so the resolved value is cached in memory.
+    """
+    global _store_password, _store_password_source
+    if _store_password is not None:
+        return _store_password
+    sources = (
+        ("fd", _read_fd_password),
+        ("systemd", _read_systemd_credential),
+        ("file", _read_password_file),
+        ("keyring", _read_keyring_password),
+        ("env", lambda: os.getenv(_ENV_PASSWORD_VAR) or None),
+    )
+    for source, getter in sources:
+        password = getter()
+        if password:
+            _store_password = password
+            _store_password_source = source
+            return password
+    return None
+
+
+def store_password_source() -> str:
+    """Report where the encrypted-store password currently comes from."""
+    _resolve_store_password()
+    return _store_password_source
+
+
+def get_store_password() -> str | None:
+    """Return the resolved store password (without prompting), if any."""
+    return _resolve_store_password()
+
+
+def set_store_password(password: str, *, persist: bool = False) -> None:
+    """Set the store password for THIS process (in memory).
+
+    When ``persist`` is true it is also saved to the OS keychain/keyring so a
+    headless launch (macOS launchd; Linux with no TTY) can unlock the store.
+    The password is never written to env or the config file.
+    """
+    global _store_password, _store_password_source
+    _store_password = password
+    _store_password_source = "memory"
+    if persist:
+        try:
+            if _keyring_is_functional():
+                keyring.set_password(_KEYRING_SERVICE, _STORE_PASSWORD_ITEM, password)
+        except Exception:
+            pass
+    _reset_singletons()
+
+
+def clear_store_password() -> None:
+    """Forget the in-memory password and any keychain-persisted copy."""
+    global _store_password, _store_password_source
+    _store_password = None
+    _store_password_source = "unset"
+    try:
+        if _keyring_is_functional():
+            try:
+                keyring.delete_password(_KEYRING_SERVICE, _STORE_PASSWORD_ITEM)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    _reset_singletons()
+
+
+def prompt_store_password(prompt: str = "ninja-mcp encrypted store password: ") -> str:
+    """Prompt interactively for the store password, cache it in memory, return it."""
+    password = getpass.getpass(prompt)
+    set_store_password(password)
+    return password
+
+
+def rekey_and_set_password(new_password: str, *, persist: bool = False) -> int:
+    """Change the encrypted-store password, re-encrypting every credential.
+
+    Reads existing rows with the *currently known* password (never prompts on
+    its own if the store was already unlocked) and rewrites them under
+    ``new_password``. With ``persist`` the new password is also stored in the
+    OS keychain/keyring for headless launches.
+
+    Returns:
+        Number of credentials re-encrypted.
+    """
+    db_path = Path.home() / ".ninja" / "credentials.db"
+    count = 0
+    if db_path.exists():
+        # Reuse the already-open manager (it holds the current key) if the store
+        # was unlocked this process; otherwise unlock it now (may prompt).
+        manager = _credential_manager
+        if manager is None:
+            manager = _get_credential_manager()
+        count = manager.rekey(new_password)
+    set_store_password(new_password, persist=persist)
+    return count
+
+
+def reset_encrypted_store() -> bool:
+    """Delete the encrypted credentials DB and forget the store password.
+
+    Returns:
+        True if the DB file was removed (or already absent).
+    """
+    clear_store_password()
+    db_path = Path.home() / ".ninja" / "credentials.db"
+    ok = True
+    try:
+        if db_path.exists():
+            db_path.unlink()
+    except OSError:
+        ok = False
+    _reset_singletons()
+    return ok
+
+
 def _get_credential_manager() -> CredentialManager:
     """Return (or create) the process-lifetime CredentialManager instance.
 
-    Password resolution order:
-    1. ``NINJA_CREDENTIAL_PASSWORD`` environment variable (set externally or by daemon)
-    2. Interactive ``getpass`` prompt when stdin is a TTY
-    3. Raises ``SecretStoreUnavailable`` if neither is possible (headless/CI)
+    Password resolution (never writes the password to env/config):
+    1. In-memory password set earlier this process
+    2. One-shot inherited fd (``NINJA_CREDENTIAL_FD``) from ``daemon start``
+    3. systemd ``LoadCredential`` file (Linux)
+    4. ``NINJA_STORE_PASSWORD_FILE`` (any platform, e.g. launchd on macOS)
+    5. OS keychain/keyring (macOS Keychain / Secret Service)
+    6. ``NINJA_CREDENTIAL_PASSWORD`` env var (explicit CI/headless fallback)
+    7. Interactive ``getpass`` prompt when stdin is a TTY
+    8. Raises ``SecretStoreUnavailable`` otherwise
     """
     global _credential_manager
     if _credential_manager is not None:
         return _credential_manager
 
-    if os.getenv("NINJA_CREDENTIAL_PASSWORD") is not None:
-        # Env var already set; CredentialManager reads it internally.
-        _credential_manager = CredentialManager()
-        return _credential_manager
+    password = _resolve_store_password()
+    if password is None:
+        if not sys.stdin.isatty():
+            raise SecretStoreUnavailable(
+                "EncryptedFileBackend needs the store password: run interactively, "
+                "start daemons via 'ninja-mcp daemon start', provide a systemd "
+                "credential / NINJA_STORE_PASSWORD_FILE, or set "
+                "NINJA_CREDENTIAL_PASSWORD for headless use."
+            )
+        password = getpass.getpass("ninja-mcp encrypted store password: ")
+        set_store_password(password)
 
-    if not sys.stdin.isatty():
-        raise SecretStoreUnavailable(
-            "EncryptedFileBackend requires NINJA_CREDENTIAL_PASSWORD env var "
-            "on non-interactive (daemon/CI) processes."
-        )
-
-    # Interactive: prompt once and inject into env for CredentialManager.
-    password = getpass.getpass("ninja-mcp encrypted store password: ")
-    os.environ["NINJA_CREDENTIAL_PASSWORD"] = password
-    _credential_manager = CredentialManager()
+    _credential_manager = CredentialManager(password=password)
     return _credential_manager
 
 

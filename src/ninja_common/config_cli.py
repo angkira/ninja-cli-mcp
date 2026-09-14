@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -203,9 +202,11 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print_colored("─" * 60, "dim")
     print()
 
-    # Check 1: API key in environment
+    # Check 1: API key in the encrypted store (env only as last resort)
+    from ninja_common.secrets import get_secret
+
     print_colored("Checking API keys...", "cyan")
-    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    api_key = get_secret("OPENROUTER_API_KEY") or get_secret("OPENAI_API_KEY")
 
     if api_key:
         if api_key.startswith("sk-or-"):

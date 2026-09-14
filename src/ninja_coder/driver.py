@@ -168,7 +168,9 @@ class NinjaConfig:
     @classmethod
     def from_env(cls) -> NinjaConfig:
         """Create config from environment variables with auto-detection fallback."""
-        api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+        from ninja_common.secrets import get_secret
+
+        api_key = get_secret("OPENROUTER_API_KEY") or get_secret("OPENAI_API_KEY") or ""
 
         # Model priority: NINJA_CODER_MODEL > NINJA_MODEL > OPENROUTER_MODEL > OPENAI_MODEL > default
         model = (

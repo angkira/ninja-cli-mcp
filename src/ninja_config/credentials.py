@@ -601,12 +601,16 @@ class CredentialManager:
         >>> credentials = manager.list_all()
     """
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(self, db_path: Path | None = None, password: str | None = None) -> None:
         """
         Initialize credential manager.
 
         Args:
             db_path: Path to credentials database (defaults to ~/.ninja/credentials.db)
+            password: Store password. When ``None`` it is read from the
+                ``NINJA_CREDENTIAL_PASSWORD`` env var (headless/CI). Callers that
+                already hold the password (prompt/fd) should pass it explicitly so
+                it never needs to live in the environment.
 
         Raises:
             DatabaseError: If database initialization fails
@@ -619,7 +623,8 @@ class CredentialManager:
         self._db = CredentialDatabase(db_path)
 
         # Initialize encryption
-        password = os.getenv("NINJA_CREDENTIAL_PASSWORD", "")
+        if password is None:
+            password = os.getenv("NINJA_CREDENTIAL_PASSWORD", "")
         salt = self._db.get_or_create_salt()
         master_key = KeyDerivation.derive_key(salt, password)
         self._encryption = CredentialEncryption(master_key)
@@ -709,6 +714,46 @@ class CredentialManager:
             DatabaseError: If deletion fails
         """
         return self._db.delete_credential(name)
+
+    def rekey(self, new_password: str) -> int:
+        """Re-encrypt every stored credential under ``new_password``.
+
+        Keeps the existing salt (stored in ``encryption_meta``); only the
+        derived key changes, so this is a decrypt-with-old / encrypt-with-new
+        pass over all rows.
+
+        Args:
+            new_password: New store password (empty string = no password).
+
+        Returns:
+            Number of credentials re-encrypted.
+
+        Raises:
+            EncryptionError: If an existing value cannot be decrypted with the
+                current (old) password.
+        """
+        salt = self._db.get_or_create_salt()
+        new_encryption = CredentialEncryption(KeyDerivation.derive_key(salt, new_password))
+
+        names = [cred["name"] for cred in self._db.list_credentials()]
+        count = 0
+        for name in names:
+            try:
+                encrypted_value = self._db.get_credential(name)
+            except CredentialNotFoundError:
+                continue
+            try:
+                plaintext = self._encryption.decrypt(encrypted_value)
+            except EncryptionError:
+                if self._legacy_encryption is None:
+                    raise
+                plaintext = self._legacy_encryption.decrypt(encrypted_value)
+            self._db.store_credential(name, new_encryption.encrypt(plaintext))
+            count += 1
+
+        self._encryption = new_encryption
+        self._legacy_encryption = None
+        return count
 
     def list_all(self) -> list[dict[str, Any]]:
         """

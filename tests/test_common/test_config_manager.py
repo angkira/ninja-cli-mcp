@@ -226,8 +226,8 @@ export NINJA_CODER_MODEL='old_model'
 
             manager = ConfigManager(str(config_file))
 
-            # Update a value
-            manager.set("OPENROUTER_API_KEY", "new_key")
+            # Update a non-secret value (secrets are routed to the store)
+            manager.set("NINJA_CODER_MODEL", "new_model")
 
             # Read file content
             content = config_file.read_text()
@@ -236,8 +236,9 @@ export NINJA_CODER_MODEL='old_model'
             assert "# Ninja MCP Configuration" in content
             assert "# API Keys" in content
             # Value should be updated
-            assert "new_key" in content
-            assert "old_key" not in content
+            assert "new_model" in content
+            # The secret line is left untouched (secrets live in the store)
+            assert "OPENROUTER_API_KEY='old_key'" in content
 
     def test_handle_quotes_in_values(self):
         """Test handling of different quote styles."""

@@ -13,6 +13,22 @@ import pytest
 from ninja_coder.driver import NinjaConfig, NinjaDriver, _get_inactivity_timeout
 
 
+@pytest.fixture(autouse=True)
+def _empty_secret_store(monkeypatch):
+    """Make the secret store return nothing so env-based tests see os.environ.
+
+    Secrets now resolve store-first (env is only a fallback); tests that set
+    env vars must not accidentally read the developer's real keyring/store.
+    """
+    import ninja_config.secrets_store as ss
+
+    class _EmptyStore:
+        def get(self, _name):  # noqa: ANN001
+            return None
+
+    monkeypatch.setattr(ss, "default_store", lambda: _EmptyStore())
+
+
 class TestNinjaConfig:
     """Test NinjaConfig class."""
 

@@ -192,7 +192,9 @@ class PerplexityProvider(SearchProvider):
         Args:
             api_key: Perplexity API key. If None, reads from PERPLEXITY_API_KEY env var.
         """
-        self.api_key = api_key or os.environ.get("PERPLEXITY_API_KEY", "")
+        from ninja_common.secrets import get_secret
+
+        self.api_key = api_key or get_secret("PERPLEXITY_API_KEY") or ""
         self.base_url = "https://api.perplexity.ai/chat/completions"
 
     async def search(self, query: str, max_results: int = 10) -> list[dict[str, Any]]:
@@ -332,12 +334,14 @@ class SearchProviderFactory:
         # DuckDuckGo is always available
         available.append("duckduckgo")
 
+        from ninja_common.secrets import get_secret
+
         # Check Serper
-        if os.environ.get("SERPER_API_KEY"):
+        if get_secret("SERPER_API_KEY"):
             available.append("serper")
 
         # Check Perplexity
-        if os.environ.get("PERPLEXITY_API_KEY"):
+        if get_secret("PERPLEXITY_API_KEY"):
             available.append("perplexity")
 
         return available
@@ -352,8 +356,10 @@ class SearchProviderFactory:
         Returns:
             Default provider name.
         """
-        if os.environ.get("PERPLEXITY_API_KEY"):
+        from ninja_common.secrets import get_secret
+
+        if get_secret("PERPLEXITY_API_KEY"):
             return "perplexity"
-        if os.environ.get("SERPER_API_KEY"):
+        if get_secret("SERPER_API_KEY"):
             return "serper"
         return "duckduckgo"

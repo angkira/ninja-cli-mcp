@@ -340,19 +340,17 @@ class TestGetSecret:
 
         assert result == "env_value"
 
-    def test_falls_back_to_config_manager(self):
+    def test_no_config_file_fallback(self):
+        """Secrets are never read from the plaintext config file (no leaks)."""
         mock_store = MagicMock()
         mock_store.get.return_value = None
         mock_secrets_module = MagicMock(default_store=MagicMock(return_value=mock_store))
-        mock_cm = MagicMock()
-        mock_cm.get.return_value = "config_value"
 
         with patch.dict(sys.modules, {"ninja_config.secrets_store": mock_secrets_module}):
             with patch("os.environ", {}):
-                with patch("ninja_common.config_manager.ConfigManager", return_value=mock_cm):
-                    result = get_secret("TEST_KEY")
+                result = get_secret("TEST_KEY")
 
-        assert result == "config_value"
+        assert result is None
 
     def test_all_return_none(self):
         mock_store = MagicMock()
@@ -368,19 +366,17 @@ class TestGetSecret:
 
         assert result is None
 
-    def test_secret_store_exception_falls_back(self):
-        mock_cm = MagicMock()
-        mock_cm.get.return_value = "fallback_value"
+    def test_store_exception_returns_none_without_env(self):
+        """A store failure yields None (no plaintext/config fallback)."""
         mock_secrets_module = MagicMock(
             default_store=MagicMock(side_effect=RuntimeError("no store")),
         )
 
         with patch.dict(sys.modules, {"ninja_config.secrets_store": mock_secrets_module}):
             with patch("os.environ", {}):
-                with patch("ninja_common.config_manager.ConfigManager", return_value=mock_cm):
-                    result = get_secret("TEST_KEY")
+                result = get_secret("TEST_KEY")
 
-        assert result == "fallback_value"
+        assert result is None
 
 
 class TestRegisterClaudeMcp:

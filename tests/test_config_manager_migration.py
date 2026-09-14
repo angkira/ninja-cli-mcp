@@ -298,22 +298,20 @@ class TestExportEnvResolutionChain:
         cm_module._migration_done = True
         return ConfigManager(config_file=str(env_path))
 
-    def test_store_wins_over_env_and_file(
+    def test_secrets_are_not_injected_into_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When secret is in store AND env AND .env, store value wins."""
+        """export_env() must NOT export secrets — they never belong in the env."""
         store = InMemoryStore()
         store._data["OPENROUTER_API_KEY"] = "from-store"
-        monkeypatch.setenv("OPENROUTER_API_KEY", "from-env")
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
         mgr = self._make_manager(tmp_path, "OPENROUTER_API_KEY=from-file\n")
 
         with patch("ninja_config.secrets_store.default_store", return_value=store):
-            # Clear env first so export_env sets it
-            monkeypatch.setenv("OPENROUTER_API_KEY", "from-env")
             mgr.export_env()
 
-        assert os.environ["OPENROUTER_API_KEY"] == "from-store"
+        assert "OPENROUTER_API_KEY" not in os.environ
 
     def test_env_wins_when_store_empty(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -329,10 +327,10 @@ class TestExportEnvResolutionChain:
 
         assert os.environ["OPENROUTER_API_KEY"] == "from-env"
 
-    def test_file_wins_when_store_and_env_empty(
+    def test_file_secret_is_not_injected(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When secret not in store, not in env, .env value is used."""
+        """A plaintext .env secret is never exported into os.environ either."""
         store = InMemoryStore()  # empty
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
@@ -341,7 +339,7 @@ class TestExportEnvResolutionChain:
         with patch("ninja_config.secrets_store.default_store", return_value=store):
             mgr.export_env()
 
-        assert os.environ["OPENROUTER_API_KEY"] == "from-file"
+        assert "OPENROUTER_API_KEY" not in os.environ
 
     def test_non_secret_injected_only_if_not_set(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

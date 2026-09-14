@@ -355,23 +355,12 @@ def save_secret(env_var: str, value: str) -> None:
 
 
 def get_secret(env_var: str) -> str | None:
-    """Retrieve a secret: SecretStore > env var > plaintext .env."""
-    try:
-        from ninja_config.secrets_store import default_store
+    """Retrieve a secret from the encrypted store (env only as last resort).
 
-        store = default_store()
-        val = store.get(env_var)
-        if val:
-            return val
-    except Exception:
-        pass
+    Delegates to :func:`ninja_common.secrets.get_secret` so runtime modules and
+    the TUI share one resolution path. Secrets are never read from the plaintext
+    config file.
+    """
+    from ninja_common.secrets import get_secret as _get_secret
 
-    import os
-
-    env_val = os.environ.get(env_var)
-    if env_val:
-        return env_val
-
-    from ninja_common.config_manager import ConfigManager
-
-    return ConfigManager().get(env_var)
+    return _get_secret(env_var)

@@ -175,8 +175,50 @@ class DaemonManager:
         self.daemon_dir = cache_dir / "daemons"
         self.log_dir = cache_dir / "logs"
 
+        # Encrypted-store password: prompted at most once per launch and handed
+        # to each forked daemon through an inherited fd (never via env/argv).
+        self._store_password: str | None = None
+        self._store_prompted = False
+
         self.daemon_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
+
+    def _unlock_store_once(self) -> str | None:
+        """Resolve the encrypted-store password once for this launch.
+
+        Order: already-known (this process) → env var → interactive prompt.
+        Returns None when there is no store DB or no way to get the password
+        (headless), in which case daemons fall back to env/file secrets.
+        """
+        if self._store_prompted:
+            return self._store_password
+        self._store_prompted = True
+
+        db = Path.home() / ".ninja" / "credentials.db"
+        if not db.exists():
+            return None
+
+        try:
+            from ninja_config import secrets_store
+        except Exception:
+            return None
+
+        existing = secrets_store.get_store_password()
+        if existing is not None:
+            self._store_password = existing
+            return self._store_password
+
+        env_password = os.getenv("NINJA_CREDENTIAL_PASSWORD")
+        if env_password:
+            self._store_password = env_password
+            return self._store_password
+
+        if sys.stdin.isatty():
+            try:
+                self._store_password = secrets_store.prompt_store_password()
+            except Exception:
+                self._store_password = None
+        return self._store_password
 
     def _get_pid_file(self, module: str) -> Path:
         """Get PID file path for module."""
@@ -224,10 +266,10 @@ class DaemonManager:
         """
         config_file = Path.home() / ".ninja-mcp.env"
 
+        # Present-but-empty is authoritative ("none enabled"); only an absent
+        # value falls back to the defaults.
         if "NINJA_ENABLED_MODULES" in os.environ:
-            modules = [m.strip() for m in os.environ["NINJA_ENABLED_MODULES"].split(",")]
-            if modules:
-                return modules
+            return [m.strip() for m in os.environ["NINJA_ENABLED_MODULES"].split(",") if m.strip()]
 
         if config_file.exists():
             try:
@@ -235,9 +277,7 @@ class DaemonManager:
                 for line in content.splitlines():
                     if line.startswith("NINJA_ENABLED_MODULES="):
                         value = line.split("=", 1)[1].strip().strip("'\"")
-                        modules = [m.strip() for m in value.split(",")]
-                        if modules:
-                            return modules
+                        return [m.strip() for m in value.split(",") if m.strip()]
             except OSError:
                 pass
 
@@ -467,6 +507,22 @@ class DaemonManager:
             str(port),
         ]
 
+        # Hand the encrypted-store password to the child through a pipe fd so it
+        # never lands in the environment or argv. The server reads it once at
+        # startup (see secrets_store._read_fd_password).
+        child_env = os.environ.copy()
+        password_fd: int | None = None
+        password = self._unlock_store_once()
+        if password is not None:
+            read_fd, write_fd = os.pipe()
+            try:
+                os.write(write_fd, password.encode("utf-8"))
+            finally:
+                os.close(write_fd)
+            os.set_inheritable(read_fd, True)
+            password_fd = read_fd
+            child_env["NINJA_CREDENTIAL_FD"] = str(read_fd)
+
         try:
             # Fork process
             new_pid = os.fork()
@@ -486,9 +542,14 @@ class DaemonManager:
                 os.dup2(null_fd, sys.stdin.fileno())
                 os.close(null_fd)
 
-                # Execute server
-                os.execvp(cmd[0], cmd)
+                # Execute server (child_env carries only the fd number)
+                os.execvpe(cmd[0], cmd, child_env)
             else:
+                if password_fd is not None:
+                    try:
+                        os.close(password_fd)
+                    except OSError:
+                        pass
                 # Parent process
                 self._write_pid(module, new_pid)
 

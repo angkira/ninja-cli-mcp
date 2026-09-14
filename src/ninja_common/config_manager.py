@@ -13,6 +13,13 @@ import re
 import shutil
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from ninja_common.secrets import KNOWN_SECRET_NAMES, get_secret, set_secret
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 logger = logging.getLogger(__name__)
@@ -157,6 +164,9 @@ class ConfigManager:
         Returns:
             Configuration value or default.
         """
+        if key in KNOWN_SECRET_NAMES:
+            value = get_secret(key)
+            return value if value is not None else default
         config = self.read_config()
         return config.get(key, default)
 
@@ -164,13 +174,48 @@ class ConfigManager:
         """
         Set a configuration value.
 
+        Secret keys (``*_API_KEY``) are routed to the encrypted store and are
+        never written to the plaintext config file.
+
         Args:
             key: Configuration key.
             value: Configuration value.
         """
+        if key in KNOWN_SECRET_NAMES:
+            if value:
+                set_secret(key, value)
+            self.scrub_secret_lines({key})
+            return
         config = self.read_config()
         config[key] = value
         self.write_config(config)
+
+    def scrub_secret_lines(self, names: Iterable[str]) -> int:
+        """Remove plaintext secret assignments from the config file.
+
+        Args:
+            names: Secret env-var names to strip.
+
+        Returns:
+            Number of lines removed.
+        """
+        if not self.config_file.exists():
+            return 0
+        raw_lines = self.config_file.read_text().splitlines(keepends=True)
+        kept: list[str] = []
+        removed = 0
+        for line in raw_lines:
+            match = re.match(r"\s*(?:export\s+)?(\w+)=", line)
+            if match and match.group(1) in names:
+                removed += 1
+                continue
+            kept.append(line)
+        if removed:
+            tmp = self.config_file.parent / (self.config_file.name + ".tmp")
+            tmp.write_text("".join(kept))
+            tmp.chmod(0o600)
+            tmp.replace(self.config_file)
+        return removed
 
     def update(self, updates: dict[str, str]) -> None:
         """
@@ -205,44 +250,18 @@ class ConfigManager:
             self.write_config(config)
 
     def export_env(self) -> None:
+        """Export NON-secret configuration into ``os.environ``.
+
+        Secrets (``*_API_KEY``) are deliberately **not** exported: they are read
+        on demand from the encrypted store via :func:`ninja_common.secrets.get_secret`
+        so they never appear in this process's environment. Non-secret keys are
+        injected from the config file only when not already present.
         """
-        Export all configuration values to environment variables.
-
-        For keys in KNOWN_SECRET_NAMES the resolution order is:
-        1. SecretStore (keyring → encrypted-file) — highest priority
-        2. Existing os.environ value (already set by CI/Docker)
-        3. Plaintext value from ~/.ninja-mcp.env (legacy fallback)
-
-        Non-secret keys are injected from the .env file only if not already
-        present in os.environ (same as before, only if not already set).
-        """
-        # Deferred import — avoids pulling keyring into processes that only
-        # call read_config/write_config without ever exporting.
-        from ninja_config.secrets_store import KNOWN_SECRET_NAMES, default_store
-
-        store = default_store()
         env_config = self.read_config()
-
         for key, file_value in env_config.items():
             if key in KNOWN_SECRET_NAMES:
-                # Resolution chain for secrets
-                resolved: str | None = store.get(key)
-                source = "store"
-                if resolved is None:
-                    existing = os.environ.get(key)
-                    if existing:
-                        resolved = existing
-                        source = "env"
-                    elif file_value:
-                        resolved = file_value
-                        source = "file"
-
-                if resolved is not None:
-                    if os.environ.get(key) != resolved:
-                        os.environ[key] = resolved
-                    logger.debug("Secret %s resolved from %s", key, source)
-            elif key not in os.environ:
-                # Non-secret: inject only if not already in environment
+                continue
+            if key not in os.environ:
                 os.environ[key] = file_value
 
     def get_masked(self, key: str) -> str | None:
