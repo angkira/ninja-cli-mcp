@@ -2665,6 +2665,31 @@ class NinjaDriver:
         return result
 
 
+def _init_scratch_git(path: str) -> None:
+    """Initialise a throwaway git repo so the driver's safety-tag step succeeds."""
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=path, check=False, capture_output=True)
+        (Path(path) / ".gitkeep").write_text("")
+        subprocess.run(["git", "add", "-A"], cwd=path, check=False, capture_output=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.email=ninja@local",
+                "-c",
+                "user.name=ninja",
+                "commit",
+                "-qm",
+                "init",
+            ],
+            cwd=path,
+            check=False,
+            capture_output=True,
+        )
+    except Exception:
+        pass
+
+
 async def run_operator_text(
     *,
     prompt: str,
@@ -2692,10 +2717,20 @@ async def run_operator_text(
         error, empty output).
     """
     try:
+        # Make ~/.ninja-mcp.env values (NINJA_MODEL, module models, operator)
+        # available even when the caller did not export them (config only
+        # injects non-secret keys).
+        try:
+            from ninja_common.config_manager import ConfigManager
+
+            ConfigManager().export_env()
+        except Exception:
+            pass
         config = NinjaConfig.from_env(operator_env=operator_env, model_env=model_env)
         # Run in a throwaway dir so a text task can never modify the real repo;
         # callers embed any needed context directly in the prompt.
         workdir = tempfile.mkdtemp(prefix="ninja-operator-text-")
+        _init_scratch_git(workdir)
         instruction = InstructionBuilder(workdir, mode=ExecutionMode.QUICK).build_quick_task(
             task=prompt,
             context_paths=[],
@@ -2714,8 +2749,33 @@ async def run_operator_text(
         logger.warning("operator text task failed: %s", e)
         return False, ""
 
-    text = (result.stdout or "").strip() or (result.notes or "").strip()
-    return bool(result.success and text), text
+    # A text task intentionally touches no files, so the driver's "no files
+    # modified" suspicion must not be treated as failure. Success = CLI exited
+    # 0 and produced assistant text.
+    text = _extract_operator_text(result.stdout or "")
+    if not text:
+        text = (result.notes or "").strip() or (result.summary or "").strip()
+    exit_ok = getattr(result, "exit_code", None) == 0
+    return bool(exit_ok and text and not text.startswith("❌")), text
+
+
+def _extract_operator_text(stdout: str) -> str:
+    """Join assistant ``text`` parts from a CLI JSON event stream."""
+    parts: list[str] = []
+    for raw in stdout.splitlines():
+        line = raw.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if obj.get("type") == "text":
+            part = obj.get("part") or {}
+            value = part.get("text")
+            if value:
+                parts.append(str(value))
+    return "\n".join(parts).strip()
 
 
 # Backwards compatibility aliases
