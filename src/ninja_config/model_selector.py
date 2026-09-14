@@ -60,6 +60,41 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
 }
 
 
+def _extra_bin_dirs() -> list[Path]:
+    """Common CLI install locations probed when a binary is not on PATH.
+
+    The config TUI may run with a minimal PATH (systemd/service, MCP host),
+    unlike an interactive shell, so ``~/.local/bin``, npm/bun globals and nvm
+    are checked explicitly. Resolved at call time (HOME is not fixed at import).
+    """
+    home = Path.home()
+    dirs = [
+        home / ".local" / "bin",
+        home / ".npm-global" / "bin",
+        home / ".bun" / "bin",
+        home / ".cargo" / "bin",
+        Path("/usr/local/bin"),
+        Path("/opt/homebrew/bin"),
+        Path("/usr/bin"),
+    ]
+    nvm = home / ".nvm" / "versions" / "node"
+    if nvm.is_dir():
+        dirs.extend(sorted(nvm.glob("*/bin")))
+    return dirs
+
+
+def _which_binary(name: str) -> str | None:
+    """Locate ``name`` on PATH, then in common install dirs (nvm, ~/.local/bin)."""
+    found = shutil.which(name)
+    if found:
+        return found
+    for directory in _extra_bin_dirs():
+        candidate = directory / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
 def _run_opencode_models() -> list[str]:
     """Run ``opencode models`` and return the raw model ID lines.
 
@@ -227,7 +262,7 @@ class Operator:
 
     def detect(self) -> bool:
         """Detect if this operator is installed and find its path."""
-        binary = shutil.which(self.binary_name)
+        binary = _which_binary(self.binary_name)
         if binary:
             self.binary_path = binary
             return True

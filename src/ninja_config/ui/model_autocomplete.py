@@ -246,6 +246,15 @@ class ModelRolePicker(Vertical):
             pass
         self._fetch_providers()
 
+    def _post(self, callback, *args) -> None:
+        """``call_from_thread`` that no-ops if the app/loop is already gone."""
+        try:
+            if not getattr(self.app, "is_running", True):
+                return
+            self.app.call_from_thread(callback, *args)
+        except Exception:
+            pass
+
     @work(thread=True, exclusive=True)
     def _fetch_providers(self) -> None:
         # Operator-aware: native operators are handled in _apply_providers, but
@@ -255,7 +264,7 @@ class ModelRolePicker(Vertical):
             providers = operator_providers("aider")
         else:
             providers = cached_discover_providers()
-        self.app.call_from_thread(self._apply_providers, providers)
+        self._post(self._apply_providers, providers)
 
     def _apply_providers(self, providers: list[tuple[str, str, str]]) -> None:
         self._providers_ready = True
@@ -396,7 +405,7 @@ class ModelRolePicker(Vertical):
         if not models:
             models = static_models_for_provider(provider, operator)
         results = filter_models(models, query, MAX_SUGGESTIONS)
-        self.app.call_from_thread(self._show_results, query, provider, results)
+        self._post(self._show_results, query, provider, results)
 
     def _show_results(self, query: str, provider: str, results: list[Model]) -> None:
         try:

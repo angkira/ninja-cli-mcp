@@ -935,13 +935,28 @@ class NinjaConfigApp(App):
         return normalize_operator(self.config_manager.get(env_var))
 
     def _operator_select_options(self, env_var: str = "NINJA_CODE_BIN") -> list[tuple[str, str]]:
-        """(label, id) options for a module's operator picker."""
-        options = [(op.name, op.id) for op in self._installed_operators()]
+        """(label, id) options for a module's operator picker.
+
+        Every known operator is listed (installed first, current on top) so the
+        picker never hides an operator just because it is not on this process's
+        PATH; uninstalled ones are labelled and refused on select.
+        """
+        installed = {op.id for op in self._installed_operators()}
         current = self._current_operator_id(env_var)
-        if all(value != current for _, value in options):
-            op = next((o for o in OPERATORS if o.id == current), None)
-            options.append((op.name if op else current, current))
-        return options or [("opencode", "opencode")]
+
+        def label(op) -> str:
+            name = op.name
+            if op.id not in installed:
+                name += " · not installed"
+            if op.id == current:
+                name += " ✓"
+            return name
+
+        ordered = sorted(
+            OPERATORS,
+            key=lambda o: (o.id != current, o.id not in installed, o.name.lower()),
+        )
+        return [(label(op), op.id) for op in ordered] or [("opencode", "opencode")]
 
     def _operator_buttons(self) -> str:
         installed = {op.id for op in self._installed_operators()}
@@ -1002,7 +1017,7 @@ class NinjaConfigApp(App):
             status = "[#a3be8c]available[/#a3be8c]" if usable else "[#ebcb8b]unavailable[/#ebcb8b]"
             detail = providers or ("host-auth" if host else "no credentials")
             lines.append(f"{op.name}: {status} [dim]({detail})[/dim]")
-        self.app.call_from_thread(
+        self._post(
             self._set_operator_avail,
             "\n".join(lines) if lines else "[dim]No operators installed.[/dim]",
         )
@@ -1022,7 +1037,17 @@ class NinjaConfigApp(App):
         """
         installed = {op.id for op in self._installed_operators()}
         if op_id not in installed:
-            self.notify(f"{op_id} is not installed.", timeout=4, severity="warning")
+            self.notify(
+                f"{op_id} is not installed on this machine — install the {op_id} CLI first.",
+                timeout=5,
+                severity="warning",
+            )
+            try:
+                self.query_one(
+                    f"#operator-select-{env_var}", Select
+                ).value = self._current_operator_id(env_var)
+            except Exception:
+                pass
             return
         self.config_manager.set(env_var, op_id)
         try:
@@ -1312,31 +1337,72 @@ class NinjaConfigApp(App):
                 st = {}
             row.set_state(running=bool(st.get("running")), port=st.get("port"))
 
-    def _toggle_module_daemon(self, module: str) -> None:
-        """Start or stop ``module``'s daemon (running state only)."""
-        dm = DaemonManager()
+    def _daemon_cli(self, action: str, module: str) -> tuple[bool, str]:
+        """Run ``ninja-mcp daemon <action> <module>`` as a subprocess.
+
+        Never fork inside the Textual process: an in-process ``os.fork`` while
+        worker threads and the event loop run corrupts their queues, which
+        surfaces as an "ended queue object" I/O error. The CLI owns the fork.
+
+        Args:
+            action: ``start`` / ``stop`` / ``restart``.
+            module: Module name.
+
+        Returns:
+            Tuple of (succeeded, error-detail).
+        """
+        import subprocess
+
         try:
-            running = bool(dm.status(module).get("running"))
-            if running:
-                ok = dm.stop(module)
-                action = "stopped"
-            else:
-                ok = dm.start(module)
-                action = "started"
+            result = subprocess.run(
+                ["ninja-mcp", "daemon", action, module],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
         except Exception as e:
-            self.notify(f"{module}: daemon toggle failed ({e}).", timeout=8)
-            self._refresh_daemons()
-            self._refresh_modules()
-            return
+            return False, str(e)
+        if result.returncode == 0:
+            return True, ""
+        detail = (result.stderr or result.stdout or "").strip().splitlines()
+        return False, (detail[-1] if detail else f"exit {result.returncode}")
+
+    @work(thread=True, exclusive=True, group="daemon-action")
+    def _daemon_worker(self, module: str, action: str) -> None:
+        """Start/stop a module's daemon off the UI thread via the CLI."""
+        ok, detail = self._daemon_cli(action, module)
+        self._post(self._after_daemon_action, module, action, ok, detail)
+
+    def _after_daemon_action(self, module: str, action: str, ok: bool, detail: str = "") -> None:
+        """Refresh rows and report the daemon action result."""
         self._refresh_daemons()
         self._refresh_modules()
         if ok:
-            self.notify(f"{module} daemon {action}.", timeout=3)
+            self.notify(f"{module} daemon {action}ed.", timeout=3)
         else:
             self.notify(
-                f"{module} daemon did not {action[:-1]} — see ~/.cache/ninja-mcp/logs/{module}.log",
-                timeout=7,
+                f"{module} daemon did not {action} — {detail} "
+                f"(see ~/.cache/ninja-mcp/logs/{module}.log)",
+                timeout=8,
             )
+
+    def _post(self, callback, *args) -> None:
+        """``call_from_thread`` that no-ops if the app/loop is already gone."""
+        try:
+            if not getattr(self.app, "is_running", True):
+                return
+            self.app.call_from_thread(callback, *args)
+        except Exception:
+            pass
+
+    def _toggle_module_daemon(self, module: str) -> None:
+        """Start or stop ``module``'s daemon (running state only)."""
+        try:
+            running = bool(DaemonManager().status(module).get("running"))
+        except Exception:
+            running = False
+        self._daemon_worker(module, "stop" if running else "start")
 
     def _enable_module(self, module: str) -> None:
         """Enable ``module`` in config and start its daemon."""
@@ -1350,21 +1416,8 @@ class NinjaConfigApp(App):
             return
         enabled.append(module)
         self._set_enabled_modules(enabled)
-        try:
-            started = DaemonManager().start(module)
-        except Exception as e:
-            self.notify(f"{module}: could not start daemon ({e}).", timeout=8)
-            self._refresh_modules()
-            return
         self._refresh_modules()
-        if started:
-            self.notify(f"{module} enabled; daemon started.", timeout=3)
-        else:
-            self.notify(
-                f"{module} enabled, but the daemon did not start — check "
-                f"~/.cache/ninja-mcp/logs/{module}.log",
-                timeout=7,
-            )
+        self._daemon_worker(module, "start")
 
     def _disable_module(self, module: str) -> None:
         """Remove ``module`` from config and stop its daemon."""
@@ -1372,14 +1425,8 @@ class NinjaConfigApp(App):
         if module in enabled:
             enabled.remove(module)
             self._set_enabled_modules(enabled)
-        try:
-            DaemonManager().stop(module)
-        except Exception as e:
-            self.notify(f"{module}: could not stop daemon ({e}).", timeout=8)
-            self._refresh_modules()
-            return
         self._refresh_modules()
-        self.notify(f"{module} disabled; daemon stopped.", timeout=3)
+        self._daemon_worker(module, "stop")
 
     def _install_module(self, module: str) -> None:
         """Install the missing binary for ``module``."""
@@ -1400,7 +1447,7 @@ class NinjaConfigApp(App):
         else:
             cmd = ["uv", "tool", "install", "--force", f"ninja-mcp[{module}]"]
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        self.call_from_thread(self._finish_install, module, result.returncode == 0)
+        self._post(self._finish_install, module, result.returncode == 0)
 
     def _finish_install(self, module: str, ok: bool) -> None:
         """Handle install completion: enable and start the module on success."""
@@ -1411,9 +1458,9 @@ class NinjaConfigApp(App):
         if module not in enabled:
             enabled.append(module)
             self._set_enabled_modules(enabled)
-        DaemonManager().start(module)
         self._refresh_modules()
-        self.notify(f"{module} installed, enabled, and started.", timeout=3)
+        self.notify(f"{module} installed and enabled — starting daemon…", timeout=3)
+        self._daemon_worker(module, "start")
 
     # ── Event handlers ───────────────────────────────────────────────────
 

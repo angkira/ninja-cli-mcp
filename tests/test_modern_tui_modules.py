@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 from ninja_common.defaults import DEFAULT_ENABLED_MODULES
 from ninja_config.modern_tui import DaemonRow, ModuleRow, NinjaConfigApp
@@ -49,3 +50,59 @@ def test_module_row_exposes_module_name() -> None:
 def test_daemon_row_exposes_module_name() -> None:
     """DaemonRow identifies its module for the inline start/stop toggle."""
     assert DaemonRow("coder").module_name == "coder"
+
+
+def test_which_binary_finds_binary_off_path(tmp_path: Path, monkeypatch) -> None:
+    """A CLI installed in ~/.local/bin is found even when not on PATH."""
+    from ninja_config.model_selector import OPERATORS, _which_binary
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("ninja_config.model_selector.shutil.which", lambda _n: None)
+    tool = tmp_path / ".local" / "bin" / "mytool"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\n")
+    tool.chmod(0o755)
+
+    assert _which_binary("mytool") == str(tool)
+    assert any(op.id == "codex" for op in OPERATORS)
+
+
+def test_operator_select_options_lists_every_operator(tmp_path: Path, monkeypatch) -> None:
+    """The picker lists all known operators, labelling the uninstalled ones."""
+    from ninja_config.model_selector import OPERATORS
+
+    app = _make_app(tmp_path)
+    monkeypatch.setattr(NinjaConfigApp, "_installed_operators", lambda _self: [])
+
+    options = app._operator_select_options("NINJA_CODE_BIN")
+
+    assert {value for _, value in options} == {op.id for op in OPERATORS}
+    assert all("not installed" in label for label, _ in options)
+
+
+def test_daemon_cli_delegates_to_cli_subprocess(tmp_path: Path) -> None:
+    """Daemon start/stop go through the CLI, never an in-process fork."""
+    import subprocess
+
+    app = _make_app(tmp_path)
+    with patch("subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        ok, detail = app._daemon_cli("start", "coder")
+
+    assert (ok, detail) == (True, "")
+    assert run.call_args.args[0] == ["ninja-mcp", "daemon", "start", "coder"]
+
+
+def test_daemon_cli_reports_failure(tmp_path: Path) -> None:
+    """A non-zero daemon CLI exit yields (False, last stderr line)."""
+    import subprocess
+
+    app = _make_app(tmp_path)
+    with patch("subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="boom: no such module\n"
+        )
+        ok, detail = app._daemon_cli("start", "nope")
+
+    assert ok is False
+    assert detail == "boom: no such module"
