@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.8 - 2026-09-14
+
+- **Keys: our key if present, otherwise the operator's own auth.** The child
+  coding CLI is spawned with a sanitized environment — inherited API keys are
+  stripped (a stale shell key can no longer leak in or shadow), ninja's key from
+  the encrypted store is injected when available, and host-auth operators
+  (Codex/Claude/Junie) never receive a key. So you are not prompted and not
+  blocked when relying on the operator's login.
+- **Encrypted store is primary** (OS keychain is the fallback, no shadowing);
+  passwordless stores open without a prompt; the TUI key save reports real
+  errors instead of silently falling back to plaintext.
+- **`ninja-mcp update` robustness:** detects the install method (uv tool / pipx /
+  pip) and upgrades that environment; pip retries with `--break-system-packages`
+  on PEP 668 (externally-managed) hosts; clearer failure output. Fixes updates
+  that failed or were a no-op on other machines.
+- Tests isolate the encrypted store from the real HOME (`NINJA_CREDENTIALS_DB`).
+
 ## 1.0.7 - 2026-09-14
 
 - **Secrets: the encrypted store is now the single source of truth.** API keys

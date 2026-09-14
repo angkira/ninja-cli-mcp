@@ -401,22 +401,7 @@ class AutoUpdater:
             return
 
         if ch == "pypi":
-            if shutil.which("uv"):
-                self._run_install_command(
-                    ["uv", "tool", "install", "--force", f"ninja-mcp[{UPDATE_EXTRAS}]"]
-                )
-            else:
-                self._run_install_command(
-                    [
-                        sys.executable,
-                        "-m",
-                        "pip",
-                        "install",
-                        "--user",
-                        "--upgrade",
-                        f"ninja-mcp[{UPDATE_EXTRAS}]",
-                    ]
-                )
+            self._pypi_reinstall()
             return
 
         if ch == "brew":
@@ -425,6 +410,58 @@ class AutoUpdater:
             return
 
         raise UpdateError(f"Unknown channel '{ch}'. Choose from: github, pypi, brew")
+
+    def _install_method(self) -> str:
+        """Detect how ninja-mcp was installed (uv-tool / pipx / pip / unknown)."""
+        if (Path.home() / ".local" / "share" / "uv" / "tools" / "ninja-mcp").exists():
+            return "uv-tool"
+        if (Path.home() / ".local" / "pipx" / "venvs" / "ninja-mcp").exists():
+            return "pipx"
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "show", "ninja-mcp"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if result.returncode == 0:
+                return "pip"
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        return "unknown"
+
+    def _pypi_reinstall(self) -> None:
+        """Reinstall from PyPI into the environment ninja-mcp was installed in.
+
+        Updating the *wrong* environment (e.g. creating a uv tool when the user
+        installed with pip) made `update` look like a no-op on some machines.
+        """
+        spec = f"ninja-mcp[{UPDATE_EXTRAS}]"
+        method = self._install_method()
+        if method == "uv-tool":
+            self._run_install_command(["uv", "tool", "install", "--force", spec])
+            return
+        if method == "pipx":
+            self._run_install_command(["pipx", "install", "--force", spec])
+            return
+        if method == "pip" or not shutil.which("uv"):
+            self._pip_install(spec)
+            return
+        # No detectable install method but uv exists — use a uv tool.
+        self._run_install_command(["uv", "tool", "install", "--force", spec])
+
+    def _pip_install(self, spec: str) -> None:
+        """``pip install --upgrade`` with a PEP 668 retry (externally-managed)."""
+        base = [sys.executable, "-m", "pip", "install", "--user", "--upgrade", spec]
+        try:
+            self._run_install_command(base)
+        except UpdateError as e:
+            if "externally-managed" not in str(e):
+                raise
+            # Debian/Ubuntu (and Homebrew) mark the interpreter as externally
+            # managed — fall back to the documented override.
+            self._run_install_command([*base, "--break-system-packages"])
 
     def _run_install_command(self, command: list[str], timeout: int = 600) -> None:
         """Run a package install command and stream its output."""
@@ -440,9 +477,12 @@ class AutoUpdater:
                 if line.strip():
                     print(f"   i {line.strip()}")
         except subprocess.CalledProcessError as e:
-            raise UpdateError(f"Package upgrade failed: {e.stderr}") from e
+            detail = (e.stderr or e.stdout or "").strip() or f"exit {e.returncode}"
+            raise UpdateError(f"Package upgrade failed: {detail}") from e
         except subprocess.TimeoutExpired:
             raise UpdateError(f"Package upgrade timed out after {timeout // 60} minutes") from None
+        except FileNotFoundError as e:
+            raise UpdateError(f"Installer not found: {command[0]}") from e
 
     def _find_editable_repo(self) -> Path | None:
         """Detect an editable (source) installation of ninja-mcp.
@@ -597,10 +637,12 @@ class AutoUpdater:
                 ["ninja-mcp", "daemon", "restart"],
                 check=True,
                 capture_output=True,
+                text=True,
                 timeout=60,  # 1 minute timeout
             )
         except subprocess.CalledProcessError as e:
-            raise UpdateError(f"Daemon restart failed: {e.stderr}") from e
+            detail = (e.stderr or e.stdout or "").strip() or f"exit {e.returncode}"
+            raise UpdateError(f"Daemon restart failed: {detail}") from e
         except subprocess.TimeoutExpired:
             raise UpdateError("Daemon restart timed out after 1 minute") from None
 

@@ -18,13 +18,13 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_package_update_pypi_uses_uv_when_available(tmp_path: Path) -> None:
-    """PyPI channel with uv installed: reinstall via uv tool install."""
+def test_package_update_pypi_uses_uv_when_installed_as_uv_tool(tmp_path: Path) -> None:
+    """PyPI channel for a uv-tool install: reinstall via uv tool install."""
     updater = AutoUpdater(repo_path=tmp_path, channel="pypi")
 
     with (
+        patch.object(AutoUpdater, "_install_method", return_value="uv-tool"),
         patch("ninja_config.auto_updater.subprocess.run") as run,
-        patch("ninja_config.auto_updater.shutil.which", return_value="/usr/local/bin/uv"),
     ):
         run.return_value = subprocess.CompletedProcess(
             args=[],
@@ -39,13 +39,13 @@ def test_package_update_pypi_uses_uv_when_available(tmp_path: Path) -> None:
     assert command == ["uv", "tool", "install", "--force", "ninja-mcp[runtime]"]
 
 
-def test_package_update_pypi_falls_back_to_pip_without_uv(tmp_path: Path) -> None:
-    """PyPI channel without uv: upgrade through pip --user."""
+def test_package_update_pypi_uses_pip_when_installed_with_pip(tmp_path: Path) -> None:
+    """PyPI channel for a pip install: upgrade through pip --user."""
     updater = AutoUpdater(repo_path=tmp_path, channel="pypi")
 
     with (
+        patch.object(AutoUpdater, "_install_method", return_value="pip"),
         patch("ninja_config.auto_updater.subprocess.run") as run,
-        patch("ninja_config.auto_updater.shutil.which", return_value=None),
     ):
         run.return_value = subprocess.CompletedProcess(
             args=[],
@@ -59,6 +59,42 @@ def test_package_update_pypi_falls_back_to_pip_without_uv(tmp_path: Path) -> Non
     command = run.call_args.args[0]
     assert command[:6] == [sys.executable, "-m", "pip", "install", "--user", "--upgrade"]
     assert command[-1] == "ninja-mcp[runtime]"
+
+
+def test_package_update_pypi_uses_pipx(tmp_path: Path) -> None:
+    """PyPI channel for a pipx install: upgrade through pipx."""
+    updater = AutoUpdater(repo_path=tmp_path, channel="pypi")
+
+    with (
+        patch.object(AutoUpdater, "_install_method", return_value="pipx"),
+        patch("ninja_config.auto_updater.subprocess.run") as run,
+    ):
+        run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        updater._reinstall_package()
+
+    assert run.call_args.args[0] == ["pipx", "install", "--force", "ninja-mcp[runtime]"]
+
+
+def test_pip_retries_with_break_system_packages(tmp_path: Path) -> None:
+    """Externally-managed (PEP 668) pip failure is retried with the override."""
+    updater = AutoUpdater(repo_path=tmp_path, channel="pypi")
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **_kw):
+        calls.append(cmd)
+        if "--break-system-packages" not in cmd:
+            raise subprocess.CalledProcessError(
+                1, cmd, output="", stderr="error: externally-managed-environment"
+            )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="ok", stderr="")
+
+    with (
+        patch.object(AutoUpdater, "_install_method", return_value="pip"),
+        patch("ninja_config.auto_updater.subprocess.run", side_effect=fake_run),
+    ):
+        updater._reinstall_package()
+
+    assert any("--break-system-packages" in c for c in calls)
 
 
 def test_package_update_github_without_repo_uses_uv_tool_install(tmp_path: Path) -> None:
