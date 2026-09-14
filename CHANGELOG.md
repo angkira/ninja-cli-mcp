@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.14 - 2026-09-14
+
+- **Config TUI: no more "ended queue object" I/O error when enabling a module.**
+  The TUI started/stopped daemons via an in-process `os.fork()` while Textual's
+  event loop and worker threads were running, corrupting their queues. Daemon
+  start/stop now go through `ninja-mcp daemon …` in a background worker, and
+  worker→UI posts become no-ops once the app stops.
+- **Config TUI: the operator picker now lists every operator, not just those on
+  the TUI process's PATH.** CLIs are also discovered in common install dirs
+  (`~/.local/bin`, npm/bun/cargo globals, nvm, Homebrew, `/usr/local/bin`), so
+  claude/junie/gemini/aider show up even under a minimal service PATH;
+  uninstalled ones are labelled and selecting them is refused with a clear
+  message (and the picker resets).
+
 ## 1.0.13 - 2026-09-14
 
 - **Fix `ninja-mcp update` hanging on the encrypted-store password.** With a
