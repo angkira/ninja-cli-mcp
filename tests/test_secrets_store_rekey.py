@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 def _isolated_store(tmp_path: pathlib.Path, monkeypatch: MonkeyPatch):
     """Redirect HOME to a temp dir, disable keyring, and forget any password."""
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("NINJA_CREDENTIALS_DB", str(tmp_path / ".ninja" / "credentials.db"))
     for var in (
         "NINJA_CREDENTIAL_PASSWORD",
         "NINJA_CREDENTIAL_FD",

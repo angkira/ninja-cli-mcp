@@ -19,6 +19,37 @@ if str(_root / "src") not in sys.path:
 if TYPE_CHECKING:
     from collections.abc import Generator
 
+    from pytest import MonkeyPatch
+
+
+@pytest.fixture(autouse=True)
+def _isolate_secret_store(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> Generator[None, None, None]:
+    """Keep the encrypted store (and its password) out of the real HOME.
+
+    Without this, any test that writes a secret via ``ConfigManager.set`` /
+    ``set_secret`` would clobber the developer's real ``~/.ninja/credentials.db``.
+    """
+    monkeypatch.setenv("NINJA_CREDENTIALS_DB", str(tmp_path / "credentials.db"))
+    for var in (
+        "NINJA_CREDENTIAL_PASSWORD",
+        "NINJA_CREDENTIAL_FD",
+        "CREDENTIALS_DIRECTORY",
+        "NINJA_STORE_PASSWORD_FILE",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    ss = None
+    try:
+        import ninja_config.secrets_store as ss
+
+        ss._reset_singletons()
+    except Exception:
+        ss = None
+    yield
+    if ss is not None:
+        ss._reset_singletons()
+
 
 @pytest.fixture
 def temp_repo() -> Generator[Path, None, None]:

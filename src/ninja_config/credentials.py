@@ -587,6 +587,16 @@ class CredentialDatabase:
 # ============================================================================
 
 
+def default_db_path() -> Path:
+    """Return the credentials DB path (``NINJA_CREDENTIALS_DB`` overrides default).
+
+    The env override lets tests and multi-profile setups point the encrypted
+    store at an isolated file instead of ``~/.ninja/credentials.db``.
+    """
+    override = os.getenv("NINJA_CREDENTIALS_DB")
+    return Path(override) if override else Path.home() / ".ninja" / "credentials.db"
+
+
 class CredentialManager:
     """
     Main credential management interface.
@@ -617,7 +627,7 @@ class CredentialManager:
             EncryptionError: If encryption setup fails
         """
         if db_path is None:
-            db_path = Path.home() / ".ninja" / "credentials.db"
+            db_path = default_db_path()
 
         # Initialize database
         self._db = CredentialDatabase(db_path)

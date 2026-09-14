@@ -19,7 +19,7 @@ import keyring
 import keyring.backends.fail
 
 from ninja_common.secrets import KNOWN_SECRET_NAMES
-from ninja_config.credentials import CredentialManager
+from ninja_config.credentials import CredentialManager, default_db_path
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +300,7 @@ def rekey_and_set_password(new_password: str, *, persist: bool = False) -> int:
     Returns:
         Number of credentials re-encrypted.
     """
-    db_path = Path.home() / ".ninja" / "credentials.db"
+    db_path = default_db_path()
     count = 0
     if db_path.exists():
         # Reuse the already-open manager (it holds the current key) if the store
@@ -320,7 +320,7 @@ def reset_encrypted_store() -> bool:
         True if the DB file was removed (or already absent).
     """
     clear_store_password()
-    db_path = Path.home() / ".ninja" / "credentials.db"
+    db_path = default_db_path()
     ok = True
     try:
         if db_path.exists():
