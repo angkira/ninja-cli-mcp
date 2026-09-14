@@ -203,6 +203,27 @@ SelectOverlay {
     color: #4C566A;
 }
 
+/* ── Switch: compact inline toggle ────────────────────────── */
+Switch {
+    border: none;
+    padding: 0 1;
+    height: auto;
+    width: auto;
+}
+
+/* ── Modules tab: one toggle row per module ───────────────── */
+.module-row {
+    height: auto;
+    margin: 0 0 1 0;
+}
+.module-label {
+    width: 1fr;
+    height: auto;
+}
+.module-row .module-install {
+    margin: 0 0 0 1;
+}
+
 /* ── Lists focus ring (keyboard navigation must stay visible) ─────── */
 ListView:focus {
     scrollbar-color: #88C0D0;

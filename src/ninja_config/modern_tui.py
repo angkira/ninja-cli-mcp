@@ -33,6 +33,7 @@ from textual.widgets import (
     ListView,
     Rule,
     Static,
+    Switch,
     TabbedContent,
     TabPane,
 )
@@ -239,6 +240,46 @@ class ModelCard(ListItem):
             Static(f"[bold]{name}[/bold]  {badge}\n[dim]{model_id} — {description}[/dim]"),
             classes="model-card current" if current else "model-card",
         )
+
+
+class ModuleRow(Horizontal):
+    """One module with an inline enable toggle, live status and Install action.
+
+    Replaces the old "select a row, then press Enable/Disable/Start/Stop" flow:
+    the :class:`Switch` mirrors ``NINJA_ENABLED_MODULES`` and, when toggled,
+    enables + starts (on) or disables + stops (off) the module's daemon.
+    """
+
+    def __init__(self, module: str) -> None:
+        super().__init__(classes="module-row")
+        self.module_name = module
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id=f"module-info-{self.module_name}", classes="module-label")
+        yield Switch(id=f"module-sw-{self.module_name}")
+        yield Button(
+            "Install",
+            id=f"module-install-{self.module_name}",
+            classes="module-install",
+        )
+
+    def set_state(self, *, enabled: bool, running: bool, installed: bool, port: int | None) -> None:
+        """Sync the row with the persisted enabled flag and live daemon state.
+
+        Setting ``Switch.value`` programmatically also posts ``Changed``; the
+        app ignores any change that matches the persisted state, so this stays
+        loop-free.
+        """
+        switch = self.query_one(Switch)
+        if switch.value != enabled:
+            switch.value = enabled
+        daemon = "[#a3be8c]● running[/#a3be8c]" if running else "[dim]○ stopped[/dim]"
+        binary = "[#a3be8c]✓[/#a3be8c]" if installed else "[#ebcb8b]✗ missing[/#ebcb8b]"
+        self.query_one(f"#module-info-{self.module_name}", Static).update(
+            f"[bold]{self.module_name.title()}[/bold]   "
+            f"port {port} · daemon {daemon} · binary {binary}"
+        )
+        self.query_one(".module-install", Button).display = not installed
 
 
 class NinjaConfigApp(App):
@@ -502,20 +543,12 @@ class NinjaConfigApp(App):
                     yield section_header("Module Management")
                     yield Rule()
                     yield Static(
-                        "[dim]Enable/disable modules and their daemons. "
-                        "Select a module, then use the actions below.[/dim]"
+                        "[dim]Toggle a module on/off — that enables it and starts/stops "
+                        "its daemon. Missing binaries show an Install button.[/dim]"
                     )
-                    yield ListView(id="module-list")
-                    yield Static("")
-                    yield Static("[bold]Actions[/bold]")
-                    yield Horizontal(
-                        Button("Enable", variant="primary", id="btn-module-enable"),
-                        Button("Disable", id="btn-module-disable"),
-                        Button("Start", id="btn-module-start"),
-                        Button("Stop", id="btn-module-stop"),
-                    )
-                    yield Static("")
-                    yield Button("Install Missing Binary", id="btn-module-install")
+                    with Vertical(id="module-rows"):
+                        for module in AVAILABLE_MODULES:
+                            yield ModuleRow(module)
                     yield Static("")
                     yield Static(self._modules_help(), id="modules-help")
 
@@ -533,7 +566,11 @@ class NinjaConfigApp(App):
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         pane = getattr(event, "pane", None)
-        if (getattr(pane, "id", "") or "") != "tab-models":
+        pane_id = getattr(pane, "id", "") or ""
+        if pane_id == "tab-modules":
+            self._refresh_modules()
+            return
+        if pane_id != "tab-models":
             return
         if self._models_loaded:
             return
@@ -982,52 +1019,35 @@ class NinjaConfigApp(App):
         )
 
     def _refresh_modules(self) -> None:
-        """Rebuild the module list showing enabled/daemon/binary state."""
-        lv = self.query_one("#module-list", ListView)
-        lv.clear()
+        """Sync every module row with the persisted enabled flag + live state."""
+        try:
+            rows = self.query_one("#module-rows", Vertical)
+        except Exception:
+            return
         dm = DaemonManager()
         enabled = self._enabled_modules()
+        by_name = {r.module_name: r for r in rows.query(ModuleRow)}
         for module in AVAILABLE_MODULES:
+            row = by_name.get(module)
+            if row is None:
+                continue
             st = dm.status(module)
-            on = module in enabled
-            installed = shutil.which(f"ninja-{module}") is not None
-            enabled_icon = "[#a3be8c]✓[/#a3be8c]" if on else "[dim]○[/dim]"
-            daemon = "[#a3be8c]● running[/#a3be8c]" if st.get("running") else "[dim]○ stopped[/dim]"
-            binary = "[#a3be8c]✓[/#a3be8c]" if installed else "[#ebcb8b]✗[/#ebcb8b]"
-            item = ListItem(
-                Static(
-                    f"[bold]{module.title()}[/bold]  enabled {enabled_icon}  daemon {daemon}\n"
-                    f"[dim]port {st.get('port')} · binary {binary}[/dim]"
-                )
+            row.set_state(
+                enabled=module in enabled,
+                running=bool(st.get("running")),
+                installed=shutil.which(f"ninja-{module}") is not None,
+                port=st.get("port"),
             )
-            item.module_name = module
-            lv.append(item)
 
-    def _selected_module(self) -> str | None:
-        """Return the module name of the highlighted module-list row, if any."""
-        lv = self.query_one("#module-list", ListView)
-        sel = getattr(lv, "highlighted_child", None)
-        if sel is None and getattr(lv, "index", None) is not None:
-            try:
-                sel = lv.children[lv.index]
-            except Exception:
-                sel = None
-        if sel and hasattr(sel, "module_name"):
-            return sel.module_name
-        return None
-
-    def _enable_module(self) -> None:
-        """Enable the selected module and start its daemon."""
-        module = self._selected_module()
-        if module is None:
-            self.notify("Select a module first.", timeout=3)
-            return
+    def _enable_module(self, module: str) -> None:
+        """Enable ``module`` in config and start its daemon."""
         enabled = self._enabled_modules()
         if module in enabled:
-            self.notify(f"{module} already enabled.", timeout=3)
+            self._refresh_modules()
             return
         if shutil.which(f"ninja-{module}") is None:
-            self.notify(f"{module} binary missing - run Install first.", timeout=3)
+            self.notify(f"{module} binary missing — press Install.", timeout=4)
+            self._refresh_modules()
             return
         enabled.append(module)
         self._set_enabled_modules(enabled)
@@ -1035,12 +1055,8 @@ class NinjaConfigApp(App):
         self._refresh_modules()
         self.notify(f"{module} enabled; daemon started.", timeout=3)
 
-    def _disable_module(self) -> None:
-        """Disable the selected module and stop its daemon."""
-        module = self._selected_module()
-        if module is None:
-            self.notify("Select a module first.", timeout=3)
-            return
+    def _disable_module(self, module: str) -> None:
+        """Remove ``module`` from config and stop its daemon."""
         enabled = self._enabled_modules()
         if module in enabled:
             enabled.remove(module)
@@ -1049,31 +1065,8 @@ class NinjaConfigApp(App):
         self._refresh_modules()
         self.notify(f"{module} disabled; daemon stopped.", timeout=3)
 
-    def _start_module(self) -> None:
-        """Start the selected module's daemon."""
-        module = self._selected_module()
-        if module is None:
-            self.notify("Select a module first.", timeout=3)
-            return
-        DaemonManager().start(module)
-        self._refresh_modules()
-        self.notify(f"{module} daemon started.", timeout=3)
-
-    def _stop_module(self) -> None:
-        """Stop the selected module's daemon."""
-        module = self._selected_module()
-        if module is None:
-            self.notify("Select a module first.", timeout=3)
-            return
-        DaemonManager().stop(module)
-        self._refresh_modules()
-        self.notify(f"{module} daemon stopped.", timeout=3)
-
-    def _install_module(self) -> None:
-        """Install the missing binary for the selected module."""
-        module = self._selected_module()
-        if module is None:
-            return
+    def _install_module(self, module: str) -> None:
+        """Install the missing binary for ``module``."""
         if shutil.which(f"ninja-{module}") is not None:
             self.notify(f"{module} already installed.", timeout=3)
             return
@@ -1141,16 +1134,8 @@ class NinjaConfigApp(App):
                 self.notify("OpenCode: use 'ninja-config configure' for setup.", timeout=3)
             else:
                 self.notify("OpenCode CLI not found.", timeout=3)
-        elif bid == "btn-module-enable":
-            self._enable_module()
-        elif bid == "btn-module-disable":
-            self._disable_module()
-        elif bid == "btn-module-start":
-            self._start_module()
-        elif bid == "btn-module-stop":
-            self._stop_module()
-        elif bid == "btn-module-install":
-            self._install_module()
+        elif bid.startswith("module-install-"):
+            self._install_module(bid[len("module-install-") :])
         elif bid.startswith("set-"):
             self._set_custom_model(bid[4:])
         elif bid.startswith("prov-"):
@@ -1166,6 +1151,21 @@ class NinjaConfigApp(App):
         elif bid == "search-perplexity":
             self.config_manager.set("NINJA_SEARCH_PROVIDER", "perplexity")
             self.notify("Search: Perplexity", timeout=3)
+
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        """Handle a module toggle (ignores programmatic state syncs)."""
+        switch_id = event.switch.id or ""
+        if not switch_id.startswith("module-sw-"):
+            return
+        module = switch_id[len("module-sw-") :]
+        # Programmatic sync in ModuleRow.set_state also posts Changed; only act
+        # when the new value actually differs from the persisted state.
+        if event.value == (module in self._enabled_modules()):
+            return
+        if event.value:
+            self._enable_module(module)
+        else:
+            self._disable_module(module)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if hasattr(event.item, "setting_env_var") and hasattr(event.item, "setting_def"):
