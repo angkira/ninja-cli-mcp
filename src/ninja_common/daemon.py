@@ -194,13 +194,13 @@ class DaemonManager:
             return self._store_password
         self._store_prompted = True
 
-        db = Path.home() / ".ninja" / "credentials.db"
-        if not db.exists():
-            return None
-
         try:
             from ninja_config import secrets_store
+            from ninja_config.credentials import default_db_path
         except Exception:
+            return None
+
+        if not default_db_path().exists():
             return None
 
         existing = secrets_store.get_store_password()
@@ -511,6 +511,9 @@ class DaemonManager:
         # never lands in the environment or argv. The server reads it once at
         # startup (see secrets_store._read_fd_password).
         child_env = os.environ.copy()
+        # Never hand the store password to the daemon via env: it is passed
+        # through the inherited fd below (NINJA_CREDENTIAL_FD).
+        child_env.pop("NINJA_CREDENTIAL_PASSWORD", None)
         password_fd: int | None = None
         password = self._unlock_store_once()
         if password is not None:

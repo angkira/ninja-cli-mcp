@@ -35,6 +35,7 @@ __all__ = [
     "SecretStoreUnavailable",
     "clear_store_password",
     "default_store",
+    "ensure_store_unlocked",
     "get_store_password",
     "prompt_store_password",
     "rekey_and_set_password",
@@ -245,6 +246,33 @@ def store_password_source() -> str:
 def get_store_password() -> str | None:
     """Return the resolved store password (without prompting), if any."""
     return _resolve_store_password()
+
+
+def ensure_store_unlocked(*, allow_prompt: bool = True) -> str | None:
+    """Resolve the store password, prompting on a TTY only when required.
+
+    Lets a parent process (e.g. ``ninja-mcp update``) surface the password
+    prompt itself and hand the result to child processes, instead of a forked
+    daemon blocking on its inherited TTY.
+
+    Args:
+        allow_prompt: Whether an interactive prompt is permitted (TTY only).
+
+    Returns:
+        ``""`` for an absent/passwordless store, the password when available or
+        prompted, or ``None`` when the store exists but cannot be unlocked
+        (headless, no password).
+    """
+    if not default_db_path().exists():
+        return None
+    resolved = _resolve_store_password()
+    if resolved is not None:
+        return resolved
+    if CredentialManager(password="").can_decrypt():
+        return ""
+    if allow_prompt and sys.stdin.isatty():
+        return prompt_store_password()
+    return None
 
 
 def set_store_password(password: str, *, persist: bool = False) -> None:

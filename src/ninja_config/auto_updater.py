@@ -15,6 +15,7 @@ Usage:
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -66,6 +67,10 @@ class AutoUpdater:
         self.repo_path = repo_path or self._find_repo_path()
         self.channel = channel or "auto"
         self.console = console or Console()
+        # Encrypted-store password resolved (and prompted once) for this run,
+        # then handed to the daemon restart so a forked daemon never blocks on
+        # its inherited TTY.
+        self._store_password: str | None = None
 
     def _find_repo_path(self) -> Path | None:
         """Find the ninja-cli-mcp repository path if this is a source checkout."""
@@ -245,6 +250,12 @@ class AutoUpdater:
         }
 
         try:
+            # Resolve (prompting once if required) the encrypted-store password
+            # before any step that opens the store, and keep it for the daemon
+            # restart. Without this a forked daemon prompts on its inherited TTY
+            # and the restart times out.
+            self._unlock_store()
+
             with self.console.status("Backing up credentials..."):
                 backup_path = self._backup_credentials()
             result["credentials_backed_up"] = True
@@ -587,7 +598,10 @@ class AutoUpdater:
         # Get credentials - try encrypted DB first, fallback to .env file
         openrouter_key = None
         try:
-            manager = CredentialManager()
+            # Reuse the password resolved (and possibly prompted) by
+            # _unlock_store so the store isn't requested twice and a
+            # password-protected store actually decrypts.
+            manager = CredentialManager(password=self._store_password)
             openrouter_key = manager.get("OPENROUTER_API_KEY")
         except Exception as e:
             print(f"   ⚠️  Could not read from credentials DB: {e}")
@@ -630,6 +644,29 @@ class AutoUpdater:
         if updated:
             print(f"   i Updated: {', '.join(updated)}")
 
+    def _unlock_store(self) -> None:
+        """Resolve the encrypted-store password, prompting once if needed.
+
+        The updater rewrites MCP config and restarts daemons from the store, so
+        the password must be resolved here. The result is propagated to the
+        daemon restart via ``NINJA_CREDENTIAL_PASSWORD``; the daemon strips it
+        from its own child env and passes it through an fd instead.
+        """
+        try:
+            from ninja_config import secrets_store
+
+            self._store_password = secrets_store.ensure_store_unlocked()
+        except Exception as e:
+            self.console.print(f"[dim]Store unlock skipped: {e}[/dim]")
+            self._store_password = None
+
+    def _daemon_env(self) -> dict[str, str]:
+        """Environment for daemon subprocesses, carrying the store password."""
+        env = dict(os.environ)
+        if self._store_password:
+            env["NINJA_CREDENTIAL_PASSWORD"] = self._store_password
+        return env
+
     def _restart_daemons(self) -> None:
         """Restart ninja daemons."""
         try:
@@ -638,13 +675,15 @@ class AutoUpdater:
                 check=True,
                 capture_output=True,
                 text=True,
-                timeout=60,  # 1 minute timeout
+                timeout=120,
+                env=self._daemon_env(),
+                stdin=subprocess.DEVNULL,
             )
         except subprocess.CalledProcessError as e:
             detail = (e.stderr or e.stdout or "").strip() or f"exit {e.returncode}"
             raise UpdateError(f"Daemon restart failed: {detail}") from e
         except subprocess.TimeoutExpired:
-            raise UpdateError("Daemon restart timed out after 1 minute") from None
+            raise UpdateError("Daemon restart timed out after 2 minutes") from None
 
     def _verify(self) -> dict[str, Any]:
         """Verify installation."""
@@ -661,6 +700,8 @@ class AutoUpdater:
                 capture_output=True,
                 text=True,
                 timeout=30,  # 30 second timeout
+                env=self._daemon_env(),
+                stdin=subprocess.DEVNULL,
             )
             daemon_status = json.loads(result.stdout)
 

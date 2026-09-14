@@ -276,6 +276,53 @@ def test_default_store_includes_keyring_when_functional() -> None:
     store_module._default_store = None
 
 
+@pytest.fixture
+def _fresh_store_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear the module-level password cache so unlocks resolve afresh."""
+    monkeypatch.setattr(store_module, "_store_password", None)
+    monkeypatch.setattr(store_module, "_store_password_source", "unset")
+
+
+def test_ensure_store_unlocked_none_when_no_store(_fresh_store_password: None) -> None:
+    """No credentials DB → nothing to unlock."""
+    from ninja_config.secrets_store import ensure_store_unlocked
+
+    assert ensure_store_unlocked(allow_prompt=False) is None
+
+
+def test_ensure_store_unlocked_empty_for_passwordless_store(_fresh_store_password: None) -> None:
+    """A passwordless store unlocks with the empty password (no prompt)."""
+    from ninja_config.credentials import CredentialManager
+    from ninja_config.secrets_store import ensure_store_unlocked
+
+    CredentialManager(password="").set("OPENROUTER_API_KEY", "sk-abc")
+
+    assert ensure_store_unlocked(allow_prompt=False) == ""
+
+
+def test_ensure_store_unlocked_reads_env_password(
+    _fresh_store_password: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A password-protected store unlocks from NINJA_CREDENTIAL_PASSWORD."""
+    from ninja_config.credentials import CredentialManager
+    from ninja_config.secrets_store import ensure_store_unlocked
+
+    CredentialManager(password="s3cret").set("OPENROUTER_API_KEY", "sk-abc")
+    monkeypatch.setenv("NINJA_CREDENTIAL_PASSWORD", "s3cret")
+
+    assert ensure_store_unlocked(allow_prompt=False) == "s3cret"
+
+
+def test_ensure_store_unlocked_none_when_locked_headless(_fresh_store_password: None) -> None:
+    """A password-protected store with no password and no TTY → None."""
+    from ninja_config.credentials import CredentialManager
+    from ninja_config.secrets_store import ensure_store_unlocked
+
+    CredentialManager(password="s3cret").set("OPENROUTER_API_KEY", "sk-abc")
+
+    assert ensure_store_unlocked(allow_prompt=False) is None
+
+
 @pytest.mark.skip(reason="EncryptedFileBackend integration covered by CredentialManager tests")
 def test_encrypted_file_backend_integration() -> None:
     """Skipped — CredentialManager has its own test suite."""

@@ -384,3 +384,43 @@ def test_modern_tui_update_hint_uses_ninja_mcp_entrypoint() -> None:
 
     assert not hasattr(modern_tui, "subprocess")
     assert app.messages == ["Update with: ninja-mcp update"]
+
+
+def test_unlock_store_prompts_via_secrets_store_and_keeps_password(tmp_path: Path) -> None:
+    """_unlock_store resolves the password once and caches it for the run."""
+    from ninja_config import secrets_store
+
+    updater = AutoUpdater(repo_path=tmp_path, channel="pypi")
+
+    with patch.object(secrets_store, "ensure_store_unlocked", return_value="s3cret") as unlock:
+        updater._unlock_store()
+
+    unlock.assert_called_once_with()
+    assert updater._store_password == "s3cret"
+
+
+def test_restart_daemons_propagates_password_and_no_stdin(tmp_path: Path) -> None:
+    """Daemon restart gets the store password via env and a closed stdin."""
+    updater = AutoUpdater(repo_path=tmp_path, channel="pypi")
+    updater._store_password = "s3cret"
+
+    with patch("ninja_config.auto_updater.subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        updater._restart_daemons()
+
+    kwargs = run.call_args.kwargs
+    assert run.call_args.args[0] == ["ninja-mcp", "daemon", "restart"]
+    assert kwargs["env"]["NINJA_CREDENTIAL_PASSWORD"] == "s3cret"
+    assert kwargs["stdin"] is subprocess.DEVNULL
+
+
+def test_restart_daemons_omits_password_for_passwordless_store(tmp_path: Path) -> None:
+    """A passwordless store (``""``) must not put an empty secret in the env."""
+    updater = AutoUpdater(repo_path=tmp_path, channel="pypi")
+    updater._store_password = ""
+
+    with patch("ninja_config.auto_updater.subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        updater._restart_daemons()
+
+    assert "NINJA_CREDENTIAL_PASSWORD" not in run.call_args.kwargs["env"]
