@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.12 - 2026-09-14
+
+- **Models auto-route to the active operator.** A single source of truth
+  (`ninja_common.operator_models`) knows what each coding CLI can run. The model
+  selector and `NinjaConfig.from_env` now fall back to the operator's own
+  default instead of leaking an OpenRouter id into Codex/Claude/Gemini/Junie;
+  text tasks (agent/secretary) pin a compatible model too.
+- **Operator-relative model autocomplete.** The config picker shows only the
+  selected operator's catalogue: native operators expose a single provider
+  (codex, junie, claude, gemini), Aider lists OpenRouter, and static fallbacks
+  never suggest another operator's ids.
+- CI: repaired stale Modules/API-Keys TUI tests (moved to the inline
+  `ModuleRow`/`DaemonRow`/`APIKeyRow` API) and made search-provider tests
+  hermetic so a developer keyring can't leak in. Lint and all test jobs pass.
+
 ## 1.0.11 - 2026-09-14
 
 - Fix text tasks (agent `plan`/`review`, secretary `codebase_report`/summary)
