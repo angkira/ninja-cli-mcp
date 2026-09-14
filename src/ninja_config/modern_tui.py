@@ -18,7 +18,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from typing import TYPE_CHECKING, ClassVar
 
-from textual import work
+from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -32,6 +32,7 @@ from textual.widgets import (
     ListItem,
     ListView,
     Rule,
+    Select,
     Static,
     TabbedContent,
     TabPane,
@@ -518,6 +519,17 @@ class NinjaConfigApp(App):
                         "[dim]Pick a provider, type 2+ chars to search. "
                         "↓/↑ + Enter picks, Enter on raw text saves custom.[/dim]"
                     )
+                    yield Static(
+                        "[bold]Operator[/bold] [dim](coding CLI: opencode / codex / claude / aider / …)[/dim]"
+                    )
+                    yield Static(self._operator_status(), id="lbl-operator-models")
+                    yield Select(
+                        self._operator_select_options(),
+                        prompt="Operator…",
+                        value=self._current_operator_id(),
+                        id="operator-select",
+                    )
+                    yield Static("")
                     with Collapsible(title="Coder · Quick (fast, simple tasks)", collapsed=False):
                         yield ModelRolePicker(
                             role="quick",
@@ -883,6 +895,19 @@ class NinjaConfigApp(App):
         except Exception:
             return []
 
+    def _current_operator_id(self) -> str:
+        """The configured operator id (``NINJA_CODE_BIN``), normalized."""
+        return normalize_operator(self.config_manager.get("NINJA_CODE_BIN"))
+
+    def _operator_select_options(self) -> list[tuple[str, str]]:
+        """(label, id) options for the Models-tab operator picker."""
+        options = [(op.name, op.id) for op in self._installed_operators()]
+        current = self._current_operator_id()
+        if all(value != current for _, value in options):
+            op = next((o for o in OPERATORS if o.id == current), None)
+            options.append((op.name if op else current, current))
+        return options or [("opencode", "opencode")]
+
     def _operator_buttons(self) -> str:
         installed = {op.id for op in self._installed_operators()}
         current = normalize_operator(self.config_manager.get("NINJA_CODE_BIN"))
@@ -1204,7 +1229,10 @@ class NinjaConfigApp(App):
             row = by_name.get(module)
             if row is None:
                 continue
-            st = dm.status(module)
+            try:
+                st = dm.status(module)
+            except Exception:
+                st = {}
             row.set_state(
                 enabled=module in enabled,
                 running=bool(st.get("running")),
@@ -1224,20 +1252,37 @@ class NinjaConfigApp(App):
             row = by_name.get(module)
             if row is None:
                 continue
-            st = dm.status(module)
+            try:
+                st = dm.status(module)
+            except Exception:
+                st = {}
             row.set_state(running=bool(st.get("running")), port=st.get("port"))
 
     def _toggle_module_daemon(self, module: str) -> None:
         """Start or stop ``module``'s daemon (running state only)."""
         dm = DaemonManager()
-        running = bool(dm.status(module).get("running"))
-        if running:
-            dm.stop(module)
-        else:
-            dm.start(module)
+        try:
+            running = bool(dm.status(module).get("running"))
+            if running:
+                ok = dm.stop(module)
+                action = "stopped"
+            else:
+                ok = dm.start(module)
+                action = "started"
+        except Exception as e:
+            self.notify(f"{module}: daemon toggle failed ({e}).", timeout=8)
+            self._refresh_daemons()
+            self._refresh_modules()
+            return
         self._refresh_daemons()
         self._refresh_modules()
-        self.notify(f"{module} daemon {'stopped' if running else 'started'}.", timeout=3)
+        if ok:
+            self.notify(f"{module} daemon {action}.", timeout=3)
+        else:
+            self.notify(
+                f"{module} daemon did not {action[:-1]} — see ~/.cache/ninja-mcp/logs/{module}.log",
+                timeout=7,
+            )
 
     def _enable_module(self, module: str) -> None:
         """Enable ``module`` in config and start its daemon."""
@@ -1251,9 +1296,21 @@ class NinjaConfigApp(App):
             return
         enabled.append(module)
         self._set_enabled_modules(enabled)
-        DaemonManager().start(module)
+        try:
+            started = DaemonManager().start(module)
+        except Exception as e:
+            self.notify(f"{module}: could not start daemon ({e}).", timeout=8)
+            self._refresh_modules()
+            return
         self._refresh_modules()
-        self.notify(f"{module} enabled; daemon started.", timeout=3)
+        if started:
+            self.notify(f"{module} enabled; daemon started.", timeout=3)
+        else:
+            self.notify(
+                f"{module} enabled, but the daemon did not start — check "
+                f"~/.cache/ninja-mcp/logs/{module}.log",
+                timeout=7,
+            )
 
     def _disable_module(self, module: str) -> None:
         """Remove ``module`` from config and stop its daemon."""
@@ -1261,7 +1318,12 @@ class NinjaConfigApp(App):
         if module in enabled:
             enabled.remove(module)
             self._set_enabled_modules(enabled)
-        DaemonManager().stop(module)
+        try:
+            DaemonManager().stop(module)
+        except Exception as e:
+            self.notify(f"{module}: could not stop daemon ({e}).", timeout=8)
+            self._refresh_modules()
+            return
         self._refresh_modules()
         self.notify(f"{module} disabled; daemon stopped.", timeout=3)
 
@@ -1363,6 +1425,20 @@ class NinjaConfigApp(App):
         elif bid == "search-perplexity":
             self.config_manager.set("NINJA_SEARCH_PROVIDER", "perplexity")
             self.notify("Search: Perplexity", timeout=3)
+
+    @on(Select.Changed)
+    def on_operator_selected(self, event: Select.Changed) -> None:
+        """Operator picker in the Models tab (global coding CLI)."""
+        if event.select.id != "operator-select":
+            return
+        value = event.value
+        if value is None or value == Select.BLANK:
+            return
+        self._select_operator(str(value))
+        try:
+            self.query_one("#lbl-operator-models", Static).update(self._operator_status())
+        except Exception:
+            pass
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if hasattr(event.item, "setting_env_var") and hasattr(event.item, "setting_def"):

@@ -13,6 +13,18 @@ Open the picker with:
 ninja-mcp config models
 ```
 
+### Operator vs. model
+
+The **operator** is the coding CLI ninja delegates to (Opencode, Codex, Claude,
+Aider, …) and is a single global setting (`NINJA_CODE_BIN`). Pick it at the top
+of the **Models** tab (the *Operator* dropdown) or in **Settings → Detected
+Operators** (one button per installed operator). Only operators actually
+installed on the host are offered. Changing the operator refreshes every role's
+provider list.
+
+The **model** is chosen per role (see the table below) and is scoped to the
+selected operator (e.g. `opencode/...` vs `codex` flat ids).
+
 In the modern Textual UI, provider discovery begins when the Models tab opens.
 Each role has a provider selector and a debounced autocomplete input. Type at
 least two characters, choose a suggestion with Up/Down and Enter, or press
