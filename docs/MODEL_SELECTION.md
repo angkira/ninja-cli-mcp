@@ -13,17 +13,26 @@ Open the picker with:
 ninja-mcp config models
 ```
 
-### Operator vs. model
+### Operator vs. model (per module)
 
 The **operator** is the coding CLI ninja delegates to (Opencode, Codex, Claude,
-Aider, …) and is a single global setting (`NINJA_CODE_BIN`). Pick it at the top
-of the **Models** tab (the *Operator* dropdown) or in **Settings → Detected
-Operators** (one button per installed operator). Only operators actually
-installed on the host are offered. Changing the operator refreshes every role's
-provider list.
+Aider, …). It is configured **per module**:
 
-The **model** is chosen per role (see the table below) and is scoped to the
-selected operator (e.g. `opencode/...` vs `codex` flat ids).
+| Module | Setting | Notes |
+| --- | --- | --- |
+| Coder (quick/sequential/parallel) | `NINJA_CODE_BIN` | shared by the three coder roles |
+| Secretary | `NINJA_SECRETARY_OPERATOR` | independent of the coder operator |
+| Agent (orchestrator) | `NINJA_AGENT_OPERATOR` | independent of the coder operator |
+| Researcher | `NINJA_RESEARCHER_OPERATOR` | search **engine** (perplexity/serper/duckduckgo), not a coding CLI |
+
+Pick each module's operator from the dropdown in its **Models** tab section (the
+coder one is at the top of the tab). Only operators actually installed on the
+host are offered; changing one refreshes that module's provider list. **Settings
+→ Detected Operators** is a shortcut for the coder operator.
+
+The **model** is chosen per role (see the table below) and is scoped to that
+role's operator (e.g. `opencode/...` vs `codex` flat ids). Researcher uses its
+own engines — set the provider in **Settings → Search Provider**.
 
 In the modern Textual UI, provider discovery begins when the Models tab opens.
 Each role has a provider selector and a debounced autocomplete input. Type at

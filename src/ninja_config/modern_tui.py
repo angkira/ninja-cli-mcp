@@ -520,14 +520,17 @@ class NinjaConfigApp(App):
                         "↓/↑ + Enter picks, Enter on raw text saves custom.[/dim]"
                     )
                     yield Static(
-                        "[bold]Operator[/bold] [dim](coding CLI: opencode / codex / claude / aider / …)[/dim]"
+                        "[bold]Coder operator[/bold] [dim](coding CLI: opencode / codex / claude / aider / …)[/dim]"
                     )
-                    yield Static(self._operator_status(), id="lbl-operator-models")
+                    yield Static(
+                        self._operator_status("NINJA_CODE_BIN"),
+                        id="lbl-operator-NINJA_CODE_BIN",
+                    )
                     yield Select(
-                        self._operator_select_options(),
-                        prompt="Operator…",
-                        value=self._current_operator_id(),
-                        id="operator-select",
+                        self._operator_select_options("NINJA_CODE_BIN"),
+                        prompt="Coder operator…",
+                        value=self._current_operator_id("NINJA_CODE_BIN"),
+                        id="operator-select-NINJA_CODE_BIN",
                     )
                     yield Static("")
                     with Collapsible(title="Coder · Quick (fast, simple tasks)", collapsed=False):
@@ -536,6 +539,7 @@ class NinjaConfigApp(App):
                             env_var="NINJA_MODEL_QUICK",
                             default="opencode/glm-4.7-free",
                             config=self.config_manager,
+                            operator_env="NINJA_CODE_BIN",
                         )
                     with Collapsible(
                         title="Coder · Sequential (complex, multi-step)", collapsed=True
@@ -545,6 +549,7 @@ class NinjaConfigApp(App):
                             env_var="NINJA_MODEL_SEQUENTIAL",
                             default="zai-coding-plan/glm-4.7",
                             config=self.config_manager,
+                            operator_env="NINJA_CODE_BIN",
                         )
                     with Collapsible(title="Coder · Parallel (high concurrency)", collapsed=True):
                         yield ModelRolePicker(
@@ -552,27 +557,57 @@ class NinjaConfigApp(App):
                             env_var="NINJA_MODEL_PARALLEL",
                             default="opencode/glm-4.7-free",
                             config=self.config_manager,
+                            operator_env="NINJA_CODE_BIN",
                         )
-                    with Collapsible(title="Researcher", collapsed=True):
+                    with Collapsible(title="Researcher (search engines)", collapsed=True):
+                        yield Static(
+                            "[dim]Researcher uses its own search engines — set the provider "
+                            "in Settings → Search Provider (DuckDuckGo / Serper / Perplexity).[/dim]"
+                        )
                         yield ModelRolePicker(
                             role="researcher",
                             env_var="NINJA_RESEARCHER_MODEL",
                             default="sonar",
                             config=self.config_manager,
+                            operator_env="NINJA_RESEARCHER_OPERATOR",
                         )
                     with Collapsible(title="Secretary", collapsed=True):
+                        yield Static("[bold]Secretary operator[/bold]")
+                        yield Static(
+                            self._operator_status("NINJA_SECRETARY_OPERATOR"),
+                            id="lbl-operator-NINJA_SECRETARY_OPERATOR",
+                        )
+                        yield Select(
+                            self._operator_select_options("NINJA_SECRETARY_OPERATOR"),
+                            prompt="Secretary operator…",
+                            value=self._current_operator_id("NINJA_SECRETARY_OPERATOR"),
+                            id="operator-select-NINJA_SECRETARY_OPERATOR",
+                        )
                         yield ModelRolePicker(
                             role="secretary",
                             env_var="NINJA_SECRETARY_MODEL",
                             default="opencode/glm-4.7-free",
                             config=self.config_manager,
+                            operator_env="NINJA_SECRETARY_OPERATOR",
                         )
                     with Collapsible(title="Agent (orchestrator)", collapsed=True):
+                        yield Static("[bold]Agent operator[/bold]")
+                        yield Static(
+                            self._operator_status("NINJA_AGENT_OPERATOR"),
+                            id="lbl-operator-NINJA_AGENT_OPERATOR",
+                        )
+                        yield Select(
+                            self._operator_select_options("NINJA_AGENT_OPERATOR"),
+                            prompt="Agent operator…",
+                            value=self._current_operator_id("NINJA_AGENT_OPERATOR"),
+                            id="operator-select-NINJA_AGENT_OPERATOR",
+                        )
                         yield ModelRolePicker(
                             role="agent",
                             env_var="NINJA_AGENT_MODEL",
                             default="opencode/glm-4.7-free",
                             config=self.config_manager,
+                            operator_env="NINJA_AGENT_OPERATOR",
                         )
                     yield Static("[bold]Custom Model ID[/bold]")
                     yield Input(
@@ -881,8 +916,8 @@ class NinjaConfigApp(App):
             lines.append(f"[#a3be8c]✓[/#a3be8c] {name}: {path}")
         return "\n".join(lines)
 
-    def _operator_status(self) -> str:
-        raw = self.config_manager.get("NINJA_CODE_BIN") or "not set"
+    def _operator_status(self, env_var: str = "NINJA_CODE_BIN") -> str:
+        raw = self.config_manager.get(env_var) or "not set"
         op_id = normalize_operator(raw)
         op = next((o for o in OPERATORS if o.id == op_id), None)
         name = op.name if op else op_id
@@ -895,14 +930,14 @@ class NinjaConfigApp(App):
         except Exception:
             return []
 
-    def _current_operator_id(self) -> str:
-        """The configured operator id (``NINJA_CODE_BIN``), normalized."""
-        return normalize_operator(self.config_manager.get("NINJA_CODE_BIN"))
+    def _current_operator_id(self, env_var: str = "NINJA_CODE_BIN") -> str:
+        """The configured operator id for ``env_var``, normalized."""
+        return normalize_operator(self.config_manager.get(env_var))
 
-    def _operator_select_options(self) -> list[tuple[str, str]]:
-        """(label, id) options for the Models-tab operator picker."""
+    def _operator_select_options(self, env_var: str = "NINJA_CODE_BIN") -> list[tuple[str, str]]:
+        """(label, id) options for a module's operator picker."""
         options = [(op.name, op.id) for op in self._installed_operators()]
-        current = self._current_operator_id()
+        current = self._current_operator_id(env_var)
         if all(value != current for _, value in options):
             op = next((o for o in OPERATORS if o.id == current), None)
             options.append((op.name if op else current, current))
@@ -978,29 +1013,48 @@ class NinjaConfigApp(App):
         except Exception:
             pass
 
-    def _select_operator(self, op_id: str) -> None:
-        """Switch the active operator, guarding against uninstalled ones.
+    def _set_operator(self, env_var: str, op_id: str) -> None:
+        """Set a module's operator (``env_var``) and refresh its model pickers.
 
-        Rebuilds the model pickers' provider lists so the new operator's native
-        provider (e.g. Codex) appears immediately.
+        Guards against uninstalled operators. Each module has its own operator:
+        coder roles share ``NINJA_CODE_BIN``; secretary/agent have
+        ``NINJA_SECRETARY_OPERATOR`` / ``NINJA_AGENT_OPERATOR``.
         """
         installed = {op.id for op in self._installed_operators()}
         if op_id not in installed:
             self.notify(f"{op_id} is not installed.", timeout=4, severity="warning")
             return
-        self.config_manager.set("NINJA_CODE_BIN", op_id)
+        self.config_manager.set(env_var, op_id)
         try:
-            self.query_one("#lbl-operator-status", Static).update(self._operator_status())
-            self.query_one("#lbl-operators", Static).update(self._operator_buttons())
+            self.query_one(f"#lbl-operator-{env_var}", Static).update(
+                self._operator_status(env_var)
+            )
         except Exception:
             pass
-        self._populate_operator_buttons()
         for picker in self.query(ModelRolePicker):
+            if getattr(picker, "operator_env", "NINJA_CODE_BIN") == env_var:
+                try:
+                    picker.on_operator_changed()
+                except Exception:
+                    continue
+        if env_var == "NINJA_CODE_BIN":
             try:
-                picker.on_operator_changed()
+                self.query_one("#lbl-operator-status", Static).update(
+                    self._operator_status("NINJA_CODE_BIN")
+                )
+                self.query_one("#lbl-operators", Static).update(self._operator_buttons())
             except Exception:
-                continue
-        self.notify(f"Operator set to {op_id}. Model providers refreshed.", timeout=3)
+                pass
+            self._populate_operator_buttons()
+        self.notify(f"{env_var} set to {op_id}. Model providers refreshed.", timeout=3)
+
+    def _select_operator(self, op_id: str) -> None:
+        """Settings-tab operator switch (coder) — see :meth:`_set_operator`."""
+        self._set_operator("NINJA_CODE_BIN", op_id)
+        try:
+            self.query_one("#operator-select-NINJA_CODE_BIN", Select).value = op_id
+        except Exception:
+            pass
 
     def _search_status(self) -> str:
         cfg = self.config_manager.list_all()
@@ -1428,17 +1482,15 @@ class NinjaConfigApp(App):
 
     @on(Select.Changed)
     def on_operator_selected(self, event: Select.Changed) -> None:
-        """Operator picker in the Models tab (global coding CLI)."""
-        if event.select.id != "operator-select":
+        """Per-module operator picker in the Models tab (coder/secretary/agent)."""
+        select_id = event.select.id or ""
+        if not select_id.startswith("operator-select-"):
             return
         value = event.value
         if value is None or value == Select.BLANK:
             return
-        self._select_operator(str(value))
-        try:
-            self.query_one("#lbl-operator-models", Static).update(self._operator_status())
-        except Exception:
-            pass
+        env_var = select_id[len("operator-select-") :]
+        self._set_operator(env_var, str(value))
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if hasattr(event.item, "setting_env_var") and hasattr(event.item, "setting_def"):

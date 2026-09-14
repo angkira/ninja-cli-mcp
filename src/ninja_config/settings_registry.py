@@ -95,13 +95,19 @@ SETTINGS: list[SettingDef] = [
     SettingDef(
         "NINJA_SECRETARY_OPERATOR",
         "Secretary Operator",
-        "Operator for the secretary module",
+        "Coding CLI operator for the secretary module",
+        "opencode",
+    ),
+    SettingDef(
+        "NINJA_AGENT_OPERATOR",
+        "Agent Operator",
+        "Coding CLI operator for the agent orchestrator",
         "opencode",
     ),
     SettingDef(
         "NINJA_RESEARCHER_OPERATOR",
         "Researcher Operator",
-        "Operator for the researcher module",
+        "Search engine for the researcher module (perplexity, serper, …)",
         "perplexity",
     ),
     # ── Timeouts ─────────────────────────────────────────────────────────

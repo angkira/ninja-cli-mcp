@@ -151,6 +151,7 @@ class ModelRolePicker(Vertical):
         env_var: str,
         default: str,
         config: ConfigManager,
+        operator_env: str = "NINJA_CODE_BIN",
         debounce: float = DEBOUNCE_DELAY,
     ) -> None:
         super().__init__(classes="model-picker")
@@ -158,8 +159,11 @@ class ModelRolePicker(Vertical):
         self.env_var = env_var
         self.default = default
         self._config = config
+        #: Config key holding this role's operator (coder roles share
+        #: NINJA_CODE_BIN; secretary/agent have their own).
+        self.operator_env = operator_env
         self._debounce = debounce
-        operator = normalize_operator(config.get("NINJA_CODE_BIN"))
+        operator = normalize_operator(config.get(self.operator_env))
         self._provider = guess_provider(config.get(env_var) or default, operator)
         self._providers_ready = False
         self._providers_loading = False
@@ -170,7 +174,7 @@ class ModelRolePicker(Vertical):
 
     def _native_provider(self) -> str | None:
         """Native provider id for the configured operator (codex, junie, …)."""
-        return native_provider_for_operator(self._config.get("NINJA_CODE_BIN"))
+        return native_provider_for_operator(self._config.get(self.operator_env))
 
     @staticmethod
     def _provider_label(provider: str) -> str:
@@ -283,7 +287,7 @@ class ModelRolePicker(Vertical):
         Recomputes the provider from the stored model under the new operator,
         rebuilds the Select options (native provider first), and re-discovers.
         """
-        operator = normalize_operator(self._config.get("NINJA_CODE_BIN"))
+        operator = normalize_operator(self._config.get(self.operator_env))
         self._provider = guess_provider(self._config.get(self.env_var) or self.default, operator)
         self._providers_ready = False
         self._providers_loading = False
@@ -524,4 +528,4 @@ class ModelRolePicker(Vertical):
             pass
 
     def _operator(self) -> str:
-        return normalize_operator(self._config.get("NINJA_CODE_BIN"))
+        return normalize_operator(self._config.get(self.operator_env))
