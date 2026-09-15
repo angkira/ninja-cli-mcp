@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.15 - 2026-09-14
+
+- **Model list follows the selected operator.** For a native operator
+  (codex/junie/claude/gemini) the picker shows that operator's provider even if
+  the stored model still carries another operator's prefix (e.g. an OpenRouter
+  id under codex); Aider is pinned to OpenRouter.
+- Fixed Aider model parsing (`- provider/model` rows yielded `-` as the id) —
+  deduped chat models now list correctly; Gemini/Claude catalogues come from the
+  single source of truth and match the operator-compatible ids.
+
 ## 1.0.14 - 2026-09-14
 
 - **Config TUI: no more "ended queue object" I/O error when enabling a module.**
