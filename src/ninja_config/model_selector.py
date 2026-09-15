@@ -1578,7 +1578,7 @@ def print_summary(operator: Operator, model: Model):
     print("  3. Test by asking Claude Code to write some code!")
 
     print("\n💡 To change later, run:")
-    print("     ninja-config select-model")
+    print("     ninja-config models")
     print()
 
 

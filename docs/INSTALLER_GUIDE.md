@@ -30,7 +30,7 @@ ninja-config install
 - **`ninja-config auth`** - Quick API key setup
 
 ### 🎯 Operator & Model Selection  
-- **`ninja-config select-model`** - Interactive operator and model selection
+- **`ninja-config models`** - Interactive operator and model selection
 
 ### 📊 Configuration Management
 - **`ninja-config show`** - Show current configuration
@@ -110,7 +110,7 @@ View current settings grouped by category:
 ### 6. 🗑️ Reset Configuration
 Clear all configuration (with confirmation).
 
-## 🎯 Model Selector (`ninja-config select-model`)
+## 🎯 Model Selector (`ninja-config models`)
 
 Interactive operator and model selection:
 
@@ -241,7 +241,7 @@ ninja-config configure
 # Select: Manage Providers → Google → Follow prompts
 
 # 5. Select operator and model
-ninja-config select-model
+ninja-config models
 # Select: OpenCode
 # Select: anthropic/claude-sonnet-4-5
 
@@ -292,7 +292,7 @@ ninja-config configure
 which opencode  # or: which aider, which gemini
 
 # Try reloading
-ninja-config select-model
+ninja-config models
 # Select operator again
 ```
 

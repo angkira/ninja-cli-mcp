@@ -30,7 +30,7 @@ ninja-mcp update
 ### Interactive Setup (Recommended)
 ```bash
 # Select operator (OpenRouter/Anthropic) and model
-ninja-config select-model
+ninja-config models
 
 # Set API key
 ninja-config api-key openrouter
@@ -210,7 +210,7 @@ cat MIGRATION.md
 ### Change Model
 ```bash
 # Interactive
-ninja-config select-model
+ninja-config models
 
 # Direct
 ninja-config set NINJA_MODEL anthropic/claude-opus-4-5
@@ -282,7 +282,7 @@ done
 
 ## Next Steps
 
-1. **Configure:** `ninja-config select-model`
+1. **Configure:** `ninja-config models`
 2. **Verify:** `ninja-config doctor`
 3. **Start coding:** Open Claude Code and try:
    - "Create a Python function that validates emails"

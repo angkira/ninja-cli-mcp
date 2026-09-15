@@ -29,12 +29,18 @@ help: ## Show categorized targets and examples
 	@printf '%s\n' '  make docker-up PROFILE=coder COMPOSE_PROJECT_NAME=ninja-mcp'
 	@printf '%s\n' '  make docker-status | docker-logs | docker-down'
 	@printf '%s\n' '  make docker-clean     Explicitly remove containers, networks, and volumes'
+	@printf '%s\n' '  make docker-run-agent Run one agent command without exposing credentials'
+	@printf '%s\n' '  make analyze          Alias for the one-shot agent wrapper'
 	@printf '%s\n' '' 'Quality and release:'
 	@printf '%s\n' '  make test             Run the full pytest suite through uv'
 	@printf '%s\n' '  make check            Run lint, format-check, typecheck, and tests'
 	@printf '%s\n' '  make version          Print the package version'
 	@printf '%s\n' '  make package          Build Python distributions with uv'
 	@printf '%s\n' '  make release-check    Run checks and build, without publishing'
+	@printf '%s\n' '  make release VERSION=1.0.17            Run the full local release flow'
+	@printf '%s\n' '  make release-dry-run VERSION=1.0.17    Dry-run the release flow without mutating'
+	@printf '%s\n' '  make release-tag-only VERSION=1.0.17   Bump, gate, build, commit and tag without PyPI publish'
+	@printf '%s\n' '  make publish-local    Build and publish the current version to PyPI (local)'
 
 install: ## Run the normal interactive Native/Docker TUI installer
 	./install.sh
@@ -57,22 +63,22 @@ docker-config: $(CONFIG_ENV) ## Print resolved Compose configuration without sta
 	NINJA_DOCKER_IMAGE="$(IMAGE)" docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" config
 
 docker-up: $(CONFIG_ENV) ## Start the selected profile in the background
-	docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" up -d
+	NINJA_DOCKER_IMAGE="$(IMAGE)" docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" up -d
 
 docker-down: $(CONFIG_ENV) ## Stop the selected Compose project
-	docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" down
+	NINJA_DOCKER_IMAGE="$(IMAGE)" docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" down
 
 docker-status: $(CONFIG_ENV) ## Show selected profile container status
-	docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" ps
+	NINJA_DOCKER_IMAGE="$(IMAGE)" docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" ps
 
 docker-logs: $(CONFIG_ENV) ## Follow selected profile logs
-	docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" logs -f
+	NINJA_DOCKER_IMAGE="$(IMAGE)" docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" logs -f
 
 docker-clean: $(CONFIG_ENV) ## Explicitly remove the project, orphan containers, and named volumes
-	docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" down --volumes --remove-orphans
+	NINJA_DOCKER_IMAGE="$(IMAGE)" docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile "$(PROFILE)" -f "$(COMPOSE_FILE)" down --volumes --remove-orphans
 
 docker-run-agent: $(CONFIG_ENV) ## Run one agent command without exposing credentials
-	docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile agent -f "$(COMPOSE_FILE)" run --rm agent
+	NINJA_DOCKER_IMAGE="$(IMAGE)" docker compose --project-name "$(COMPOSE_PROJECT_NAME)" --env-file "$(CONFIG_ENV)" --profile agent -f "$(COMPOSE_FILE)" run --rm agent
 
 analyze: docker-run-agent ## Alias for the one-shot agent wrapper
 

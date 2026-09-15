@@ -158,7 +158,7 @@ ninja-config set NINJA_SEARCH_PROVIDER serper
 
 ### Interactive Model Selection
 ```bash
-ninja-config select-model
+ninja-config models
 ```
 
 ---
@@ -232,7 +232,7 @@ cat ~/.ninja-mcp-backups/backup_*.env | grep MODEL
 
 **Manual fix:**
 ```bash
-ninja-config select-model
+ninja-config models
 # Or
 ninja-config set NINJA_MODEL anthropic/claude-sonnet-4-5
 ```

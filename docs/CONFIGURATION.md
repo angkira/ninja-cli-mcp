@@ -130,7 +130,7 @@ ninja-config configure
 ninja-config auth
 
 # Select operator and model
-ninja-config select-model
+ninja-config models
 
 # View current config
 ninja-config show
@@ -162,7 +162,7 @@ When you change `~/.ninja-mcp.env`:
 
 ```bash
 # Method 1: CLI
-ninja-config select-model
+ninja-config models
 # Select: OpenCode → anthropic/claude-sonnet-4-5
 
 # Method 2: Direct edit

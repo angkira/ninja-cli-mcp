@@ -6,7 +6,7 @@
 
 Ninja MCP is a set of MCP servers and a small command-line orchestrator for
 coding, research, and codebase analysis. The current package and release are
-`1.0.1`.
+`1.0.17`.
 
 ## What It Includes
 
@@ -51,15 +51,15 @@ configuration exists; Docker targets use the TUI-generated
 | Goal | Command | Notes |
 | --- | --- | --- |
 | Interactive install | `make install` | The normal Native/Docker TUI flow |
-| Native guidance | `make install-native` | Native has no separate automation flow |
+| Native guidance | `make install-native` | Prints native guidance; non-interactive native flow is `./install.sh --auto` / `--minimal` |
 | Internal Docker automation | `make install-headless` | Hidden `NINJA_DOCKER_NONINTERACTIVE=1` backend; not public UX |
 | Compose config | `make docker-config PROFILE=coder` | Resolves config only, does not start containers |
 | Start services | `make docker-up PROFILE=coder` | Requires prior TUI-generated config |
 | Stop services | `make docker-down PROFILE=coder` | Non-destructive stop |
 | Quality checks | `make check` | CI-aligned lint, format, typecheck, and tests |
 | Release validation | `make release-check` | Builds locally; never publishes |
-| Local release | `make release VERSION=1.0.5` | Bump, gate, build, tag, push, publish to PyPI |
-| Release dry-run | `make release-dry-run VERSION=1.0.5` | Print the release plan without mutating |
+| Local release | `make release VERSION=1.0.17` | Bump, gate, build, tag, push, publish to PyPI |
+| Release dry-run | `make release-dry-run VERSION=1.0.17` | Print the release plan without mutating |
 
 The Make targets are thin wrappers around `install.sh`, `uv`, and Docker
 Compose. `IMAGE`, `PROFILE`, `COMPOSE_PROJECT_NAME`, and `CONFIG_DIR` can be
@@ -97,9 +97,11 @@ Run `./install.sh` and select `Native installation` or
 `Docker container (isolated)` as the first TUI question. Docker then asks for
 workspace, profiles, unique localhost ports, build/start, and credentials.
 
-The interactive flow asks for an existing absolute workspace, one or more
+The interactive TUI flow asks for an absolute workspace path (missing
+directories are created automatically), one or more
 Compose profiles, unique localhost ports, whether to build and start, and
-whether to pass API credentials. It creates a project under
+whether to pass API credentials. The headless backend instead requires an
+existing absolute workspace directory. It creates a project under
 `~/.config/ninja-mcp/docker` and installs the `ninja-mcp-docker` wrapper in
 `~/.local/bin`.
 
