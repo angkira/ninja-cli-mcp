@@ -35,6 +35,11 @@ from ninja_common.mcp_tasks import emit_progress, get_progress_callback, get_tas
 SLOW_PREFIX = "slow:"
 SLOW_DELAY_SECONDS = 30.0
 SLOW_POLL_SECONDS = 0.05
+#: ``timed:<seconds>`` runs for that many seconds on a short timer tick, so the
+#: tests can simulate a long task deterministically and measure how long it ran.
+TIMED_PREFIX = "timed:"
+TIMED_TICK_SECONDS = 0.05
+TIMED_PROGRESS_EVERY_TICKS = 10
 MARKER_ENV = "NINJA_TASK_TEST_MARKER"
 
 
@@ -54,9 +59,45 @@ class StubExecutor:
     """Executor that returns fixed results without any external dependency."""
 
     async def simple_task(self, request: Any, *, client_id: str = "default") -> SimpleTaskResult:
-        if str(request.task).startswith(SLOW_PREFIX):
+        task = str(request.task)
+        if task.startswith(SLOW_PREFIX):
             await self._run_slow_task()
-        return SimpleTaskResult(status="ok", summary=f"stub: {request.task}")
+            return SimpleTaskResult(status="ok", summary=f"stub: {task}")
+        if task.startswith(TIMED_PREFIX):
+            elapsed = await self._run_timed_task(task[len(TIMED_PREFIX) :].strip())
+            return SimpleTaskResult(status="ok", summary=f"stub timed: ran {elapsed:.2f}s")
+        return SimpleTaskResult(status="ok", summary=f"stub: {task}")
+
+    async def _run_timed_task(self, spec: str) -> float:
+        """Run for ``spec`` seconds on a timer tick, honoring cancellation.
+
+        Simulates a long task with asyncio timers. Records ``timed-completed`` /
+        ``timed-interrupted`` plus the elapsed seconds and tick count to the
+        marker file, and returns the seconds actually run.
+        """
+        try:
+            duration = max(0.0, float(spec or "1"))
+        except ValueError:
+            duration = 1.0
+
+        start = time.monotonic()
+        ticks = 0
+        while True:
+            elapsed = time.monotonic() - start
+            if elapsed >= duration:
+                break
+            cancellation = get_task_cancellation()
+            if cancellation is not None and cancellation.is_set():
+                _mark(f"timed-interrupted spec={spec} elapsed={elapsed:.2f} ticks={ticks}")
+                return elapsed
+            ticks += 1
+            if get_progress_callback() is not None and ticks % TIMED_PROGRESS_EVERY_TICKS == 0:
+                await emit_progress(elapsed, duration, f"tick {ticks}")
+            await asyncio.sleep(TIMED_TICK_SECONDS)
+
+        elapsed = time.monotonic() - start
+        _mark(f"timed-completed spec={spec} elapsed={elapsed:.2f} ticks={ticks}")
+        return elapsed
 
     async def _run_slow_task(self) -> None:
         """Loop until cancelled, proving the progress bridge and cancellation."""

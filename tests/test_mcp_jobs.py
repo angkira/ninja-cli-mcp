@@ -223,3 +223,138 @@ async def test_jobs_list_returns_submitted_job() -> None:
             entries = {job["job_id"]: job for job in listing["jobs"]}
             assert job_id in entries
             assert entries[job_id]["status"] == "completed"
+
+
+TIMED_TASK = "timed:"  # timed:<seconds> — a long task simulated with asyncio timers
+
+
+def _marker_elapsed(marker: Path, needle: str) -> float:
+    """Return the ``elapsed=`` seconds recorded on the marker line starting with *needle*."""
+    for line in marker.read_text().splitlines():
+        if line.startswith(needle):
+            for part in line.split():
+                if part.startswith("elapsed="):
+                    return float(part.split("=", 1)[1])
+    raise AssertionError(f"no {needle!r} line in marker: {marker.read_text()!r}")
+
+
+async def test_submit_is_immediate_and_timed_job_runs_in_background() -> None:
+    """A long (timer) job returns a handle instantly and runs in the background."""
+    with tempfile.TemporaryDirectory(prefix="ninja-jobs-test-") as tmp:
+        db_path = Path(tmp) / "tasks.db"
+        async with _connected(db_path) as session:
+            started = time.monotonic()
+            submitted = _payload(
+                await session.call_tool(
+                    "coder_submit_simple",
+                    {"task": f"{TIMED_TASK}2.0", "repo_root": str(REPO_ROOT)},
+                )
+            )
+            submit_latency = time.monotonic() - started
+            assert submitted["status"] == "working"
+            assert submit_latency < 0.5, f"submit blocked for {submit_latency:.2f}s"
+            job_id = submitted["job_id"]
+
+            # Still working right after submit, and the caller can keep calling.
+            immediate = _payload(await session.call_tool("coder_job_status", {"job_id": job_id}))
+            assert immediate["status"] == "working"
+            listing = _payload(await session.call_tool("coder_jobs_list", {}))
+            assert job_id in {job["job_id"] for job in listing["jobs"]}
+
+            # It finishes only after roughly the timer duration.
+            poll_started = time.monotonic()
+            terminal = await _poll_status(session, job_id, timeout=15)
+            ran = time.monotonic() - poll_started
+            assert terminal["status"] == "completed"
+            assert ran >= 1.0, f"job finished too fast ({ran:.2f}s); timer did not run"
+
+            result = _payload(await session.call_tool("coder_job_result", {"job_id": job_id}))
+            assert "stub timed" in result["summary"]
+
+
+async def test_cancel_stops_timed_job_mid_flight() -> None:
+    """Cancelling a timed job stops the timer early (work actually interrupted)."""
+    with tempfile.TemporaryDirectory(prefix="ninja-jobs-test-") as tmp:
+        db_path = Path(tmp) / "tasks.db"
+        marker = Path(tmp) / "marker.txt"
+        async with _connected(db_path, extra_env={MARKER_ENV: str(marker)}) as session:
+            submitted = _payload(
+                await session.call_tool(
+                    "coder_submit_simple",
+                    {"task": f"{TIMED_TASK}10.0", "repo_root": str(REPO_ROOT)},
+                )
+            )
+            job_id = submitted["job_id"]
+
+            await asyncio.sleep(0.3)  # let the timer tick a few times
+            cancelled = _payload(await session.call_tool("coder_job_cancel", {"job_id": job_id}))
+            assert cancelled["status"] == "cancelled"
+
+            assert await _wait_for_marker(marker, "timed-interrupted", timeout=10)
+            elapsed = _marker_elapsed(marker, "timed-interrupted")
+            assert elapsed < 5.0, f"timer ran {elapsed:.2f}s despite cancellation"
+            assert "timed-completed" not in marker.read_text()
+
+            status = _payload(await session.call_tool("coder_job_status", {"job_id": job_id}))
+            assert status["status"] == "cancelled"
+
+
+async def test_concurrent_timed_jobs_do_not_interfere() -> None:
+    """Several timer jobs run in parallel without trampling each other's timers.
+
+    Three jobs with different durations must each finish after (roughly) their
+    own duration — shortest first — and cancelling a fourth, long job must not
+    disturb the others (independent cancellation contexts).
+    """
+    with tempfile.TemporaryDirectory(prefix="ninja-jobs-test-") as tmp:
+        db_path = Path(tmp) / "tasks.db"
+        marker = Path(tmp) / "marker.txt"
+        async with _connected(db_path, extra_env={MARKER_ENV: str(marker)}) as session:
+            specs = (0.8, 1.6, 2.4)
+            jobs: dict[float, str] = {}
+            for spec in specs:
+                payload = _payload(
+                    await session.call_tool(
+                        "coder_submit_simple",
+                        {"task": f"{TIMED_TASK}{spec}", "repo_root": str(REPO_ROOT)},
+                    )
+                )
+                assert payload["status"] == "working"
+                jobs[spec] = payload["job_id"]
+
+            # A separate long job that we cancel; it must not affect the others.
+            doomed = _payload(
+                await session.call_tool(
+                    "coder_submit_simple",
+                    {"task": f"{TIMED_TASK}30.0", "repo_root": str(REPO_ROOT)},
+                )
+            )["job_id"]
+            await asyncio.sleep(0.3)
+            assert (
+                _payload(await session.call_tool("coder_job_cancel", {"job_id": doomed}))["status"]
+                == "cancelled"
+            )
+
+            for spec, job_id in jobs.items():
+                terminal = await _poll_status(session, job_id, timeout=15)
+                assert terminal["status"] == "completed", f"{spec}s job: {terminal}"
+
+            lines = marker.read_text().splitlines()
+            completed = [line for line in lines if line.startswith("timed-completed")]
+            interrupted = [line for line in lines if line.startswith("timed-interrupted")]
+            assert len(completed) == len(specs), lines
+            assert len(interrupted) == 1, lines
+
+            # Each job ran for ~its own duration: its timer was independent.
+            elapsed_by_spec: dict[float, float] = {}
+            for line in completed:
+                spec = float(line.split("spec=")[1].split()[0])
+                elapsed = float(line.split("elapsed=")[1].split()[0])
+                elapsed_by_spec[spec] = elapsed
+            assert set(elapsed_by_spec) == set(specs)
+            for spec in specs:
+                assert spec * 0.7 <= elapsed_by_spec[spec] <= spec + 1.5, elapsed_by_spec
+            # Longer durations took longer (no shared/looped timer).
+            assert elapsed_by_spec[0.8] < elapsed_by_spec[1.6] < elapsed_by_spec[2.4], (
+                elapsed_by_spec
+            )
