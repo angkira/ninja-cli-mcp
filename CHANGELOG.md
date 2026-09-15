@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.1.0 - 2026-09-15
+
+Background execution: long-running tools now run as **standard MCP Tasks** —
+start a run, get a task id, keep working, and fetch or cancel the result later.
+
+### Added
+- **MCP Tasks across coder, agent and researcher.** Long tools advertise
+  `execution.taskSupport = "optional"`; a task-augmented `tools/call` returns a
+  task handle (`CreateTaskResult`), and the client follows up with `tasks/get`,
+  `tasks/result`, `tasks/list`, `tasks/cancel`. Clients without the capability
+  keep the exact synchronous behavior.
+- **Durable task store** (`SqliteTaskStore`, `NINJA_TASKS_DB`, default
+  `~/.ninja/tasks.db`): tasks survive restarts and are shared across sessions.
+- **Real cancellation**: `tasks/cancel` interrupts the running work by
+  terminating the CLI subprocess group (SIGTERM → SIGKILL), and safely no-ops for
+  unknown/terminal tasks.
+- **Progress notifications** (`notifications/progress`) emitted from the CLI
+  streaming loop (~every 10s), best-effort.
+- Docs: [docs/MCP_TASKS.md](docs/MCP_TASKS.md).
+
+### Fixed
+- Guarded the SDK's stale-completion race so a cancelled task can no longer tear
+  down the server's task support.
+
+### Verified (live)
+- Task mode end-to-end with real operators **codex, claude, opencode and agy**:
+  handle → poll → `completed` → `tasks/result`, expected files written.
+- Cancellation interrupts in-flight work; a task is still queryable via
+  `tasks/get`/`tasks/result` after a server restart.
+
+### Notes
+- The MCP Tasks capability is experimental in the SDK/protocol; live result
+  waiters are in-process, and the store is local (not distributed).
+
 ## 1.0.17 - 2026-09-15
 
 - **Replaced the deprecated Gemini CLI operator with Antigravity (`agy`).**
