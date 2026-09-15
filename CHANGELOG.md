@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.2.0 - 2026-09-15
+
+Background jobs that work in **every** MCP host, not just Tasks-capable ones.
+
+### Added
+- **submit/poll job tools** (coder): `coder_submit_simple`,
+  `coder_submit_sequential`, `coder_submit_parallel` return
+  `{job_id, status:"working", poll_interval_ms}` immediately and run in the
+  background; `coder_job_status`, `coder_job_result`, `coder_job_cancel`,
+  `coder_jobs_list` inspect/stop them. Runs on ordinary tool calls, so it works
+  in opencode, Claude Code, Codex, Antigravity and anything else.
+- `ninja_common.jobs.JobManager` — background runner built on the durable
+  `SqliteTaskStore`: jobs survive restarts and are visible across sessions;
+  `coder_job_cancel` actually interrupts the CLI process group.
+
+### Why
+- Verified via client handshake that opencode 1.18, Claude Code 2.1, Codex 0.154
+  and Antigravity v1.0 all initialize with `capabilities.tasks = null` — the
+  standard MCP Tasks path stays implemented and will light up automatically, but
+  submit/poll is what makes background execution usable today.
+
+### Verified (live)
+- `NINJA_CODE_BIN=codex`: submit → `working` → poll → `completed` → result
+  (file written); a second job `coder_job_cancel` → `cancelled` (process group
+  terminated) with the server still serving calls.
+- `tests/test_mcp_jobs.py` + `tests/test_mcp_tasks.py` — 17 passed.
+
 ## 1.1.0 - 2026-09-15
 
 Background execution: long-running tools now run as **standard MCP Tasks** —

@@ -26,6 +26,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
     CallToolResult,
+    Task,
     TextContent,
     Tool,
     ToolExecution,
@@ -41,8 +42,14 @@ from ninja_coder.models import (
     SimpleTaskRequest,
 )
 from ninja_coder.tools import get_executor
+from ninja_common.jobs import JOB_STATUS_CANCELLED, JOB_STATUS_WORKING, JobManager
 from ninja_common.logging_utils import get_logger, setup_logging
-from ninja_common.mcp_tasks import install_tasks, refresh_task_after_cancel, server_task_scope
+from ninja_common.mcp_tasks import (
+    SqliteTaskStore,
+    install_tasks,
+    refresh_task_after_cancel,
+    server_task_scope,
+)
 from ninja_common.security import RequestDeduplicator
 
 
@@ -75,6 +82,95 @@ def _get_deduplicator() -> RequestDeduplicator:
     if _deduplicator is None:
         _deduplicator = RequestDeduplicator()
     return _deduplicator
+
+
+#: Tool names served through the submit/poll background-job API.
+JOB_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "coder_submit_simple",
+        "coder_submit_sequential",
+        "coder_submit_parallel",
+        "coder_job_status",
+        "coder_job_result",
+        "coder_job_cancel",
+        "coder_jobs_list",
+    }
+)
+
+
+def _text_content(payload: dict[str, Any]) -> TextContent:
+    """Render a dict payload as a pretty-printed JSON text block."""
+    return TextContent(type="text", text=json.dumps(payload, indent=2))
+
+
+def _result_payload(result: Any) -> CallToolResult:
+    """Convert an executor result model into the storable/synchronous payload."""
+    if result is None or not hasattr(result, "model_dump"):
+        return CallToolResult(
+            content=[
+                _text_content(
+                    {
+                        "status": "error",
+                        "error": "Tool produced no result (internal error)",
+                        "error_type": "InternalError",
+                    }
+                )
+            ],
+            isError=True,
+        )
+    return CallToolResult(
+        content=[TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))],
+        isError=False,
+    )
+
+
+def _job_status_payload(task: Task) -> dict[str, Any]:
+    """Render a task record as the public job-status payload."""
+    return {
+        "job_id": task.taskId,
+        "status": task.status,
+        "created_at": task.createdAt.isoformat(),
+        "last_updated_at": task.lastUpdatedAt.isoformat(),
+        "status_message": task.statusMessage,
+    }
+
+
+def _job_handle_payload(task: Task, poll_interval_ms: int) -> dict[str, Any]:
+    """Render the immediate response returned by a ``coder_submit_*`` call."""
+    return {
+        "job_id": task.taskId,
+        "status": task.status,
+        "poll_interval_ms": poll_interval_ms,
+    }
+
+
+def _stored_result_text(result: Any) -> str | None:
+    """Extract the first text block from a stored task result, if any."""
+    if result is None:
+        return None
+    try:
+        dumped = result.model_dump(mode="json", by_alias=True)
+    except Exception:
+        return None
+    content = dumped.get("content") if isinstance(dumped, dict) else None
+    if not content:
+        return None
+    first = content[0]
+    if isinstance(first, dict) and first.get("type") == "text":
+        text = first.get("text")
+        return text if isinstance(text, str) else None
+    return None
+
+
+def _validation_error_payload(exc: ValidationError) -> dict[str, Any]:
+    """Render a friendly, indexed validation error payload."""
+    messages: list[str] = []
+    for err in exc.errors():
+        msg = str(err.get("msg", "Invalid input")).replace("Value error, ", "")
+        if msg not in messages:
+            messages.append(msg)
+    detail = "\n".join(messages) or "Invalid tool input."
+    return {"status": "error", "error": detail, "error_type": "InvalidPlanInput"}
 
 
 # Tool definitions with JSON Schema
@@ -512,6 +608,120 @@ TOOLS: list[Tool] = [
 _TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 
 
+# --- Submit/poll background-job API -----------------------------------------
+# These tools work in every MCP host, even ones that do not advertise the
+# standard MCP Tasks capability: they start work in the server's background and
+# return a job handle the caller polls. Schemas reuse the synchronous tool
+# schemas so submit arguments stay identical.
+_JOB_ID_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "job_id": {
+            "type": "string",
+            "description": "Job id returned by a coder_submit_* call.",
+        }
+    },
+    "required": ["job_id"],
+}
+
+TOOLS.extend(
+    [
+        Tool(
+            name="coder_submit_simple",
+            description=(
+                "Submit a SIMPLE CODE WRITING task to run in the BACKGROUND and "
+                "return a job handle immediately. Works in any MCP host, even "
+                "those without the standard MCP Tasks capability. Returns "
+                "{job_id, status:'working', poll_interval_ms}: poll "
+                "coder_job_status until terminal, then fetch coder_job_result. "
+                "Arguments are identical to coder_simple_task."
+            ),
+            inputSchema=dict(_TOOLS_BY_NAME["coder_simple_task"].inputSchema),
+        ),
+        Tool(
+            name="coder_submit_sequential",
+            description=(
+                "Submit a multi-step SEQUENTIAL CODE WRITING plan to run in the "
+                "BACKGROUND and return a job handle immediately. Works in any MCP "
+                "host, even those without the standard MCP Tasks capability. "
+                "Returns {job_id, status:'working', poll_interval_ms}: poll "
+                "coder_job_status until terminal, then fetch coder_job_result. "
+                "Arguments are identical to coder_execute_plan_sequential."
+            ),
+            inputSchema=dict(_TOOLS_BY_NAME["coder_execute_plan_sequential"].inputSchema),
+        ),
+        Tool(
+            name="coder_submit_parallel",
+            description=(
+                "Submit an INDEPENDENT PARALLEL CODE WRITING plan to run in the "
+                "BACKGROUND and return a job handle immediately. Works in any MCP "
+                "host, even those without the standard MCP Tasks capability. "
+                "Returns {job_id, status:'working', poll_interval_ms}: poll "
+                "coder_job_status until terminal, then fetch coder_job_result. "
+                "Arguments are identical to coder_execute_plan_parallel."
+            ),
+            inputSchema=dict(_TOOLS_BY_NAME["coder_execute_plan_parallel"].inputSchema),
+        ),
+        Tool(
+            name="coder_job_status",
+            description=(
+                "Get the status of a background job created by coder_submit_*. "
+                "Returns {job_id, status, created_at, last_updated_at, "
+                "status_message}; status is one of working|completed|failed|"
+                "cancelled. Poll this until it is no longer 'working', then call "
+                "coder_job_result."
+            ),
+            inputSchema=dict(_JOB_ID_SCHEMA),
+        ),
+        Tool(
+            name="coder_job_result",
+            description=(
+                "Fetch the result payload of a background job created by "
+                "coder_submit_*. While the job is still working it returns "
+                "{job_id, status:'working', poll_interval_ms}; once terminal it "
+                "returns the same JSON payload the synchronous tool would have "
+                "returned."
+            ),
+            inputSchema=dict(_JOB_ID_SCHEMA),
+        ),
+        Tool(
+            name="coder_job_cancel",
+            description=(
+                "Cancel a running background job and actually interrupt its work. "
+                "Idempotent and safe for unknown or already-terminal job ids. "
+                "Returns the final job status."
+            ),
+            inputSchema=dict(_JOB_ID_SCHEMA),
+        ),
+        Tool(
+            name="coder_jobs_list",
+            description=(
+                "List known background jobs (oldest first) with optional cursor "
+                "pagination. Returns {jobs: [...], next_cursor}."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "cursor": {
+                        "type": "string",
+                        "description": "Opaque cursor returned as next_cursor by a previous call.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "Maximum number of jobs to return.",
+                    },
+                },
+                "required": [],
+            },
+        ),
+    ]
+)
+
+_TOOLS_BY_NAME.update({tool.name: tool for tool in TOOLS if tool.name in JOB_TOOL_NAMES})
+
+
 def create_server() -> Server:
     """
     Create and configure the MCP server with detailed instructions.
@@ -632,7 +842,12 @@ You:
     # durable store and real cancellation of running work. Registers
     # tasks/get | tasks/result | tasks/list | tasks/cancel and declares the
     # ServerTasksCapability during initialization.
-    install_tasks(server)
+    #
+    # The same store backs the always-available submit/poll job API below, so
+    # both views agree on jobs and survive across calls and processes.
+    store = SqliteTaskStore()
+    install_tasks(server, store=store)
+    jobs = JobManager(store)
 
     # Use the process-global deduplicator for request deduplication
     deduplicator = _get_deduplicator()
@@ -657,7 +872,126 @@ You:
         if tool_definition is not None:
             experimental.validate_for_tool(tool_definition)
 
+        async def _handle_job_tool() -> list[TextContent]:
+            """Serve the always-available submit/poll background-job tools."""
+            executor = get_executor()
+
+            if name == "coder_submit_simple":
+                try:
+                    simple_request = SimpleTaskRequest(**arguments)
+                except ValidationError as exc:
+                    return [_text_content(_validation_error_payload(exc))]
+
+                async def _simple_work() -> CallToolResult:
+                    result = await executor.simple_task(simple_request, client_id="default")
+                    return _result_payload(result)
+
+                task = await jobs.submit(_simple_work, status_message="coder_simple_task")
+                return [_text_content(_job_handle_payload(task, jobs.poll_interval_ms))]
+
+            if name == "coder_submit_sequential":
+                try:
+                    sequential_request = SequentialPlanRequest(**arguments)
+                except ValidationError as exc:
+                    return [_text_content(_validation_error_payload(exc))]
+
+                async def _sequential_work() -> CallToolResult:
+                    result = await executor.execute_plan_sequential(
+                        sequential_request, client_id="default"
+                    )
+                    return _result_payload(result)
+
+                task = await jobs.submit(
+                    _sequential_work, status_message="coder_execute_plan_sequential"
+                )
+                return [_text_content(_job_handle_payload(task, jobs.poll_interval_ms))]
+
+            if name == "coder_submit_parallel":
+                try:
+                    parallel_request = ParallelPlanRequest(**arguments)
+                except ValidationError as exc:
+                    return [_text_content(_validation_error_payload(exc))]
+
+                async def _parallel_work() -> CallToolResult:
+                    result = await executor.execute_plan_parallel(
+                        parallel_request, client_id="default"
+                    )
+                    return _result_payload(result)
+
+                task = await jobs.submit(
+                    _parallel_work, status_message="coder_execute_plan_parallel"
+                )
+                return [_text_content(_job_handle_payload(task, jobs.poll_interval_ms))]
+
+            job_id = str(arguments.get("job_id", ""))
+            unknown = _text_content(
+                {
+                    "job_id": job_id,
+                    "status": "error",
+                    "error": f"Unknown job: {job_id}",
+                    "error_type": "UnknownJob",
+                }
+            )
+
+            if name == "coder_job_status":
+                task = await jobs.status(job_id)
+                return [unknown] if task is None else [_text_content(_job_status_payload(task))]
+
+            if name == "coder_job_result":
+                task = await jobs.status(job_id)
+                if task is None:
+                    return [unknown]
+                if task.status == JOB_STATUS_WORKING:
+                    return [
+                        _text_content(
+                            {
+                                "job_id": job_id,
+                                "status": task.status,
+                                "poll_interval_ms": jobs.poll_interval_ms,
+                            }
+                        )
+                    ]
+                stored_text = _stored_result_text(await jobs.result(job_id))
+                if stored_text is None:
+                    stored_text = json.dumps(
+                        {
+                            "job_id": job_id,
+                            "status": task.status,
+                            "status_message": task.statusMessage,
+                        },
+                        indent=2,
+                    )
+                return [TextContent(type="text", text=stored_text)]
+
+            if name == "coder_job_cancel":
+                task = await jobs.cancel(job_id)
+                if task is None:
+                    return [_text_content({"job_id": job_id, "status": JOB_STATUS_CANCELLED})]
+                return [_text_content(_job_status_payload(task))]
+
+            # coder_jobs_list
+            try:
+                listed, next_cursor = await jobs.list_jobs(
+                    arguments.get("cursor"), arguments.get("limit")
+                )
+            except ValueError as exc:
+                return [
+                    _text_content(
+                        {"status": "error", "error": str(exc), "error_type": "InvalidCursor"}
+                    )
+                ]
+            return [
+                _text_content(
+                    {
+                        "jobs": [_job_status_payload(job) for job in listed],
+                        "next_cursor": next_cursor,
+                    }
+                )
+            ]
+
         async def _invoke() -> list[TextContent]:
+            if name in JOB_TOOL_NAMES:
+                return await _handle_job_tool()
             client_id = "default"
             logger.info(f"[{client_id}] Tool called: {name}")
             logger.debug(f"[{client_id}] Arguments: {json.dumps(arguments, indent=2)}")

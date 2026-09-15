@@ -6,7 +6,7 @@
 
 Ninja MCP is a set of MCP servers and a small command-line orchestrator for
 coding, research, and codebase analysis. The current package and release are
-`1.1.0`.
+`1.2.0`.
 
 ## What It Includes
 
@@ -16,8 +16,10 @@ coding, research, and codebase analysis. The current package and release are
 - **Agent**: a CLI orchestrator for plan, analyze, delegate, review, and run.
 - **Config TUI**: Nord-themed setup, model selection, host-auth detection, and
   IDE registration.
-- **Background execution**: long tools run as standard [MCP Tasks](docs/MCP_TASKS.md)
-  — start a run, get a task id, keep working, fetch or cancel the result later.
+- **Background execution**: start a long run, get a job id, keep working, then
+  fetch or cancel the result. Works in **every** MCP host via `coder_submit_*` /
+  `coder_job_status|result|cancel`, with standard [MCP Tasks](docs/MCP_TASKS.md)
+  for hosts that advertise the capability.
 
 ## TUI Preview
 
