@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.17 - 2026-09-15
+
+- **Replaced the deprecated Gemini CLI operator with Antigravity (`agy`).**
+  New `AgyStrategy` runs `agy --add-dir <repo> --dangerously-skip-permissions
+  --output-format stream-json -p <prompt>` (stream-json keeps the watchdog alive
+  and yields a structured result). Models are discovered dynamically via `agy
+  models` (no hardcoded list); the default omits `--model` and lets agy choose.
+  Operator detection, config UI, operator/default/compatibility maps and the
+  settings registry all switched gemini → agy; the MCP-host target is
+  Antigravity.
+- **Fixed the Claude Code operator:** pass the prompt via `-p` (a bare
+  positional was dropped) and use version aliases (`sonnet`/`opus`/`haiku`)
+  instead of expired dated model ids.
+- Verified live: with `agy` (e.g. model `claude-sonnet-4-6`) the sequential,
+  parallel and delegate flows all succeed and write the expected files; Claude
+  sequential also passes.
+
 ## 1.0.16 - 2026-09-15
 
 - **OpenCode provider sub-selection (dynamic, OpenCode only).** The model picker
