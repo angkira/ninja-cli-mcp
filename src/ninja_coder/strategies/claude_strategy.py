@@ -122,18 +122,18 @@ class ClaudeStrategy:
         """
         model_name = model or self.config.model or "claude-sonnet-4"
 
-        # Map short model names to full model names if needed
-        model_mapping = {
-            "claude-sonnet-4": "claude-sonnet-4-20250514",
-            "claude-opus-4": "claude-opus-4-20250514",
-            "claude-haiku-4": "claude-haiku-4-20250514",
-            "sonnet": "claude-sonnet-4-20250514",
-            "opus": "claude-opus-4-20250514",
-            "haiku": "claude-haiku-4-20250514",
-        }
-
-        # Use mapping if available, otherwise use as-is
-        full_model = model_mapping.get(model_name, model_name)
+        # Claude Code accepts version aliases that always point at the latest
+        # model (e.g. "sonnet"); pinned dated ids (…-20250514) expire. Collapse
+        # any family name to its alias so runs never hit an expired model.
+        low = (model_name or "").lower()
+        if "sonnet" in low:
+            full_model = "sonnet"
+        elif "opus" in low:
+            full_model = "opus"
+        elif "haiku" in low:
+            full_model = "haiku"
+        else:
+            full_model = model_name
 
         # Build command using claude CLI
         # Format: claude --model MODEL --print "PROMPT"
@@ -162,8 +162,9 @@ class ClaudeStrategy:
             files_text = ", ".join(file_paths)
             final_prompt = f"{prompt}\n\nFocus on these files: {files_text}"
 
-        # Add prompt as the final argument
-        cmd.append(final_prompt)
+        # Prompt via -p/--print. A bare positional arg was dropped by the CLI
+        # ("Input must be provided either through stdin or as a prompt").
+        cmd.extend(["-p", final_prompt])
 
         # Build environment (inherit current environment)
         env = subprocess_env()
