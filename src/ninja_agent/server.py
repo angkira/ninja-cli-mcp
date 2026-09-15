@@ -16,11 +16,11 @@ import argparse
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolResult, TextContent, Tool, ToolExecution
 
 from ninja_agent.models import (
     AgentAnalyzeRequest,
@@ -34,10 +34,7 @@ from ninja_agent.models import (
 )
 from ninja_agent.tools import AgentToolExecutor
 from ninja_common.logging_utils import get_logger, setup_logging
-
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
+from ninja_common.mcp_tasks import install_tasks, refresh_task_after_cancel, server_task_scope
 
 
 # Set up logging to stderr (stdout is for MCP protocol)
@@ -49,6 +46,7 @@ logger = get_logger(__name__)
 TOOLS: list[Tool] = [
     Tool(
         name="agent_analyze",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Analyze a codebase: structure, file counts, and optionally a focus area. "
             "Delegates to the secretary module. Never modifies files."
@@ -75,6 +73,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_plan",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Decompose a high-level task into an ordered execution plan. Each step is "
             "routed to the appropriate sub-agent (coder for code, researcher for research, "
@@ -106,6 +105,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_delegate",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Delegate a subtask to a specific sub-agent: 'coder' writes code, 'researcher' "
             "does a web search, 'secretary' analyzes the codebase. Use this to dispatch "
@@ -143,6 +143,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_review",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Review files without modifying them. Heuristic static analysis for long "
             "blocks, empty except handlers, missing docstrings, and syntax errors."
@@ -169,10 +170,18 @@ TOOLS: list[Tool] = [
     ),
 ]
 
+# Look up tool definitions by name (used for task-mode validation).
+_TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
+
 
 def create_server() -> Server:
     """Create and configure the MCP server."""
     server = Server("ninja-agent")
+
+    # Enable standard MCP Tasks (background/asynchronous tool execution) with a
+    # durable store and real cancellation of running work.
+    install_tasks(server)
+
     executor = AgentToolExecutor()
 
     @server.list_tools()
@@ -181,62 +190,94 @@ def create_server() -> Server:
         return TOOLS
 
     @server.call_tool()
-    async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
-        """Handle tool execution requests."""
-        try:
-            client_id = arguments.get("client_id", "default")
+    async def call_tool(name: str, arguments: Any) -> Any:
+        """Handle tool execution requests, synchronously or as a background task."""
+        request_ctx = server.request_context
+        experimental = request_ctx.experimental
+        tool_definition = _TOOLS_BY_NAME.get(name)
+        if tool_definition is not None:
+            experimental.validate_for_tool(tool_definition)
 
-            if name == "agent_analyze":
-                analyze_request = AgentAnalyzeRequest(**arguments)
-                analyze_result: AgentAnalyzeResult = await executor.analyze(
-                    analyze_request, client_id
-                )
-                return [
-                    TextContent(type="text", text=json.dumps(analyze_result.model_dump(), indent=2))
-                ]
+        async def _invoke() -> list[TextContent]:
+            try:
+                client_id = arguments.get("client_id", "default")
 
-            elif name == "agent_plan":
-                plan_request = AgentPlanRequest(**arguments)
-                plan_result: AgentPlanResult = await executor.plan(plan_request, client_id)
-                return [
-                    TextContent(type="text", text=json.dumps(plan_result.model_dump(), indent=2))
-                ]
+                if name == "agent_analyze":
+                    analyze_request = AgentAnalyzeRequest(**arguments)
+                    analyze_result: AgentAnalyzeResult = await executor.analyze(
+                        analyze_request, client_id
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(analyze_result.model_dump(), indent=2)
+                        )
+                    ]
 
-            elif name == "agent_delegate":
-                delegate_request = AgentDelegateRequest(**arguments)
-                delegate_result: AgentDelegateResult = await executor.delegate(
-                    delegate_request, client_id
-                )
+                elif name == "agent_plan":
+                    plan_request = AgentPlanRequest(**arguments)
+                    plan_result: AgentPlanResult = await executor.plan(plan_request, client_id)
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(plan_result.model_dump(), indent=2)
+                        )
+                    ]
+
+                elif name == "agent_delegate":
+                    delegate_request = AgentDelegateRequest(**arguments)
+                    delegate_result: AgentDelegateResult = await executor.delegate(
+                        delegate_request, client_id
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(delegate_result.model_dump(), indent=2)
+                        )
+                    ]
+
+                elif name == "agent_review":
+                    review_request = AgentReviewRequest(**arguments)
+                    review_result: AgentReviewResult = await executor.review(
+                        review_request, client_id
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(review_result.model_dump(), indent=2)
+                        )
+                    ]
+
+                else:
+                    raise ValueError(f"Unknown tool: {name}")
+
+            except Exception as e:
+                logger.error(f"Error executing tool {name}: {e}", exc_info=True)
                 return [
                     TextContent(
-                        type="text", text=json.dumps(delegate_result.model_dump(), indent=2)
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "success": False,
+                                "error": str(e),
+                                "tool": name,
+                            }
+                        ),
                     )
                 ]
 
-            elif name == "agent_review":
-                review_request = AgentReviewRequest(**arguments)
-                review_result: AgentReviewResult = await executor.review(review_request, client_id)
-                return [
-                    TextContent(type="text", text=json.dumps(review_result.model_dump(), indent=2))
-                ]
+        if experimental.is_task:
+            session = request_ctx.session
+            progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
 
-            else:
-                raise ValueError(f"Unknown tool: {name}")
+            async def _work(task: Any) -> CallToolResult:
+                async with server_task_scope(
+                    task, session=session, progress_token=progress_token
+                ) as cancellation:
+                    content = await _invoke()
+                    if cancellation.is_set():
+                        await refresh_task_after_cancel(task)
+                    return CallToolResult(content=list(content), isError=False)
 
-        except Exception as e:
-            logger.error(f"Error executing tool {name}: {e}", exc_info=True)
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {
-                            "success": False,
-                            "error": str(e),
-                            "tool": name,
-                        }
-                    ),
-                )
-            ]
+            return await experimental.run_task(_work)
+
+        return await _invoke()
 
     return server
 

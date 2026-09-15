@@ -1,9 +1,10 @@
 # Documentation Index
 
-Start here for the current `1.0.1` behavior:
+Start here for the current `1.1.0` behavior:
 
 - [Project quickstart](../README.md)
 - [Docker quickstart](container-quickstart.md)
+- [Background execution with MCP Tasks](MCP_TASKS.md)
 - [Automatic safety, worktrees, and timeouts](AUTOMATIC_SAFETY.md)
 - [CLI strategies and host authentication](CLI_STRATEGIES.md)
 - [Model selection and autocomplete](MODEL_SELECTION.md)

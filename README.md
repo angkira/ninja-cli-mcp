@@ -6,7 +6,7 @@
 
 Ninja MCP is a set of MCP servers and a small command-line orchestrator for
 coding, research, and codebase analysis. The current package and release are
-`1.0.17`.
+`1.1.0`.
 
 ## What It Includes
 
@@ -16,6 +16,8 @@ coding, research, and codebase analysis. The current package and release are
 - **Agent**: a CLI orchestrator for plan, analyze, delegate, review, and run.
 - **Config TUI**: Nord-themed setup, model selection, host-auth detection, and
   IDE registration.
+- **Background execution**: long tools run as standard [MCP Tasks](docs/MCP_TASKS.md)
+  — start a run, get a task id, keep working, fetch or cancel the result later.
 
 ## TUI Preview
 
@@ -186,11 +188,17 @@ controls, and legacy paths that intentionally remain in place.
 ## Provider Authentication
 
 Ninja does not require a new API key when the selected coding CLI is already
-authenticated on the host:
+authenticated on the host. Supported operators: `opencode`, `aider`, `claude`,
+`codex`, `agy` (Antigravity), and `junie`.
 
-- `claude` uses `claude auth status` and the host Claude Code session.
+- `claude` uses the host Claude Code session (`sonnet`/`opus`/`haiku` aliases).
+- `codex` uses the ChatGPT login from the Codex CLI.
+- `agy` (Antigravity) runs locally with its own auth; models are listed live
+  with `agy models`.
 - `junie` uses JetBrains Account authentication and the `junie` binary.
-- `opencode` uses its own provider configuration and authentication.
+- `opencode` uses its own provider configuration and authentication, and exposes
+  a dynamic provider sub-selection (Anthropic, OpenAI, Google, Z.AI, OpenRouter,
+  …).
 
 Junie uses a flat model id and runs commands shaped like:
 
@@ -223,6 +231,7 @@ Use `--dry-run` to preview a supported config change. See
 ## Documentation
 
 - [Docker Quickstart](docs/container-quickstart.md)
+- [Background execution (MCP Tasks)](docs/MCP_TASKS.md)
 - [Automatic Safety](docs/AUTOMATIC_SAFETY.md)
 - [CLI Strategies and operators](docs/CLI_STRATEGIES.md)
 - [Model selection](docs/MODEL_SELECTION.md)

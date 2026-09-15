@@ -55,6 +55,12 @@ from ninja_common.defaults import (
     FALLBACK_CODER_MODELS,
 )
 from ninja_common.logging_utils import create_task_logger, get_logger
+from ninja_common.mcp_tasks import (
+    PROGRESS_INTERVAL_SECONDS,
+    TaskCancelledError,
+    emit_progress,
+    get_task_cancellation,
+)
 from ninja_common.operator_models import (
     operator_default_model,
     operator_from_bin,
@@ -158,6 +164,46 @@ def _get_absolute_timeout(task_type: str, explicit_timeout: int | None = None) -
     else:
         value = type_defaults.get(base_type, DEFAULT_ABSOLUTE_TIMEOUT_SEC)
     return float(value) if value > 0 else None
+
+
+async def _terminate_process_group(
+    process: asyncio.subprocess.Process,
+    *,
+    grace_seconds: float = 5.0,
+) -> None:
+    """Terminate a CLI subprocess tree (SIGTERM to pgid, then SIGKILL).
+
+    Idempotent: a process that has already exited is left alone.
+    """
+    if process.returncode is not None:
+        return
+
+    def _signal(sig: int) -> None:
+        try:
+            if process.pid:
+                pgid = os.getpgid(process.pid)
+                if pgid != os.getpgid(0):
+                    os.killpg(pgid, sig)
+                    return
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            process.send_signal(sig)
+        except (ProcessLookupError, PermissionError, ValueError):
+            pass
+
+    _signal(signal.SIGTERM)
+    try:
+        await asyncio.wait_for(process.wait(), timeout=grace_seconds)
+        return
+    except TimeoutError:
+        pass
+    logger.warning("Process group ignored SIGTERM, forcing SIGKILL")
+    _signal(signal.SIGKILL)
+    try:
+        await asyncio.wait_for(process.wait(), timeout=2.0)
+    except TimeoutError:
+        pass
 
 
 @dataclass
@@ -1410,6 +1456,14 @@ class NinjaDriver:
         count_stderr_activity = os.environ.get("NINJA_INACTIVITY_COUNT_STDERR") == "1"
         stderr_chunks: list[bytes] = []
 
+        # Bind this subprocess to the active MCP task (if any) so a
+        # tasks/cancel can terminate the whole process group.
+        cancellation = get_task_cancellation()
+        if cancellation is not None:
+            cancellation.bind_process(process)
+        streamed_bytes = 0
+        last_progress = _time.monotonic()
+
         async def _read_stderr() -> bytes:
             nonlocal last_activity
             if process.stderr:
@@ -1430,6 +1484,9 @@ class NinjaDriver:
         try:
             while True:
                 now = _time.monotonic()
+
+                if cancellation is not None and cancellation.is_set():
+                    raise TaskCancelledError(f"Task {cancellation.task_id} was cancelled")
 
                 if absolute_deadline is not None and now >= absolute_deadline:
                     raise TimeoutError(f"Absolute timeout of {max_timeout:.0f}s exceeded")
@@ -1530,14 +1587,31 @@ class NinjaDriver:
 
                 if line:
                     stdout_chunks.append(line)
+                    streamed_bytes += len(line)
                     last_activity = _time.monotonic()
+                    now_progress = _time.monotonic()
+                    if now_progress - last_progress >= PROGRESS_INTERVAL_SECONDS:
+                        last_progress = now_progress
+                        # Best-effort; never affects the run.
+                        await emit_progress(
+                            float(streamed_bytes),
+                            None,
+                            f"streaming ({streamed_bytes} bytes)",
+                        )
                 else:
                     break  # EOF — process finished writing
+
+            if cancellation is not None and cancellation.is_set():
+                # The process group may have been terminated by a cancellation
+                # request, producing EOF without any error.
+                raise TaskCancelledError(f"Task {cancellation.task_id} was cancelled")
 
         except TimeoutError:
             stream_timed_out = True
             raise
         finally:
+            if cancellation is not None:
+                cancellation.unbind_process()
             if stream_timed_out:
                 stderr_task.cancel()
                 try:
@@ -2150,6 +2224,33 @@ class NinjaDriver:
                     worktree_info,
                 )
 
+            except TaskCancelledError as e:
+                task_logger.warning(f"Task cancelled ({e}), terminating process group")
+                await _terminate_process_group(process)
+                logs_path = task_logger.save()
+                self.structured_logger.log_result(
+                    success=False,
+                    summary="🛑 Task cancelled",
+                    session_id=session_id,
+                    task_id=step_id,
+                    cli_name=self._strategy.name,
+                    model=model,
+                    exit_code=-1,
+                    error_type="TaskCancelledError",
+                    reason=str(e)[:500],
+                )
+                return self._attach_worktree_info(
+                    NinjaResult(
+                        success=False,
+                        summary="🛑 Task cancelled",
+                        notes=str(e),
+                        raw_logs_path=logs_path,
+                        exit_code=-1,
+                        model_used=model,
+                    ),
+                    worktree_info,
+                )
+
             task_logger.log_subprocess(cli_result.command, exit_code, stdout, stderr)
 
             # Parse output using strategy (paths verified against execution_dir,
@@ -2432,7 +2533,12 @@ class NinjaDriver:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 limit=SUBPROCESS_STREAM_LIMIT,  # JSON lines can exceed the 64 KiB default
+                start_new_session=True,  # Own process group — cancellable as a unit
             )
+
+            cancellation = get_task_cancellation()
+            if cancellation is not None:
+                cancellation.bind_process(process)
 
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
@@ -2452,6 +2558,22 @@ class NinjaDriver:
                     success=False,
                     summary="⏱️ Task timed out",
                     notes=f"Execution exceeded {timeout}s timeout",
+                    raw_logs_path=logs_path,
+                    exit_code=-1,
+                    model_used=model,
+                )
+            finally:
+                if cancellation is not None:
+                    cancellation.unbind_process()
+
+            if cancellation is not None and cancellation.is_set():
+                task_logger.warning("Task cancelled, terminating process group")
+                await _terminate_process_group(process)
+                logs_path = task_logger.save()
+                return NinjaResult(
+                    success=False,
+                    summary="🛑 Task cancelled",
+                    notes="Cancelled by MCP tasks/cancel",
                     raw_logs_path=logs_path,
                     exit_code=-1,
                     model_used=model,

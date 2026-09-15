@@ -20,13 +20,15 @@ import asyncio
 import json
 import logging
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
+    CallToolResult,
     TextContent,
     Tool,
+    ToolExecution,
 )
 from pydantic import ValidationError
 
@@ -40,11 +42,8 @@ from ninja_coder.models import (
 )
 from ninja_coder.tools import get_executor
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.mcp_tasks import install_tasks, refresh_task_after_cancel, server_task_scope
 from ninja_common.security import RequestDeduplicator
-
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 
 # Load config from ~/.ninja-mcp.env into environment variables
@@ -82,6 +81,7 @@ def _get_deduplicator() -> RequestDeduplicator:
 TOOLS: list[Tool] = [
     Tool(
         name="coder_simple_task",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Delegate CODE WRITING to Ninja AI agent using SIMPLE task specification. "
             "Ninja ONLY writes/edits code files based on your specification. "
@@ -147,6 +147,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="coder_execute_plan_sequential",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Execute a multi-step CODE WRITING plan sequentially. "
             "Each step delegates code writing to Ninja AI agent. "
@@ -283,6 +284,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="coder_execute_plan_parallel",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Execute independent CODE WRITING steps in parallel with configurable concurrency. "
             "Each step delegates code writing to Ninja AI agent. "
@@ -412,6 +414,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="coder_multi_agent_task",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Execute a complex task with multi-agent orchestration (oh-my-opencode). "
             "Automatically selects and coordinates specialized agents based on task requirements. "
@@ -504,6 +507,9 @@ TOOLS: list[Tool] = [
         },
     ),
 ]
+
+# Look up tool definitions by name (used for task-mode validation).
+_TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 
 
 def create_server() -> Server:
@@ -622,6 +628,12 @@ You:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""",
     )
 
+    # Enable standard MCP Tasks (background/asynchronous tool execution) with a
+    # durable store and real cancellation of running work. Registers
+    # tasks/get | tasks/result | tasks/list | tasks/cancel and declares the
+    # ServerTasksCapability during initialization.
+    install_tasks(server)
+
     # Use the process-global deduplicator for request deduplication
     deduplicator = _get_deduplicator()
 
@@ -631,108 +643,141 @@ You:
         return TOOLS
 
     @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[TextContent]:
-        """Handle tool invocations."""
-        client_id = "default"
-        logger.info(f"[{client_id}] Tool called: {name}")
-        logger.debug(f"[{client_id}] Arguments: {json.dumps(arguments, indent=2)}")
-        executor = get_executor()
-        SKIP_DEDUP = {"coder_get_agents", "coder_query_logs"}
+    async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
+        """Handle tool invocations, synchronously or as a background task.
 
-        async def _execute() -> Any:
-            if name == "coder_simple_task":
-                request = SimpleTaskRequest(**arguments)
-                return await executor.simple_task(request, client_id=client_id)
-            elif name == "coder_execute_plan_sequential":
-                request = SequentialPlanRequest(**arguments)
-                return await executor.execute_plan_sequential(request, client_id=client_id)
-            elif name == "coder_execute_plan_parallel":
-                request = ParallelPlanRequest(**arguments)
-                return await executor.execute_plan_parallel(request, client_id=client_id)
-            elif name == "coder_get_agents":
-                request = GetAgentsRequest(**arguments)
-                return await executor.get_agents(request, client_id=client_id)
-            elif name == "coder_multi_agent_task":
-                request = MultiAgentTaskRequest(**arguments)
-                return await executor.multi_agent_task(request, client_id=client_id)
-            elif name == "coder_query_logs":
-                request = QueryLogsRequest(**arguments)
-                return await executor.query_logs(request, client_id=client_id)
-            else:
-                raise ValueError(f"Unknown tool: {name}")
+        When the client sends a task-augmented ``tools/call`` (standard MCP
+        Tasks capability) for a tool marked ``taskSupport="optional"``, the work
+        runs in the background and a ``CreateTaskResult`` handle is returned
+        immediately. Otherwise the tool runs synchronously as before.
+        """
+        request_ctx = server.request_context
+        experimental = request_ctx.experimental
+        tool_definition = _TOOLS_BY_NAME.get(name)
+        if tool_definition is not None:
+            experimental.validate_for_tool(tool_definition)
 
-        try:
-            if name in SKIP_DEDUP:
-                result = await _execute()
-            else:
-                key = RequestDeduplicator.make_key(name, arguments)
-                result = await deduplicator.deduplicate(key, _execute)
+        async def _invoke() -> list[TextContent]:
+            client_id = "default"
+            logger.info(f"[{client_id}] Tool called: {name}")
+            logger.debug(f"[{client_id}] Arguments: {json.dumps(arguments, indent=2)}")
+            executor = get_executor()
+            SKIP_DEDUP = {"coder_get_agents", "coder_query_logs"}
 
-            if result is None or not hasattr(result, "model_dump"):
-                # Defensive: an executor must always return a result model.
-                # Never let a None/invalid result crash with AttributeError —
-                # return a proper MCP error envelope instead.
-                logger.error(
-                    f"[{client_id}] Tool {name} returned invalid result: {type(result).__name__}"
+            async def _execute() -> Any:
+                if name == "coder_simple_task":
+                    request = SimpleTaskRequest(**arguments)
+                    return await executor.simple_task(request, client_id=client_id)
+                elif name == "coder_execute_plan_sequential":
+                    request = SequentialPlanRequest(**arguments)
+                    return await executor.execute_plan_sequential(request, client_id=client_id)
+                elif name == "coder_execute_plan_parallel":
+                    request = ParallelPlanRequest(**arguments)
+                    return await executor.execute_plan_parallel(request, client_id=client_id)
+                elif name == "coder_get_agents":
+                    request = GetAgentsRequest(**arguments)
+                    return await executor.get_agents(request, client_id=client_id)
+                elif name == "coder_multi_agent_task":
+                    request = MultiAgentTaskRequest(**arguments)
+                    return await executor.multi_agent_task(request, client_id=client_id)
+                elif name == "coder_query_logs":
+                    request = QueryLogsRequest(**arguments)
+                    return await executor.query_logs(request, client_id=client_id)
+                else:
+                    raise ValueError(f"Unknown tool: {name}")
+
+            try:
+                if name in SKIP_DEDUP:
+                    result = await _execute()
+                else:
+                    key = RequestDeduplicator.make_key(name, arguments)
+                    result = await deduplicator.deduplicate(key, _execute)
+
+                if result is None or not hasattr(result, "model_dump"):
+                    # Defensive: an executor must always return a result model.
+                    # Never let a None/invalid result crash with AttributeError —
+                    # return a proper MCP error envelope instead.
+                    logger.error(
+                        f"[{client_id}] Tool {name} returned invalid result: {type(result).__name__}"
+                    )
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps(
+                                {
+                                    "status": "error",
+                                    "error": f"Tool {name} produced no result (internal error)",
+                                    "error_type": "InternalError",
+                                }
+                            ),
+                        )
+                    ]
+
+                result_json = result.model_dump()
+                logger.info(
+                    f"[{client_id}] Tool {name} completed with status: {result_json.get('status', 'unknown')}"
                 )
+                return [TextContent(type="text", text=json.dumps(result_json, indent=2))]
+
+            except ValidationError as e:
+                # Surface our friendly, indexed plan errors instead of pydantic's
+                # multi-line dump. `_normalize_plan_steps` raises ValueError, which
+                # pydantic wraps as "Value error, <message>".
+                messages: list[str] = []
+                for err in e.errors():
+                    msg = str(err.get("msg", "Invalid input")).replace("Value error, ", "")
+                    if msg not in messages:
+                        messages.append(msg)
+                detail = "\n".join(messages) or "Invalid tool input."
+                logger.warning(f"[{client_id}] Tool {name} input rejected: {detail}")
                 return [
                     TextContent(
                         type="text",
                         text=json.dumps(
                             {
                                 "status": "error",
-                                "error": f"Tool {name} produced no result (internal error)",
-                                "error_type": "InternalError",
+                                "error": detail,
+                                "error_type": "InvalidPlanInput",
                             }
                         ),
                     )
                 ]
 
-            result_json = result.model_dump()
-            logger.info(
-                f"[{client_id}] Tool {name} completed with status: {result_json.get('status', 'unknown')}"
-            )
-            return [TextContent(type="text", text=json.dumps(result_json, indent=2))]
+            except ValueError as e:
+                if "Unknown tool" in str(e):
+                    return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
+                raise
 
-        except ValidationError as e:
-            # Surface our friendly, indexed plan errors instead of pydantic's
-            # multi-line dump. `_normalize_plan_steps` raises ValueError, which
-            # pydantic wraps as "Value error, <message>".
-            messages: list[str] = []
-            for err in e.errors():
-                msg = str(err.get("msg", "Invalid input")).replace("Value error, ", "")
-                if msg not in messages:
-                    messages.append(msg)
-            detail = "\n".join(messages) or "Invalid tool input."
-            logger.warning(f"[{client_id}] Tool {name} input rejected: {detail}")
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {
-                            "status": "error",
-                            "error": detail,
-                            "error_type": "InvalidPlanInput",
-                        }
-                    ),
-                )
-            ]
+            except Exception as e:
+                logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {"status": "error", "error": str(e), "error_type": type(e).__name__}
+                        ),
+                    )
+                ]
 
-        except ValueError as e:
-            if "Unknown tool" in str(e):
-                return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
-            raise
+        if experimental.is_task:
+            session = request_ctx.session
+            progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
 
-        except Exception as e:
-            logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {"status": "error", "error": str(e), "error_type": type(e).__name__}
-                    ),
-                )
-            ]
+            async def _work(task: Any) -> CallToolResult:
+                async with server_task_scope(
+                    task, session=session, progress_token=progress_token
+                ) as cancellation:
+                    content = await _invoke()
+                    if cancellation.is_set():
+                        # The task was cancelled while work was in flight. Sync
+                        # the SDK's cached status so it skips auto-completion of
+                        # an already-terminal task (avoids tearing down tasks).
+                        await refresh_task_after_cancel(task)
+                    return CallToolResult(content=list(content), isError=False)
+
+            return await experimental.run_task(_work)
+
+        return await _invoke()
 
     return server
 

@@ -14,14 +14,15 @@ import asyncio
 import json
 import logging
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import anyio
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolResult, TextContent, Tool, ToolExecution
 
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.mcp_tasks import install_tasks, refresh_task_after_cancel, server_task_scope
 from ninja_researcher.models import (
     DeepResearchRequest,
     FactCheckRequest,
@@ -29,10 +30,6 @@ from ninja_researcher.models import (
     SummarizeSourcesRequest,
 )
 from ninja_researcher.tools import get_executor
-
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 
 # Set up logging to stderr (stdout is for MCP protocol)
@@ -44,6 +41,7 @@ logger = get_logger(__name__)
 TOOLS: list[Tool] = [
     Tool(
         name="researcher_deep_research",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Perform comprehensive deep research on topics by decomposing them into "
             "sub-queries and using parallel search agents with Perplexity AI. Gathers multiple sources, "
@@ -89,6 +87,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="researcher_generate_report",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Synthesize research sources into structured, comprehensive reports using parallel "
             "analysis agents. Analyzes multiple sources simultaneously, identifies key themes, "
@@ -135,6 +134,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="researcher_fact_check",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Verify claims and statements against reliable web sources. Cross-references "
             "information, identifies supporting and contradicting evidence, and validates accuracy. "
@@ -164,6 +164,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="researcher_summarize_sources",
+        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Extract key information and main points from multiple sources and create concise "
             "summaries. Condenses information while preserving essential insights and findings. "
@@ -193,6 +194,9 @@ TOOLS: list[Tool] = [
         },
     ),
 ]
+
+# Look up tool definitions by name (used for task-mode validation).
+_TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 
 
 def create_server() -> Server:
@@ -260,71 +264,99 @@ def create_server() -> Server:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""",
     )
 
+    # Enable standard MCP Tasks (background/asynchronous tool execution) with a
+    # durable store and real cancellation of running work.
+    install_tasks(server)
+
     @server.list_tools()
     async def list_tools() -> list[Tool]:
         """Return the list of available tools."""
         return TOOLS
 
     @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[TextContent]:
-        """Handle tool invocations."""
-        client_id = "default"
-        logger.info(f"[{client_id}] Tool called: {name}")
+    async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
+        """Handle tool invocations, synchronously or as a background task."""
+        request_ctx = server.request_context
+        experimental = request_ctx.experimental
+        tool_definition = _TOOLS_BY_NAME.get(name)
+        if tool_definition is not None:
+            experimental.validate_for_tool(tool_definition)
 
-        executor = get_executor()
+        async def _invoke() -> list[TextContent]:
+            client_id = "default"
+            logger.info(f"[{client_id}] Tool called: {name}")
 
-        try:
-            if name == "researcher_deep_research":
-                request = DeepResearchRequest(**arguments)
-                result = await executor.deep_research(request, client_id=client_id)
+            executor = get_executor()
 
-            elif name == "researcher_generate_report":
-                request = GenerateReportRequest(**arguments)
-                result = await executor.generate_report(request, client_id=client_id)
+            try:
+                if name == "researcher_deep_research":
+                    request = DeepResearchRequest(**arguments)
+                    result = await executor.deep_research(request, client_id=client_id)
 
-            elif name == "researcher_fact_check":
-                request = FactCheckRequest(**arguments)
-                result = await executor.fact_check(request, client_id=client_id)
+                elif name == "researcher_generate_report":
+                    request = GenerateReportRequest(**arguments)
+                    result = await executor.generate_report(request, client_id=client_id)
 
-            elif name == "researcher_summarize_sources":
-                request = SummarizeSourcesRequest(**arguments)
-                result = await executor.summarize_sources(request, client_id=client_id)
+                elif name == "researcher_fact_check":
+                    request = FactCheckRequest(**arguments)
+                    result = await executor.fact_check(request, client_id=client_id)
 
-            else:
+                elif name == "researcher_summarize_sources":
+                    request = SummarizeSourcesRequest(**arguments)
+                    result = await executor.summarize_sources(request, client_id=client_id)
+
+                else:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps({"error": f"Unknown tool: {name}"}),
+                        )
+                    ]
+
+                # Serialize result to JSON
+                result_json = result.model_dump()
+                logger.info(
+                    f"[{client_id}] Tool {name} completed with status: {result_json.get('status', 'unknown')}"
+                )
+
                 return [
                     TextContent(
                         type="text",
-                        text=json.dumps({"error": f"Unknown tool: {name}"}),
+                        text=json.dumps(result_json, indent=2),
                     )
                 ]
 
-            # Serialize result to JSON
-            result_json = result.model_dump()
-            logger.info(
-                f"[{client_id}] Tool {name} completed with status: {result_json.get('status', 'unknown')}"
-            )
+            except Exception as e:
+                logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "status": "error",
+                                "error": str(e),
+                                "error_type": type(e).__name__,
+                            }
+                        ),
+                    )
+                ]
 
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(result_json, indent=2),
-                )
-            ]
+        if experimental.is_task:
+            session = request_ctx.session
+            progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
 
-        except Exception as e:
-            logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {
-                            "status": "error",
-                            "error": str(e),
-                            "error_type": type(e).__name__,
-                        }
-                    ),
-                )
-            ]
+            async def _work(task: Any) -> CallToolResult:
+                async with server_task_scope(
+                    task, session=session, progress_token=progress_token
+                ) as cancellation:
+                    content = await _invoke()
+                    if cancellation.is_set():
+                        await refresh_task_after_cancel(task)
+                    return CallToolResult(content=list(content), isError=False)
+
+            return await experimental.run_task(_work)
+
+        return await _invoke()
 
     return server
 
