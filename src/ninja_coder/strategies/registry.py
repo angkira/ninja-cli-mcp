@@ -10,10 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+from ninja_coder.strategies.agy_strategy import AgyStrategy
 from ninja_coder.strategies.aider_strategy import AiderStrategy
 from ninja_coder.strategies.claude_strategy import ClaudeStrategy
 from ninja_coder.strategies.codex_strategy import CodexStrategy
-from ninja_coder.strategies.gemini_strategy import GeminiStrategy
 from ninja_coder.strategies.junie_strategy import JunieStrategy
 from ninja_coder.strategies.opencode_strategy import OpenCodeStrategy
 
@@ -34,7 +34,7 @@ class CLIStrategyRegistry:
     _strategies: ClassVar[dict[str, type[CLIStrategy]]] = {
         "aider": AiderStrategy,
         "opencode": OpenCodeStrategy,
-        "gemini": GeminiStrategy,
+        "agy": AgyStrategy,
         "claude": ClaudeStrategy,
         "junie": JunieStrategy,
         "codex": CodexStrategy,
@@ -45,7 +45,7 @@ class CLIStrategyRegistry:
         """Register a new CLI strategy.
 
         Args:
-            name: Strategy name (e.g., 'aider', 'opencode', 'gemini').
+            name: Strategy name (e.g., 'aider', 'opencode', 'agy').
             strategy_class: Class implementing CLIStrategy protocol.
         """
         cls._strategies[name] = strategy_class
@@ -74,8 +74,8 @@ class CLIStrategyRegistry:
             strategy_name = "aider"
         elif "opencode" in bin_name or "opencode-cli" in bin_name:
             strategy_name = "opencode"
-        elif "gemini" in bin_name:
-            strategy_name = "gemini"
+        elif "agy" in bin_name:
+            strategy_name = "agy"
         elif "claude" in bin_name:
             strategy_name = "claude"
         elif "junie" in bin_name:

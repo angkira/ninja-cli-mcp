@@ -62,7 +62,7 @@ def _confirm(message: str, default: bool = False) -> bool:
 OPERATOR_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     "aider": ("OPENROUTER_API_KEY",),
     "opencode": ("OPENROUTER_API_KEY",),
-    "gemini": ("GOOGLE_API_KEY",),
+    "agy": (),
     "claude": ("ANTHROPIC_API_KEY",),
     "junie": (),
     "codex": (),
@@ -242,7 +242,7 @@ class TUIInstaller:
         for name, desc in [
             ("aider", "Aider Chat  •  OpenRouter"),
             ("opencode", "OpenCode  •  Multi-provider CLI"),
-            ("gemini", "Gemini CLI  •  Google models"),
+            ("agy", "Antigravity  •  Google models"),
             ("cursor", "Cursor  •  AI-powered IDE"),
         ]:
             if name not in self.tools:

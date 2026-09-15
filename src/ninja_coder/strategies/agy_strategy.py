@@ -104,6 +104,11 @@ class AgyStrategy:
             "--add-dir",
             repo_root,
             "--dangerously-skip-permissions",
+            # Stream NDJSON progress events. In text mode agy buffers and stays
+            # silent for minutes, which trips the inactivity watchdog; streaming
+            # keeps it alive and yields a structured final "result" event.
+            "--output-format",
+            "stream-json",
         ]
 
         # Only pass --model for a real model id; "default"/empty means the CLI

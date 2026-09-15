@@ -1,7 +1,7 @@
 """Operator ↔ model compatibility (single source of truth).
 
 A *model operator* is a coding CLI (``opencode``, ``aider``, ``codex``,
-``junie``, ``claude``, ``gemini``). Native operators only accept a fixed set of
+``junie``, ``claude``, ``agy``). Native operators only accept a fixed set of
 model ids (e.g. Codex's flat ``gpt-5.6-luna``); passing an OpenRouter-style id
 to them makes the CLI fail. These helpers let every layer (runtime model
 selection, config autocomplete, text tasks) agree on what a given operator can
@@ -13,7 +13,6 @@ from __future__ import annotations
 from ninja_common.defaults import (
     CLAUDE_CODE_MODELS,
     CODEX_MODELS,
-    GOOGLE_MODELS,
     JUNIE_MODELS,
     OPERATOR_DEFAULT_MODELS,
 )
@@ -24,19 +23,19 @@ OPERATOR_NATIVE_MODELS: dict[str, frozenset[str]] = {
     "codex": frozenset(mid for mid, _n, _d in CODEX_MODELS),
     "junie": frozenset(mid for mid, _n, _d in JUNIE_MODELS),
     "claude": frozenset(mid for mid, _n, _d in CLAUDE_CODE_MODELS),
-    "gemini": frozenset(mid for mid, _n, _d in GOOGLE_MODELS),
 }
 
 #: Operators that accept ``provider/model`` ids dynamically (opencode: any
-#: provider it knows; aider: OpenRouter-style ``provider/model``).
-DYNAMIC_OPERATORS: frozenset[str] = frozenset({"opencode", "aider"})
+#: provider it knows; aider: OpenRouter-style ``provider/model``; agy: any id
+#: from its own dynamic catalogue).
+DYNAMIC_OPERATORS: frozenset[str] = frozenset({"opencode", "aider", "agy"})
 
 #: Binary-name substrings mapped to their operator id. Order matters: the
 #: first match wins (checked against the lowercased binary name).
 _BIN_MARKERS: tuple[tuple[str, str], ...] = (
     ("aider", "aider"),
     ("opencode", "opencode"),
-    ("gemini", "gemini"),
+    ("agy", "agy"),
     ("claude", "claude"),
     ("junie", "junie"),
     ("codex", "codex"),
@@ -94,6 +93,12 @@ def is_model_compatible(model: str, operator: str | None) -> bool:
         # Aider is OpenRouter-backed: it needs ``provider/model`` ids and
         # cannot run another operator's flat id (e.g. codex's gpt-5.6-luna).
         return "/" in model
+    if op == "agy":
+        # Antigravity models are flat ids (gemini-3.8-flash-medium,
+        # claude-sonnet-4-6, …) or the "default" sentinel; a provider-prefixed
+        # id (e.g. openrouter/…) belongs to another operator and must be
+        # replaced by agy's default.
+        return "/" not in model
     native = OPERATOR_NATIVE_MODELS.get(op)
     if native is None:
         return True

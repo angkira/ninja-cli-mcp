@@ -99,7 +99,7 @@ class PowerConfigurator:
                     providers.append("opencode")
                 if "anthropic" in output:
                     providers.append("anthropic")
-                if "google" in output or "gemini" in output:
+                if "google" in output:
                     providers.append("google")
                 if "openai" in output:
                     providers.append("openai")
@@ -434,7 +434,7 @@ class PowerConfigurator:
             print("     • Aider: pipx install aider-chat")
             print("     • OpenCode: https://opencode.dev/download")
             print("     • Claude Code: https://claude.ai/download")
-            print("     • Gemini CLI: npm install -g @google/generative-ai-cli")
+            print("     • Antigravity: install the agy CLI")
             return
 
         # Show current operator
@@ -657,7 +657,7 @@ class PowerConfigurator:
         print("  🎯 CODER SETUP")
         print("=" * 80)
         print("\n  This wizard will guide you through:")
-        print("    1. Operator selection (OpenCode, Aider, Claude Code, Gemini CLI)")
+        print("    1. Operator selection (OpenCode, Aider, Claude Code, Antigravity)")
         print("    2. Provider selection (for OpenCode)")
         print("    3. Model configuration (regular, quick, heavy tasks)")
 
@@ -680,7 +680,7 @@ class PowerConfigurator:
             print("     • OpenCode: https://opencode.dev/download")
             print("     • Aider: pipx install aider-chat")
             print("     • Claude Code: https://claude.ai/download")
-            print("     • Gemini CLI: npm install -g @google/generative-ai-cli")
+            print("     • Antigravity: install the agy CLI")
             return
 
         current_operator = self.config.get("NINJA_CODE_BIN", "Not set")
@@ -720,9 +720,9 @@ class PowerConfigurator:
         elif selected_operator == "aider":
             selected_provider = "openrouter"
             self._save_config("NINJA_CODER_PROVIDER", "openrouter")
-        elif selected_operator == "gemini":
-            selected_provider = "google"
-            self._save_config("NINJA_CODER_PROVIDER", "google")
+        elif selected_operator == "agy":
+            selected_provider = "agy"
+            self._save_config("NINJA_CODER_PROVIDER", "agy")
 
         # Step 3: Model Configuration
         self._configure_coder_models(selected_operator, selected_provider)
@@ -993,8 +993,8 @@ class PowerConfigurator:
             secretary_provider = "anthropic"
         elif secretary_operator == "aider":
             secretary_provider = "openrouter"
-        elif secretary_operator == "gemini":
-            secretary_provider = "google"
+        elif secretary_operator == "agy":
+            secretary_provider = "agy"
 
         # Select secretary model
         print("\n" + "-" * 50)

@@ -15,6 +15,7 @@ import pytest
 
 from ninja_coder.driver import NinjaConfig
 from ninja_coder.strategies import CLIStrategyRegistry
+from ninja_coder.strategies.agy_strategy import AgyStrategy
 from ninja_coder.strategies.aider_strategy import AiderStrategy
 from ninja_coder.strategies.base import CLICapabilities, CLICommandResult, ParsedResult
 from ninja_coder.strategies.opencode_strategy import OpenCodeStrategy
@@ -89,7 +90,7 @@ def test_registry_list_strategies():
 
     assert "aider" in strategies
     assert "opencode" in strategies
-    assert "gemini" in strategies
+    assert "agy" in strategies
     assert len(strategies) >= 3
 
 
@@ -546,6 +547,62 @@ def test_opencode_server_mode_enables_session_flags_without_server(monkeypatch):
 
     # Verify --continue flag IS present
     assert "--continue" in result.command
+
+
+# ============================================================================
+# Antigravity (agy) Strategy Tests
+# ============================================================================
+
+
+def test_agy_build_command_workspace_and_autonomy_flags():
+    """agy must target the repo dir, auto-approve, and pass the prompt via -p."""
+    config = NinjaConfig(bin_path="agy", model="default", openai_api_key="test")
+    strategy = AgyStrategy("agy", config)
+
+    result = strategy.build_command(prompt="Add a feature", repo_root="/tmp/agy-repo")
+
+    assert isinstance(result, CLICommandResult)
+    assert result.command[0] == "agy"
+    assert "--add-dir" in result.command
+    add_dir_idx = result.command.index("--add-dir")
+    assert result.command[add_dir_idx + 1] == "/tmp/agy-repo"
+    assert "--dangerously-skip-permissions" in result.command
+    assert "-p" in result.command
+    prompt_idx = result.command.index("-p")
+    assert result.command[prompt_idx + 1] == "Add a feature"
+    assert str(result.working_dir) == "/tmp/agy-repo"
+
+
+def test_agy_default_model_omits_model_flag():
+    """The ``"default"`` sentinel must omit --model entirely."""
+    config = NinjaConfig(bin_path="agy", model="default", openai_api_key="test")
+    strategy = AgyStrategy("agy", config)
+
+    result = strategy.build_command(prompt="Task", repo_root="/tmp/repo")
+
+    assert "--model" not in result.command
+
+
+def test_agy_explicit_model_is_forwarded():
+    """A real model id is forwarded via --model (no static allow-list)."""
+    config = NinjaConfig(bin_path="agy", model="default", openai_api_key="test")
+    strategy = AgyStrategy("agy", config)
+
+    result = strategy.build_command(prompt="Task", repo_root="/tmp/repo", model="gemini-3.8-flash-high")
+
+    assert "--model" in result.command
+    model_idx = result.command.index("--model")
+    assert result.command[model_idx + 1] == "gemini-3.8-flash-high"
+
+
+def test_agy_registry_detection():
+    """Registry selects the agy strategy from the binary name."""
+    config = NinjaConfig(bin_path="/home/u/.local/bin/agy", model="default", openai_api_key="test")
+
+    strategy = CLIStrategyRegistry.get_strategy("/home/u/.local/bin/agy", config)
+
+    assert isinstance(strategy, AgyStrategy)
+    assert strategy.name == "agy"
 
 
 # ============================================================================

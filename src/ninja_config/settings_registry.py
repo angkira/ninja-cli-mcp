@@ -82,7 +82,7 @@ SETTINGS: list[SettingDef] = [
     SettingDef(
         "NINJA_CODE_BIN",
         "Code Operator",
-        "Which AI coding CLI to use (opencode, aider, claude, gemini, junie, ...)",
+        "Which AI coding CLI to use (opencode, aider, claude, agy, junie, ...)",
         "opencode",
     ),
     SettingDef("NINJA_CODER_PROVIDER", "Coder Provider", "Default OpenCode provider", "openrouter"),
@@ -228,9 +228,9 @@ SETTINGS: list[SettingDef] = [
         "int",
     ),
     SettingDef(
-        "NINJA_GEMINI_TIMEOUT",
-        "Gemini Timeout (s)",
-        "Timeout for the Gemini strategy",
+        "NINJA_AGY_TIMEOUT",
+        "Antigravity Timeout (s)",
+        "Timeout for the Antigravity strategy",
         "600",
         "int",
     ),

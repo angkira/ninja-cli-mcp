@@ -281,9 +281,36 @@ def test_aider_models_parse_bullet_lines(monkeypatch) -> None:
 
 
 def test_native_operator_models_use_defaults() -> None:
-    """Gemini/Claude catalogues come from defaults (operator-compatible ids)."""
-    from ninja_common.defaults import CLAUDE_CODE_MODELS, GOOGLE_MODELS
-    from ninja_config.model_selector import _get_claude_models, _get_gemini_models
+    """Claude catalogue comes from defaults (operator-compatible ids)."""
+    from ninja_common.defaults import CLAUDE_CODE_MODELS
+    from ninja_config.model_selector import _get_claude_models
 
-    assert [m.id for m in _get_gemini_models()] == [mid for mid, _, _ in GOOGLE_MODELS]
     assert [m.id for m in _get_claude_models()] == [mid for mid, _, _ in CLAUDE_CODE_MODELS]
+
+
+def test_agy_models_are_dynamic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Antigravity models come from ``agy models``, never a hardcoded list."""
+    import ninja_config.model_selector as ms
+
+    monkeypatch.setattr(
+        ms,
+        "_run_agy_models",
+        lambda binary=None: [
+            ("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)"),
+            ("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)"),
+        ],
+    )
+
+    models = ms._get_agy_models()
+
+    assert [m.id for m in models] == ["gemini-3.8-flash-high", "gpt-oss-120b-medium"]
+    assert all(m.provider == "agy" for m in models)
+
+
+def test_agy_models_empty_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed ``agy models`` probe yields no models (safe empty fallback)."""
+    import ninja_config.model_selector as ms
+
+    monkeypatch.setattr(ms, "_run_agy_models", lambda binary=None: [])
+
+    assert ms._get_agy_models() == []

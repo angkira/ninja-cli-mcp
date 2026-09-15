@@ -18,7 +18,6 @@ from ninja_common.config_manager import ConfigManager
 from ninja_common.defaults import (
     CLAUDE_CODE_MODELS,
     CODEX_MODELS,
-    GOOGLE_MODELS,
     JUNIE_MODELS,
 )
 from ninja_common.defaults import OPENCODE_PROVIDERS as _CANONICAL_OPENCODE_PROVIDERS
@@ -59,6 +58,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "opencode": "OpenCode (Free)",
     "anthropic": "Anthropic",
     "google": "Google",
+    "agy": "Antigravity",
     "openai": "OpenAI",
     "github-copilot": "GitHub Copilot",
     "litellm": "LiteLLM",
@@ -122,6 +122,47 @@ def _run_opencode_models() -> list[str]:
         return [line.strip() for line in result.stdout.split("\n") if line.strip()]
     except (subprocess.TimeoutExpired, OSError):
         return []
+
+
+def _run_agy_models(binary: str | None = None) -> list[tuple[str, str]]:
+    """Run ``agy models`` and return ``(id, display_name)`` pairs.
+
+    The CLI prints tab-separated ``<id>\\t<Display Name>`` rows and may prefix
+    them with a ``Fetching available models...`` status line, which is skipped.
+
+    Args:
+        binary: Optional path/name of the ``agy`` binary; discovered on PATH
+            when omitted.
+
+    Returns:
+        List of ``(model_id, display_name)`` tuples, or empty on failure.
+    """
+    agy_path = binary or _which_binary("agy")
+    if not agy_path:
+        return []
+    try:
+        result = subprocess.run(
+            [agy_path, "models"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode != 0:
+            return []
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+
+    models: list[tuple[str, str]] = []
+    for line in result.stdout.split("\n"):
+        stripped = line.strip()
+        if not stripped or "\t" not in stripped:
+            continue
+        model_id, _, display = stripped.partition("\t")
+        model_id = model_id.strip()
+        if model_id:
+            models.append((model_id, display.strip()))
+    return models
 
 
 def discover_opencode_providers() -> list[tuple[str, str, str]]:
@@ -387,8 +428,8 @@ class Operator:
             return self._load_opencode_models()
         elif self.id == "aider":
             return self._load_aider_models()
-        elif self.id == "gemini":
-            return self._load_gemini_models()
+        elif self.id == "agy":
+            return self._load_agy_models()
         elif self.id == "claude":
             return self._load_claude_models()
         elif self.id == "junie":
@@ -520,67 +561,20 @@ class Operator:
             print(f"Error loading Aider models: {e}")
             return False
 
-    def _load_gemini_models(self) -> bool:
-        """Load models for Gemini CLI."""
-        # Gemini CLI uses Google models directly
-        # Query a reasonable default list based on Google's API
-        try:
-            # Try to query from OpenCode if available
-            opencode = shutil.which("opencode")
-            if opencode:
-                result = subprocess.run(
-                    [opencode, "models", "google"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False,
+    def _load_agy_models(self) -> bool:
+        """Load models for the Antigravity CLI (dynamic via ``agy models``)."""
+        for model_id, name in _run_agy_models(self.binary_path):
+            self.models.append(
+                Model(
+                    id=model_id,
+                    name=name or self._format_model_name(model_id),
+                    description="Antigravity model",
+                    provider="agy",
+                    recommended=False,
                 )
+            )
 
-                if result.returncode == 0:
-                    for line in result.stdout.strip().split("\n"):
-                        gemini_line = line.strip()
-                        if gemini_line.startswith("google/") and not gemini_line.startswith("INFO"):
-                            # Remove google/ prefix for Gemini CLI
-                            model_id = gemini_line.replace("google/", "")
-                            # Filter out ancient models
-                            if not self._is_recent_model(model_id):
-                                continue
-                            name = self._format_model_name(model_id)
-                            desc = "Google Gemini model"
-                            # NO HARDCODED RECOMMENDATIONS
-                            recommended = False
-
-                            self.models.append(
-                                Model(
-                                    id=model_id,
-                                    name=name,
-                                    description=desc,
-                                    provider="google",
-                                    recommended=recommended,
-                                )
-                            )
-
-            return len(self.models) > 0
-
-        except Exception:
-            # Fallback to a minimal list if query fails (only recent models)
-            fallback_models = [
-                ("gemini-2.5-flash", "Gemini 2.5 Flash", "Latest fast model"),
-                ("gemini-2.0-flash", "Gemini 2.0 Flash", "Flash model"),
-            ]
-
-            for model_id, name, desc in fallback_models:
-                self.models.append(
-                    Model(
-                        id=model_id,
-                        name=name,
-                        description=desc,
-                        provider="google",
-                        recommended=False,  # NO HARDCODED RECOMMENDATIONS
-                    )
-                )
-
-            return True
+        return len(self.models) > 0
 
     def _load_claude_models(self) -> bool:
         """Load models for Claude Code CLI.
@@ -797,22 +791,21 @@ def _get_claude_models() -> list[Model]:
     ]
 
 
-def _get_gemini_models() -> list[Model]:
-    """Get models from Gemini CLI.
+def _get_agy_models() -> list[Model]:
+    """Get models from the Antigravity CLI (dynamic via ``agy models``).
 
     Returns:
-        List of Model objects (Gemini models)
+        List of Model objects (Antigravity model ids), or empty on failure.
     """
-    # Single source of truth so ids match OPERATOR_NATIVE_MODELS exactly.
     return [
         Model(
-            id=mid,
-            name=name,
-            description=f"{desc} (via Gemini CLI)",
-            provider="google",
-            recommended=(mid == "gemini-3-flash"),
+            id=model_id,
+            name=name or model_id,
+            description="Antigravity model",
+            provider="agy",
+            recommended=False,
         )
-        for mid, name, desc in GOOGLE_MODELS
+        for model_id, name in _run_agy_models()
     ]
 
 
@@ -859,11 +852,11 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
     - opencode: runs `opencode models {provider}` and parses output
     - aider: runs `aider --list-models {provider}`
     - claude: returns Claude-specific models
-    - gemini: returns Gemini-specific models
+    - agy: runs `agy models` (dynamic Antigravity catalogue)
     - junie: returns static Junie models (host-auth, no network probe)
 
     Args:
-        operator: The operator ID (e.g., 'opencode', 'aider', 'claude', 'gemini')
+        operator: The operator ID (e.g., 'opencode', 'aider', 'claude', 'agy')
         provider: The provider ID (e.g., 'anthropic', 'openrouter')
 
     Returns:
@@ -873,7 +866,7 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
     operator_handlers = {
         "aider": lambda p: _get_aider_models(p),
         "claude": lambda _p: _get_claude_models(),
-        "gemini": lambda _p: _get_gemini_models(),
+        "agy": lambda _p: _get_agy_models(),
         "junie": lambda _p: _get_junie_models(),
         "codex": lambda _p: _get_codex_models(),
     }
@@ -969,10 +962,10 @@ OPERATORS = [
         description="OpenRouter-based CLI - requires OPENROUTER_API_KEY",
     ),
     Operator(
-        id="gemini",
-        name="Gemini CLI",
-        binary_name="gemini",
-        description="Google Gemini native CLI",
+        id="agy",
+        name="Antigravity",
+        binary_name="agy",
+        description="Google Antigravity CLI - host-auth, dynamic models",
     ),
     Operator(
         id="claude",
@@ -1004,7 +997,7 @@ NATIVE_OPERATOR_PROVIDERS: dict[str, str] = {
     "codex": "codex",
     "junie": "junie",
     "claude": "anthropic",
-    "gemini": "google",
+    "agy": "agy",
 }
 
 
@@ -1147,9 +1140,23 @@ def check_operator_auth(operator: Operator) -> dict[str, bool]:
             os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
         )
 
-    elif operator.id == "gemini":
-        # Gemini uses Google API key
-        auth_status["google"] = bool(os.getenv("GOOGLE_API_KEY"))
+    elif operator.id == "agy":
+        # Antigravity is host-authorized; probe the binary with --help (no network).
+        agy_bin = operator.binary_path or shutil.which("agy")
+        if not agy_bin:
+            auth_status["agy"] = False
+        else:
+            try:
+                result = subprocess.run(
+                    [agy_bin, "--help"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                auth_status["agy"] = result.returncode == 0
+            except Exception:
+                auth_status["agy"] = False
 
     elif operator.id == "claude":
         # Claude Code uses claude auth

@@ -30,7 +30,7 @@ def run_coder_setup_flow(config_manager: ConfigManager, config: dict[str, str]) 
     print("  🎯 CODER SETUP")
     print("=" * 80)
     print("\n  This wizard will guide you through:")
-    print("    1. Operator selection (OpenCode, Aider, Claude Code, Gemini CLI)")
+    print("    1. Operator selection (OpenCode, Aider, Claude Code, Antigravity)")
     print("    2. Provider selection (for OpenCode)")
     print("    3. Model configuration (regular, quick, heavy tasks)")
 
@@ -45,7 +45,7 @@ def run_coder_setup_flow(config_manager: ConfigManager, config: dict[str, str]) 
         "opencode": ("OpenCode", "Multi-provider CLI (75+ LLMs)"),
         "aider": ("Aider", "OpenRouter-based CLI"),
         "claude": ("Claude Code", "Anthropic's official CLI"),
-        "gemini": ("Gemini CLI", "Google native CLI"),
+        "agy": ("Antigravity", "Google Antigravity CLI (host-auth)"),
     }
 
     if not tools:
@@ -54,7 +54,7 @@ def run_coder_setup_flow(config_manager: ConfigManager, config: dict[str, str]) 
         print("     • OpenCode: https://opencode.dev/download")
         print("     • Aider: pipx install aider-chat")
         print("     • Claude Code: https://claude.ai/download")
-        print("     • Gemini CLI: npm install -g @google/generative-ai-cli")
+        print("     • Antigravity: install the agy CLI")
         return
 
     current_operator = config.get("NINJA_CODE_BIN", "Not set")
@@ -97,10 +97,10 @@ def run_coder_setup_flow(config_manager: ConfigManager, config: dict[str, str]) 
         selected_provider = "openrouter"
         config_manager.set("NINJA_CODER_PROVIDER", "openrouter")
         config["NINJA_CODER_PROVIDER"] = "openrouter"
-    elif selected_operator == "gemini":
-        selected_provider = "google"
-        config_manager.set("NINJA_CODER_PROVIDER", "google")
-        config["NINJA_CODER_PROVIDER"] = "google"
+    elif selected_operator == "agy":
+        selected_provider = "agy"
+        config_manager.set("NINJA_CODER_PROVIDER", "agy")
+        config["NINJA_CODER_PROVIDER"] = "agy"
 
     # Step 3: Model Configuration
     configure_coder_models(config_manager, config, selected_operator, selected_provider)
@@ -296,7 +296,7 @@ def configure_secretary(config_manager: ConfigManager, config: dict[str, str]) -
             "opencode": ("OpenCode", "Multi-provider CLI"),
             "aider": ("Aider", "OpenRouter-based CLI"),
             "claude": ("Claude Code", "Anthropic's official CLI"),
-            "gemini": ("Gemini CLI", "Google native CLI"),
+            "agy": ("Antigravity", "Google Antigravity CLI (host-auth)"),
         }
 
         choices = []
@@ -329,8 +329,8 @@ def configure_secretary(config_manager: ConfigManager, config: dict[str, str]) -
         secretary_provider = "anthropic"
     elif secretary_operator == "aider":
         secretary_provider = "openrouter"
-    elif secretary_operator == "gemini":
-        secretary_provider = "google"
+    elif secretary_operator == "agy":
+        secretary_provider = "agy"
 
     # Select secretary model
     print("\n" + "-" * 50)

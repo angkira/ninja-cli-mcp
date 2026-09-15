@@ -747,7 +747,7 @@ class NinjaDriver:
             compatibility with existing tests but will be removed in a future version.
 
         Returns:
-            CLI type: 'aider', 'qwen', 'claude', 'gemini', 'cursor', or 'generic'
+            CLI type: 'aider', 'qwen', 'claude', 'agy', 'cursor', or 'generic'
         """
         bin_name = Path(self.config.bin_path).name.lower()
         if "aider" in bin_name:
@@ -756,8 +756,8 @@ class NinjaDriver:
             return "qwen"
         elif "claude" in bin_name:
             return "claude"
-        elif "gemini" in bin_name:
-            return "gemini"
+        elif "agy" in bin_name:
+            return "agy"
         elif "cursor" in bin_name:
             return "cursor"
         else:
@@ -1084,7 +1084,7 @@ class NinjaDriver:
             return self._build_command_qwen(prompt, repo_root, file_paths=context_paths)
         elif cli_type == "claude":
             return self._build_command_claude(prompt, repo_root, file_paths=context_paths)
-        elif cli_type == "gemini":
+        elif cli_type == "agy":
             return self._build_command_qwen(prompt, repo_root, file_paths=context_paths)
         else:
             return self._build_command_generic(prompt, repo_root, file_paths=context_paths)
@@ -2074,6 +2074,11 @@ class NinjaDriver:
             try:
                 start_time = asyncio.get_event_loop().time()
                 inactivity_timeout = _get_inactivity_timeout(task_type, model=model)
+                # Antigravity (agy) runs fully locally but is slow: an edit turn
+                # can think for minutes between stream events, so give it a
+                # generous inactivity floor to survive sparse output.
+                if self._strategy.name == "agy":
+                    inactivity_timeout = max(inactivity_timeout, 300.0)
 
                 task_logger.debug(
                     f"Starting subprocess with absolute timeout={absolute_timeout}s, "
@@ -2806,6 +2811,12 @@ def _extract_operator_text(stdout: str) -> str:
                 parts.append(str(item["text"]))
         elif obj_type == "agent_message" and obj.get("text"):
             parts.append(str(obj["text"]))
+        elif obj.get("event") == "result":
+            # Antigravity (agy) stream-json: final event carries the answer.
+            result_payload = obj.get("result") or {}
+            value = result_payload.get("response")
+            if value:
+                parts.append(str(value))
     return "\n".join(parts).strip()
 
 

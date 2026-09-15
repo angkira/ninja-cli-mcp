@@ -27,7 +27,7 @@ def test_get_provider_models_signatures():
         ("opencode", "openrouter"),
         ("aider", "openrouter"),
         ("claude", "anthropic"),
-        ("gemini", "google"),
+        ("agy", "agy"),
     ]
 
     for operator, provider in operators_to_test:
@@ -38,12 +38,13 @@ def test_get_provider_models_signatures():
             print(f"❌ {operator}/{provider}: {e}")
 
 
-def test_operator_specific_functions():
+def test_operator_specific_functions(monkeypatch):
     """Test operator-specific model fetching functions."""
+    import ninja_config.model_selector as ms
     from ninja_config.model_selector import (
         _get_aider_models,
+        _get_agy_models,
         _get_claude_models,
-        _get_gemini_models,
     )
 
     # Test Claude models (always available, hardcoded)
@@ -52,11 +53,15 @@ def test_operator_specific_functions():
     assert any("sonnet" in m.name.lower() for m in claude_models), "Should have Sonnet"
     print(f"✅ Claude models: {len(claude_models)} models")
 
-    # Test Gemini models (always available, hardcoded)
-    gemini_models = _get_gemini_models()
-    assert len(gemini_models) > 0, "Gemini should return models"
-    assert any("flash" in m.name.lower() for m in gemini_models), "Should have Flash"
-    print(f"✅ Gemini models: {len(gemini_models)} models")
+    # Test Antigravity models (dynamic via `agy models`, stubbed here)
+    monkeypatch.setattr(
+        ms,
+        "_run_agy_models",
+        lambda binary=None: [("gemini-3.8-flash-medium", "Gemini 3.8 Flash (Medium)")],
+    )
+    agy_models = _get_agy_models()
+    assert len(agy_models) > 0, "Antigravity should return models"
+    print(f"✅ Antigravity models: {len(agy_models)} models")
 
     # Test Aider models (may or may not be available)
     aider_models = _get_aider_models("openrouter")
@@ -102,5 +107,5 @@ if __name__ == "__main__":
     print("  • OpenRouter: Dynamic loading with fuzzy search")
     print("  • Aider: Dynamic model listing via --list-models")
     print("  • Claude: Hardcoded Claude 4.x models")
-    print("  • Gemini: Hardcoded Gemini 1.5/2.0 models")
+    print("  • Antigravity: Dynamic model listing via `agy models`")
     print("  • InquirerPy: Built-in fuzzy search (type to filter)")

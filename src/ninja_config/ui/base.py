@@ -59,9 +59,9 @@ def detect_installed_tools() -> dict[str, str]:
     if shutil.which("opencode"):
         tools["opencode"] = shutil.which("opencode")
 
-    # Check for gemini
-    if shutil.which("gemini"):
-        tools["gemini"] = shutil.which("gemini")
+    # Check for agy (Antigravity, host-auth)
+    if shutil.which("agy"):
+        tools["agy"] = shutil.which("agy")
 
     # Check for claude (Claude Code)
     if shutil.which("claude"):
@@ -115,7 +115,7 @@ def check_opencode_auth() -> list[str]:
                 providers.append("opencode")
             if "anthropic" in output:
                 providers.append("anthropic")
-            if "google" in output or "gemini" in output:
+            if "google" in output:
                 providers.append("google")
             if "openai" in output:
                 providers.append("openai")

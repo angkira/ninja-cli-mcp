@@ -91,7 +91,8 @@ class NinjaConfigurator:
                 name="🔑 Manage API Keys  •  Add/update OpenRouter, Perplexity, etc",
             ),
             Choice(
-                value="operators", name="🎯 Configure Operators  •  Set up Aider, OpenCode, Gemini"
+                value="operators",
+                name="🎯 Configure Operators  •  Set up Aider, OpenCode, Antigravity",
             ),
             Choice(
                 value="providers", name="🌐 Manage Providers  •  Authenticate OpenCode providers"
@@ -139,12 +140,6 @@ class NinjaConfigurator:
                 "Serper/Google",
                 "https://serper.dev",
                 "For researcher - Google search API",
-            ),
-            (
-                "GEMINI_API_KEY",
-                "Google Gemini",
-                "https://makersuite.google.com/app/apikey",
-                "For Gemini CLI operator",
             ),
         ]
 
@@ -221,8 +216,8 @@ class NinjaConfigurator:
             )
         if subprocess.run(["which", "aider"], capture_output=True, check=False).returncode == 0:
             operators.append(("aider", "Aider", "OpenRouter-based CLI", ["openrouter"]))
-        if subprocess.run(["which", "gemini"], capture_output=True, check=False).returncode == 0:
-            operators.append(("gemini", "Gemini CLI", "Google Gemini native CLI", ["google"]))
+        if subprocess.run(["which", "agy"], capture_output=True, check=False).returncode == 0:
+            operators.append(("agy", "Antigravity", "Google Antigravity CLI (host-auth)", ["agy"]))
         if subprocess.run(["which", "claude"], capture_output=True, check=False).returncode == 0:
             operators.append(("claude", "Claude Code", "Anthropic's official CLI", ["anthropic"]))
 
@@ -232,7 +227,7 @@ class NinjaConfigurator:
             print("  • OpenCode: https://opencode.dev")
             print("  • Aider: pipx install aider-chat")
             print("  • Claude Code: https://claude.ai/download")
-            print("  • Gemini: npm install -g @google/generative-ai-cli")
+            print("  • Antigravity: install the agy CLI")
             return
 
         # Show current operator

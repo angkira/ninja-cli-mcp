@@ -169,7 +169,7 @@ class TestDetectTools:
         assert result["aider"] == "/usr/bin/aider"
         assert result["claude"] == "/usr/bin/claude"
         assert "opencode" not in result
-        assert "gemini" not in result
+        assert "agy" not in result
         assert "cursor" not in result
 
     @patch("ninja_config.config_shared.shutil.which", return_value=None)
@@ -182,7 +182,7 @@ class TestDetectTools:
         mock_which.side_effect = lambda n: f"/usr/local/bin/{n}"
         result = detect_tools()
         assert len(result) == 7
-        for name in ("aider", "opencode", "gemini", "claude", "junie", "codex", "cursor"):
+        for name in ("aider", "opencode", "agy", "claude", "junie", "codex", "cursor"):
             assert name in result
 
 

@@ -59,7 +59,7 @@ API_KEYS: list[APIKeyDef] = [
         "Google",
         "https://aistudio.google.com/app/apikey",
         "coder",
-        "For Gemini models (OpenCode/Gemini CLI)",
+        "For Google models (OpenCode)",
     ),
     APIKeyDef(
         "AZURE_OPENAI_API_KEY",
@@ -151,7 +151,7 @@ OPERATORS: list[OperatorDef] = [
     ),
     OperatorDef("aider", "Aider", "OpenRouter-based CLI", ("openrouter",)),
     OperatorDef("claude", "Claude Code", "Anthropic's official CLI", ("anthropic",)),
-    OperatorDef("gemini", "Gemini CLI", "Google native CLI", ("google",)),
+    OperatorDef("agy", "Antigravity", "Google Antigravity CLI (host-auth)", ("agy",)),
     OperatorDef("junie", "Junie", "JetBrains coding agent CLI (host-auth)", ("junie",)),
     OperatorDef("codex", "Codex", "OpenAI Codex CLI (host-auth, subagents)", ("codex",)),
     OperatorDef("cursor", "Cursor", "AI code editor", ("openai", "anthropic")),
@@ -197,7 +197,7 @@ def get_fallback_models(provider: str | None = None) -> list[tuple[str, str, str
 
 def detect_tools() -> dict[str, str]:
     tools: dict[str, str] = {}
-    for name in ("aider", "opencode", "gemini", "claude", "junie", "codex", "cursor"):
+    for name in ("aider", "opencode", "agy", "claude", "junie", "codex", "cursor"):
         path = shutil.which(name)
         if path:
             tools[name] = path

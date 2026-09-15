@@ -150,7 +150,7 @@ ANTHROPIC_MODELS = [
 ]
 
 # =============================================================================
-# GOOGLE MODELS (Native API via Gemini CLI)
+# GOOGLE MODELS (Native API)
 # =============================================================================
 
 GOOGLE_MODELS = [
@@ -518,7 +518,7 @@ MODEL_DATABASE = {
         "livebench_score": 80.0,
         "supports_coding_plan_api": False,
     },
-    # Gemini models (via Gemini CLI or OpenRouter)
+    # Gemini models (via OpenRouter)
     "google/gemini-3-flash": {
         "provider": "google",
         "best_for": ["quick", "parallel", "coding"],
@@ -527,7 +527,7 @@ MODEL_DATABASE = {
         "livebench_score": 85.0,
         "swe_bench_score": 78.0,
         "supports_coding_plan_api": False,
-        "operator": "gemini",
+        "operator": "agy",
     },
     "google/gemini-3-pro": {
         "provider": "google",
@@ -536,7 +536,7 @@ MODEL_DATABASE = {
         "cost": "high",
         "livebench_score": 89.0,
         "supports_coding_plan_api": False,
-        "operator": "gemini",
+        "operator": "agy",
     },
     "google/gemini-2.5-flash": {
         "provider": "google",
@@ -545,7 +545,7 @@ MODEL_DATABASE = {
         "cost": "very_low",
         "livebench_score": 80.0,
         "supports_coding_plan_api": False,
-        "operator": "gemini",
+        "operator": "agy",
     },
     "google/gemini-2.5-pro": {
         "provider": "google",
@@ -554,7 +554,7 @@ MODEL_DATABASE = {
         "cost": "medium",
         "livebench_score": 86.0,
         "supports_coding_plan_api": False,
-        "operator": "gemini",
+        "operator": "agy",
     },
     # Claude Code models (native Anthropic via Claude CLI)
     "claude-sonnet-4": {
@@ -635,25 +635,25 @@ DEFAULT_PREFER_QUALITY = False
 # =============================================================================
 
 # Default model used when an operator is selected but no explicit model is
-# configured. Native operators (codex/junie/claude/gemini) only accept their
+# configured. Native operators (codex/junie/claude) only accept their
 # own model ids, so the coder's OpenRouter default must never leak into them.
+# Antigravity's ``"default"`` sentinel tells the strategy to omit ``--model``.
 OPERATOR_DEFAULT_MODELS: dict[str, str] = {
     "opencode": DEFAULT_CODER_MODEL,
     "aider": DEFAULT_CODER_MODEL,
     "codex": CODEX_MODELS[0][0],
     "junie": JUNIE_MODELS[0][0],
     "claude": "claude-sonnet-4",
-    "gemini": GOOGLE_MODELS[0][0],
+    "agy": "default",
 }
 
 # Operator → static model catalogue, used by the config autocomplete fallback
 # when the operator CLI yields no models. Native operators have flat ids;
-# aider is OpenRouter-backed.
+# aider is OpenRouter-backed; agy is dynamic (discovered via ``agy models``).
 OPERATOR_STATIC_MODELS: dict[str, list[tuple[str, str, str]]] = {
     "codex": CODEX_MODELS,
     "junie": JUNIE_MODELS,
     "claude": CLAUDE_CODE_MODELS,
-    "gemini": GOOGLE_MODELS,
     "aider": OPENROUTER_MODELS,
 }
 

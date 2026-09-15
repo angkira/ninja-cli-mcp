@@ -29,7 +29,7 @@ class OperatorType(str, Enum):
     OPENCODE = "opencode"
     AIDER = "aider"
     CLAUDE = "claude"
-    GEMINI = "gemini"
+    AGY = "agy"
     PERPLEXITY = "perplexity"
 
 
@@ -183,18 +183,18 @@ class AiderOperatorSettings(BaseModel):
     )
 
 
-class GeminiOperatorSettings(BaseModel):
+class AgyOperatorSettings(BaseModel):
     """
-    Gemini CLI operator settings.
+    Antigravity CLI operator settings.
 
-    Currently minimal as Gemini CLI has limited configuration options.
+    Currently minimal as the Antigravity CLI has limited configuration options.
     Reserved for future expansion.
 
     Examples:
-        >>> settings = GeminiOperatorSettings()
+        >>> settings = AgyOperatorSettings()
     """
 
-    # Gemini has minimal settings currently
+    # Antigravity has minimal settings currently
     # Reserved for future expansion
     pass
 
@@ -235,7 +235,7 @@ class PerplexityOperatorSettings(BaseModel):
 OperatorSettingsType = (
     OpenCodeOperatorSettings
     | AiderOperatorSettings
-    | GeminiOperatorSettings
+    | AgyOperatorSettings
     | ClaudeCodeOperatorSettings
     | PerplexityOperatorSettings
 )
@@ -361,7 +361,7 @@ class ComponentConfig(BaseModel):
         expected_types = {
             OperatorType.OPENCODE: OpenCodeOperatorSettings,
             OperatorType.AIDER: AiderOperatorSettings,
-            OperatorType.GEMINI: GeminiOperatorSettings,
+            OperatorType.AGY: AgyOperatorSettings,
             OperatorType.CLAUDE: ClaudeCodeOperatorSettings,
             OperatorType.PERPLEXITY: PerplexityOperatorSettings,
         }

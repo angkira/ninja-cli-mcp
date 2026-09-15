@@ -34,7 +34,7 @@ OPENROUTER_ID = "openrouter/deepseek/deepseek-v4.1-flash"
         ("/home/u/.nvm/versions/node/v25.0.0/bin/codex", "codex"),
         ("/opt/aider/bin/aider", "aider"),
         ("opencode", "opencode"),
-        ("gemini", "gemini"),
+        ("agy", "agy"),
         ("claude", "claude"),
         ("junie", "junie"),
         ("unknown-cli", None),

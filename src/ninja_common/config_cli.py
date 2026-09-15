@@ -306,9 +306,9 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     if shutil.which("claude"):
         operators_found.append("claude")
         print_colored("  ✓ claude (Claude Code) is installed", "green")
-    if shutil.which("gemini"):
-        operators_found.append("gemini")
-        print_colored("  ✓ gemini is installed", "green")
+    if shutil.which("agy"):
+        operators_found.append("agy")
+        print_colored("  ✓ agy (Antigravity) is installed", "green")
 
     if not operators_found:
         print_colored("  ⚠ No operators found (need at least one for ninja-coder)", "yellow")
@@ -493,8 +493,8 @@ def _run_quick_configure(config_path: str | None = None) -> None:
         operators.append(("opencode", "OpenCode - Multi-provider CLI"))
     if shutil.which("aider"):
         operators.append(("aider", "Aider - OpenRouter-based CLI"))
-    if shutil.which("gemini"):
-        operators.append(("gemini", "Gemini CLI - Google native"))
+    if shutil.which("agy"):
+        operators.append(("agy", "Antigravity - Google native"))
     if shutil.which("claude"):
         operators.append(("claude", "Claude Code - Anthropic native"))
 

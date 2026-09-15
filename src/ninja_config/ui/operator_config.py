@@ -54,7 +54,7 @@ def manage_api_keys(config_manager: ConfigManager, config: dict[str, str]) -> No
             "GOOGLE_API_KEY",
             "Google",
             "https://aistudio.google.com/app/apikey",
-            "For Gemini models",
+            "For Google models",
         ),
         (
             "PERPLEXITY_API_KEY",
@@ -179,7 +179,7 @@ def configure_operators(config_manager: ConfigManager, config: dict[str, str]) -
             "Multi-provider CLI (75+ LLMs)",
             ["anthropic", "google", "openai", "github", "openrouter"],
         ),
-        "gemini": ("Gemini CLI", "Google native CLI", ["google"]),
+        "agy": ("Antigravity", "Google Antigravity CLI (host-auth)", ["agy"]),
         "claude": ("Claude Code", "Anthropic's official CLI", ["anthropic"]),
         "junie": ("Junie", "JetBrains coding agent CLI (host-auth)", ["junie"]),
         "codex": ("Codex", "OpenAI Codex CLI (host-auth, subagents)", ["codex"]),
@@ -192,7 +192,7 @@ def configure_operators(config_manager: ConfigManager, config: dict[str, str]) -
         print("     • Aider: pipx install aider-chat")
         print("     • OpenCode: https://opencode.dev/download")
         print("     • Claude Code: https://claude.ai/download")
-        print("     • Gemini CLI: npm install -g @google/generative-ai-cli")
+        print("     • Antigravity: install the agy CLI")
         return
 
     # Show current operator

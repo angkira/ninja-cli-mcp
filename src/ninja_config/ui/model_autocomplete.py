@@ -122,6 +122,10 @@ def static_models_for_provider(provider: str, operator: str | None = None) -> li
         # OpenCode models are discovered dynamically (`opencode models
         # <provider>`); never substitute a hardcoded list.
         return []
+    elif op == "agy":
+        # Antigravity models are discovered dynamically (`agy models`);
+        # never substitute another provider's list.
+        return []
     elif provider in PROVIDER_MODELS:
         triples = list(PROVIDER_MODELS[provider])
     else:
@@ -189,7 +193,7 @@ class ModelRolePicker(Vertical):
     def _resolve_provider(self) -> str:
         """Provider to show for the configured operator.
 
-        A native operator (codex/junie/claude/gemini) exposes exactly one
+        A native operator (codex/junie/claude/agy) exposes exactly one
         provider, so the picker follows it even when the stored model id still
         carries another operator's prefix (e.g. an OpenRouter id after switching
         the coder operator to codex).

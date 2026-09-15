@@ -31,11 +31,11 @@ from typing import Any
 
 from ninja_config.config_loader import ConfigLoader
 from ninja_config.config_schema import (
+    AgyOperatorSettings,
     AiderOperatorSettings,
     ClaudeCodeOperatorSettings,
     ComponentConfig,
     DaemonConfig,
-    GeminiOperatorSettings,
     ModelConfiguration,
     NinjaConfig,
     OpenCodeOperatorSettings,
@@ -489,8 +489,8 @@ class ConfigMigrator:
                 auto_commits=True,
                 dirty_commits=True,
             )
-        elif operator == OperatorType.GEMINI:
-            settings["gemini"] = GeminiOperatorSettings()
+        elif operator == OperatorType.AGY:
+            settings["agy"] = AgyOperatorSettings()
         elif operator == OperatorType.CLAUDE:
             settings["claude"] = ClaudeCodeOperatorSettings()
         elif operator == OperatorType.PERPLEXITY:
@@ -515,7 +515,7 @@ class ConfigMigrator:
             "opencode": OperatorType.OPENCODE,
             "aider": OperatorType.AIDER,
             "claude": OperatorType.CLAUDE,
-            "gemini": OperatorType.GEMINI,
+            "agy": OperatorType.AGY,
             "perplexity": OperatorType.PERPLEXITY,
         }
 

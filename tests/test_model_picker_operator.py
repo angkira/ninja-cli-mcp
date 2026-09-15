@@ -1,6 +1,6 @@
 """The model picker must follow the selected operator.
 
-For a native operator (codex/junie/claude/gemini) only its own provider is
+For a native operator (codex/junie/claude/agy) only its own provider is
 valid, so a stored model id from a different operator must not leak its prefix
 into the picker. Aider is OpenRouter-backed.
 """
@@ -35,7 +35,7 @@ def _picker(operator: str, model: str) -> ModelRolePicker:
     [
         ("codex", "openrouter/deepseek/deepseek-v4.1-flash", "codex"),
         ("claude", "claude-sonnet-4", "anthropic"),
-        ("gemini", "gemini-3-flash", "google"),
+        ("agy", "gemini-3.8-flash-medium", "agy"),
         ("junie", "deepseek-v4-flash", "junie"),
         ("aider", "openrouter/anthropic/claude-sonnet-4", "openrouter"),
         ("opencode", "openrouter/deepseek/deepseek-v4.1-flash", "openrouter"),
