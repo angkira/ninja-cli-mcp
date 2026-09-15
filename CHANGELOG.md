@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.16 - 2026-09-15
+
+- **OpenCode provider sub-selection (dynamic, OpenCode only).** The model picker
+  now exposes a provider dropdown for OpenCode — the one operator with many
+  providers (Anthropic, OpenAI, Google, Z.AI, OpenRouter, …). Providers are
+  discovered from `opencode models` (no hardcoded list; the previous Anthropic
+  exclusion is removed) and models per provider from `opencode models
+  <provider>`. The dropdown is hidden for native operators and Aider, which have
+  a single provider. Configure a provider (e.g. `opencode auth`) and it shows up
+  automatically; you can also type any `provider/model` id directly.
+
 ## 1.0.15 - 2026-09-14
 
 - **Model list follows the selected operator.** For a native operator
