@@ -171,8 +171,7 @@ class ModelRolePicker(Vertical):
         #: NINJA_CODE_BIN; secretary/agent have their own).
         self.operator_env = operator_env
         self._debounce = debounce
-        operator = normalize_operator(config.get(self.operator_env))
-        self._provider = guess_provider(config.get(env_var) or default, operator)
+        self._provider = self._resolve_provider()
         self._providers_ready = False
         self._providers_loading = False
         self._debounce_timer: Timer | None = None
@@ -183,6 +182,24 @@ class ModelRolePicker(Vertical):
     def _native_provider(self) -> str | None:
         """Native provider id for the configured operator (codex, junie, …)."""
         return native_provider_for_operator(self._config.get(self.operator_env))
+
+    def _resolve_provider(self) -> str:
+        """Provider to show for the configured operator.
+
+        A native operator (codex/junie/claude/gemini) exposes exactly one
+        provider, so the picker follows it even when the stored model id still
+        carries another operator's prefix (e.g. an OpenRouter id after switching
+        the coder operator to codex).
+        """
+        native = self._native_provider()
+        if native:
+            return native
+        operator = normalize_operator(self._config.get(self.operator_env))
+        if operator == "aider":
+            # Aider is OpenRouter-backed: its model ids (openrouter/…) must not
+            # be classified under their inner provider (anthropic/google/…).
+            return "openrouter"
+        return guess_provider(self._config.get(self.env_var) or self.default, operator)
 
     @staticmethod
     def _provider_label(provider: str) -> str:
@@ -312,8 +329,7 @@ class ModelRolePicker(Vertical):
         Recomputes the provider from the stored model under the new operator,
         rebuilds the Select options (native provider first), and re-discovers.
         """
-        operator = normalize_operator(self._config.get(self.operator_env))
-        self._provider = guess_provider(self._config.get(self.env_var) or self.default, operator)
+        self._provider = self._resolve_provider()
         self._providers_ready = False
         self._providers_loading = False
         try:

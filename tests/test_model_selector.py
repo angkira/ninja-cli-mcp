@@ -1,13 +1,9 @@
-from __future__ import annotations
-import pytest
-
-
-"""
-Tests for intelligent model selection.
+"""Tests for intelligent model selection.
 
 Tests model routing based on task complexity, cost preferences, and quality preferences.
 """
 
+from __future__ import annotations
 
 import os
 
@@ -134,9 +130,7 @@ def test_use_default_model_when_set(selector_with_default):
 
 def test_override_default_with_preference(selector_with_default):
     """Test that preferences override default model."""
-    rec = selector_with_default.select_model(
-        TaskComplexity.QUICK, prefer_cost=True
-    )
+    rec = selector_with_default.select_model(TaskComplexity.QUICK, prefer_cost=True)
 
     # Should not use default when preference is specified
     # (may or may not be the default depending on available models)
@@ -258,3 +252,38 @@ def test_select_by_class_case_insensitive():
 if __name__ == "__main__":
     # Run tests
     pytest.main([__file__, "-v"])
+
+
+def test_aider_models_parse_bullet_lines(monkeypatch) -> None:
+    """Aider's '- provider/model' bullet rows parse to real model ids, not '-'."""
+    from ninja_config import model_selector as ms
+
+    output = (
+        "─" * 80
+        + '\nModels which match "openrouter":\n'
+        + "- openrouter/anthropic/claude-3-haiku\n"
+        + "- openrouter/anthropic/claude-opus-4.5\n"
+    )
+
+    class _Result:
+        returncode = 0
+        stdout = output
+
+    monkeypatch.setattr(ms.shutil, "which", lambda n: "/usr/bin/aider" if n == "aider" else None)
+    monkeypatch.setattr(ms.subprocess, "run", lambda *a, **k: _Result())
+
+    ids = [m.id for m in ms._get_aider_models("openrouter")]
+
+    assert ids == [
+        "openrouter/anthropic/claude-3-haiku",
+        "openrouter/anthropic/claude-opus-4.5",
+    ]
+
+
+def test_native_operator_models_use_defaults() -> None:
+    """Gemini/Claude catalogues come from defaults (operator-compatible ids)."""
+    from ninja_common.defaults import CLAUDE_CODE_MODELS, GOOGLE_MODELS
+    from ninja_config.model_selector import _get_claude_models, _get_gemini_models
+
+    assert [m.id for m in _get_gemini_models()] == [mid for mid, _, _ in GOOGLE_MODELS]
+    assert [m.id for m in _get_claude_models()] == [mid for mid, _, _ in CLAUDE_CODE_MODELS]

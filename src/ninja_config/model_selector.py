@@ -15,7 +15,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ninja_common.config_manager import ConfigManager
-from ninja_common.defaults import CODEX_MODELS, JUNIE_MODELS
+from ninja_common.defaults import (
+    CLAUDE_CODE_MODELS,
+    CODEX_MODELS,
+    GOOGLE_MODELS,
+    JUNIE_MODELS,
+)
 from ninja_common.defaults import OPENCODE_PROVIDERS as _CANONICAL_OPENCODE_PROVIDERS
 from ninja_config.config_shared import MCP_SERVER_COMMANDS
 
@@ -748,22 +753,25 @@ def _get_aider_models(provider: str) -> list[Model]:
             return models
 
         # Parse model IDs from Aider output
+        seen: set[str] = set()
         for raw_line in result.stdout.strip().split("\n"):
-            line = raw_line.strip()
+            # Aider prints bullet rows: "- openrouter/anthropic/claude-…".
+            line = raw_line.strip().lstrip("-").strip()
             if not line or line.startswith("#") or line.startswith("Models"):
                 continue
-            # Aider typically shows: model-id  (description)
-            if "/" in line:
-                model_id = line.split()[0] if " " in line else line
-                models.append(
-                    Model(
-                        id=model_id,
-                        name=model_id.split("/")[-1].replace("-", " ").title(),
-                        description="Via Aider",
-                        provider=provider,
-                        recommended=False,
-                    )
+            model_id = line.split()[0] if " " in line else line
+            if "/" not in model_id or model_id in seen or not _is_chat_model(model_id):
+                continue
+            seen.add(model_id)
+            models.append(
+                Model(
+                    id=model_id,
+                    name=model_id.split("/")[-1].replace("-", " ").title(),
+                    description="Via Aider",
+                    provider=provider,
+                    recommended=False,
                 )
+            )
     except (subprocess.TimeoutExpired, OSError):
         pass
 
@@ -776,29 +784,16 @@ def _get_claude_models() -> list[Model]:
     Returns:
         List of Model objects (Claude models)
     """
-    # Claude CLI uses specific model aliases
+    # Single source of truth so ids match OPERATOR_NATIVE_MODELS exactly.
     return [
         Model(
-            id="claude-sonnet-4-5",
-            name="Claude Sonnet 4.5",
-            description="Latest Sonnet (via Claude CLI)",
+            id=mid,
+            name=name,
+            description=f"{desc} (via Claude Code)",
             provider="anthropic",
-            recommended=True,
-        ),
-        Model(
-            id="claude-opus-4",
-            name="Claude Opus 4",
-            description="Most capable (via Claude CLI)",
-            provider="anthropic",
-            recommended=False,
-        ),
-        Model(
-            id="claude-haiku-4",
-            name="Claude Haiku 4",
-            description="Fast and efficient (via Claude CLI)",
-            provider="anthropic",
-            recommended=False,
-        ),
+            recommended=(mid == "claude-sonnet-4"),
+        )
+        for mid, name, desc in CLAUDE_CODE_MODELS
     ]
 
 
@@ -808,29 +803,16 @@ def _get_gemini_models() -> list[Model]:
     Returns:
         List of Model objects (Gemini models)
     """
-    # Gemini CLI supported models
+    # Single source of truth so ids match OPERATOR_NATIVE_MODELS exactly.
     return [
         Model(
-            id="gemini-2.0-flash-exp",
-            name="Gemini 2.0 Flash",
-            description="Latest fast model (experimental)",
+            id=mid,
+            name=name,
+            description=f"{desc} (via Gemini CLI)",
             provider="google",
-            recommended=True,
-        ),
-        Model(
-            id="gemini-1.5-pro",
-            name="Gemini 1.5 Pro",
-            description="Production-ready capable model",
-            provider="google",
-            recommended=False,
-        ),
-        Model(
-            id="gemini-1.5-flash",
-            name="Gemini 1.5 Flash",
-            description="Fast and efficient",
-            provider="google",
-            recommended=False,
-        ),
+            recommended=(mid == "gemini-3-flash"),
+        )
+        for mid, name, desc in GOOGLE_MODELS
     ]
 
 
@@ -1081,14 +1063,6 @@ def native_provider_for_operator(operator: str | None) -> str | None:
         Provider id (e.g. ``"codex"``) or ``None`` for opencode-style operators.
     """
     return NATIVE_OPERATOR_PROVIDERS.get(normalize_operator(operator))
-
-
-# Claude Code models (Anthropic only)
-CLAUDE_CODE_MODELS = [
-    ("claude-sonnet-4", "Claude Sonnet 4", "Latest Claude - Balanced performance"),
-    ("claude-opus-4", "Claude Opus 4", "Most powerful Claude model"),
-    ("claude-haiku-4", "Claude Haiku 4", "Fast & cost-effective"),
-]
 
 
 # Perplexity models for researcher module
