@@ -54,3 +54,26 @@ def test_native_operator_offers_only_its_provider() -> None:
     values = [value for _, value in picker._initial_options()]
 
     assert values == ["codex"]
+
+
+def test_opencode_has_no_hardcoded_model_fallback() -> None:
+    """OpenCode models are discovered dynamically — never a static list."""
+    from ninja_config.ui.model_autocomplete import static_models_for_provider
+
+    assert static_models_for_provider("anthropic", "opencode") == []
+    assert static_models_for_provider("openrouter", "opencode") == []
+
+
+def test_opencode_provider_dropdown_starts_without_hardcoded_list() -> None:
+    """Before discovery the picker shows only the current provider (hidden)."""
+    picker = _picker("opencode", "openrouter/deepseek/deepseek-v4.1-flash")
+
+    options = picker._initial_options()
+
+    assert options == [("OpenRouter", "openrouter")]
+
+
+def test_single_provider_operators_hide_dropdown() -> None:
+    """Native/aider operators expose exactly one provider (dropdown hidden)."""
+    assert len(_picker("codex", "gpt-5.6-luna")._initial_options()) == 1
+    assert len(_picker("aider", "openrouter/anthropic/claude-sonnet-4")._initial_options()) == 1

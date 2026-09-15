@@ -38,7 +38,6 @@ from textual.widgets import (
 
 from ninja_common.defaults import OPERATOR_STATIC_MODELS, PERPLEXITY_MODELS, PROVIDER_MODELS
 from ninja_config.model_selector import (
-    OPENCODE_PROVIDERS,
     PROVIDER_DISPLAY_NAMES,
     Model,
     native_provider_for_operator,
@@ -119,6 +118,10 @@ def static_models_for_provider(provider: str, operator: str | None = None) -> li
         triples = list(PERPLEXITY_MODELS)
     elif op and op in OPERATOR_STATIC_MODELS:
         triples = list(OPERATOR_STATIC_MODELS[op])
+    elif op == "opencode":
+        # OpenCode models are discovered dynamically (`opencode models
+        # <provider>`); never substitute a hardcoded list.
+        return []
     elif provider in PROVIDER_MODELS:
         triples = list(PROVIDER_MODELS[provider])
     else:
@@ -213,8 +216,12 @@ class ModelRolePicker(Vertical):
             opts: list[tuple[str, object]] = [(self._provider_label(native), native)]
         elif self._operator() == "aider":
             opts = [("OpenRouter", "openrouter")]
+        elif self._provider:
+            # OpenCode providers are discovered dynamically (background worker);
+            # show only the current one until discovery lands — no hardcoded list.
+            opts = [(self._provider_label(self._provider), self._provider)]
         else:
-            opts = [(display, pid) for pid, display, _ in OPENCODE_PROVIDERS]
+            opts = []
         if self._provider and all(pid != self._provider for _, pid in opts):
             opts.append((self._provider_label(self._provider), self._provider))
         return opts
@@ -222,12 +229,17 @@ class ModelRolePicker(Vertical):
     def compose(self) -> ComposeResult:
         current = self._config.get(self.env_var) or self.default
         yield Static(f"Current: [#a3be8c]{current}[/#a3be8c]", id=f"lbl-{self.role}")
-        yield Select(
-            self._initial_options(),
+        options = self._initial_options()
+        provider_select = Select(
+            options,
             prompt="Provider…",
             value=self._provider if self._provider else Select.BLANK,
             id=f"prov-select-{self.role}",
         )
+        # Only OpenCode has a real provider sub-selection; native operators and
+        # Aider have exactly one provider, so the dropdown is hidden for them.
+        provider_select.display = len(options) > 1
+        yield provider_select
         yield Input(
             placeholder="Type ≥2 chars to search — Enter saves custom id…",
             id=f"model-input-{self.role}",
@@ -299,9 +311,12 @@ class ModelRolePicker(Vertical):
                 if native:
                     wanted = [(native, self._provider_label(native))]
                 else:
-                    wanted = [(p, d) for p, d, _ in providers if p != "anthropic"]
-                    if not wanted:
-                        wanted = [(p, d) for p, d, _ in OPENCODE_PROVIDERS if p != "anthropic"]
+                    # OpenCode: providers the CLI actually exposes (dynamic),
+                    # including Anthropic/Google/etc. once configured. No
+                    # hardcoded provider exclusion.
+                    wanted = [(p, d) for p, d, _ in providers]
+                    if not wanted and self._provider:
+                        wanted = [(self._provider_label(self._provider), self._provider)]
             # Select options are (label, value) tuples.
             if self._provider and all(v != self._provider for v, _ in wanted):
                 wanted.append((self._provider, self._provider_label(self._provider)))
@@ -309,6 +324,7 @@ class ModelRolePicker(Vertical):
             values = [value for _, value in [(label, value) for value, label in wanted]]
             if self._provider in values:
                 select.value = self._provider
+            select.display = len(wanted) > 1
             self.query_one(f"#loading-{self.role}", LoadingIndicator).display = False
             self.query_one(f"#status-{self.role}", Static).update(
                 "Type ≥2 chars to search — ↓ for list, Enter saves."
