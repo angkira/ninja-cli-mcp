@@ -36,7 +36,7 @@ run, get an id, and continue; the run proceeds in the server.
 | Server | Tools |
 | --- | --- |
 | coder | `coder_simple_task`, `coder_execute_plan_sequential`, `coder_execute_plan_parallel`, `coder_multi_agent_task` |
-| agent | `agent_plan`, `agent_analyze`, `agent_delegate_coder`, `agent_delegate_researcher`, `agent_delegate_secretary`, `agent_delegate_runner`, `agent_delegate_git`, `agent_review` |
+| agent | `agent_exec_command`, `agent_tail_logs`, `agent_processes`, `agent_jobs_overview`, `agent_analyze`, `agent_review`, `agent_run_and_diagnose`, `agent_exec_pipeline`, `agent_distill_logs` |
 | researcher | `researcher_deep_research`, `researcher_generate_report`, `researcher_fact_check`, `researcher_summarize_sources` |
 
 ### Task lifecycle

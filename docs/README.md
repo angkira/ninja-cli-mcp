@@ -1,6 +1,6 @@
 # Documentation Index
 
-Start here for the current `1.2.0` behavior:
+Start here for the current `1.3.0` behavior:
 
 - [Project quickstart](../README.md)
 - [Docker quickstart](container-quickstart.md)
@@ -18,6 +18,20 @@ Start here for the current `1.2.0` behavior:
 - [Researcher guide](researcher/README.md)
 - [Secretary guide](secretary/README.md)
 - [Release history](../CHANGELOG.md)
+
+### Agent CLI Commands and Tools
+
+| Command | MCP Tool | Purpose |
+| --- | --- | --- |
+| `run-and-diagnose` | `agent_run_and_diagnose` | Execute test/build commands and distill diagnostic outcomes |
+| `pipeline` | `agent_exec_pipeline` | Execute ordered sequence of commands with fail-fast policy |
+| `distill-logs` | `agent_distill_logs` | Cluster and deduplicate logs into tracebacks and patterns |
+| `analyze` | `agent_analyze` | Analyze repository codebase and structure |
+| `review` | `agent_review` | Review changed files without modifications |
+| `exec-command` | `agent_exec_command` | Execute guarded shell command |
+| `tail-logs` | `agent_tail_logs` | Query and tail structured logs |
+| `processes` | `agent_processes` | Snapshot daemon status and host resources |
+| `jobs-overview` | `agent_jobs_overview` | Summarize background jobs and tasks |
 
 Some files under `docs/` describe historical experiments or migration paths.
 When a historical document conflicts with the current CLI, prefer the README,

@@ -172,3 +172,174 @@ class AgentReviewResult(BaseModel):
     success: bool = Field(..., description="Whether review succeeded")
     findings: list[AgentReviewFinding] = Field(default_factory=list, description="Review findings")
     summary: str = Field(default="", description="Overall review summary")
+
+
+# ============================================================================
+# agent_run_and_diagnose — compound test/diagnostic execution & extraction
+# ============================================================================
+
+
+class FailureDetail(BaseModel):
+    """Structured details of a diagnostic failure (test, linter, or compiler)."""
+
+    test_name: str | None = Field(
+        default=None, description="Name or identifier of failed test if applicable"
+    )
+    file_path: str | None = Field(
+        default=None, description="File path associated with failure or diagnostic"
+    )
+    line_number: int | None = Field(
+        default=None, description="Line number of failure or diagnostic if applicable"
+    )
+    error_message: str = Field(..., description="Concise error message or root cause")
+    traceback: str | None = Field(
+        default=None, description="Stripped or condensed traceback if applicable"
+    )
+
+
+class AgentRunAndDiagnoseRequest(BaseModel):
+    """Request to run a command and distill diagnostic outcomes."""
+
+    command: str = Field(..., description="Shell command to execute and diagnose")
+    repo_root: str = Field(..., description="Repository root path")
+    cwd: str | None = Field(default=None, description="Working directory (defaults to repo_root)")
+    timeout: int = Field(default=120, description="Kill the command after this many seconds")
+    allow_write: bool = Field(
+        default=False, description="Must be True for commands that mutate files/state"
+    )
+    framework_hint: str | None = Field(
+        default=None,
+        description="Optional framework hint (e.g. 'pytest', 'ruff', 'mypy')",
+    )
+
+
+class AgentRunAndDiagnoseResult(BaseModel):
+    """Distilled outcome of a diagnostic command execution."""
+
+    success: bool = Field(..., description="Whether the command succeeded (exit code 0)")
+    summary: str = Field(..., description="High-signal concise summary of outcome")
+    returncode: int | None = Field(default=None, description="Process exit code")
+    passed_count: int = Field(default=0, description="Count of passed tests or checks")
+    failed_count: int = Field(default=0, description="Count of failed tests or checks")
+    skipped_count: int = Field(default=0, description="Count of skipped tests or checks")
+    error_count: int = Field(default=0, description="Count of errors or compiler/linter diagnostics")
+    failures: list[FailureDetail] = Field(
+        default_factory=list, description="Structured failure details"
+    )
+    condensed_output: str = Field(
+        default="", description="High-signal condensed stdout/stderr"
+    )
+    truncated: bool = Field(default=False, description="True when output was truncated")
+    safety_warnings: list[str] = Field(
+        default_factory=list, description="Safety dry-run notes"
+    )
+
+
+# ============================================================================
+# agent_exec_pipeline — ordered multi-step execution with fail-fast
+# ============================================================================
+
+
+class PipelineStep(BaseModel):
+    """A single execution step in an ordered pipeline."""
+
+    command: str = Field(..., description="Shell command to execute")
+    name: str | None = Field(default=None, description="Optional step name or label")
+    cwd: str | None = Field(
+        default=None, description="Working directory for this step (defaults to pipeline cwd)"
+    )
+    timeout: int = Field(default=120, description="Timeout in seconds for this step")
+    allow_write: bool = Field(
+        default=False, description="Must be True for commands that mutate files/state"
+    )
+    continue_on_error: bool = Field(
+        default=False, description="If True, pipeline continues even if this step fails"
+    )
+
+
+class PipelineStepResult(BaseModel):
+    """Result of a single executed pipeline step."""
+
+    command: str = Field(..., description="Executed command")
+    name: str | None = Field(default=None, description="Step name or label")
+    success: bool = Field(..., description="Whether this step succeeded")
+    returncode: int | None = Field(default=None, description="Process exit code (None if skipped)")
+    duration_seconds: float = Field(
+        default=0.0, description="Wall-clock duration in seconds"
+    )
+    skipped: bool = Field(
+        default=False, description="Whether this step was skipped due to prior failure"
+    )
+    summary: str = Field(..., description="Concise outcome summary")
+    condensed_output: str = Field(
+        default="", description="High-signal condensed output for this step"
+    )
+
+
+class AgentExecPipelineRequest(BaseModel):
+    """Request to run an ordered sequence of shell commands."""
+
+    steps: list[PipelineStep] = Field(..., description="Ordered list of pipeline steps to execute")
+    repo_root: str = Field(..., description="Repository root path")
+    cwd: str | None = Field(default=None, description="Default working directory for steps")
+    fail_fast: bool = Field(
+        default=True,
+        description="Halt pipeline on first failing step unless step has continue_on_error",
+    )
+
+
+class AgentExecPipelineResult(BaseModel):
+    """Result of executing a multi-step pipeline."""
+
+    success: bool = Field(..., description="Whether the pipeline succeeded overall")
+    summary: str = Field(..., description="Summary of overall pipeline execution")
+    total_duration_seconds: float = Field(
+        default=0.0, description="Total wall-clock duration of pipeline in seconds"
+    )
+    steps: list[PipelineStepResult] = Field(
+        default_factory=list, description="Per-step execution results"
+    )
+
+
+# ============================================================================
+# agent_distill_logs — clustering, deduplication, and error extraction
+# ============================================================================
+
+
+class LogCluster(BaseModel):
+    """A cluster of repeating or identical log entries."""
+
+    pattern: str = Field(..., description="Normalized message pattern representing the cluster")
+    count: int = Field(..., description="Number of occurrences in the cluster")
+    level: str = Field(default="UNKNOWN", description="Log level of this cluster")
+    first_seen: str | None = Field(
+        default=None, description="Timestamp of first occurrence if detected"
+    )
+    last_seen: str | None = Field(
+        default=None, description="Timestamp of last occurrence if detected"
+    )
+    sample_line: str = Field(..., description="Sample raw log line from the cluster")
+
+
+class AgentDistillLogsRequest(BaseModel):
+    """Request to tail and distill log patterns."""
+
+    module: str | None = Field(default=None, description="Daemon/module name (e.g. 'coder')")
+    level: str | None = Field(default=None, description="Optional level filter (INFO/ERROR/...)")
+    limit: int = Field(default=50, description="Max entries to retrieve (capped at 200)")
+    session_id: str | None = Field(default=None, description="Optional session filter")
+
+
+class AgentDistillLogsResult(BaseModel):
+    """Distilled log analysis with clusters and isolated errors."""
+
+    success: bool = Field(..., description="Whether the log distillation succeeded")
+    summary: str = Field(..., description="Human-readable summary of distillation")
+    total_lines_analyzed: int = Field(default=0, description="Total log lines processed")
+    clusters: list[LogCluster] = Field(
+        default_factory=list, description="Clusters of repeating log patterns"
+    )
+    isolated_errors: list[str] = Field(
+        default_factory=list, description="Isolated multi-line error blocks or tracebacks"
+    )
+    source: str = Field(default="", description="Where entries came from")

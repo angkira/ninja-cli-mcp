@@ -27,14 +27,20 @@ from ninja_agent.models import (
     DELEGATE_MIGRATION,
     AgentAnalyzeRequest,
     AgentAnalyzeResult,
+    AgentDistillLogsRequest,
+    AgentDistillLogsResult,
     AgentExecCommandRequest,
     AgentExecCommandResult,
+    AgentExecPipelineRequest,
+    AgentExecPipelineResult,
     AgentJobsOverviewRequest,
     AgentJobsOverviewResult,
     AgentProcessesRequest,
     AgentProcessesResult,
     AgentReviewRequest,
     AgentReviewResult,
+    AgentRunAndDiagnoseRequest,
+    AgentRunAndDiagnoseResult,
     AgentTailLogsRequest,
     AgentTailLogsResult,
 )
@@ -196,6 +202,116 @@ TOOLS: list[Tool] = [
             "required": ["repo_root", "file_paths"],
         },
     ),
+    Tool(
+        name="agent_run_and_diagnose",
+        execution=ToolExecution(taskSupport="optional"),
+        description=(
+            "Execute a test suite or command, clean ANSI codes, parse failures/counts, "
+            "and return high-signal condensed output preserving root cause."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Shell command to execute and diagnose",
+                },
+                "repo_root": {
+                    "type": "string",
+                    "description": "Repository root (default cwd / safety scope)",
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Working directory (defaults to repo_root)",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Kill the command after this many seconds",
+                },
+                "allow_write": {
+                    "type": "boolean",
+                    "description": "Allow file-mutating commands",
+                },
+                "framework_hint": {
+                    "type": "string",
+                    "description": "Optional framework hint (e.g. 'pytest', 'ruff', 'mypy')",
+                },
+            },
+            "required": ["command", "repo_root"],
+        },
+    ),
+    Tool(
+        name="agent_exec_pipeline",
+        execution=ToolExecution(taskSupport="optional"),
+        description=(
+            "Execute an ordered batch of commands sequentially with wall-clock timing, "
+            "per-step condensed output, and fail-fast logic."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "command": {"type": "string", "description": "Shell command to execute"},
+                            "name": {"type": "string", "description": "Optional step name"},
+                            "cwd": {"type": "string", "description": "Working directory for this step"},
+                            "timeout": {"type": "integer", "description": "Timeout in seconds"},
+                            "allow_write": {"type": "boolean", "description": "Allow file mutations"},
+                            "continue_on_error": {"type": "boolean", "description": "Continue pipeline if step fails"},
+                        },
+                        "required": ["command"],
+                    },
+                    "description": "Ordered sequence of steps to run",
+                },
+                "repo_root": {
+                    "type": "string",
+                    "description": "Repository root path",
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Default working directory for steps",
+                },
+                "fail_fast": {
+                    "type": "boolean",
+                    "description": "Halt on first failing step (default: True)",
+                },
+            },
+            "required": ["steps", "repo_root"],
+        },
+    ),
+    Tool(
+        name="agent_distill_logs",
+        execution=ToolExecution(taskSupport="optional"),
+        description=(
+            "Retrieve, cluster, and deduplicate repeating log entries, masking dynamic values "
+            "and isolating distinct error tracebacks."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "module": {
+                    "type": "string",
+                    "description": "Daemon/module name (e.g. 'coder')",
+                },
+                "level": {
+                    "type": "string",
+                    "description": "Optional level filter (INFO/ERROR/...)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max entries (capped at 200)",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session filter",
+                },
+            },
+            "required": [],
+        },
+    ),
 ]
 
 # Look up tool definitions by name (used for task-mode validation).
@@ -309,6 +425,39 @@ def create_server() -> Server:
                         )
                     ]
 
+                elif name == "agent_run_and_diagnose":
+                    diag_request = AgentRunAndDiagnoseRequest(**arguments)
+                    diag_result: AgentRunAndDiagnoseResult = await executor.run_and_diagnose(
+                        diag_request, client_id
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(diag_result.model_dump(), indent=2)
+                        )
+                    ]
+
+                elif name == "agent_exec_pipeline":
+                    pipe_request = AgentExecPipelineRequest(**arguments)
+                    pipe_result: AgentExecPipelineResult = await executor.exec_pipeline(
+                        pipe_request, client_id
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(pipe_result.model_dump(), indent=2)
+                        )
+                    ]
+
+                elif name == "agent_distill_logs":
+                    distill_request = AgentDistillLogsRequest(**arguments)
+                    distill_result: AgentDistillLogsResult = await executor.distill_logs(
+                        distill_request, client_id
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(distill_result.model_dump(), indent=2)
+                        )
+                    ]
+
                 elif name in _REMOVED_TOOLS:
                     raise ValueError(DELEGATE_MIGRATION)
 
@@ -402,6 +551,27 @@ async def main_http(host: str, port: int) -> None:
 
 def run() -> None:
     """Run the server with command-line argument parsing."""
+    import sys
+
+    cli_subcommands = {
+        "exec-command",
+        "tail-logs",
+        "processes",
+        "jobs-overview",
+        "analyze",
+        "review",
+        "run-and-diagnose",
+        "pipeline",
+        "distill-logs",
+    }
+    if len(sys.argv) > 1 and (
+        sys.argv[1] in cli_subcommands
+        or (sys.argv[1] == "--json" and len(sys.argv) > 2 and sys.argv[2] in cli_subcommands)
+    ):
+        from ninja_agent import cli
+
+        sys.exit(cli.main(sys.argv[1:]))
+
     parser = argparse.ArgumentParser(description="Ninja Agent MCP Server")
     parser.add_argument(
         "--http",

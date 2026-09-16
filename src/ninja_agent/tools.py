@@ -27,8 +27,12 @@ from typing import Any
 from ninja_agent.models import (
     AgentAnalyzeRequest,
     AgentAnalyzeResult,
+    AgentDistillLogsRequest,
+    AgentDistillLogsResult,
     AgentExecCommandRequest,
     AgentExecCommandResult,
+    AgentExecPipelineRequest,
+    AgentExecPipelineResult,
     AgentJobsOverviewRequest,
     AgentJobsOverviewResult,
     AgentProcessesRequest,
@@ -36,6 +40,8 @@ from ninja_agent.models import (
     AgentReviewFinding,
     AgentReviewRequest,
     AgentReviewResult,
+    AgentRunAndDiagnoseRequest,
+    AgentRunAndDiagnoseResult,
     AgentTailLogsRequest,
     AgentTailLogsResult,
 )
@@ -377,6 +383,63 @@ class AgentToolExecutor:
             f"found {len(findings)} finding(s). No files modified."
         )
         return AgentReviewResult(success=True, findings=findings, summary=summary)
+
+    @rate_balanced(
+        max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
+    )
+    @monitored
+    async def run_and_diagnose(
+        self, request: AgentRunAndDiagnoseRequest, client_id: str = "default"
+    ) -> AgentRunAndDiagnoseResult:
+        """Run a command and distill diagnostic outcomes via the runner.
+
+        Args:
+            request: Diagnostic execution request.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Structured diagnostic execution result.
+        """
+        logger.info(f"Agent run_and_diagnose: {request.command[:80]} (client: {client_id})")
+        return await self._get_runner().run_and_diagnose(request)
+
+    @rate_balanced(
+        max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
+    )
+    @monitored
+    async def exec_pipeline(
+        self, request: AgentExecPipelineRequest, client_id: str = "default"
+    ) -> AgentExecPipelineResult:
+        """Execute an ordered sequence of shell commands via the runner.
+
+        Args:
+            request: Multi-step pipeline request.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Structured pipeline execution result.
+        """
+        logger.info(f"Agent exec_pipeline: {len(request.steps)} steps (client: {client_id})")
+        return await self._get_runner().exec_pipeline(request)
+
+    @rate_balanced(
+        max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
+    )
+    @monitored
+    async def distill_logs(
+        self, request: AgentDistillLogsRequest, client_id: str = "default"
+    ) -> AgentDistillLogsResult:
+        """Tail and distill logs into clusters and tracebacks via the runner.
+
+        Args:
+            request: Log distillation request.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Distilled log results.
+        """
+        logger.info(f"Agent distill_logs: module={request.module} (client: {client_id})")
+        return await self._get_runner().distill_logs(request)
 
     def _check_long_lines(self, rel: str, lines: list[str]) -> list[AgentReviewFinding]:
         """Flag functions that are too long (rough heuristic via line blocks)."""

@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.3.0 - 2026-09-16
+
+Autonomous compound routines and context distillation for `ninja-agent`.
+
+### Added
+- **`run_and_diagnose` compound routine**: `agent_run_and_diagnose` (MCP) and
+  `ninja-mcp agent run-and-diagnose` (CLI) execute test suites or build commands,
+  automatically extracting failures, root causes, clean tracebacks, and test counts
+  (`passed`, `failed`, `skipped`, `errors`), stripping noisy passing logs and ANSI codes.
+- **`exec_pipeline` compound routine**: `agent_exec_pipeline` (MCP) and
+  `ninja-mcp agent pipeline` (CLI) run an ordered batch of commands in a single
+  round-trip with configurable `fail_fast` policy, per-step timing, and write guards.
+- **`distill_logs` context condensation**: `agent_distill_logs` (MCP) and
+  `ninja-mcp agent distill-logs` (CLI) tail, cluster, and deduplicate repetitive log lines,
+  extracting unique patterns, recurrence counts, and isolated error traces.
+- **End-to-end test suite**: `tests/test_agent_e2e.py` covering in-process
+  executor operations, live stdio JSON-RPC MCP ClientSession calling autonomous routines,
+  and real-world smoke scenarios.
+
+### Changed
+- **`ninja-agent` autonomous runner**: Transformed from atomic command executor
+  into an outcome-driven autonomous runner tool with rate balancing and telemetry monitoring.
+- JetBrains Junie CLI model discovery and effort configuration support.
+
+### Verified (live)
+- `tests/test_agent.py`, `tests/test_agent_cli.py`, `tests/test_agent_runner.py`,
+  `tests/test_agent_e2e.py`, and `tests/test_container_config.py` passing with 100% pass rate.
+
 ## 1.2.0 - 2026-09-15
 
 Background jobs that work in **every** MCP host, not just Tasks-capable ones.

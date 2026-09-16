@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import json
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import ValidationError
@@ -27,16 +28,23 @@ from ninja_agent.models import (
     DELEGATE_MIGRATION,
     AgentAnalyzeRequest,
     AgentAnalyzeResult,
+    AgentDistillLogsRequest,
+    AgentDistillLogsResult,
     AgentExecCommandRequest,
     AgentExecCommandResult,
+    AgentExecPipelineRequest,
+    AgentExecPipelineResult,
     AgentJobsOverviewRequest,
     AgentJobsOverviewResult,
     AgentProcessesRequest,
     AgentProcessesResult,
     AgentReviewRequest,
     AgentReviewResult,
+    AgentRunAndDiagnoseRequest,
+    AgentRunAndDiagnoseResult,
     AgentTailLogsRequest,
     AgentTailLogsResult,
+    PipelineStep,
 )
 from ninja_agent.tools import AgentToolExecutor
 
@@ -134,6 +142,53 @@ def build_parser() -> argparse.ArgumentParser:
     review_p.add_argument("--focus", default=None, help="Optional area to focus review on")
     review_p.add_argument("--json", action="store_true", help="Output JSON format")
 
+    # run-and-diagnose
+    diag_p = subparsers.add_parser(
+        "run-and-diagnose", help="Run a command and distill diagnostic outcomes"
+    )
+    diag_p.add_argument(
+        "--command", dest="shell_command", required=True, help="Shell command to execute"
+    )
+    diag_p.add_argument("--repo-root", default=".", help="Repository root path")
+    diag_p.add_argument("--cwd", default=None, help="Working directory (defaults to repo_root)")
+    diag_p.add_argument("--timeout", type=int, default=300, help="Timeout in seconds")
+    diag_p.add_argument("--allow-write", action="store_true", help="Allow file-mutating commands")
+    diag_p.add_argument(
+        "--framework-hint", default="auto", help="Optional framework hint (default: 'auto')"
+    )
+    diag_p.add_argument("--json", action="store_true", help="Output JSON format")
+
+    # pipeline
+    pipe_p = subparsers.add_parser(
+        "pipeline", help="Execute an ordered sequence of shell commands"
+    )
+    pipe_p.add_argument(
+        "--steps",
+        required=True,
+        help="JSON string or path to JSON file containing list of step dicts",
+    )
+    pipe_p.add_argument("--repo-root", default=".", help="Repository root path")
+    pipe_p.add_argument("--cwd", default=None, help="Working directory (defaults to repo_root)")
+    pipe_p.add_argument(
+        "--fail-fast",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Halt on first failing step (default: True)",
+    )
+    pipe_p.add_argument("--json", action="store_true", help="Output JSON format")
+
+    # distill-logs
+    distill_p = subparsers.add_parser(
+        "distill-logs", help="Tail and distill logs into clusters and tracebacks"
+    )
+    distill_p.add_argument("--module", default=None, help="Daemon/module name (e.g. 'coder')")
+    distill_p.add_argument("--level", default=None, help="Level filter (INFO/ERROR/...)")
+    distill_p.add_argument("--limit", type=int, default=200, help="Max entries (capped at 200)")
+    distill_p.add_argument(
+        "--session-id", dest="session_id", default=None, help="Optional session filter"
+    )
+    distill_p.add_argument("--json", action="store_true", help="Output JSON format")
+
     return parser
 
 
@@ -219,6 +274,78 @@ def _print_review(result: object, as_json: bool) -> None:
         print(
             f"  [{finding.get('severity')}] {finding.get('file_path')}{line}: {finding.get('message')}"
         )
+
+
+def _print_run_and_diagnose(result: object, as_json: bool) -> None:
+    data = _dump(result)
+    if as_json:
+        print(json.dumps(data, indent=2))
+        return
+    print(data.get("summary", ""))
+    failures = data.get("failures", [])
+    if failures:
+        print(f"Failures / Diagnostics ({len(failures)}):")
+        for f in failures:
+            loc = ""
+            if f.get("file_path"):
+                loc = f.get("file_path")
+                if f.get("line_number") is not None:
+                    loc += f":{f.get('line_number')}"
+            target = f.get("test_name") or loc or "Diagnostic"
+            msg = f.get("error_message", "")
+            print(f"  - [{target}] {msg}")
+            if f.get("traceback"):
+                for tb_line in f["traceback"].strip().splitlines():
+                    print(f"      {tb_line}")
+    condensed = data.get("condensed_output", "")
+    if condensed and not failures:
+        print(condensed)
+
+
+def _print_pipeline(result: object, as_json: bool) -> None:
+    data = _dump(result)
+    if as_json:
+        print(json.dumps(data, indent=2))
+        return
+    print(data.get("summary", ""))
+    for idx, s in enumerate(data.get("steps", []), start=1):
+        if s.get("skipped"):
+            status = "[SKIPPED]"
+        elif s.get("success"):
+            status = "[PASS]"
+        else:
+            status = "[FAIL]"
+        name = s.get("name") or s.get("command") or f"step {idx}"
+        duration = s.get("duration_seconds", 0.0)
+        print(f"  {status} {name} ({duration:.2f}s)")
+        if not s.get("success") and not s.get("skipped") and s.get("summary"):
+            print(f"         {s.get('summary')}")
+
+
+def _print_distill_logs(result: object, as_json: bool) -> None:
+    data = _dump(result)
+    if as_json:
+        print(json.dumps(data, indent=2))
+        return
+    print(data.get("summary", ""))
+    clusters = data.get("clusters", [])
+    if clusters:
+        print(f"Log Clusters ({len(clusters)}):")
+        for c in clusters:
+            count = c.get("count", 0)
+            level = c.get("level", "UNKNOWN")
+            pattern = c.get("pattern", "")
+            sample = c.get("sample_line", "")
+            print(f"  [{count}x] [{level}] {pattern}")
+            if sample and sample != pattern:
+                print(f"       Sample: {sample}")
+    isolated_errors = data.get("isolated_errors", [])
+    if isolated_errors:
+        print(f"Isolated Error Blocks ({len(isolated_errors)}):")
+        for idx, err in enumerate(isolated_errors, start=1):
+            print(f"  --- Error Block #{idx} ---")
+            for line in err.strip().splitlines():
+                print(f"  {line}")
 
 
 def _cmd_exec_command(args: argparse.Namespace, as_json: bool) -> int:
@@ -352,11 +479,124 @@ def _cmd_review(args: argparse.Namespace, as_json: bool) -> int:
     return 0
 
 
+def _cmd_run_and_diagnose(executor: Any, args: Any = None) -> int:
+    if isinstance(executor, argparse.Namespace):
+        args = executor
+        executor = AgentToolExecutor()
+    as_json = _wants_json(args)
+    hint = (
+        args.framework_hint
+        if getattr(args, "framework_hint", None) and args.framework_hint != "auto"
+        else None
+    )
+    cmd = (
+        getattr(args, "shell_command", None)
+        or (args.command if getattr(args, "command", None) != "run-and-diagnose" else None)
+        or ""
+    )
+    try:
+        request = AgentRunAndDiagnoseRequest(
+            command=cmd,
+            repo_root=getattr(args, "repo_root", ".") or ".",
+            cwd=getattr(args, "cwd", None),
+            timeout=int(getattr(args, "timeout", 300) or 300),
+            allow_write=bool(getattr(args, "allow_write", False)),
+            framework_hint=hint,
+        )
+    except ValidationError as exc:
+        return _fail(str(exc))
+    try:
+        result = asyncio.run(
+            cast(
+                "Coroutine[Any, Any, AgentRunAndDiagnoseResult]",
+                executor.run_and_diagnose(request),
+            )
+        )
+    except Exception as exc:
+        return _fail(str(exc))
+    _print_run_and_diagnose(result, as_json)
+    return 0 if result.success else 1
+
+
+def _cmd_pipeline(executor: Any, args: Any = None) -> int:
+    if isinstance(executor, argparse.Namespace):
+        args = executor
+        executor = AgentToolExecutor()
+    as_json = _wants_json(args)
+    steps_raw = (getattr(args, "steps", None) or "").strip()
+    steps_data = None
+    steps_path = Path(steps_raw)
+    if steps_path.is_file():
+        try:
+            steps_data = json.loads(steps_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return _fail(f"Failed to read steps file: {exc}")
+    else:
+        try:
+            steps_data = json.loads(steps_raw)
+        except json.JSONDecodeError as exc:
+            return _fail(f"Invalid JSON for --steps: {exc}")
+    if not isinstance(steps_data, list):
+        return _fail("--steps must be a JSON list of step objects")
+    try:
+        steps = [
+            PipelineStep(**s) if isinstance(s, dict) else PipelineStep(command=str(s))
+            for s in steps_data
+        ]
+        request = AgentExecPipelineRequest(
+            steps=steps,
+            repo_root=getattr(args, "repo_root", ".") or ".",
+            cwd=getattr(args, "cwd", None),
+            fail_fast=bool(getattr(args, "fail_fast", True)),
+        )
+    except (ValidationError, TypeError, ValueError) as exc:
+        return _fail(str(exc))
+    try:
+        result = asyncio.run(
+            cast(
+                "Coroutine[Any, Any, AgentExecPipelineResult]",
+                executor.exec_pipeline(request),
+            )
+        )
+    except Exception as exc:
+        return _fail(str(exc))
+    _print_pipeline(result, as_json)
+    return 0 if result.success else 1
+
+
+def _cmd_distill_logs(executor: Any, args: Any = None) -> int:
+    if isinstance(executor, argparse.Namespace):
+        args = executor
+        executor = AgentToolExecutor()
+    as_json = _wants_json(args)
+    try:
+        request = AgentDistillLogsRequest(
+            module=getattr(args, "module", None),
+            level=getattr(args, "level", None),
+            limit=int(getattr(args, "limit", 200) or 200),
+            session_id=getattr(args, "session_id", None),
+        )
+    except ValidationError as exc:
+        return _fail(str(exc))
+    try:
+        result = asyncio.run(
+            cast(
+                "Coroutine[Any, Any, AgentDistillLogsResult]",
+                executor.distill_logs(request),
+            )
+        )
+    except Exception as exc:
+        return _fail(str(exc))
+    _print_distill_logs(result, as_json)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the agent CLI."""
     parser = build_parser()
     args = parser.parse_args(argv)
     as_json = _wants_json(args)
+    executor = AgentToolExecutor()
 
     if args.command == "exec-command":
         return _cmd_exec_command(args, as_json)
@@ -370,6 +610,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_analyze(args, as_json)
     if args.command == "review":
         return _cmd_review(args, as_json)
+    if args.command == "run-and-diagnose":
+        return _cmd_run_and_diagnose(executor, args)
+    if args.command == "pipeline":
+        return _cmd_pipeline(executor, args)
+    if args.command == "distill-logs":
+        return _cmd_distill_logs(executor, args)
 
     print(f"ninja-mcp agent: unknown command: {args.command}", file=sys.stderr)
     return 1

@@ -33,6 +33,9 @@ def test_server_registers_autonomous_toolset():
         "agent_jobs_overview",
         "agent_analyze",
         "agent_review",
+        "agent_run_and_diagnose",
+        "agent_exec_pipeline",
+        "agent_distill_logs",
     ]
     assert not any("delegate" in n for n in names)
     assert "agent_plan" not in names
@@ -69,7 +72,17 @@ def test_executor_has_no_delegation_surface():
         "_delegate_coder",
     ):
         assert not hasattr(executor, attr), attr
-    for attr in ("exec_command", "tail_logs", "processes", "jobs_overview", "analyze", "review"):
+    for attr in (
+        "exec_command",
+        "tail_logs",
+        "processes",
+        "jobs_overview",
+        "analyze",
+        "review",
+        "run_and_diagnose",
+        "exec_pipeline",
+        "distill_logs",
+    ):
         assert hasattr(executor, attr), attr
 
 

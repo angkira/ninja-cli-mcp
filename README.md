@@ -144,7 +144,7 @@ Run `ninja-mcp <command> --help` for command-specific options.
 | `init` | Install MCP servers into a host config | `ninja-mcp init detect` |
 | `init <host>` | Configure Claude Code, Codex, Cursor, Antigravity, or generic MCP | `ninja-mcp init claude-code --direct` |
 | `daemon` | Manage persistent HTTP/SSE module processes | `ninja-mcp daemon status` |
-| `agent` | Plan, analyze, delegate, review, or run | `ninja-mcp agent analyze --repo-root .` |
+| `agent` | Analyze, review, run-and-diagnose, pipeline, distill-logs | `ninja-mcp agent run-and-diagnose --command "pytest"` |
 | `update` | Update an installed checkout/package | `ninja-mcp update` |
 | `version` | Print the installed version | `ninja-mcp version` |
 
@@ -156,17 +156,15 @@ The standalone server entry points remain available: `ninja-coder`,
 The agent CLI emits readable output by default and JSON with `--json`:
 
 ```bash
-ninja-mcp agent plan --task "Add email validation" --repo-root .
 ninja-mcp agent analyze --repo-root . --focus auth
-ninja-mcp agent delegate-coder --subtask "Implement the validator" --repo-root . --model-class smart
 ninja-mcp agent review --repo-root . --files src/auth.py tests/test_auth.py
-ninja-mcp agent run --task "Implement and review email validation" --repo-root .
+ninja-mcp agent run-and-diagnose --command "pytest tests/" --repo-root .
+ninja-mcp agent pipeline --step "uv sync" --step "ruff check" --step "pytest" --repo-root .
+ninja-mcp agent distill-logs --module coder --lines 100
+ninja-mcp agent exec-command --command "git status" --repo-root .
 ```
 
-`run` composes plan, delegate, and review. One delegate tool per sub-agent:
-`delegate-coder`, `delegate-researcher`, `delegate-secretary`,
-`delegate-runner`, `delegate-git`; coder model tiers are `smart`, `balanced`,
-and `fast`.
+`run-and-diagnose` executes diagnostic and test commands with automated outcome distillation, failure extraction, and ANSI stripping. `pipeline` executes an ordered sequence of commands in a single round-trip with fail-fast enforcement. `distill-logs` aggregates and clusters repetitive log lines into actionable tracebacks and frequency summaries.
 
 ## Coder Routing and Safety
 
