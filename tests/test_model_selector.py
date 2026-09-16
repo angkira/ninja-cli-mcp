@@ -5,12 +5,30 @@ Tests model routing based on task complexity, cost preferences, and quality pref
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from ninja_coder.model_selector import ModelRecommendation, ModelSelector
 from ninja_coder.models import TaskComplexity
+
+
+@pytest.fixture(autouse=True)
+def _clear_model_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear task-specific / model-class env overrides for determinism.
+
+    ``select_model`` honors ``NINJA_MODEL_QUICK/SEQUENTIAL/PARALLEL`` and
+    ``select_by_class`` honors ``NINJA_MODEL_CLASS_*``; a developer's real
+    environment (e.g. loaded from ``~/.ninja-mcp.env`` by an earlier test)
+    would otherwise hijack these assertions.
+    """
+    for key in (
+        "NINJA_MODEL_QUICK",
+        "NINJA_MODEL_SEQUENTIAL",
+        "NINJA_MODEL_PARALLEL",
+        "NINJA_MODEL_CLASS_SMART",
+        "NINJA_MODEL_CLASS_BALANCED",
+        "NINJA_MODEL_CLASS_FAST",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
 
 @pytest.fixture
@@ -146,21 +164,12 @@ def test_recommendation_has_cost_estimate(selector):
         assert len(rec.cost_estimate) > 0
 
 
-def test_from_env_no_default():
+def test_from_env_no_default(monkeypatch: pytest.MonkeyPatch):
     """Test creating selector from env with no NINJA_MODEL."""
-    # Ensure NINJA_MODEL is not set
-    env_backup = os.environ.get("NINJA_MODEL")
-    try:
-        if "NINJA_MODEL" in os.environ:
-            del os.environ["NINJA_MODEL"]
+    monkeypatch.delenv("NINJA_MODEL", raising=False)
 
-        selector = ModelSelector.from_env()
-        assert selector.default_model is None
-
-    finally:
-        # Restore env
-        if env_backup:
-            os.environ["NINJA_MODEL"] = env_backup
+    selector = ModelSelector.from_env()
+    assert selector.default_model is None
 
 
 def test_from_env_with_default(monkeypatch):

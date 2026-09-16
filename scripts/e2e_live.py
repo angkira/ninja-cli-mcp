@@ -137,9 +137,8 @@ async def _coder_parallel(session: ClientSession) -> dict:
 async def _agent_delegate(session: ClientSession) -> dict:
     return await _tool_call(
         session,
-        "agent_delegate",
+        "agent_delegate_coder",
         {
-            "delegate_to": "coder",
             "subtask": (
                 "Create utils.py in the repo with an is_even(n) function returning n % 2 == 0."
             ),
@@ -193,7 +192,7 @@ async def main() -> None:
 
     if SCOPE in ("delegate", "all"):
         print("\n" + "=" * 70)
-        print("E2E 3: agent_delegate -> coder")
+        print("E2E 3: agent_delegate_coder")
         print("=" * 70)
         async with stdio_client(agent_params) as (read, write):
             async with ClientSession(read, write) as session:
@@ -201,7 +200,7 @@ async def main() -> None:
                 results["delegate"] = await _agent_delegate(session)
         dele = results["delegate"]
         print("\nDELEGATE success:", dele.get("success"))
-        print("DELEGATE delegate_to:", dele.get("delegate_to"))
+        print("DELEGATE delegate_tool:", dele.get("delegate_tool"))
 
     print("\n" + "=" * 70)
     print("VERIFY files")

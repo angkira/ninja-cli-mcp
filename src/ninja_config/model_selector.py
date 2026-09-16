@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from ninja_common import junie_discovery as _junie_discovery
 from ninja_common.config_manager import ConfigManager
 from ninja_common.defaults import (
     CLAUDE_CODE_MODELS,
@@ -163,6 +164,45 @@ def _run_agy_models(binary: str | None = None) -> list[tuple[str, str]]:
         if model_id:
             models.append((model_id, display.strip()))
     return models
+
+
+def _run_junie_models(binary: str | None = None) -> list[str]:
+    """Probe ``junie --model <sentinel>`` and return the raw model ids.
+
+    The CLI has no ``models`` subcommand; an invalid ``--model`` value makes
+    it print ``Available models:`` to stderr (local validation, no task run).
+    Empty output is not an error — callers fall back to the next source.
+
+    Args:
+        binary: Optional ``junie`` binary path; discovered when omitted.
+
+    Returns:
+        List of Junie model ids, or empty list on failure.
+    """
+    try:
+        return _junie_discovery._run_junie_models_cli(binary=binary)
+    except Exception:
+        return []
+
+
+def discover_junie_models() -> list[tuple[str, str, str]]:
+    """Dynamically discover Junie models as ``(id, name, description)``.
+
+    Priority: CLI probe → ``~/.junie/settings.json`` → static
+    :data:`JUNIE_MODELS` last-resort fallback (see
+    ``ninja_common.junie_discovery``). Never raises; never empty while the
+    static catalogue exists.
+
+    Returns:
+        List of model triples.
+    """
+    try:
+        triples = _junie_discovery.discover_junie_model_triples()
+    except Exception:
+        triples = []
+    if not triples:
+        triples = list(JUNIE_MODELS)
+    return triples
 
 
 def discover_opencode_providers() -> list[tuple[str, str, str]]:
@@ -602,8 +642,8 @@ class Operator:
         return True
 
     def _load_junie_models(self) -> bool:
-        """Load models for Junie CLI (static list, host-auth — no network probe)."""
-        for model_id, name, desc in JUNIE_MODELS:
+        """Load models for Junie CLI (dynamic probe, host-auth — no task run)."""
+        for model_id, name, desc in discover_junie_models():
             self.models.append(
                 Model(
                     id=model_id,
@@ -810,10 +850,13 @@ def _get_agy_models() -> list[Model]:
 
 
 def _get_junie_models() -> list[Model]:
-    """Get models for Junie CLI (static list, host-auth via JetBrains Account).
+    """Get models for Junie CLI (dynamic probe, host-auth via JetBrains Account).
+
+    The catalogue is discovered at search time (CLI → settings.json →
+    static fallback), never served from a hardcoded list alone.
 
     Returns:
-        List of Model objects (Junie flat model ids).
+        List of Model objects (Junie model ids).
     """
     return [
         Model(
@@ -823,7 +866,7 @@ def _get_junie_models() -> list[Model]:
             provider="junie",
             recommended=(model_id == "deepseek-v4-flash"),
         )
-        for model_id, name, desc in JUNIE_MODELS
+        for model_id, name, desc in discover_junie_models()
     ]
 
 
@@ -853,7 +896,7 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
     - aider: runs `aider --list-models {provider}`
     - claude: returns Claude-specific models
     - agy: runs `agy models` (dynamic Antigravity catalogue)
-    - junie: returns static Junie models (host-auth, no network probe)
+    - junie: discovers Junie models dynamically (CLI probe, host-auth, no task run)
 
     Args:
         operator: The operator ID (e.g., 'opencode', 'aider', 'claude', 'agy')

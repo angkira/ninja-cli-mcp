@@ -315,6 +315,14 @@ Successfully upgraded repository to Level 5 autonomous capability with context m
 
 ## Session Log
 
+**2026-09-16**
+- Completed (UNCOMMITTED, no commit per instructions): Junie versioned model catalog
+  (deepseek-v4-flash, gemini-3.8-flash, grok-4.6, gpt-5.6-luna — all 3 probes + settings.json
+  verified; gpt-5.6-luna IS served by Junie) + junie normalizer (prefix-strip/alias,
+  loud ValueError) + effort сквозняком (NINJA_JUNIE_EFFORT[_QUICK/_SEQUENTIAL/_PARALLEL]
+  → `--effort`, omitted when unset) + tests + live e2e pin proof. See STATUS.md
+  session `junie-models-effort-20260916` for files/lines.
+
 **2026-02-12 01:42**
 - Session started: Configuration refactoring investigation
 - Task: Investigate latest ninja-coder task failures

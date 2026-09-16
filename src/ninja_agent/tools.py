@@ -1,29 +1,43 @@
 """
 MCP tool implementations for the Agent module.
 
-The agent is an orchestrator that plans, analyzes, delegates, and reviews —
-but never writes code itself. Code-writing is delegated to the coder module.
-Analysis is delegated to the secretary module, and web research to the
-researcher module.
+The agent is AUTONOMOUS: it owns routine ops (guarded shell, log tails,
+daemon/process snapshots, read-only job overviews) plus its own file
+analysis and heuristic review. It knows nothing about coder / researcher /
+secretary — no imports, no delegation. Code-writing is invoked directly via
+coder_* tools by the central model, never through the agent.
+
+One tool per capability (all ``agent_*``, no ``delegate_*``):
+
+- ``agent_exec_command`` — guarded shell via the in-process runner
+- ``agent_tail_logs`` — capped, redacted log tails
+- ``agent_processes`` — read-only daemon + resource snapshot
+- ``agent_jobs_overview`` — read-only job summary
+- ``agent_analyze`` — own analysis: direct file reads + ast/grep
+- ``agent_review`` — own heuristic static review (never writes)
 """
 
 from __future__ import annotations
 
 import ast
+import fnmatch
 from pathlib import Path
 from typing import Any
 
 from ninja_agent.models import (
     AgentAnalyzeRequest,
     AgentAnalyzeResult,
-    AgentDelegateRequest,
-    AgentDelegateResult,
-    AgentPlanRequest,
-    AgentPlanResult,
-    AgentPlanStep,
+    AgentExecCommandRequest,
+    AgentExecCommandResult,
+    AgentJobsOverviewRequest,
+    AgentJobsOverviewResult,
+    AgentProcessesRequest,
+    AgentProcessesResult,
     AgentReviewFinding,
     AgentReviewRequest,
     AgentReviewResult,
+    AgentTailLogsRequest,
+    AgentTailLogsResult,
 )
 from ninja_common.logging_utils import get_logger
 from ninja_common.rate_balancer import rate_balanced
@@ -32,39 +46,146 @@ from ninja_common.security import monitored
 
 logger = get_logger(__name__)
 
+#: Cap on files inspected by :meth:`AgentToolExecutor.analyze`.
+_MAX_ANALYZE_FILES = 200
+
+#: Per-file read cap (chars) for analysis.
+_MAX_ANALYZE_CHARS_PER_FILE = 20_000
+
 
 class AgentToolExecutor:
-    """Executor for agent MCP tools (planning, analysis, delegation, review)."""
+    """Executor for autonomous agent MCP tools (no external agents)."""
 
-    def __init__(self) -> None:
-        """Initialize the agent tool executor."""
-        self._coder: Any = None
-        self._secretary: Any = None
-        self._researcher: Any = None
+    def __init__(self, runner: Any | None = None) -> None:
+        """Initialize the agent tool executor.
 
-    def _get_coder(self) -> Any:
-        """Lazily import and return the coder tool executor."""
-        if self._coder is None:
-            from ninja_coder.tools import ToolExecutor as CoderToolExecutor
+        Args:
+            runner: Injected runner executor (default: real ``RunnerToolExecutor``,
+                imported lazily to keep module import cheap and cycle-free).
+        """
+        self._runner = runner
 
-            self._coder = CoderToolExecutor()
-        return self._coder
+    def _get_runner(self) -> Any:
+        """Lazily build and return the in-process runner executor."""
+        if self._runner is None:
+            from ninja_agent.runner import RunnerToolExecutor
 
-    def _get_secretary(self) -> Any:
-        """Lazily import and return the secretary tool executor."""
-        if self._secretary is None:
-            from ninja_secretary.tools import SecretaryToolExecutor
+            self._runner = RunnerToolExecutor()
+        return self._runner
 
-            self._secretary = SecretaryToolExecutor()
-        return self._secretary
+    @rate_balanced(
+        max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
+    )
+    @monitored
+    async def exec_command(
+        self, request: AgentExecCommandRequest, client_id: str = "default"
+    ) -> AgentExecCommandResult:
+        """Run a guarded, non-interactive shell command via the runner.
 
-    def _get_researcher(self) -> Any:
-        """Lazily import and return the researcher tool executor."""
-        if self._researcher is None:
-            from ninja_researcher.tools import ResearchToolExecutor
+        Args:
+            request: Shell invocation request.
+            client_id: Client identifier for rate limiting.
 
-            self._researcher = ResearchToolExecutor()
-        return self._researcher
+        Returns:
+            Guarded execution result with capped, redacted output.
+        """
+        logger.info(f"Agent exec_command: {request.command[:80]} (client: {client_id})")
+        result = await self._get_runner().run_command(
+            request.command,
+            cwd=request.cwd,
+            repo_root=request.repo_root,
+            timeout=request.timeout,
+            allow_write=request.allow_write,
+        )
+        return AgentExecCommandResult(
+            success=result.success,
+            summary=result.summary,
+            returncode=result.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            truncated=result.truncated,
+            safety_warnings=list(result.safety_warnings),
+        )
+
+    @rate_balanced(
+        max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
+    )
+    @monitored
+    async def tail_logs(
+        self, request: AgentTailLogsRequest, client_id: str = "default"
+    ) -> AgentTailLogsResult:
+        """Return capped, redacted log tails via the runner.
+
+        Args:
+            request: Log-tail request.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Redacted tail result.
+        """
+        logger.info(f"Agent tail_logs: module={request.module} (client: {client_id})")
+        result = await self._get_runner().tail_logs(
+            module=request.module,
+            level=request.level,
+            limit=request.limit,
+            session_id=request.session_id,
+        )
+        return AgentTailLogsResult(
+            success=result.success,
+            summary=result.summary,
+            entries=list(result.entries),
+            source=result.source,
+        )
+
+    @rate_balanced(
+        max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
+    )
+    @monitored
+    async def processes(
+        self, request: AgentProcessesRequest | None = None, client_id: str = "default"
+    ) -> AgentProcessesResult:
+        """Snapshot daemon statuses plus host resource stats (read-only).
+
+        Args:
+            request: Unused (no fields); kept for a uniform tool signature.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Daemon map + resource stats; never mutates anything.
+        """
+        logger.info(f"Agent processes snapshot (client: {client_id})")
+        result = await self._get_runner().processes()
+        return AgentProcessesResult(
+            success=result.success,
+            summary=result.summary,
+            daemons=dict(result.daemons),
+            resources=dict(result.resources),
+        )
+
+    @rate_balanced(
+        max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
+    )
+    @monitored
+    async def jobs_overview(
+        self, request: AgentJobsOverviewRequest | None = None, client_id: str = "default"
+    ) -> AgentJobsOverviewResult:
+        """Summarize pending background jobs/tasks (read-only).
+
+        Args:
+            request: Job-overview request (limit).
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            Read-only job summary list.
+        """
+        limit = request.limit if request is not None else 20
+        logger.info(f"Agent jobs_overview (client: {client_id})")
+        result = await self._get_runner().jobs_overview(limit=limit)
+        return AgentJobsOverviewResult(
+            success=result.success,
+            summary=result.summary,
+            jobs=list(result.jobs),
+        )
 
     @rate_balanced(
         max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
@@ -73,8 +194,11 @@ class AgentToolExecutor:
     async def analyze(
         self, request: AgentAnalyzeRequest, client_id: str = "default"
     ) -> AgentAnalyzeResult:
-        """
-        Analyze a codebase by delegating to the secretary module.
+        """Analyze a codebase with direct file reads + AST/grep heuristics.
+
+        No secretary, no network: walks ``repo_root`` with ``include_patterns``,
+        optionally narrows to ``focus`` matches, and summarizes Python files via
+        ``ast`` (functions/classes/lines/syntax errors).
 
         Args:
             request: Analysis request.
@@ -84,38 +208,73 @@ class AgentToolExecutor:
             Aggregated analysis result.
         """
         logger.info(f"Analyzing codebase at {request.repo_root} (client: {client_id})")
-        secretary = self._get_secretary()
-
-        try:
-            from ninja_secretary.models import CodebaseReportRequest, FileSearchRequest
-
-            report_result = await secretary.codebase_report(
-                CodebaseReportRequest(repo_root=request.repo_root), client_id
+        root = Path(request.repo_root)
+        if not root.exists() or not root.is_dir():
+            return AgentAnalyzeResult(
+                success=False,
+                summary=f"Analysis failed: repo_root does not exist: {request.repo_root}",
+                findings=[],
+                touched_paths=[],
             )
+        try:
+            candidates = self._collect_files(root, request.include_patterns)
+            if request.focus:
+                focus_lower = request.focus.lower()
+                focused = [p for p in candidates if focus_lower in p.lower()]
+                # Fall back to full candidate list when focus matches nothing,
+                # but say so in the summary.
+                narrowed = bool(focused)
+                candidates = focused if focused else candidates
+            else:
+                narrowed = False
 
+            candidates = candidates[:_MAX_ANALYZE_FILES]
             findings: list[str] = []
             touched: list[str] = []
+            total_lines = 0
+            total_funcs = 0
+            total_classes = 0
+            syntax_errors: list[str] = []
 
-            if getattr(report_result, "report", None):
-                findings.append(report_result.report[:2000])
-            if getattr(report_result, "file_count", 0):
-                findings.append(f"Analyzed {report_result.file_count} files total.")
+            for rel in candidates:
+                touched.append(rel)
+                path = root / rel
+                try:
+                    text = path.read_text(encoding="utf-8", errors="ignore")[
+                        :_MAX_ANALYZE_CHARS_PER_FILE
+                    ]
+                except OSError:
+                    continue
+                total_lines += len(text.splitlines())
+                if not rel.endswith(".py"):
+                    continue
+                try:
+                    tree = ast.parse(text)
+                except SyntaxError as e:
+                    syntax_errors.append(f"{rel}:{e.lineno or '?'}: {e.msg}")
+                    continue
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        total_funcs += 1
+                    elif isinstance(node, ast.ClassDef):
+                        total_classes += 1
 
-            # Optionally narrow into a focus area via file search
-            if request.focus:
-                pattern = f"**/*{request.focus}*"
-                search = await secretary.file_search(
-                    FileSearchRequest(pattern=pattern, repo_root=request.repo_root), client_id
+            findings.append(f"Inspected {len(touched)} file(s), ~{total_lines} lines total.")
+            py_count = sum(1 for p in touched if p.endswith(".py"))
+            if py_count:
+                findings.append(
+                    f"Python: {py_count} file(s), {total_funcs} function(s), "
+                    f"{total_classes} class(es)."
                 )
-                for m in getattr(search, "matches", []):
-                    fp = getattr(m, "path", None) or getattr(m, "file_path", None)
-                    if fp:
-                        touched.append(fp)
+            for err in syntax_errors[:10]:
+                findings.append(f"Syntax error: {err}")
 
             summary = f"Codebase at {request.repo_root} analyzed."
             if request.focus:
-                summary += f" Focus: {request.focus}."
-
+                if narrowed:
+                    summary += f" Focus '{request.focus}' matched {len(touched)} file(s)."
+                else:
+                    summary += f" Focus '{request.focus}' matched nothing; fell back to full scope."
             return AgentAnalyzeResult(
                 success=True,
                 summary=summary,
@@ -131,248 +290,32 @@ class AgentToolExecutor:
                 touched_paths=[],
             )
 
-    @rate_balanced(
-        max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
-    )
-    @monitored
-    async def plan(self, request: AgentPlanRequest, client_id: str = "default") -> AgentPlanResult:
-        """
-        Decompose a task into an execution plan.
-
-        Deterministic heuristic decomposition — no LLM call. Routes each step
-        to the appropriate sub-agent (coder for code, researcher for research,
-        secretary for analysis, self for review).
+    def _collect_files(self, root: Path, patterns: list[str]) -> list[str]:
+        """Collect repo-relative file paths matching any glob pattern.
 
         Args:
-            request: Planning request.
-            client_id: Client identifier for rate limiting.
+            root: Repository root.
+            patterns: Glob patterns (``**``-style, matched with fnmatch).
 
         Returns:
-            A plan with ordered steps.
+            Sorted list of POSIX-style relative paths.
         """
-        logger.info(f"Planning task: {request.task[:100]} (client: {client_id})")
-        task_lower = request.task.lower()
-
-        research_keywords = [
-            "research",
-            "search",
-            "investigate",
-            "find",
-            "look up",
-            "explore",
-            "learn about",
-            "what is",
-            "how does",
-            "compare",
-            "latest",
-        ]
-        analysis_keywords = [
-            "analy",
-            "understand the code",
-            "explain",
-            "review",
-            "map",
-            "architecture",
-            "structure",
-            "assess",
-            "audit",
-        ]
-
-        is_research = any(k in task_lower for k in research_keywords)
-        is_analysis = any(k in task_lower for k in analysis_keywords) and not is_research
-
-        steps: list[AgentPlanStep] = []
-
-        if is_analysis:
-            steps.append(
-                AgentPlanStep(
-                    title="Analyze codebase",
-                    description="Inspect the relevant files and structure to understand the current state.",
-                    delegate_to="secretary",
-                    dependencies=[],
-                )
-            )
-        elif is_research:
-            steps.append(
-                AgentPlanStep(
-                    title="Gather information",
-                    description="Search the web for current, accurate information on the topic.",
-                    delegate_to="researcher",
-                    dependencies=[],
-                )
-            )
-        else:
-            # Default: understand, then implement
-            steps.append(
-                AgentPlanStep(
-                    title="Analyze context",
-                    description="Inspect relevant files to understand the code that will be changed.",
-                    delegate_to="secretary",
-                    dependencies=[],
-                )
-            )
-
-        # Implementation step (unless it's purely analysis)
-        if not is_analysis:
-            steps.append(
-                AgentPlanStep(
-                    title="Implement changes",
-                    description=(
-                        "Write or modify code to accomplish the task. Delegated to the coder "
-                        "sub-agent, which owns all code-writing."
-                    ),
-                    delegate_to="coder",
-                    dependencies=[0] if steps else [],
-                )
-            )
-
-        # Final verification step
-        steps.append(
-            AgentPlanStep(
-                title="Review and verify",
-                description="Review the produced changes for correctness, quality, and completeness.",
-                delegate_to="self",
-                dependencies=list(range(len(steps))) if steps else [],
-            )
-        )
-
-        # Optional step-count hint: cap the plan
-        if request.steps_requested and request.steps_requested < len(steps):
-            steps = steps[: request.steps_requested]
-
-        reasoning = (
-            "Heuristic decomposition based on task keywords. Code changes are always "
-            "delegated to the coder sub-agent; analysis goes to the secretary; research "
-            "goes to the researcher; final verification stays with the agent itself."
-        )
-
-        # Enrich the rationale via the agent's own operator when configured.
-        # Heuristic steps stay (schema-stable); failures fall back silently.
-        try:
-            from ninja_coder.driver import run_operator_text
-
-            ok, text = await run_operator_text(
-                prompt=(
-                    "You are a planning assistant. In 3-6 sentences, outline an "
-                    "execution plan (analysis, implementation, verification) for the "
-                    "task below. Output text only; do not modify any files.\n\n"
-                    f"Task: {request.task}\nRepository: {request.repo_root}"
-                ),
-                repo_root=request.repo_root,
-                operator_env="NINJA_AGENT_OPERATOR",
-                model_env="NINJA_AGENT_MODEL",
-                timeout_sec=300,
-            )
-            if ok and text:
-                reasoning = text
-        except Exception as e:
-            logger.debug("agent plan operator enrichment skipped: %s", e)
-
-        return AgentPlanResult(success=True, plan=steps, reasoning=reasoning)
-
-    @rate_balanced(
-        max_calls=30, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=30.0
-    )
-    @monitored
-    async def delegate(
-        self, request: AgentDelegateRequest, client_id: str = "default"
-    ) -> AgentDelegateResult:
-        """
-        Delegate a subtask to the appropriate sub-agent.
-
-        - 'coder': writes code via the coder module.
-        - 'secretary': analyzes the codebase.
-        - 'researcher': performs a web search.
-
-        Args:
-            request: Delegation request.
-            client_id: Client identifier for rate limiting.
-
-        Returns:
-            Result summarizing what the sub-agent did.
-        """
-        logger.info(
-            f"Delegating to '{request.delegate_to}': {request.subtask[:80]} (client: {client_id})"
-        )
-
-        try:
-            if request.delegate_to == "coder":
-                return await self._delegate_coder(request, client_id)
-            elif request.delegate_to == "secretary":
-                return await self._delegate_secretary(request, client_id)
-            elif request.delegate_to == "researcher":
-                return await self._delegate_researcher(request, client_id)
-            else:
-                return AgentDelegateResult(
-                    success=False,
-                    summary=f"Unknown delegate target: {request.delegate_to}",
-                    delegate_to=request.delegate_to,
-                )
-        except Exception as e:
-            logger.error(f"Delegate to {request.delegate_to} failed: {e}", exc_info=True)
-            return AgentDelegateResult(
-                success=False,
-                summary=f"Delegation to {request.delegate_to} failed: {e}",
-                delegate_to=request.delegate_to,
-                raw_output="",
-            )
-
-    async def _delegate_coder(
-        self, request: AgentDelegateRequest, client_id: str
-    ) -> AgentDelegateResult:
-        from ninja_coder.models import SimpleTaskRequest
-
-        coder = self._get_coder()
-        model_class = request.model_class or "smart"
-        coder_request = SimpleTaskRequest(
-            task=request.subtask,
-            repo_root=request.repo_root,
-            context_paths=request.context_paths,
-            model_class=model_class,  # type: ignore[arg-type]
-        )
-        result = await coder.simple_task(coder_request, client_id)
-        return AgentDelegateResult(
-            success=result.status == "ok",
-            summary=result.summary,
-            delegate_to="coder",
-            raw_output=result.notes or "",
-        )
-
-    async def _delegate_secretary(
-        self, request: AgentDelegateRequest, client_id: str
-    ) -> AgentDelegateResult:
-        from ninja_secretary.models import CodebaseReportRequest
-
-        secretary = self._get_secretary()
-        result = await secretary.codebase_report(
-            CodebaseReportRequest(repo_root=request.repo_root), client_id
-        )
-        return AgentDelegateResult(
-            success=True,
-            summary=getattr(result, "report", "")[:2000] or "Codebase analyzed.",
-            delegate_to="secretary",
-            raw_output="",
-        )
-
-    async def _delegate_researcher(
-        self, request: AgentDelegateRequest, client_id: str
-    ) -> AgentDelegateResult:
-        from ninja_researcher.models import WebSearchRequest
-
-        researcher = self._get_researcher()
-        result = await researcher.web_search(WebSearchRequest(query=request.subtask), client_id)
-        sources = getattr(result, "results", []) or []
-        summary_lines = []
-        for s in sources[:5]:
-            title = getattr(s, "title", "") or getattr(s, "url", "")
-            url = getattr(s, "url", "")
-            summary_lines.append(f"- {title}: {url}")
-        return AgentDelegateResult(
-            success=True,
-            summary="\n".join(summary_lines) or "Search completed, no results.",
-            delegate_to="researcher",
-            raw_output="",
-        )
+        matched: set[str] = set()
+        all_files: list[str] | None = None
+        for pattern in patterns:
+            # Fast path: pathlib glob handles ** patterns natively.
+            try:
+                for path in root.glob(pattern):
+                    if path.is_file():
+                        matched.add(path.relative_to(root).as_posix())
+                continue
+            except (OSError, ValueError):
+                pass
+            # Fallback: fnmatch over a full walk.
+            if all_files is None:
+                all_files = [p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()]
+            matched.update(fnmatch.filter(all_files, pattern))
+        return sorted(matched)
 
     @rate_balanced(
         max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
@@ -381,11 +324,11 @@ class AgentToolExecutor:
     async def review(
         self, request: AgentReviewRequest, client_id: str = "default"
     ) -> AgentReviewResult:
-        """
-        Review files without modifying them.
+        """Review files without modifying them.
 
-        Heuristic static analysis: long functions, empty except blocks, missing
-        top-level docstrings. Never writes to disk.
+        Deterministic heuristic static analysis only: long blocks, empty
+        except handlers, missing top-level docstrings, syntax errors.
+        No LLM enrichment — the agent must stay free of coder-package imports.
 
         Args:
             request: Review request.
@@ -397,9 +340,17 @@ class AgentToolExecutor:
         logger.info(f"Reviewing {len(request.file_paths)} files (client: {client_id})")
         findings: list[AgentReviewFinding] = []
         root = Path(request.repo_root)
-        context_parts: list[str] = []
 
         for rel in request.file_paths:
+            if request.review_focus and request.review_focus.lower() not in rel.lower():
+                findings.append(
+                    AgentReviewFinding(
+                        severity="info",
+                        file_path=rel,
+                        message=(f"Skipped: outside review focus '{request.review_focus}'."),
+                    )
+                )
+                continue
             path = root / rel
             if not path.exists() or not path.is_file():
                 findings.append(
@@ -412,7 +363,6 @@ class AgentToolExecutor:
                 continue
 
             text = path.read_text(encoding="utf-8", errors="ignore")
-            context_parts.append(f"### {rel}\n{text[:4000]}")
 
             # Basic line count
             lines = text.splitlines()
@@ -426,29 +376,6 @@ class AgentToolExecutor:
             f"Reviewed {len(request.file_paths)} files, "
             f"found {len(findings)} finding(s). No files modified."
         )
-
-        # Enrich the summary via the agent's own operator when configured.
-        try:
-            from ninja_coder.driver import run_operator_text
-
-            focus = f" Focus: {request.review_focus}." if request.review_focus else ""
-            ok, text = await run_operator_text(
-                prompt=(
-                    "You are a code reviewer. Give a concise review summary (5-10 "
-                    "sentences) for the files below: correctness, quality, risks."
-                    f"{focus} Output text only; do NOT modify any files.\n\n"
-                    + "".join(context_parts)
-                ),
-                repo_root=request.repo_root,
-                operator_env="NINJA_AGENT_OPERATOR",
-                model_env="NINJA_AGENT_MODEL",
-                timeout_sec=300,
-            )
-            if ok and text:
-                summary = f"{summary}\n\n{text}"
-        except Exception as e:
-            logger.debug("agent review operator enrichment skipped: %s", e)
-
         return AgentReviewResult(success=True, findings=findings, summary=summary)
 
     def _check_long_lines(self, rel: str, lines: list[str]) -> list[AgentReviewFinding]:

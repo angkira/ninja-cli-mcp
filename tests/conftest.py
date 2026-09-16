@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -20,6 +21,24 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
     from pytest import MonkeyPatch
+
+
+@pytest.fixture(autouse=True)
+def _isolate_environ() -> Generator[None, None, None]:
+    """Snapshot/restore ``os.environ`` around every test.
+
+    ``monkeypatch.setenv/delenv`` already rolls back its own changes, but
+    production code such as ``ConfigManager.export_env()`` (which loads the
+    developer's real ``~/.ninja-mcp.env`` into the process env) writes to
+    ``os.environ`` directly. Without this guard those values
+    (``NINJA_CODER_MODEL``, ``NINJA_MODEL_QUICK``, ...) leak into all
+    subsequently collected tests and make model-resolution tests order
+    dependent. The real ``~/.ninja-mcp.env`` file itself is never touched.
+    """
+    saved = os.environ.copy()
+    yield
+    os.environ.clear()
+    os.environ.update(saved)
 
 
 @pytest.fixture(autouse=True)

@@ -26,6 +26,26 @@ from ninja_common.operator_models import (
 OPENROUTER_ID = "openrouter/deepseek/deepseek-v4.1-flash"
 
 
+@pytest.fixture(autouse=True)
+def _clear_model_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear task-specific / model-class env overrides for determinism.
+
+    ``select_model`` honors ``NINJA_MODEL_QUICK/SEQUENTIAL/PARALLEL`` and
+    ``select_by_class`` honors ``NINJA_MODEL_CLASS_*``; a developer's real
+    environment (e.g. loaded from ``~/.ninja-mcp.env`` by an earlier test)
+    would otherwise hijack these assertions.
+    """
+    for key in (
+        "NINJA_MODEL_QUICK",
+        "NINJA_MODEL_SEQUENTIAL",
+        "NINJA_MODEL_PARALLEL",
+        "NINJA_MODEL_CLASS_SMART",
+        "NINJA_MODEL_CLASS_BALANCED",
+        "NINJA_MODEL_CLASS_FAST",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -63,6 +83,56 @@ def test_resolve_operator_model_swaps_incompatible() -> None:
     assert resolve_operator_model(OPENROUTER_ID, "codex") == operator_default_model("codex")
     assert resolve_operator_model(OPENROUTER_ID, "opencode") == OPENROUTER_ID
     assert resolve_operator_model("gpt-5.6-luna", "aider") == operator_default_model("aider")
+
+
+def test_resolve_operator_model_normalizes_junie_prefix() -> None:
+    assert resolve_operator_model("junie/deepseek-v4-flash", "junie") == "deepseek-v4-flash"
+    assert resolve_operator_model("openai/gpt-5.6-luna", "junie") == "gpt-5.6-luna"
+
+
+def test_resolve_operator_model_resolves_junie_alias() -> None:
+    assert resolve_operator_model("grok", "junie") == "grok-4.6"
+
+
+def test_resolve_operator_model_junie_foreign_falls_back() -> None:
+    assert resolve_operator_model(OPENROUTER_ID, "junie") == operator_default_model("junie")
+
+
+def test_junie_versioned_ids_are_compatible() -> None:
+    for model in ("deepseek-v4-flash", "gemini-3.8-flash", "grok-4.6", "gpt-5.6-luna"):
+        assert is_model_compatible(model, "junie") is True
+        assert resolve_operator_model(model, "junie") == model
+
+
+@pytest.mark.parametrize("complexity", list(TaskComplexity))
+def test_selector_never_returns_foreign_model_for_junie(complexity: TaskComplexity) -> None:
+    selector = ModelSelector(default_model=OPENROUTER_ID, operator="junie")
+    assert selector.select_model(complexity).model == operator_default_model("junie")
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["deepseek-v4-flash", "gemini-3.8-flash", "grok-4.6", "gpt-5.6-luna"],
+)
+def test_selector_keeps_junie_pin(model: str) -> None:
+    """A pinned Junie model survives routing for every task type."""
+    for complexity in TaskComplexity:
+        selector = ModelSelector(default_model=model, operator="junie")
+        assert selector.select_model(complexity).model == model
+
+
+def test_from_env_junie_defaults_to_junie_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in (
+        "NINJA_MODEL",
+        "NINJA_CODER_MODEL",
+        "OPENROUTER_MODEL",
+        "OPENAI_MODEL",
+        "NINJA_MODEL_CLASS_SMART",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("NINJA_CODE_BIN", "junie")
+    config = NinjaConfig.from_env()
+    assert config.model == operator_default_model("junie")
 
 
 @pytest.mark.parametrize("complexity", list(TaskComplexity))

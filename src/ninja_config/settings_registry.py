@@ -238,6 +238,38 @@ SETTINGS: list[SettingDef] = [
         "NINJA_JUNIE_TIMEOUT", "Junie Timeout (s)", "Timeout for the Junie strategy", "600", "int"
     ),
     SettingDef(
+        "NINJA_JUNIE_EFFORT",
+        "Junie Effort",
+        "Effort level for Junie tasks (low|medium|high); empty = CLI default",
+        "",
+        "choice",
+        ("low", "medium", "high"),
+    ),
+    SettingDef(
+        "NINJA_JUNIE_EFFORT_QUICK",
+        "Junie Effort (Quick)",
+        "Effort override for quick tasks; empty = follow NINJA_JUNIE_EFFORT",
+        "",
+        "choice",
+        ("low", "medium", "high"),
+    ),
+    SettingDef(
+        "NINJA_JUNIE_EFFORT_SEQUENTIAL",
+        "Junie Effort (Sequential)",
+        "Effort override for sequential tasks; empty = follow NINJA_JUNIE_EFFORT",
+        "",
+        "choice",
+        ("low", "medium", "high"),
+    ),
+    SettingDef(
+        "NINJA_JUNIE_EFFORT_PARALLEL",
+        "Junie Effort (Parallel)",
+        "Effort override for parallel tasks; empty = follow NINJA_JUNIE_EFFORT",
+        "",
+        "choice",
+        ("low", "medium", "high"),
+    ),
+    SettingDef(
         "NINJA_CODEX_TIMEOUT", "Codex Timeout (s)", "Timeout for the Codex strategy", "600", "int"
     ),
     # ── Retries ──────────────────────────────────────────────────────────

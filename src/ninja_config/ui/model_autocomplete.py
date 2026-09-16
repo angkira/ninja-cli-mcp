@@ -46,6 +46,7 @@ from ninja_config.model_selector import (
 )
 from ninja_config.ui.model_cache import (
     cached_discover_providers,
+    cached_get_junie_models,
     cached_get_provider_models,
     filter_models,
 )
@@ -66,8 +67,41 @@ MAX_SUGGESTIONS: int = 30
 
 
 def _native_provider_models(provider: str) -> set[str]:
-    """Return the known static model ids for a native provider (codex, junie, …)."""
+    """Return the known model ids for a native provider (codex, junie, …).
+
+    For junie the dynamic catalogue (CLI probe → settings.json → static) is
+    consulted so newly listed ids are still classified under ``junie``;
+    failures fall back to the static list.
+    """
+    if provider == "junie":
+        try:
+            return {m.id for m in cached_get_junie_models()}
+        except Exception:
+            pass
     return {mid for mid, _name, _desc in PROVIDER_MODELS.get(provider, [])}
+
+
+def resolve_search_models(operator: str, provider: str) -> list[Model]:
+    """Resolve the searchable model list for ``(operator, provider)``.
+
+    Junie is resolved dynamically at search time (cached CLI probe, TTL) —
+    never from the static list alone; the static catalogue in
+    :func:`static_models_for_provider` remains the last-resort fallback when
+    discovery yields nothing.
+
+    Args:
+        operator: Operator id (e.g. ``"junie"``).
+        provider: Provider id (e.g. ``"junie"``).
+
+    Returns:
+        Candidate models (possibly empty — callers apply static fallbacks).
+    """
+    if operator == "junie":
+        try:
+            return cached_get_junie_models()
+        except Exception:
+            return []
+    return cached_get_provider_models(operator, provider)
 
 
 def guess_provider(model_id: str, operator: str | None = None) -> str:
@@ -437,7 +471,7 @@ class ModelRolePicker(Vertical):
     @work(thread=True)
     def _search_models(self, query: str, provider: str) -> None:
         operator = self._operator()
-        models = cached_get_provider_models(operator, provider)
+        models = resolve_search_models(operator, provider)
         if not models:
             models = static_models_for_provider(provider, operator)
         results = filter_models(models, query, MAX_SUGGESTIONS)

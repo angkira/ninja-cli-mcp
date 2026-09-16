@@ -1,10 +1,11 @@
 """
 MCP stdio server for ninja-agent module.
 
-The agent is an orchestrator: it plans, analyzes, delegates, and reviews,
-but never writes code itself. Code-writing is delegated to the coder module.
-Analysis is delegated to the secretary module, and web research to the
-researcher module.
+The agent is AUTONOMOUS: guarded shell, log tails, daemon/process snapshots,
+read-only job overviews, plus its own file analysis and heuristic review.
+It knows nothing about coder/researcher/secretary and never delegates to
+them — code-writing is invoked directly via coder_* tools by the central
+model, not through the agent.
 
 Usage:
     python -m ninja_agent.server
@@ -23,14 +24,19 @@ from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, TextContent, Tool, ToolExecution
 
 from ninja_agent.models import (
+    DELEGATE_MIGRATION,
     AgentAnalyzeRequest,
     AgentAnalyzeResult,
-    AgentDelegateRequest,
-    AgentDelegateResult,
-    AgentPlanRequest,
-    AgentPlanResult,
+    AgentExecCommandRequest,
+    AgentExecCommandResult,
+    AgentJobsOverviewRequest,
+    AgentJobsOverviewResult,
+    AgentProcessesRequest,
+    AgentProcessesResult,
     AgentReviewRequest,
     AgentReviewResult,
+    AgentTailLogsRequest,
+    AgentTailLogsResult,
 )
 from ninja_agent.tools import AgentToolExecutor
 from ninja_common.logging_utils import get_logger, setup_logging
@@ -42,14 +48,105 @@ setup_logging(level=logging.INFO)
 logger = get_logger(__name__)
 
 
-# Tool definitions
+# Tool definitions — one tool per capability, all agent_*, no delegate_*.
 TOOLS: list[Tool] = [
+    Tool(
+        name="agent_exec_command",
+        execution=ToolExecution(taskSupport="optional"),
+        description=(
+            "Run a guarded, non-interactive shell command (tests, git status, ls, "
+            "builds). Destructive patterns are refused; mutating commands require "
+            "allow_write=True. Output is capped and redacted."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Shell command to execute",
+                },
+                "repo_root": {
+                    "type": "string",
+                    "description": "Repository root (default cwd / safety scope)",
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Working directory (defaults to repo_root)",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Kill the command after this many seconds",
+                },
+                "allow_write": {
+                    "type": "boolean",
+                    "description": "Allow file-mutating commands",
+                },
+            },
+            "required": ["command", "repo_root"],
+        },
+    ),
+    Tool(
+        name="agent_tail_logs",
+        execution=ToolExecution(taskSupport="optional"),
+        description=(
+            "Return capped, redacted log tails (daemon .log files / structured logs). "
+            "Never returns more than 200 lines/entries."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "module": {
+                    "type": "string",
+                    "description": "Daemon/module name (e.g. 'coder')",
+                },
+                "level": {
+                    "type": "string",
+                    "description": "Optional level filter (INFO/ERROR/...)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max entries (capped at 200)",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session filter",
+                },
+            },
+            "required": [],
+        },
+    ),
+    Tool(
+        name="agent_processes",
+        execution=ToolExecution(taskSupport="optional"),
+        description=("Snapshot daemon statuses plus host resource stats. Strictly read-only."),
+        inputSchema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    ),
+    Tool(
+        name="agent_jobs_overview",
+        execution=ToolExecution(taskSupport="optional"),
+        description=("Summarize pending background jobs/tasks. Strictly read-only."),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max jobs to include",
+                },
+            },
+            "required": [],
+        },
+    ),
     Tool(
         name="agent_analyze",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Analyze a codebase: structure, file counts, and optionally a focus area. "
-            "Delegates to the secretary module. Never modifies files."
+            "Analyze a codebase with direct file reads + AST/grep heuristics: "
+            "structure, file/line counts, function/class counts, syntax errors, "
+            "optionally narrowed by a focus term. Never modifies files."
         ),
         inputSchema={
             "type": "object",
@@ -72,81 +169,12 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="agent_plan",
-        execution=ToolExecution(taskSupport="optional"),
-        description=(
-            "Decompose a high-level task into an ordered execution plan. Each step is "
-            "routed to the appropriate sub-agent (coder for code, researcher for research, "
-            "secretary for analysis, self for review)."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "task": {
-                    "type": "string",
-                    "description": "High-level task description",
-                },
-                "repo_root": {
-                    "type": "string",
-                    "description": "Repository root path",
-                },
-                "context_paths": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Paths relevant to the task",
-                },
-                "steps_requested": {
-                    "type": "integer",
-                    "description": "Optional hint for number of steps",
-                },
-            },
-            "required": ["task", "repo_root"],
-        },
-    ),
-    Tool(
-        name="agent_delegate",
-        execution=ToolExecution(taskSupport="optional"),
-        description=(
-            "Delegate a subtask to a specific sub-agent: 'coder' writes code, 'researcher' "
-            "does a web search, 'secretary' analyzes the codebase. Use this to dispatch "
-            "work to specialized agents."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "subtask": {
-                    "type": "string",
-                    "description": "Subtask description",
-                },
-                "repo_root": {
-                    "type": "string",
-                    "description": "Repository root path",
-                },
-                "delegate_to": {
-                    "type": "string",
-                    "enum": ["coder", "researcher", "secretary"],
-                    "description": "Sub-agent to invoke",
-                },
-                "context_paths": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Paths relevant to the subtask",
-                },
-                "model_class": {
-                    "type": "string",
-                    "enum": ["smart", "balanced", "fast"],
-                    "description": "Model tier for the coder sub-agent (default: smart)",
-                },
-            },
-            "required": ["subtask", "repo_root", "delegate_to"],
-        },
-    ),
-    Tool(
         name="agent_review",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Review files without modifying them. Heuristic static analysis for long "
-            "blocks, empty except handlers, missing docstrings, and syntax errors."
+            "Review files without modifying them. Deterministic heuristic static "
+            "analysis: long blocks, empty except handlers, missing docstrings, "
+            "syntax errors."
         ),
         inputSchema={
             "type": "object",
@@ -172,6 +200,19 @@ TOOLS: list[Tool] = [
 
 # Look up tool definitions by name (used for task-mode validation).
 _TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
+
+#: Removed tool names kept as explicit migration errors.
+_REMOVED_TOOLS = frozenset(
+    {
+        "agent_delegate",
+        "agent_delegate_coder",
+        "agent_delegate_researcher",
+        "agent_delegate_secretary",
+        "agent_delegate_runner",
+        "agent_delegate_git",
+        "agent_plan",
+    }
+)
 
 
 def create_server() -> Server:
@@ -202,7 +243,51 @@ def create_server() -> Server:
             try:
                 client_id = arguments.get("client_id", "default")
 
-                if name == "agent_analyze":
+                if name == "agent_exec_command":
+                    exec_request = AgentExecCommandRequest(**arguments)
+                    exec_result: AgentExecCommandResult = await executor.exec_command(
+                        exec_request, client_id
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(exec_result.model_dump(), indent=2)
+                        )
+                    ]
+
+                elif name == "agent_tail_logs":
+                    logs_request = AgentTailLogsRequest(**arguments)
+                    logs_result: AgentTailLogsResult = await executor.tail_logs(
+                        logs_request, client_id
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(logs_result.model_dump(), indent=2)
+                        )
+                    ]
+
+                elif name == "agent_processes":
+                    procs_request = AgentProcessesRequest(**arguments)
+                    procs_result: AgentProcessesResult = await executor.processes(
+                        procs_request, client_id
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(procs_result.model_dump(), indent=2)
+                        )
+                    ]
+
+                elif name == "agent_jobs_overview":
+                    jobs_request = AgentJobsOverviewRequest(**arguments)
+                    jobs_result: AgentJobsOverviewResult = await executor.jobs_overview(
+                        jobs_request, client_id
+                    )
+                    return [
+                        TextContent(
+                            type="text", text=json.dumps(jobs_result.model_dump(), indent=2)
+                        )
+                    ]
+
+                elif name == "agent_analyze":
                     analyze_request = AgentAnalyzeRequest(**arguments)
                     analyze_result: AgentAnalyzeResult = await executor.analyze(
                         analyze_request, client_id
@@ -210,26 +295,6 @@ def create_server() -> Server:
                     return [
                         TextContent(
                             type="text", text=json.dumps(analyze_result.model_dump(), indent=2)
-                        )
-                    ]
-
-                elif name == "agent_plan":
-                    plan_request = AgentPlanRequest(**arguments)
-                    plan_result: AgentPlanResult = await executor.plan(plan_request, client_id)
-                    return [
-                        TextContent(
-                            type="text", text=json.dumps(plan_result.model_dump(), indent=2)
-                        )
-                    ]
-
-                elif name == "agent_delegate":
-                    delegate_request = AgentDelegateRequest(**arguments)
-                    delegate_result: AgentDelegateResult = await executor.delegate(
-                        delegate_request, client_id
-                    )
-                    return [
-                        TextContent(
-                            type="text", text=json.dumps(delegate_result.model_dump(), indent=2)
                         )
                     ]
 
@@ -243,6 +308,9 @@ def create_server() -> Server:
                             type="text", text=json.dumps(review_result.model_dump(), indent=2)
                         )
                     ]
+
+                elif name in _REMOVED_TOOLS:
+                    raise ValueError(DELEGATE_MIGRATION)
 
                 else:
                     raise ValueError(f"Unknown tool: {name}")

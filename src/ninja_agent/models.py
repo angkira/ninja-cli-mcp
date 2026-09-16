@@ -1,20 +1,121 @@
 """
 Pydantic models for Ninja Agent MCP tools.
 
-The agent module is an orchestrator: it plans, analyzes, delegates, and
-reviews — but never writes code itself. Code-writing is delegated to the
-coder module. This module defines the API surface for the agent tools.
+The agent is AUTONOMOUS: it owns shell/logs/processes-jobs ops plus its own
+file analysis and review. It knows nothing about coder/researcher/secretary
+and never delegates to them — code-writing is invoked directly via coder_*
+tools by the central model, not through the agent.
 """
 
 from __future__ import annotations
-
-from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
 # ============================================================================
-# Request Models
+# Migration hint for every removed ``agent_delegate_*`` / ``agent_plan`` call.
+# ============================================================================
+
+#: Shared by the executor, the MCP server, and the CLI parser.
+DELEGATE_MIGRATION = (
+    "ninja-agent is autonomous: agent_delegate_* / agent_plan were removed. "
+    "The agent owns only shell/logs/processes/jobs plus its own "
+    "analyze/review. For code-writing call coder directly via coder_* tools "
+    "(not through the agent)."
+)
+
+
+# ============================================================================
+# agent_exec_command — guarded shell via the in-process runner
+# ============================================================================
+
+
+class AgentExecCommandRequest(BaseModel):
+    """Request to run a guarded, non-interactive shell command."""
+
+    command: str = Field(..., description="Shell command to execute")
+    repo_root: str = Field(..., description="Repository root (default cwd / safety scope)")
+    cwd: str | None = Field(default=None, description="Working directory (defaults to repo_root)")
+    timeout: int = Field(default=120, description="Kill the command after this many seconds")
+    allow_write: bool = Field(
+        default=False, description="Must be True for commands that mutate files/state"
+    )
+
+
+class AgentExecCommandResult(BaseModel):
+    """Outcome of a guarded shell invocation."""
+
+    success: bool = Field(..., description="Whether the command exited with code 0")
+    summary: str = Field(..., description="Human-readable outcome summary")
+    returncode: int | None = Field(default=None, description="Process exit code")
+    stdout: str = Field(default="", description="Capped, redacted stdout")
+    stderr: str = Field(default="", description="Capped, redacted stderr")
+    truncated: bool = Field(default=False, description="True when output was truncated")
+    safety_warnings: list[str] = Field(default_factory=list, description="Safety dry-run notes")
+
+
+# ============================================================================
+# agent_tail_logs — capped, redacted log tails
+# ============================================================================
+
+
+class AgentTailLogsRequest(BaseModel):
+    """Request for a capped, redacted log tail."""
+
+    module: str | None = Field(default=None, description="Daemon/module name (e.g. 'coder')")
+    level: str | None = Field(default=None, description="Optional level filter (INFO/ERROR/...)")
+    limit: int = Field(default=50, description="Max entries (capped at 200)")
+    session_id: str | None = Field(default=None, description="Optional session filter")
+
+
+class AgentTailLogsResult(BaseModel):
+    """Redacted log-tail result."""
+
+    success: bool = Field(..., description="Whether the query succeeded")
+    summary: str = Field(..., description="Human-readable summary")
+    entries: list[str] = Field(default_factory=list, description="Redacted log lines")
+    source: str = Field(default="", description="Where entries came from")
+
+
+# ============================================================================
+# agent_processes — read-only daemon + resource snapshot
+# ============================================================================
+
+
+class AgentProcessesRequest(BaseModel):
+    """Request for a daemon/resource snapshot (no fields: strictly read-only)."""
+
+
+class AgentProcessesResult(BaseModel):
+    """Read-only daemon + host resource snapshot."""
+
+    success: bool = Field(..., description="Whether the snapshot succeeded")
+    summary: str = Field(..., description="Human-readable summary")
+    daemons: dict = Field(default_factory=dict, description="Daemon status map")
+    resources: dict = Field(default_factory=dict, description="Host resource stats")
+
+
+# ============================================================================
+# agent_jobs_overview — read-only job summary
+# ============================================================================
+
+
+class AgentJobsOverviewRequest(BaseModel):
+    """Request for a read-only background-job overview."""
+
+    limit: int = Field(default=20, description="Max jobs to include")
+
+
+class AgentJobsOverviewResult(BaseModel):
+    """Read-only job summary list."""
+
+    success: bool = Field(..., description="Whether the query succeeded")
+    summary: str = Field(..., description="Human-readable summary")
+    jobs: list[dict] = Field(default_factory=list, description="Job summary entries")
+
+
+# ============================================================================
+# agent_analyze — own file analysis (direct reads + ast/grep, no secretary)
 # ============================================================================
 
 
@@ -43,69 +144,15 @@ class AgentAnalyzeResult(BaseModel):
     )
 
 
-class AgentPlanStep(BaseModel):
-    """A single step in an execution plan."""
-
-    title: str = Field(..., description="Short title of the step")
-    description: str = Field(..., description="What this step accomplishes")
-    delegate_to: Literal["coder", "researcher", "secretary", "self"] = Field(
-        ..., description="Which sub-agent handles this step"
-    )
-    dependencies: list[int] = Field(
-        default_factory=list, description="Indices of steps this step depends on"
-    )
-
-
-class AgentPlanRequest(BaseModel):
-    """Request to decompose a task into an execution plan."""
-
-    task: str = Field(..., description="High-level task description")
-    repo_root: str = Field(..., description="Repository root path")
-    context_paths: list[str] = Field(default_factory=list, description="Paths relevant to the task")
-    steps_requested: int | None = Field(
-        default=None, description="Optional hint for number of steps"
-    )
-
-
-class AgentPlanResult(BaseModel):
-    """Result of plan decomposition."""
-
-    success: bool = Field(..., description="Whether planning succeeded")
-    plan: list[AgentPlanStep] = Field(default_factory=list, description="Ordered execution steps")
-    reasoning: str = Field(default="", description="Explanation of the plan")
-
-
-class AgentDelegateRequest(BaseModel):
-    """Request to delegate a subtask to a specific sub-agent."""
-
-    subtask: str = Field(..., description="Subtask description")
-    repo_root: str = Field(..., description="Repository root path")
-    delegate_to: Literal["coder", "researcher", "secretary"] = Field(
-        ..., description="Sub-agent to invoke"
-    )
-    context_paths: list[str] = Field(
-        default_factory=list, description="Paths relevant to the subtask"
-    )
-    model_class: Literal["smart", "balanced", "fast"] | None = Field(
-        default=None, description="Model tier for the coder sub-agent (default: smart)"
-    )
-
-
-class AgentDelegateResult(BaseModel):
-    """Result of a delegation call."""
-
-    success: bool = Field(..., description="Whether the delegate succeeded")
-    summary: str = Field(..., description="Concise summary from the sub-agent")
-    delegate_to: str = Field(..., description="Sub-agent that was invoked")
-    raw_output: str = Field(default="", description="Raw output from the sub-agent")
+# ============================================================================
+# agent_review — own heuristic static review (no LLM, never writes)
+# ============================================================================
 
 
 class AgentReviewFinding(BaseModel):
     """A single review finding."""
 
-    severity: Literal["critical", "warning", "info"] = Field(
-        ..., description="Severity of the finding"
-    )
+    severity: str = Field(..., description="Severity of the finding")
     file_path: str = Field(..., description="File the finding applies to")
     line: int | None = Field(default=None, description="Line number, if applicable")
     message: str = Field(..., description="Human-readable finding message")

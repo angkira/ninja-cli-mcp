@@ -2,10 +2,58 @@
 
 ## Session Information
 
-**Session ID:** release-1.0.5-20260913
-**Started At:** 2026-09-13
-**Last Updated:** 2026-09-13
-**Session Type:** Release 1.0.5 + release automation + codex strategy + updater
+**Session ID:** junie-models-effort-20260916
+**Started At:** 2026-09-16
+**Last Updated:** 2026-09-16
+**Session Type:** Feature - Junie versioned models + normalizer + effort (NO COMMIT per instructions)
+
+## Latest Session (2026-09-16): Junie catalog / normalizer / effort
+
+**Verified live first (3 cheap `say hi` probes, junie CLI):**
+- `gpt-5.6-luna` → SUPPORTED (exit 0, "Hi!") — despite being a Codex-model id.
+- `gemini-3.8-flash` → SUPPORTED (exit 0). `grok-4.6` → SUPPORTED (exit 0).
+- `~/.junie/settings.json`: effortPerModel grok-4.6/gemini-3.8-flash/deepseek-v4-flash,
+  modelForLaunch gemini-3.8-flash.
+
+**Delivered (uncommitted, no commit per instructions):**
+1. `src/ninja_common/defaults.py` — JUNIE_MODELS: versioned ids first
+   (deepseek-v4-flash, gemini-3.8-flash, grok-4.6, gpt-5.6-luna) + legacy
+   shorts kept; new JUNIE_MODEL_ALIASES (gpt/gemini-flash/grok → versioned),
+   JUNIE_EFFORT_LEVELS; MODEL_DATABASE +3 junie entries. OPERATOR_STATIC_MODELS /
+   PROVIDER_MODELS / OPERATOR_NATIVE_MODELS / OPERATOR_DEFAULT_MODELS sync for free
+   (reference JUNIE_MODELS; default stays deepseek-v4-flash).
+2. `src/ninja_common/operator_models.py` — normalize_junie_model (prefix-strip +
+   alias + case-canonicalize, never raises), resolve_junie_model (loud ValueError
+   with valid list), resolve_junie_effort (per-call → NINJA_JUNIE_EFFORT_<TYPE> →
+   NINJA_JUNIE_EFFORT → None; invalid raises); resolve_operator_model normalizes
+   junie ids before the compat check (silent fallback preserved).
+3. `src/ninja_coder/strategies/junie_strategy.py` — build_command: loud model
+   resolve + `--effort <v>` from extra/env, omitted when unset; metadata effort.
+4. `src/ninja_coder/driver.py` — `_additional_flags_for_task(use_coding_plan,
+   task_type)` (junie-gated effort), used at both build_command call sites.
+5. `src/ninja_config/settings_registry.py` — NINJA_JUNIE_EFFORT (+_QUICK/_SEQUENTIAL/
+   _PARALLEL), choice low|medium|high, default "" (TUI picks up automatically).
+6. Tests: test_junie_strategy (normalize/alias/effort/unknown→ValueError/driver
+   passthrough), test_operator_model_routing (junie pin kept, prefix/alias resolve),
+   test_model_picker_operator (guess_provider junie ids → junie, static coverage).
+7. `guess_provider` needed NO code change: with operator=junie all 4 versioned ids
+   resolve via the synced native catalogue (previously gpt-5.6-luna → openai).
+
+**Verification:** ruff check/format + mypy clean; 91 targeted + 212 adjacent tests pass
+(existing failures: none new — pre-existing tree changes from another session in
+CLAUDE.md/tests/conftest.py/test_driver.py/test_model_selector.py/test_driver_unit.py
+untouched). Live e2e (NINJA_CODE_BIN=junie, MODEL=gemini-3.8-flash, EFFORT=low,
+/tmp git repo, trivial hello-junie.txt task): SUCCESS, MODEL=gemini-3.8-flash,
+file created with exact content, /tmp cleaned. In-process chain check:
+`--model gemini-3.8-flash ... --effort low` confirmed in built command.
+
+## Notes for Next Session
+- Pre-existing uncommitted changes from ANOTHER session (env-isolation fixtures etc.)
+  were left untouched; this session's files: defaults.py, operator_models.py,
+  junie_strategy.py, driver.py, settings_registry.py + 3 test files. No commit made.
+- Bare `sonnet`/`opus` still pass through to Junie un-remapped (no verified
+  versioned target; budget allowed only 3-4 probes).
+- `~/.ninja-mcp.env` not modified (env overrides used only in launch environment).
 
 ## Latest Session (2026-09-13): Codex models in config + daemon autostart
 

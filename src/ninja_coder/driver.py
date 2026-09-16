@@ -64,6 +64,7 @@ from ninja_common.mcp_tasks import (
 from ninja_common.operator_models import (
     operator_default_model,
     operator_from_bin,
+    resolve_junie_effort,
     resolve_operator_model,
 )
 from ninja_common.path_utils import ensure_internal_dirs, safe_join
@@ -874,6 +875,33 @@ class NinjaDriver:
                 operator=self._strategy.name,
             )
         return self._selector_cache
+
+    def _additional_flags_for_task(
+        self, use_coding_plan: bool, task_type: str
+    ) -> dict[str, Any] | None:
+        """Assemble per-task CLI flags.
+
+        Carries the Coding Plan opt-in (opencode) and the Junie effort pin:
+        per-task-type env (``NINJA_JUNIE_EFFORT_QUICK/SEQUENTIAL/PARALLEL``)
+        wins over the global ``NINJA_JUNIE_EFFORT``; unset means the flag is
+        omitted and the CLI decides. Effort is only attached for the Junie
+        strategy so it never leaks into other CLIs.
+
+        Args:
+            use_coding_plan: Whether the Coding Plan API should be used.
+            task_type: Task type (``quick``/``sequential``/``parallel``).
+
+        Returns:
+            Flags dict, or ``None`` when no flag applies.
+        """
+        flags: dict[str, Any] = {}
+        if use_coding_plan:
+            flags["use_coding_plan"] = True
+        if self._strategy.name == "junie":
+            effort = resolve_junie_effort(task_type=task_type)
+            if effort is not None:
+                flags["effort"] = effort
+        return flags or None
 
     def _build_prompt_text(self, instruction: dict[str, Any], repo_root: str) -> str:
         """
@@ -2103,7 +2131,7 @@ class NinjaDriver:
                 )
             else:
                 # Use standard command builder
-                additional_flags = {"use_coding_plan": use_coding_plan} if use_coding_plan else None
+                additional_flags = self._additional_flags_for_task(use_coding_plan, task_type)
 
                 cli_result = self._strategy.build_command(
                     prompt=prompt,
@@ -2492,7 +2520,7 @@ class NinjaDriver:
             context_paths = file_scope.get("context_paths", [])
 
             # Build command using strategy with session parameters
-            additional_flags = {"use_coding_plan": use_coding_plan} if use_coding_plan else None
+            additional_flags = self._additional_flags_for_task(use_coding_plan, task_type)
 
             cli_result = self._strategy.build_command(
                 prompt=prompt,

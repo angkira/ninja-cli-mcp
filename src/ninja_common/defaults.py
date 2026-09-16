@@ -117,15 +117,35 @@ CLAUDE_CODE_MODELS = [
 # =============================================================================
 # JUNIE MODELS (JetBrains Junie CLI, host-auth — flat --model ids)
 # =============================================================================
+#
+# Versioned ids are verified live (``junie --model <id> --task "say hi"``,
+# 2026-09-16): deepseek-v4-flash, gemini-3.8-flash, grok-4.6, gpt-5.6-luna
+# (the latter is served by Junie despite also being a Codex model id).
+# They match ``effortPerModel`` in ``~/.junie/settings.json``.
+# Legacy short family names are kept for back-compat and normalized via
+# JUNIE_MODEL_ALIASES (or passed through for sonnet/opus).
 
 JUNIE_MODELS = [
     ("deepseek-v4-flash", "DeepSeek V4 Flash", "Fast default model"),
-    ("sonnet", "Sonnet", "Claude Sonnet via Junie"),
-    ("opus", "Opus", "Claude Opus via Junie"),
-    ("gpt", "GPT", "OpenAI model via Junie"),
-    ("gemini-flash", "Gemini Flash", "Google fast model via Junie"),
-    ("grok", "Grok", "xAI model via Junie"),
+    ("gemini-3.8-flash", "Gemini 3.8 Flash", "Google fast model"),
+    ("grok-4.6", "Grok 4.6", "xAI model"),
+    ("gpt-5.6-luna", "GPT-5.6 Luna", "OpenAI model (also served by Junie)"),
+    ("sonnet", "Sonnet", "Claude Sonnet via Junie (legacy alias)"),
+    ("opus", "Opus", "Claude Opus via Junie (legacy alias)"),
+    ("gpt", "GPT", "OpenAI model via Junie (alias → gpt-5.6-luna)"),
+    ("gemini-flash", "Gemini Flash", "Google fast model via Junie (alias → gemini-3.8-flash)"),
+    ("grok", "Grok", "xAI model via Junie (alias → grok-4.6)"),
 ]
+
+#: Legacy short names → canonical versioned Junie model ids.
+JUNIE_MODEL_ALIASES: dict[str, str] = {
+    "gpt": "gpt-5.6-luna",
+    "gemini-flash": "gemini-3.8-flash",
+    "grok": "grok-4.6",
+}
+
+#: Valid ``--effort`` levels for the Junie CLI.
+JUNIE_EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high")
 
 # =============================================================================
 # CODEX MODELS (OpenAI Codex CLI, host-auth via ChatGPT login)
@@ -589,6 +609,33 @@ MODEL_DATABASE = {
         "best_for": ["quick", "parallel"],
         "concurrent_limit": 10,
         "cost": "low",
+        "livebench_score": None,
+        "supports_coding_plan_api": False,
+        "operator": "junie",
+    },
+    "gemini-3.8-flash": {
+        "provider": "junie",
+        "best_for": ["quick", "sequential"],
+        "concurrent_limit": 5,
+        "cost": "medium",
+        "livebench_score": None,
+        "supports_coding_plan_api": False,
+        "operator": "junie",
+    },
+    "grok-4.6": {
+        "provider": "junie",
+        "best_for": ["quick", "parallel"],
+        "concurrent_limit": 10,
+        "cost": "low",
+        "livebench_score": None,
+        "supports_coding_plan_api": False,
+        "operator": "junie",
+    },
+    "gpt-5.6-luna": {
+        "provider": "junie",
+        "best_for": ["quick", "sequential"],
+        "concurrent_limit": 5,
+        "cost": "medium",
         "livebench_score": None,
         "supports_coding_plan_api": False,
         "operator": "junie",

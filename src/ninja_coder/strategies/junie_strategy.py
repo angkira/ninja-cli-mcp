@@ -21,6 +21,7 @@ from ninja_coder.strategies.base import (
     subprocess_env,
 )
 from ninja_common.logging_utils import get_logger
+from ninja_common.operator_models import resolve_junie_effort, resolve_junie_model
 
 
 if TYPE_CHECKING:
@@ -114,16 +115,23 @@ class JunieStrategy:
             prompt: The instruction prompt.
             repo_root: Repository root path.
             file_paths: List of files to include in context (folded into prompt).
-            model: Model to use (flat id, e.g. ``deepseek-v4-flash``).
+            model: Model to use (flat id, e.g. ``deepseek-v4-flash``; a
+                ``provider/`` prefix is stripped and legacy aliases such as
+                ``grok`` are resolved to versioned ids).
             additional_flags: Additional flags (supports ``auth`` key for CI
-                ``--auth`` injection; never used for host-auth).
+                ``--auth`` injection — never used for host-auth — and
+                ``effort`` override for ``--effort``).
             session_id: Session ID for conversation continuity.
             continue_last: Resume last session via ``--resume``.
 
         Returns:
             CLICommandResult with command, env, and metadata.
+
+        Raises:
+            ValueError: If the model (after normalization) is not a known
+                Junie model, or the effort level is invalid.
         """
-        model_name = model or self.config.model or DEFAULT_JUNIE_MODEL
+        model_name = resolve_junie_model(model or self.config.model or DEFAULT_JUNIE_MODEL)
 
         cmd = [
             self.bin_path,
@@ -147,6 +155,13 @@ class JunieStrategy:
         if extra.get("auth"):
             cmd.extend(["--auth", str(extra["auth"])])
 
+        # Effort: per-call override wins, else NINJA_JUNIE_EFFORT env, else
+        # omit the flag (CLI/settings.json decides). Invalid values raise.
+        effort_raw = extra.get("effort")
+        effort = resolve_junie_effort(explicit=str(effort_raw) if effort_raw is not None else None)
+        if effort is not None:
+            cmd.extend(["--effort", effort])
+
         final_prompt = prompt
         if file_paths:
             files_text = ", ".join(file_paths)
@@ -167,6 +182,7 @@ class JunieStrategy:
             metadata={
                 "provider": "junie",
                 "model": model_name,
+                "effort": effort,
                 "timeout": base_timeout,
                 "session_id": session_id,
                 "continue_last": continue_last,

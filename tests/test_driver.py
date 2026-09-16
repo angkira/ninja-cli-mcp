@@ -52,6 +52,11 @@ def test_config_from_env(monkeypatch):
     monkeypatch.setenv("NINJA_CODE_BIN", sys.executable)
     monkeypatch.setenv("OPENAI_BASE_URL", "https://test.api/v1")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test-123")
+    # NINJA_CODER_MODEL outranks NINJA_MODEL — clear it (and provider
+    # fallbacks) for determinism.
+    monkeypatch.delenv("NINJA_CODER_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
     monkeypatch.setenv("NINJA_MODEL", "anthropic/claude-opus-4")
     monkeypatch.setenv("NINJA_TIMEOUT_SEC", "600")
 
@@ -66,6 +71,8 @@ def test_config_from_env(monkeypatch):
 
 def test_config_from_env_model_priority(monkeypatch):
     """Test model selection priority: NINJA_MODEL > OPENROUTER_MODEL > OPENAI_MODEL."""
+    # NINJA_CODER_MODEL outranks the whole chain — clear it for determinism.
+    monkeypatch.delenv("NINJA_CODER_MODEL", raising=False)
     # Test NINJA_MODEL takes precedence
     monkeypatch.setenv("NINJA_MODEL", "model-1")
     monkeypatch.setenv("OPENROUTER_MODEL", "model-2")

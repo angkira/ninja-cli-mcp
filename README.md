@@ -158,14 +158,15 @@ The agent CLI emits readable output by default and JSON with `--json`:
 ```bash
 ninja-mcp agent plan --task "Add email validation" --repo-root .
 ninja-mcp agent analyze --repo-root . --focus auth
-ninja-mcp agent delegate --to coder --subtask "Implement the validator" --repo-root . --model-class smart
+ninja-mcp agent delegate-coder --subtask "Implement the validator" --repo-root . --model-class smart
 ninja-mcp agent review --repo-root . --files src/auth.py tests/test_auth.py
 ninja-mcp agent run --task "Implement and review email validation" --repo-root .
 ```
 
-`run` composes plan, delegate, and review. `delegate --to` accepts `coder`,
-`researcher`, or `secretary`; coder model tiers are `smart`, `balanced`, and
-`fast`.
+`run` composes plan, delegate, and review. One delegate tool per sub-agent:
+`delegate-coder`, `delegate-researcher`, `delegate-secretary`,
+`delegate-runner`, `delegate-git`; coder model tiers are `smart`, `balanced`,
+and `fast`.
 
 ## Coder Routing and Safety
 

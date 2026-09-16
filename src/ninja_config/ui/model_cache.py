@@ -21,6 +21,7 @@ import time
 from ninja_config.model_selector import (
     OPENCODE_PROVIDERS,
     Model,
+    _get_junie_models,
     discover_opencode_providers,
     get_provider_models,
 )
@@ -99,6 +100,41 @@ def cached_get_provider_models(
                 return models
         try:
             models = get_provider_models(operator, provider)
+        except Exception:
+            models = []
+        _models_cache[key] = (_now(), models)
+        return models
+
+
+def cached_get_junie_models(ttl: float = MODELS_TTL) -> list[Model]:
+    """Return Junie models, cached per process with a TTL.
+
+    The catalogue is discovered dynamically at search time (CLI probe →
+    settings.json → static fallback); this cache only avoids re-probing on
+    every keystroke. Shares its entry with
+    ``cached_get_provider_models("junie", "junie")``.
+
+    Args:
+        ttl: Cache lifetime in seconds.
+
+    Returns:
+        List of :class:`Model` (static fallback included, so never empty
+        while the static catalogue exists).
+    """
+    key = ("junie", "junie")
+    hit = _models_cache.get(key)
+    if hit is not None:
+        stamped, models = hit
+        if _now() - stamped < ttl:
+            return models
+    with _lock:  # Double-checked: one probe for concurrent pickers.
+        hit = _models_cache.get(key)
+        if hit is not None:
+            stamped, models = hit
+            if _now() - stamped < ttl:
+                return models
+        try:
+            models = _get_junie_models()
         except Exception:
             models = []
         _models_cache[key] = (_now(), models)

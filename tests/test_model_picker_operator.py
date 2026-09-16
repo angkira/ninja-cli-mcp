@@ -37,6 +37,9 @@ def _picker(operator: str, model: str) -> ModelRolePicker:
         ("claude", "claude-sonnet-4", "anthropic"),
         ("agy", "gemini-3.8-flash-medium", "agy"),
         ("junie", "deepseek-v4-flash", "junie"),
+        ("junie", "gemini-3.8-flash", "junie"),
+        ("junie", "grok-4.6", "junie"),
+        ("junie", "gpt-5.6-luna", "junie"),
         ("aider", "openrouter/anthropic/claude-sonnet-4", "openrouter"),
         ("opencode", "openrouter/deepseek/deepseek-v4.1-flash", "openrouter"),
     ],
@@ -77,3 +80,22 @@ def test_single_provider_operators_hide_dropdown() -> None:
     """Native/aider operators expose exactly one provider (dropdown hidden)."""
     assert len(_picker("codex", "gpt-5.6-luna")._initial_options()) == 1
     assert len(_picker("aider", "openrouter/anthropic/claude-sonnet-4")._initial_options()) == 1
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["deepseek-v4-flash", "gemini-3.8-flash", "grok-4.6", "gpt-5.6-luna"],
+)
+def test_guess_provider_keeps_junie_ids_on_junie(model: str) -> None:
+    """Junie flat ids (incl. gpt-5.6-luna) must not be misclassified as openai."""
+    from ninja_config.ui.model_autocomplete import guess_provider
+
+    assert guess_provider(model, operator="junie") == "junie"
+
+
+def test_junie_static_models_cover_versioned_ids() -> None:
+    """The picker fallback offers the verified versioned Junie ids."""
+    from ninja_config.ui.model_autocomplete import static_models_for_provider
+
+    ids = {m.id for m in static_models_for_provider("junie", "junie")}
+    assert {"deepseek-v4-flash", "gemini-3.8-flash", "grok-4.6", "gpt-5.6-luna"} <= ids

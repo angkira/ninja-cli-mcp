@@ -53,6 +53,8 @@ class TestNinjaConfig:
     def test_config_from_env_with_openrouter(self, monkeypatch):
         """Test loading config from OPENROUTER environment variables."""
         monkeypatch.setattr("ninja_coder.driver.shutil.which", lambda _: None)
+        # NINJA_CODER_MODEL outranks NINJA_MODEL — clear it for determinism.
+        monkeypatch.delenv("NINJA_CODER_MODEL", raising=False)
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
         monkeypatch.setenv("NINJA_MODEL", "anthropic/claude-sonnet-4")
         monkeypatch.setenv("NINJA_CODE_BIN", "/custom/bin/aider")
@@ -67,9 +69,11 @@ class TestNinjaConfig:
 
     def test_config_from_env_with_openai(self, monkeypatch):
         """Test loading config from OPENAI environment variables."""
-        # Clear OPENROUTER vars
+        # Clear OPENROUTER vars (NINJA_CODER_MODEL outranks OPENAI_MODEL too).
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.delenv("NINJA_CODER_MODEL", raising=False)
         monkeypatch.delenv("NINJA_MODEL", raising=False)
+        monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
 
         monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
         monkeypatch.setenv("OPENAI_MODEL", "gpt-4")
@@ -115,6 +119,8 @@ class TestNinjaConfig:
 
     def test_config_model_priority_ninja_wins(self, monkeypatch):
         """Test NINJA_MODEL has highest priority."""
+        # NINJA_CODER_MODEL outranks NINJA_MODEL — clear it for determinism.
+        monkeypatch.delenv("NINJA_CODER_MODEL", raising=False)
         monkeypatch.setenv("OPENAI_MODEL", "gpt-3")
         monkeypatch.setenv("OPENROUTER_MODEL", "claude-2")
         monkeypatch.setenv("NINJA_MODEL", "claude-3")
@@ -126,6 +132,7 @@ class TestNinjaConfig:
 
     def test_config_model_priority_openrouter_second(self, monkeypatch):
         """Test OPENROUTER_MODEL has second priority."""
+        monkeypatch.delenv("NINJA_CODER_MODEL", raising=False)
         monkeypatch.delenv("NINJA_MODEL", raising=False)
         monkeypatch.setenv("OPENAI_MODEL", "gpt-3")
         monkeypatch.setenv("OPENROUTER_MODEL", "claude-2")
@@ -158,6 +165,10 @@ class TestNinjaDriver:
     def test_driver_init_from_env(self, monkeypatch):
         """Test driver initialization from environment."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "env-key")
+        # Clear higher-priority chain vars so NINJA_MODEL deterministically wins.
+        monkeypatch.delenv("NINJA_CODER_MODEL", raising=False)
+        monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+        monkeypatch.delenv("OPENAI_MODEL", raising=False)
         monkeypatch.setenv("NINJA_MODEL", "env-model")
 
         driver = NinjaDriver()

@@ -49,11 +49,8 @@ This file defines the operating principles for autonomous development sessions i
 - Clear separation between domain logic and infrastructure
 
 **CODE REVIEW GATES:**
-- All code must pass linting (ruff)
-- All code must pass type checking (mypy)
 - All public functions must have docstrings
 - All changes must be covered by tests
-- No commented-out code allowed
 
 **ARCHITECTURAL REVIEW:**
 - Use architect review prompt to grade all new code
@@ -74,52 +71,10 @@ This file defines the operating principles for autonomous development sessions i
 - When resuming work, always start with Anti-Amnesia Protocol
 - If context is unclear, ask for clarification before proceeding
 - Never assume previous session's state without verification
-- Use `secretary_file_tree` to verify codebase state
-
-## Tool Usage Guidelines
-
-**SECRETARY MODULE:**
-- Use `secretary_codebase_report` for initial analysis
-- Use `secretary_analyse_file` to understand specific files
-- Use `secretary_file_search` to locate relevant code
-- Use `secretary_file_tree` for project structure overview
-
-**CODER MODULE:**
-- Use `coder_simple_task` ONLY for small, single-pass tasks (one file / one function / one concern).
-  It runs on the fast `quick` model and its default timeout is short. NEVER use it for
-  large multi-part implementation or MR stabilization work - it will time out.
-- Use `coder_execute_plan_sequential` for complex implementation (heavy model, order matters)
-- Use `coder_execute_plan_parallel` for independent tasks (runs on the fast model but steps are separate)
-- Match the tool to the task size: small → `coder_simple_task`, complex/large → `coder_execute_plan_sequential`
-- Always specify files to modify explicitly
-- Include test steps in execution plans
-
-**PROMPTS MODULE:**
-- Use `prompt_registry` to find relevant templates
-- Use `prompt_chain` for multi-step workflows
-- Always validate prompt variables before execution
 
 ## Emergency Protocols
 
-**IF CONTEXT IS LOST:**
-1. Run full codebase analysis
-2. Re-read all `.agent/` files
-3. Check git history for recent changes
-4. Reconstruct session state from available information
-
-**IF ARCHITECTURAL VIOLATIONS FOUND:**
-1. Document the violation in STATUS.md
-2. Create refactoring task in ROADMAP.md
-3. Use architect review to assess impact
-4. Schedule remediation in backlog
-
-## Success Metrics
-
-- All tasks in `.agent/ROADMAP.md` have clear acceptance criteria
-- All code passes architectural review gates
-- Session state is recoverable after interruption
-- Zero architectural violations in new code
-- All documentation is up-to-date
+If context is lost or an architectural violation is found mid-session, see the `emergency-recovery` skill.
 
 ---
 
