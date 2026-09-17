@@ -242,9 +242,7 @@ class DiagnosticsDistiller:
         re.IGNORECASE,
     )
 
-    PYTEST_SHORT_FAILED_RE = re.compile(
-        r"^(?:FAILED|ERROR)\s+([^\s:]+::[^\s]+)(?:\s*-\s*(.*))?$"
-    )
+    PYTEST_SHORT_FAILED_RE = re.compile(r"^(?:FAILED|ERROR)\s+([^\s:]+::[^\s]+)(?:\s*-\s*(.*))?$")
 
     DIAGNOSTIC_RE = re.compile(
         r"^([^\s:]+\.[a-zA-Z0-9_]+):(\d+)(?::(\d+))?:\s*(?:([a-zA-Z0-9_\-\[\]]+):\s*)?(.*)$"
@@ -523,7 +521,8 @@ class DiagnosticsDistiller:
         truncation_marker = "\n...[condensed output truncated]"
         if is_test_output:
             all_passed = not any(
-                "FAILED" in line or "=== FAILURES ===" in line or "=== ERRORS ===" in line for line in lines
+                "FAILED" in line or "=== FAILURES ===" in line or "=== ERRORS ===" in line
+                for line in lines
             )
             if all_passed:
                 for line in reversed(lines):
@@ -540,19 +539,13 @@ class DiagnosticsDistiller:
 
             condensed = "\n".join(filtered_lines).strip()
             if len(condensed) > max_chars:
-                return (
-                    condensed[: max_chars - len(truncation_marker)]
-                    + truncation_marker
-                )
+                return condensed[: max_chars - len(truncation_marker)] + truncation_marker
             return condensed
 
         filtered = [line for line in lines if line.strip()]
         condensed = "\n".join(filtered)
         if len(condensed) > max_chars:
-            return (
-                condensed[: max_chars - len(truncation_marker)]
-                + truncation_marker
-            )
+            return condensed[: max_chars - len(truncation_marker)] + truncation_marker
         return condensed
 
     @classmethod
@@ -673,9 +666,7 @@ class LogDistiller:
     )
     NUM_ID_PATTERN = re.compile(r"\b\d{4,}\b")
     ID_KEY_PATTERN = re.compile(r"(?<=[=:_/#])\d+\b")
-    LEVEL_PATTERN = re.compile(
-        r"\b(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL|FATAL)\b", re.IGNORECASE
-    )
+    LEVEL_PATTERN = re.compile(r"\b(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL|FATAL)\b", re.IGNORECASE)
 
     @classmethod
     def extract_timestamp(cls, line: str) -> str | None:
@@ -827,7 +818,7 @@ class RunnerToolExecutor:
         self._jobs_lister = jobs_lister
         self._safety_checker = safety_checker
         self._subprocess_runner = subprocess_runner or (
-            lambda *a, **k: subprocess.run(*a, check=False, **k)  # type: ignore[call-arg]
+            lambda *a, **k: subprocess.run(*a, check=False, **k)
         )
 
     def _get_daemon_manager(self) -> Any:
@@ -1089,12 +1080,12 @@ class RunnerToolExecutor:
         """
         limit = max(1, min(int(limit or 20), 100))
         if self._jobs_lister is not None:
-            jobs = await self._jobs_lister(limit)
-            jobs = list(jobs)[:limit]
+            raw_jobs = await self._jobs_lister(limit)
+            listed_jobs = list(raw_jobs)[:limit]
             return RunnerJobsResult(
                 success=True,
-                summary=f"{len(jobs)} job(s) listed.",
-                jobs=jobs,
+                summary=f"{len(listed_jobs)} job(s) listed.",
+                jobs=listed_jobs,
             )
         try:
             from ninja_common.mcp_tasks import SqliteTaskStore
@@ -1182,9 +1173,7 @@ class RunnerToolExecutor:
         max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
     )
     @monitored
-    async def exec_pipeline(
-        self, request: AgentExecPipelineRequest
-    ) -> AgentExecPipelineResult:
+    async def exec_pipeline(self, request: AgentExecPipelineRequest) -> AgentExecPipelineResult:
         """Execute an ordered sequence of shell commands with fail-fast logic.
 
         Args:
@@ -1265,9 +1254,7 @@ class RunnerToolExecutor:
         max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
     )
     @monitored
-    async def distill_logs(
-        self, request: AgentDistillLogsRequest
-    ) -> AgentDistillLogsResult:
+    async def distill_logs(self, request: AgentDistillLogsRequest) -> AgentDistillLogsResult:
         """Fetch and distill logs into clusters and isolated errors.
 
         Args:

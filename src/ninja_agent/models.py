@@ -222,17 +222,15 @@ class AgentRunAndDiagnoseResult(BaseModel):
     passed_count: int = Field(default=0, description="Count of passed tests or checks")
     failed_count: int = Field(default=0, description="Count of failed tests or checks")
     skipped_count: int = Field(default=0, description="Count of skipped tests or checks")
-    error_count: int = Field(default=0, description="Count of errors or compiler/linter diagnostics")
+    error_count: int = Field(
+        default=0, description="Count of errors or compiler/linter diagnostics"
+    )
     failures: list[FailureDetail] = Field(
         default_factory=list, description="Structured failure details"
     )
-    condensed_output: str = Field(
-        default="", description="High-signal condensed stdout/stderr"
-    )
+    condensed_output: str = Field(default="", description="High-signal condensed stdout/stderr")
     truncated: bool = Field(default=False, description="True when output was truncated")
-    safety_warnings: list[str] = Field(
-        default_factory=list, description="Safety dry-run notes"
-    )
+    safety_warnings: list[str] = Field(default_factory=list, description="Safety dry-run notes")
 
 
 # ============================================================================
@@ -264,9 +262,7 @@ class PipelineStepResult(BaseModel):
     name: str | None = Field(default=None, description="Step name or label")
     success: bool = Field(..., description="Whether this step succeeded")
     returncode: int | None = Field(default=None, description="Process exit code (None if skipped)")
-    duration_seconds: float = Field(
-        default=0.0, description="Wall-clock duration in seconds"
-    )
+    duration_seconds: float = Field(default=0.0, description="Wall-clock duration in seconds")
     skipped: bool = Field(
         default=False, description="Whether this step was skipped due to prior failure"
     )

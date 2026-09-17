@@ -20,9 +20,9 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from ninja_agent.models import (
     DELEGATE_MIGRATION,
@@ -72,7 +72,7 @@ _REMOVED_COMMANDS = frozenset(
 class _AgentParser(argparse.ArgumentParser):
     """Argument parser that maps removed commands to migration hints."""
 
-    def error(self, message: str) -> None:
+    def error(self, message: str) -> NoReturn:
         for removed in sorted(_REMOVED_COMMANDS):
             if f"'{removed}'" in message:
                 self.exit(2, f"ninja-mcp agent: error: {DELEGATE_MIGRATION}\n{message}\n")
@@ -159,9 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
     diag_p.add_argument("--json", action="store_true", help="Output JSON format")
 
     # pipeline
-    pipe_p = subparsers.add_parser(
-        "pipeline", help="Execute an ordered sequence of shell commands"
-    )
+    pipe_p = subparsers.add_parser("pipeline", help="Execute an ordered sequence of shell commands")
     pipe_p.add_argument(
         "--steps",
         required=True,
@@ -202,8 +200,12 @@ def _fail(message: str) -> int:
     return 1
 
 
-def _dump(result: object) -> dict:
-    return result.model_dump() if hasattr(result, "model_dump") else dict(result)  # type: ignore[arg-type]
+def _dump(result: object) -> dict[str, Any]:
+    if isinstance(result, BaseModel):
+        return result.model_dump()
+    if isinstance(result, dict):
+        return result
+    return dict(cast("Any", result))
 
 
 def _print_exec_command(result: object, as_json: bool) -> None:

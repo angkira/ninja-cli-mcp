@@ -22,7 +22,7 @@ from __future__ import annotations
 import ast
 import fnmatch
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ninja_agent.models import (
     AgentAnalyzeRequest,
@@ -401,7 +401,10 @@ class AgentToolExecutor:
             Structured diagnostic execution result.
         """
         logger.info(f"Agent run_and_diagnose: {request.command[:80]} (client: {client_id})")
-        return await self._get_runner().run_and_diagnose(request)
+        return cast(
+            "AgentRunAndDiagnoseResult",
+            await self._get_runner().run_and_diagnose(request),
+        )
 
     @rate_balanced(
         max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
@@ -420,7 +423,10 @@ class AgentToolExecutor:
             Structured pipeline execution result.
         """
         logger.info(f"Agent exec_pipeline: {len(request.steps)} steps (client: {client_id})")
-        return await self._get_runner().exec_pipeline(request)
+        return cast(
+            "AgentExecPipelineResult",
+            await self._get_runner().exec_pipeline(request),
+        )
 
     @rate_balanced(
         max_calls=60, time_window=60, max_retries=3, initial_backoff=0.5, max_backoff=30.0
@@ -439,7 +445,10 @@ class AgentToolExecutor:
             Distilled log results.
         """
         logger.info(f"Agent distill_logs: module={request.module} (client: {client_id})")
-        return await self._get_runner().distill_logs(request)
+        return cast(
+            "AgentDistillLogsResult",
+            await self._get_runner().distill_logs(request),
+        )
 
     def _check_long_lines(self, rel: str, lines: list[str]) -> list[AgentReviewFinding]:
         """Flag functions that are too long (rough heuristic via line blocks)."""

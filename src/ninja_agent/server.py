@@ -255,12 +255,24 @@ TOOLS: list[Tool] = [
                     "items": {
                         "type": "object",
                         "properties": {
-                            "command": {"type": "string", "description": "Shell command to execute"},
+                            "command": {
+                                "type": "string",
+                                "description": "Shell command to execute",
+                            },
                             "name": {"type": "string", "description": "Optional step name"},
-                            "cwd": {"type": "string", "description": "Working directory for this step"},
+                            "cwd": {
+                                "type": "string",
+                                "description": "Working directory for this step",
+                            },
                             "timeout": {"type": "integer", "description": "Timeout in seconds"},
-                            "allow_write": {"type": "boolean", "description": "Allow file mutations"},
-                            "continue_on_error": {"type": "boolean", "description": "Continue pipeline if step fails"},
+                            "allow_write": {
+                                "type": "boolean",
+                                "description": "Allow file mutations",
+                            },
+                            "continue_on_error": {
+                                "type": "boolean",
+                                "description": "Continue pipeline if step fails",
+                            },
                         },
                         "required": ["command"],
                     },
