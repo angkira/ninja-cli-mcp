@@ -49,7 +49,7 @@ def main() -> NoReturn:
         _print_usage()
         sys.exit(0)
 
-    if command == "version":
+    if command in ("version", "--version", "-v"):
         _print_version()
         sys.exit(0)
 

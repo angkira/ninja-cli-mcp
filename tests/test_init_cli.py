@@ -429,6 +429,133 @@ class TestCursor:
 
 
 # ---------------------------------------------------------------------------
+# junie
+# ---------------------------------------------------------------------------
+
+
+class TestJunie:
+    def test_fresh_install(self, tmp_path: Path) -> None:
+        """Writes mcp.json when ~/.junie/mcp does not yet exist."""
+        from ninja_common.init_targets import junie
+
+        orig_dir = junie.config_dir
+        orig_file = junie.config_file
+        try:
+            target_dir = tmp_path / ".junie" / "mcp"
+            target_file = target_dir / "mcp.json"
+            junie.config_dir = target_dir
+            junie.config_file = target_file
+
+            rc = junie.install(_make_args())
+            assert rc == 0
+            assert target_file.exists()
+            data = json.loads(target_file.read_text(encoding="utf-8"))
+            servers = data.get("mcpServers", {})
+            assert "ninja-coder" in servers
+            assert "ninja-researcher" in servers
+            assert "ninja-secretary" in servers
+            assert "ninja-agent" in servers
+        finally:
+            junie.config_dir = orig_dir
+            junie.config_file = orig_file
+
+    def test_dry_run_no_write(self, tmp_path: Path) -> None:
+        """--dry-run does not create the file."""
+        from ninja_common.init_targets import junie
+
+        orig_dir = junie.config_dir
+        orig_file = junie.config_file
+        try:
+            target_dir = tmp_path / ".junie" / "mcp"
+            target_file = target_dir / "mcp.json"
+            junie.config_dir = target_dir
+            junie.config_file = target_file
+
+            rc = junie.install(_make_args(dry_run=True))
+            assert rc == 0
+            assert not target_file.exists()
+        finally:
+            junie.config_dir = orig_dir
+            junie.config_file = orig_file
+
+    def test_merges_existing_servers(self, tmp_path: Path) -> None:
+        """Preserves existing servers that are not ninja's."""
+        from ninja_common.init_targets import junie
+
+        orig_dir = junie.config_dir
+        orig_file = junie.config_file
+        try:
+            target_dir = tmp_path / ".junie" / "mcp"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_file = target_dir / "mcp.json"
+            existing: dict[str, Any] = {
+                "mcpServers": {"custom-mcp": {"command": "custom-cmd", "args": []}}
+            }
+            target_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+            junie.config_dir = target_dir
+            junie.config_file = target_file
+
+            rc = junie.install(_make_args())
+            assert rc == 0
+            data = json.loads(target_file.read_text(encoding="utf-8"))
+            assert "custom-mcp" in data["mcpServers"]
+            assert "ninja-coder" in data["mcpServers"]
+            assert "ninja-researcher" in data["mcpServers"]
+            assert "ninja-secretary" in data["mcpServers"]
+            assert "ninja-agent" in data["mcpServers"]
+        finally:
+            junie.config_dir = orig_dir
+            junie.config_file = orig_file
+
+    def test_conflict_no_force_exits_nonzero(self, tmp_path: Path) -> None:
+        """Conflict without --force returns non-zero exit code."""
+        from ninja_common.init_targets import junie
+
+        orig_dir = junie.config_dir
+        orig_file = junie.config_file
+        try:
+            target_dir = tmp_path / ".junie" / "mcp"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_file = target_dir / "mcp.json"
+            existing = {"mcpServers": {"ninja-coder": {"command": "old-cmd", "args": []}}}
+            target_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+            junie.config_dir = target_dir
+            junie.config_file = target_file
+
+            rc = junie.install(_make_args(force=False))
+            assert rc != 0
+        finally:
+            junie.config_dir = orig_dir
+            junie.config_file = orig_file
+
+    def test_conflict_with_force_overwrites(self, tmp_path: Path) -> None:
+        """Conflict with --force overwrites existing server."""
+        from ninja_common.init_targets import junie
+
+        orig_dir = junie.config_dir
+        orig_file = junie.config_file
+        try:
+            target_dir = tmp_path / ".junie" / "mcp"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_file = target_dir / "mcp.json"
+            existing = {"mcpServers": {"ninja-coder": {"command": "old-cmd", "args": []}}}
+            target_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+            junie.config_dir = target_dir
+            junie.config_file = target_file
+
+            rc = junie.install(_make_args(force=True))
+            assert rc == 0
+            data = json.loads(target_file.read_text(encoding="utf-8"))
+            assert data["mcpServers"]["ninja-coder"]["command"] == "ninja-mcp"
+        finally:
+            junie.config_dir = orig_dir
+            junie.config_file = orig_file
+
+
+# ---------------------------------------------------------------------------
 # detect
 # ---------------------------------------------------------------------------
 

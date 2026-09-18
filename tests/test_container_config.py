@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-CURRENT_VERSION = "1.3.0"
+CURRENT_VERSION = "1.3.1"
 
 
 def test_container_files_and_release_version_exist() -> None:

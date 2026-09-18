@@ -142,7 +142,7 @@ Run `ninja-mcp <command> --help` for command-specific options.
 | `config configure` | Open the ongoing configuration manager | `ninja-mcp config configure` |
 | `config models` | Configure models with provider/model picker | `ninja-mcp config models` |
 | `init` | Install MCP servers into a host config | `ninja-mcp init detect` |
-| `init <host>` | Configure Claude Code, Codex, Cursor, Antigravity, or generic MCP | `ninja-mcp init claude-code --direct` |
+| `init <host>` | Configure Claude Code, Codex, Cursor, Junie, Antigravity, or generic MCP | `ninja-mcp init claude-code --direct` |
 | `daemon` | Manage persistent HTTP/SSE module processes | `ninja-mcp daemon status` |
 | `agent` | Analyze, review, run-and-diagnose, pipeline, distill-logs | `ninja-mcp agent run-and-diagnose --command "pytest"` |
 | `update` | Update an installed checkout/package | `ninja-mcp update` |
@@ -222,6 +222,7 @@ Detect supported hosts and install their configuration with the unified CLI:
 ninja-mcp init detect
 ninja-mcp init claude-code --direct
 ninja-mcp init codex
+ninja-mcp init junie
 ninja-mcp init generic
 ```
 

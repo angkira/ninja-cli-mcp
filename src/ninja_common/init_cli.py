@@ -51,6 +51,9 @@ Examples:
   # Merge into ~/.cursor/mcp.json
   ninja-mcp init cursor
 
+  # Merge into ~/.junie/mcp/mcp.json
+  ninja-mcp init junie
+
   # Install into Google Antigravity
   ninja-mcp init antigravity
 
@@ -229,6 +232,7 @@ def _populate_json_targets() -> None:
     from ninja_common.init_targets import (
         antigravity,
         cursor,
+        junie,
         kiro,
         roo_code,
         vscode_cline,
@@ -244,6 +248,11 @@ def _populate_json_targets() -> None:
         "cursor",
         cursor._cursor_target,
         "Merge into ~/.cursor/mcp.json.",
+    )
+    _register_json_target(
+        "junie",
+        junie.junie,
+        "Merge into ~/.junie/mcp/mcp.json.",
     )
     _register_json_target(
         "kiro",

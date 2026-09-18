@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.1 - 2026-09-18
+
+[1.3.1] - 2026-09-18: Native JetBrains Junie MCP host integration, CLI version flag support, and init target test coverage.
+
+### Added
+- **Native Junie MCP integration**: Added `ninja-mcp init junie` target with automated detection of `~/.junie` and configuration merge into `~/.junie/mcp/mcp.json` containing all 4 MCP servers (`ninja-coder`, `ninja-researcher`, `ninja-secretary`, `ninja-agent`).
+- **CLI version flags**: Support for `--version` and `-v` flags in `ninja-mcp` CLI in addition to the `version` subcommand.
+- **Init target test coverage**: Added comprehensive unit test suite in `tests/test_init_targets.py` verifying detection, installation, dry-run previews, and config merging for the Junie target.
+
+### Verified (live)
+- `tests/test_init_cli.py`, `tests/test_init_targets.py`, `tests/test_container_config.py`, and `tests/test_agent_e2e.py` passing 100%.
+
 ## 1.3.0 - 2026-09-16
 
 Autonomous compound routines and context distillation for `ninja-agent`.

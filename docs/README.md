@@ -1,6 +1,6 @@
 # Documentation Index
 
-Start here for the current `1.3.0` behavior:
+Start here for the current `1.3.1` behavior:
 
 - [Project quickstart](../README.md)
 - [Docker quickstart](container-quickstart.md)
