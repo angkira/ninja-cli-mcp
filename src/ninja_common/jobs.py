@@ -40,7 +40,12 @@ from mcp.types import (
     TaskMetadata,
 )
 
-from ninja_common.mcp_tasks import TaskCancelledError, request_cancel, task_scope
+from ninja_common.mcp_tasks import (
+    ProgressCallback,
+    TaskCancelledError,
+    request_cancel,
+    task_scope,
+)
 
 
 if TYPE_CHECKING:
@@ -67,6 +72,9 @@ DEFAULT_CANCEL_WAIT_SECONDS = 15.0
 
 #: A background job body: an awaitable returning the storable result payload.
 JobWork = Callable[[], Awaitable[Result]]
+
+#: Builds the progress callback once a job's id is known.
+ProgressCallbackFactory = Callable[[str], ProgressCallback]
 
 
 class JobManager:
@@ -100,7 +108,7 @@ class JobManager:
         self._cancel_wait_seconds = cancel_wait_seconds
         # Strong references so running work is never garbage collected. The
         # done callback removes entries once the work is finished.
-        self._running: dict[str, asyncio.Task[None]] = {}
+        self._running: dict[str, asyncio.Task[object]] = {}
         self._pending_cancel: set[str] = set()
 
     @property
@@ -108,13 +116,21 @@ class JobManager:
         """Suggested client poll interval in milliseconds."""
         return self._poll_interval_ms
 
-    async def submit(self, work: JobWork, *, status_message: str | None = None) -> Task:
+    async def submit(
+        self,
+        work: JobWork,
+        *,
+        status_message: str | None = None,
+        progress_factory: ProgressCallbackFactory | None = None,
+    ) -> Task:
         """Create a durable job record and start *work* in the background.
 
         Args:
             work: Zero-argument coroutine factory returning the result payload.
             status_message: Optional human-readable status message stored on the
                 job record.
+            progress_factory: Optional builder invoked with the new job id to
+                produce the progress callback installed while *work* runs.
 
         Returns:
             The freshly created (``working``) task record.
@@ -124,7 +140,8 @@ class JobManager:
         if status_message is not None:
             task = await self._store.update_task(job_id, status_message=status_message)
 
-        runner = asyncio.create_task(self._run(job_id, work), name=f"ninja-job-{job_id}")
+        progress = progress_factory(job_id) if progress_factory is not None else None
+        runner = asyncio.create_task(self._run(job_id, work, progress), name=f"ninja-job-{job_id}")
         self._running[job_id] = runner
 
         def _on_done(_task: asyncio.Task[None], finished_id: str = job_id) -> None:
@@ -132,6 +149,72 @@ class JobManager:
 
         runner.add_done_callback(_on_done)
         return task
+
+    async def run_tracked(
+        self,
+        work: JobWork,
+        *,
+        status_message: str | None = None,
+        progress_factory: ProgressCallbackFactory | None = None,
+    ) -> Result:
+        """Register a durable job record and run *work* inline.
+
+        Unlike :meth:`submit`, *work* runs in the caller's asyncio task (the
+        server's request handler) so the synchronous tool can still return its
+        full result payload. The row is written to the shared store *before*
+        *work* starts and is marked terminal on completion, failure or
+        cancellation, so a client that disappears mid-flight leaves an
+        observable — and cancellable — record instead of an invisible orphan.
+
+        Args:
+            work: Zero-argument coroutine factory returning the result payload.
+            status_message: Optional human-readable status message.
+            progress_factory: Optional builder producing the progress callback
+                installed while *work* runs.
+
+        Returns:
+            The result payload returned by *work*.
+
+        Raises:
+            TaskCancelledError: If the job was cancelled before/while running.
+            Exception: Re-raises whatever *work* raised, after marking the job
+                ``failed``.
+        """
+        task = await self._store.create_task(TaskMetadata(ttl=self._ttl_ms))
+        job_id = task.taskId
+        if status_message is not None:
+            task = await self._store.update_task(job_id, status_message=status_message)
+
+        progress = progress_factory(job_id) if progress_factory is not None else None
+        runner = asyncio.current_task()
+        if runner is not None:
+            self._running[job_id] = runner
+        try:
+            async with task_scope(job_id, progress=progress) as cancellation:
+                if self._take_pending_cancel(job_id) or cancellation.is_set():
+                    await self._set_terminal(job_id, JOB_STATUS_CANCELLED)
+                    raise TaskCancelledError(f"Job {job_id} was cancelled before it started")
+
+                result = await work()
+
+                if cancellation.is_set():
+                    await self._set_terminal(job_id, JOB_STATUS_CANCELLED)
+                    raise TaskCancelledError(f"Job {job_id} was cancelled")
+                await self._store.store_result(job_id, result)
+                await self._store.update_task(job_id, status=JOB_STATUS_COMPLETED)
+                return result
+        except TaskCancelledError:
+            await self._set_terminal(job_id, JOB_STATUS_CANCELLED)
+            raise
+        except asyncio.CancelledError:
+            await self._set_terminal(job_id, JOB_STATUS_CANCELLED)
+            raise
+        except Exception as exc:
+            logger.warning("Tracked job %s failed: %s", job_id, exc, exc_info=True)
+            await self._set_terminal(job_id, JOB_STATUS_FAILED, f"{type(exc).__name__}: {exc}")
+            raise
+        finally:
+            self._forget(job_id)
 
     async def status(self, job_id: str) -> Task | None:
         """Return the current task record for *job_id*, or ``None``."""
@@ -211,10 +294,15 @@ class JobManager:
         self._running.pop(job_id, None)
         self._pending_cancel.discard(job_id)
 
-    async def _run(self, job_id: str, work: JobWork) -> None:
+    async def _run(
+        self,
+        job_id: str,
+        work: JobWork,
+        progress: ProgressCallback | None = None,
+    ) -> None:
         """Execute *work* under a task scope and record its outcome."""
         try:
-            async with task_scope(job_id) as cancellation:
+            async with task_scope(job_id, progress=progress) as cancellation:
                 if self._take_pending_cancel(job_id):
                     cancellation.cancel()
                 if cancellation.is_set():
@@ -276,4 +364,5 @@ __all__ = [
     "JOB_STATUS_WORKING",
     "JobManager",
     "JobWork",
+    "ProgressCallbackFactory",
 ]

@@ -28,9 +28,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
 from mcp import types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+
+from ninja_coder.server import _make_job_progress_factory
+from ninja_common.jobs import JobManager
+from ninja_common.mcp_tasks import SqliteTaskStore, TaskCancelledError, get_task_cancellation
 
 
 if TYPE_CHECKING:
@@ -358,3 +363,207 @@ async def test_concurrent_timed_jobs_do_not_interfere() -> None:
             assert elapsed_by_spec[0.8] < elapsed_by_spec[1.6] < elapsed_by_spec[2.4], (
                 elapsed_by_spec
             )
+
+
+# --- fix1: durable rows for inline/sync execution --------------------------
+
+
+def _result_text(result: types.Result) -> str:
+    """Return the first text block of a stored ``CallToolResult`` payload."""
+    dumped = result.model_dump(by_alias=True)
+    return str(dumped["content"][0]["text"])
+
+
+async def test_run_tracked_records_completion_and_result(tmp_path: Path) -> None:
+    """``run_tracked`` persists a durable row that reaches ``completed``."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    jobs = JobManager(store)
+
+    async def work() -> types.CallToolResult:
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text="done")], isError=False
+        )
+
+    await jobs.run_tracked(work, status_message="unit-task")
+
+    listed, _ = await jobs.list_jobs()
+    assert len(listed) == 1
+    assert listed[0].status == "completed"
+    stored = await jobs.result(listed[0].taskId)
+    assert stored is not None
+    assert _result_text(stored) == "done"
+
+
+async def test_run_tracked_marks_failed_on_exception(tmp_path: Path) -> None:
+    """A work exception marks the durable row ``failed`` and is re-raised."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    jobs = JobManager(store)
+
+    async def work() -> types.CallToolResult:
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await jobs.run_tracked(work, status_message="unit-task")
+
+    listed, _ = await jobs.list_jobs()
+    assert len(listed) == 1
+    assert listed[0].status == "failed"
+    assert "boom" in (listed[0].statusMessage or "")
+
+
+async def test_run_tracked_is_visible_and_cancellable_mid_flight(tmp_path: Path) -> None:
+    """A running inline job is visible as ``working`` and can be cancelled."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    jobs = JobManager(store)
+    started = asyncio.Event()
+
+    async def work() -> types.CallToolResult:
+        started.set()
+        cancellation = get_task_cancellation()
+        while cancellation is not None and not cancellation.is_set():
+            await asyncio.sleep(0.02)
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text="unreachable")], isError=False
+        )
+
+    runner = asyncio.create_task(jobs.run_tracked(work, status_message="slow"))
+    await asyncio.wait_for(started.wait(), timeout=5)
+
+    listed, _ = await jobs.list_jobs()
+    assert len(listed) == 1
+    assert listed[0].status == "working"
+    job_id = listed[0].taskId
+
+    cancelled = await jobs.cancel(job_id)
+    assert cancelled is not None
+    assert cancelled.status == "cancelled"
+
+    with pytest.raises(TaskCancelledError):
+        await runner
+
+
+async def test_sync_tool_registers_durable_job_and_returns_full_payload() -> None:
+    """A sync tool still returns its full payload *and* leaves a terminal row."""
+    with tempfile.TemporaryDirectory(prefix="ninja-jobs-test-") as tmp:
+        db_path = Path(tmp) / "tasks.db"
+        async with _connected(db_path) as session:
+            result = _payload(
+                await session.call_tool(
+                    "coder_simple_task",
+                    {"task": "timed:0.3", "repo_root": str(REPO_ROOT)},
+                )
+            )
+            assert result["status"] == "ok"
+            assert "stub timed" in result["summary"]
+
+            listing = _payload(await session.call_tool("coder_jobs_list", {}))
+            assert len(listing["jobs"]) == 1
+            entry = listing["jobs"][0]
+            assert entry["status"] == "completed"
+
+            stored = _payload(
+                await session.call_tool("coder_job_result", {"job_id": entry["job_id"]})
+            )
+            assert "stub timed" in stored["summary"]
+
+
+# --- fix2: request_key idempotency -----------------------------------------
+
+
+async def test_request_key_coalesces_concurrent_submits() -> None:
+    """Same request_key => same job id and a single job, even concurrently."""
+    with tempfile.TemporaryDirectory(prefix="ninja-jobs-test-") as tmp:
+        db_path = Path(tmp) / "tasks.db"
+        async with _connected(db_path) as session:
+            args = {
+                "repo_root": str(REPO_ROOT),
+                "steps": [{"task": "hello"}],
+                "request_key": "rk-coalesce",
+            }
+            first, second = await asyncio.gather(
+                session.call_tool("coder_submit_sequential", dict(args)),
+                session.call_tool("coder_submit_sequential", dict(args)),
+            )
+            assert _payload(first)["job_id"] == _payload(second)["job_id"]
+
+            listing = _payload(await session.call_tool("coder_jobs_list", {}))
+            assert len(listing["jobs"]) == 1
+
+
+async def test_request_key_returns_same_job_after_completion() -> None:
+    """A retry with the same key after completion returns the cached job."""
+    with tempfile.TemporaryDirectory(prefix="ninja-jobs-test-") as tmp:
+        db_path = Path(tmp) / "tasks.db"
+        async with _connected(db_path) as session:
+            args = {
+                "repo_root": str(REPO_ROOT),
+                "steps": [{"task": "hello"}],
+                "request_key": "rk-replay",
+            }
+            first = _payload(await session.call_tool("coder_submit_sequential", dict(args)))
+            await _poll_status(session, first["job_id"])
+            second = _payload(await session.call_tool("coder_submit_sequential", dict(args)))
+            assert first["job_id"] == second["job_id"]
+
+            listing = _payload(await session.call_tool("coder_jobs_list", {}))
+            assert len(listing["jobs"]) == 1
+
+
+async def test_distinct_request_keys_create_distinct_jobs() -> None:
+    """Different request_keys are independent submissions."""
+    with tempfile.TemporaryDirectory(prefix="ninja-jobs-test-") as tmp:
+        db_path = Path(tmp) / "tasks.db"
+        async with _connected(db_path) as session:
+            base = {"repo_root": str(REPO_ROOT), "steps": [{"task": "hello"}]}
+            first = _payload(
+                await session.call_tool("coder_submit_sequential", {**base, "request_key": "rk-a"})
+            )
+            second = _payload(
+                await session.call_tool("coder_submit_sequential", {**base, "request_key": "rk-b"})
+            )
+            assert first["job_id"] != second["job_id"]
+
+
+async def test_missing_request_key_keeps_submit_behavior() -> None:
+    """Without a request_key, every submit creates a fresh job (as today)."""
+    with tempfile.TemporaryDirectory(prefix="ninja-jobs-test-") as tmp:
+        db_path = Path(tmp) / "tasks.db"
+        async with _connected(db_path) as session:
+            args = {"repo_root": str(REPO_ROOT), "steps": [{"task": "hello"}]}
+            first = _payload(await session.call_tool("coder_submit_sequential", dict(args)))
+            second = _payload(await session.call_tool("coder_submit_sequential", dict(args)))
+            assert first["job_id"] != second["job_id"]
+
+
+# --- fix5: progress refresh -------------------------------------------------
+
+
+async def test_progress_factory_refreshes_status_message(tmp_path: Path) -> None:
+    """The server progress factory writes the latest progress message."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    factory = _make_job_progress_factory(store, "unit")
+    callback = factory("job-progress")
+    await store.create_task(types.TaskMetadata(ttl=60000), task_id="job-progress")
+
+    await callback(1.0, 3.0, "step 1")
+    task = await store.get_task("job-progress")
+    assert task is not None
+    assert task.statusMessage == "unit: step 1"
+
+    await callback(2.0, 3.0, "step 2")
+    task = await store.get_task("job-progress")
+    assert task is not None
+    assert task.statusMessage == "unit: step 2"
+
+
+async def test_progress_factory_swallows_store_failure(tmp_path: Path) -> None:
+    """A store failure inside the progress callback never breaks the work."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    factory = _make_job_progress_factory(store, "unit")
+    callback = factory("job-progress")
+
+    async def boom(*args: object, **kwargs: object) -> types.Task:
+        raise RuntimeError("db down")
+
+    store.update_task = boom  # type: ignore[method-assign]
+    await callback(1.0, None, "whatever")  # must not raise

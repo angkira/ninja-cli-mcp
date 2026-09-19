@@ -17,10 +17,11 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -45,12 +46,17 @@ from ninja_coder.tools import get_executor
 from ninja_common.jobs import JOB_STATUS_CANCELLED, JOB_STATUS_WORKING, JobManager
 from ninja_common.logging_utils import get_logger, setup_logging
 from ninja_common.mcp_tasks import (
+    ProgressCallback,
     SqliteTaskStore,
     install_tasks,
     refresh_task_after_cancel,
     server_task_scope,
 )
 from ninja_common.security import RequestDeduplicator
+
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 # Load config from ~/.ninja-mcp.env into environment variables
@@ -96,6 +102,88 @@ JOB_TOOL_NAMES: frozenset[str] = frozenset(
         "coder_jobs_list",
     }
 )
+
+#: Sync tools that spawn CLI execution and therefore register a durable job row
+#: (the same store the submit/poll API uses) before running. The sync HTTP
+#: response is unchanged; the row exists for observability/cancellation when
+#: the client disappears mid-flight.
+TRACKED_SYNC_TOOLS: frozenset[str] = frozenset(
+    {
+        "coder_simple_task",
+        "coder_execute_plan_sequential",
+        "coder_execute_plan_parallel",
+        "coder_multi_agent_task",
+    }
+)
+
+#: Shared JSON-schema fragment for the optional idempotency key. Added to the
+#: sync tool schemas; the submit tool schemas are copies of those and inherit it.
+_REQUEST_KEY_SCHEMA: dict[str, Any] = {
+    "type": "string",
+    "description": (
+        "Supply the same request_key to safely retry after a timeout — duplicates "
+        "join the in-flight run instead of re-executing."
+    ),
+}
+
+#: Appended to every tool description that accepts a ``request_key``.
+_REQUEST_KEY_NOTE: str = (
+    "\n\nSupply the same request_key to safely retry after a timeout — "
+    "duplicates join the in-flight run instead of re-executing."
+)
+
+
+def _make_job_progress_factory(
+    store: SqliteTaskStore, label: str
+) -> Callable[[str], ProgressCallback]:
+    """Build a progress-callback factory that refreshes a job's status message.
+
+    The returned callback rides the existing progress tick cadence (one write
+    per tick), so DB writes stay bounded. Any store failure is swallowed and
+    logged — progress bookkeeping must never break the actual work.
+    """
+
+    def _factory(job_id: str) -> ProgressCallback:
+        heartbeats = itertools.count(1)
+
+        async def _callback(
+            current: float,
+            total: float | None = None,
+            message: str | None = None,
+        ) -> None:
+            detail = message.strip() if message else f"heartbeat {next(heartbeats)}"
+            try:
+                await store.update_task(job_id, status_message=f"{label}: {detail}")
+            except Exception:
+                logger.debug("Progress update for job %s failed", job_id, exc_info=True)
+
+        return _callback
+
+    return _factory
+
+
+def _dedup_submit_key(request_key: str | None) -> str | None:
+    """Return the deduplicator key for an idempotent submission, if requested."""
+    if request_key:
+        return f"submit:{request_key}"
+    return None
+
+
+async def _submit_or_join(
+    request_key: str | None,
+    submit: Callable[[], Awaitable[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Run *submit*, coalescing duplicates that share a ``request_key``.
+
+    With a key, concurrent and retried submissions join one in-flight run and
+    every caller receives the same job payload; without one, *submit* runs as
+    today.
+    """
+    dedup_key = _dedup_submit_key(request_key)
+    if dedup_key is None:
+        return await submit()
+    joined: dict[str, Any] = await _get_deduplicator().deduplicate(dedup_key, submit)
+    return joined
 
 
 def _text_content(payload: dict[str, Any]) -> TextContent:
@@ -197,6 +285,7 @@ TOOLS: list[Tool] = [
             "YOU provide the specification, Ninja writes the code. "
             "Ninja returns ONLY a summary (file paths changed, brief description). "
             "NO source code is returned to you - Ninja writes directly to files."
+            + _REQUEST_KEY_NOTE
         ),
         inputSchema={
             "type": "object",
@@ -237,6 +326,7 @@ TOOLS: list[Tool] = [
                     "description": "Execution mode (always 'quick' for single-pass code writing)",
                     "default": "quick",
                 },
+                "request_key": _REQUEST_KEY_SCHEMA,
             },
             "required": ["task", "repo_root"],
         },
@@ -259,7 +349,7 @@ TOOLS: list[Tool] = [
             "enable dialogue mode by setting use_dialogue_mode=true.\n"
             "This maintains conversation context across all steps instead of spawning "
             "separate subprocesses for each step.\n"
-            "Set NINJA_USE_DIALOGUE_MODE=true environment variable."
+            "Set NINJA_USE_DIALOGUE_MODE=true environment variable." + _REQUEST_KEY_NOTE
         ),
         inputSchema={
             "type": "object",
@@ -374,6 +464,7 @@ TOOLS: list[Tool] = [
                         "required": [],
                     },
                 },
+                "request_key": _REQUEST_KEY_SCHEMA,
             },
             "required": ["repo_root", "steps"],
         },
@@ -399,7 +490,7 @@ TOOLS: list[Tool] = [
             "❌ NEVER USE FOR: Running tests, executing commands, tasks with dependencies. "
             "\n\n"
             "Returns summary of each step plus merge report. "
-            "NO source code is returned - Ninja writes directly to files."
+            "NO source code is returned - Ninja writes directly to files." + _REQUEST_KEY_NOTE
         ),
         inputSchema={
             "type": "object",
@@ -482,6 +573,7 @@ TOOLS: list[Tool] = [
                         "required": [],
                     },
                 },
+                "request_key": _REQUEST_KEY_SCHEMA,
             },
             "required": ["repo_root", "steps"],
         },
@@ -522,6 +614,7 @@ TOOLS: list[Tool] = [
             "Librarian, Explorer work in parallel with shared context. "
             "\n\n"
             "⏱️ NOTE: Multi-agent tasks take longer but provide comprehensive solutions."
+            + _REQUEST_KEY_NOTE
         ),
         inputSchema={
             "type": "object",
@@ -544,6 +637,7 @@ TOOLS: list[Tool] = [
                     "description": "Files/directories for context",
                     "default": [],
                 },
+                "request_key": _REQUEST_KEY_SCHEMA,
             },
             "required": ["task", "repo_root"],
         },
@@ -634,7 +728,7 @@ TOOLS.extend(
                 "those without the standard MCP Tasks capability. Returns "
                 "{job_id, status:'working', poll_interval_ms}: poll "
                 "coder_job_status until terminal, then fetch coder_job_result. "
-                "Arguments are identical to coder_simple_task."
+                "Arguments are identical to coder_simple_task." + _REQUEST_KEY_NOTE
             ),
             inputSchema=dict(_TOOLS_BY_NAME["coder_simple_task"].inputSchema),
         ),
@@ -646,7 +740,7 @@ TOOLS.extend(
                 "host, even those without the standard MCP Tasks capability. "
                 "Returns {job_id, status:'working', poll_interval_ms}: poll "
                 "coder_job_status until terminal, then fetch coder_job_result. "
-                "Arguments are identical to coder_execute_plan_sequential."
+                "Arguments are identical to coder_execute_plan_sequential." + _REQUEST_KEY_NOTE
             ),
             inputSchema=dict(_TOOLS_BY_NAME["coder_execute_plan_sequential"].inputSchema),
         ),
@@ -658,7 +752,7 @@ TOOLS.extend(
                 "host, even those without the standard MCP Tasks capability. "
                 "Returns {job_id, status:'working', poll_interval_ms}: poll "
                 "coder_job_status until terminal, then fetch coder_job_result. "
-                "Arguments are identical to coder_execute_plan_parallel."
+                "Arguments are identical to coder_execute_plan_parallel." + _REQUEST_KEY_NOTE
             ),
             inputSchema=dict(_TOOLS_BY_NAME["coder_execute_plan_parallel"].inputSchema),
         ),
@@ -846,6 +940,12 @@ You:
     # The same store backs the always-available submit/poll job API below, so
     # both views agree on jobs and survive across calls and processes.
     store = SqliteTaskStore()
+    # A previous daemon run cannot be resumed: any row still 'working' is a
+    # zombie. Reconcile them to 'failed' so they are observable and cancellable
+    # rather than forever-in-flight.
+    swept = store.sweep_stale_working("lost: daemon restart before completion")
+    if swept:
+        logger.info("Reconciled %d stale working jobs from previous daemon run", swept)
     install_tasks(server, store=store)
     jobs = JobManager(store)
 
@@ -875,6 +975,7 @@ You:
         async def _handle_job_tool() -> list[TextContent]:
             """Serve the always-available submit/poll background-job tools."""
             executor = get_executor()
+            request_key = str(arguments.get("request_key") or "") or None
 
             if name == "coder_submit_simple":
                 try:
@@ -886,8 +987,16 @@ You:
                     result = await executor.simple_task(simple_request, client_id="default")
                     return _result_payload(result)
 
-                task = await jobs.submit(_simple_work, status_message="coder_simple_task")
-                return [_text_content(_job_handle_payload(task, jobs.poll_interval_ms))]
+                async def _submit_simple() -> dict[str, Any]:
+                    task = await jobs.submit(
+                        _simple_work,
+                        status_message="coder_simple_task",
+                        progress_factory=_make_job_progress_factory(store, "coder_simple_task"),
+                    )
+                    return _job_handle_payload(task, jobs.poll_interval_ms)
+
+                handle = await _submit_or_join(request_key, _submit_simple)
+                return [_text_content(handle)]
 
             if name == "coder_submit_sequential":
                 try:
@@ -901,10 +1010,18 @@ You:
                     )
                     return _result_payload(result)
 
-                task = await jobs.submit(
-                    _sequential_work, status_message="coder_execute_plan_sequential"
-                )
-                return [_text_content(_job_handle_payload(task, jobs.poll_interval_ms))]
+                async def _submit_sequential() -> dict[str, Any]:
+                    task = await jobs.submit(
+                        _sequential_work,
+                        status_message="coder_execute_plan_sequential",
+                        progress_factory=_make_job_progress_factory(
+                            store, "coder_execute_plan_sequential"
+                        ),
+                    )
+                    return _job_handle_payload(task, jobs.poll_interval_ms)
+
+                handle = await _submit_or_join(request_key, _submit_sequential)
+                return [_text_content(handle)]
 
             if name == "coder_submit_parallel":
                 try:
@@ -918,10 +1035,18 @@ You:
                     )
                     return _result_payload(result)
 
-                task = await jobs.submit(
-                    _parallel_work, status_message="coder_execute_plan_parallel"
-                )
-                return [_text_content(_job_handle_payload(task, jobs.poll_interval_ms))]
+                async def _submit_parallel() -> dict[str, Any]:
+                    task = await jobs.submit(
+                        _parallel_work,
+                        status_message="coder_execute_plan_parallel",
+                        progress_factory=_make_job_progress_factory(
+                            store, "coder_execute_plan_parallel"
+                        ),
+                    )
+                    return _job_handle_payload(task, jobs.poll_interval_ms)
+
+                handle = await _submit_or_join(request_key, _submit_parallel)
+                return [_text_content(handle)]
 
             job_id = str(arguments.get("job_id", ""))
             unknown = _text_content(
@@ -997,8 +1122,9 @@ You:
             logger.debug(f"[{client_id}] Arguments: {json.dumps(arguments, indent=2)}")
             executor = get_executor()
             SKIP_DEDUP = {"coder_get_agents", "coder_query_logs"}
+            request_key = str(arguments.get("request_key") or "") or None
 
-            async def _execute() -> Any:
+            async def _dispatch() -> Any:
                 if name == "coder_simple_task":
                     request = SimpleTaskRequest(**arguments)
                     return await executor.simple_task(request, client_id=client_id)
@@ -1020,11 +1146,36 @@ You:
                 else:
                     raise ValueError(f"Unknown tool: {name}")
 
+            async def _execute() -> Any:
+                # Standard task-augmented calls already have a durable row from
+                # the SDK; only inline (sync) executions need their own.
+                if name not in TRACKED_SYNC_TOOLS or experimental.is_task:
+                    return await _dispatch()
+
+                captured: list[Any] = []
+
+                async def _tracked_work() -> CallToolResult:
+                    result = await _dispatch()
+                    captured.append(result)
+                    return _result_payload(result)
+
+                await jobs.run_tracked(
+                    _tracked_work,
+                    status_message=name,
+                    progress_factory=_make_job_progress_factory(store, name),
+                )
+                return captured[0] if captured else None
+
             try:
                 if name in SKIP_DEDUP:
                     result = await _execute()
                 else:
-                    key = RequestDeduplicator.make_key(name, arguments)
+                    dedup_key = _dedup_submit_key(request_key)
+                    key = (
+                        dedup_key
+                        if dedup_key is not None
+                        else RequestDeduplicator.make_key(name, arguments)
+                    )
                     result = await deduplicator.deduplicate(key, _execute)
 
                 if result is None or not hasattr(result, "model_dump"):

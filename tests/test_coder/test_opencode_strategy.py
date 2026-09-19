@@ -191,13 +191,63 @@ class TestParseOutput:
 
     def test_touched_files_are_not_retryable(self, strategy):
         """A run that actually modified files is a real success."""
-        stdout = '{"type":"tool_use","timestamp":1,"sessionID":"s1","part":{"type":"tool","tool":"edit",' \
-                 '"callID":"c1","state":{"status":"completed","input":{"filePath":"/repo/src/a.py"}}}}'
+        stdout = (
+            '{"type":"tool_use","timestamp":1,"sessionID":"s1","part":{"type":"tool","tool":"edit",'
+            '"callID":"c1","state":{"status":"completed","input":{"filePath":"/repo/src/a.py"}}}}'
+        )
 
         parsed = strategy.parse_output(stdout, "", 0)
 
         assert parsed.success is True
         assert parsed.retryable_error is False
+
+    def test_negative_exit_code_is_killed_by_signal_not_auth(self, strategy):
+        """SIGTERM (-15) is killed-by-signal, never auth, and not retryable."""
+        stdout = '{"usage":{"total_tokens":401}} waiting on timeout'
+        stderr = "401 Unauthorized"
+
+        parsed = strategy.parse_output(stdout, stderr, -15)
+
+        assert parsed.success is False
+        assert "SIGTERM" in parsed.summary
+        assert "Authentication" not in parsed.summary
+        assert parsed.retryable_error is False
+
+    def test_sigkill_classification(self, strategy):
+        """SIGKILL (-9) is classified killed-by-signal."""
+        parsed = strategy.parse_output("killed", "", -9)
+
+        assert parsed.success is False
+        assert "SIGKILL" in parsed.summary
+        assert parsed.retryable_error is False
+
+    def test_exit_zero_genuine_auth_json_still_auth(self, strategy):
+        """A real ``status":401`` marker is still an auth failure at exit 0."""
+        stdout = '{"error":{"message":"no auth","status":401}}'
+
+        parsed = strategy.parse_output(stdout, "", 0)
+
+        assert parsed.success is False
+        assert "Authentication" in parsed.summary
+        assert parsed.retryable_error is False
+
+    def test_token_count_containing_401_is_not_auth(self, strategy):
+        """A bare token count containing '401' must never be read as auth."""
+        stdout = '{"usage":{"total_tokens":40123,"prompt_tokens":401}} failed to write output'
+
+        parsed = strategy.parse_output(stdout, "", 1)
+
+        assert parsed.success is False
+        assert "Authentication" not in parsed.summary
+
+    def test_bare_unauthorized_word_is_not_auth(self, strategy):
+        """A bare 'Unauthorized' mention must not be read as an auth failure."""
+        stdout = "The requested resource was Unauthorized for this token count 40123 tokens"
+
+        parsed = strategy.parse_output(stdout, "", 0)
+
+        assert parsed.success is True
+        assert "Authentication" not in parsed.summary
 
 
 if __name__ == "__main__":

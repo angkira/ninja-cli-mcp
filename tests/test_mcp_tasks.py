@@ -20,6 +20,7 @@ Covered:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 import tempfile
@@ -320,3 +321,60 @@ async def test_task_scope_and_emit_progress_round_trip() -> None:
         assert await emit_progress(1.0, 2.0, "inside") is True
 
     assert calls == [(1.0, 2.0, "inside")]
+
+
+# --- fix4: stale 'working' reconciliation across restarts ------------------
+
+
+async def test_sweep_stale_working_marks_only_working_failed(tmp_path: Path) -> None:
+    """Only ``working`` rows are swept; terminal rows are left untouched."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+
+    working = await store.create_task(types.TaskMetadata(ttl=60000))
+    await store.update_task(working.taskId, status_message="mid")
+    done = await store.create_task(types.TaskMetadata(ttl=60000))
+    await store.update_task(done.taskId, status="completed")
+    failed = await store.create_task(types.TaskMetadata(ttl=60000))
+    await store.update_task(failed.taskId, status="failed")
+    cancelled = await store.create_task(types.TaskMetadata(ttl=60000))
+    await store.update_task(cancelled.taskId, status="cancelled")
+
+    swept = store.sweep_stale_working("lost: daemon restart before completion")
+    assert swept == 1
+
+    reconciled = await store.get_task(working.taskId)
+    assert reconciled is not None
+    assert reconciled.status == "failed"
+    assert reconciled.statusMessage == "lost: daemon restart before completion"
+    assert reconciled.lastUpdatedAt >= reconciled.createdAt
+
+    assert (await store.get_task(done.taskId)).status == "completed"  # type: ignore[union-attr]
+    assert (await store.get_task(failed.taskId)).status == "failed"  # type: ignore[union-attr]
+    assert (await store.get_task(cancelled.taskId)).status == "cancelled"  # type: ignore[union-attr]
+
+    # Idempotent: nothing left working.
+    assert store.sweep_stale_working("lost: daemon restart before completion") == 0
+
+
+def test_sweep_stale_working_is_zero_on_empty_db(tmp_path: Path) -> None:
+    """An empty store sweeps zero rows."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    assert store.sweep_stale_working("lost") == 0
+
+
+async def test_daemon_startup_sweeps_working_jobs(tmp_path: Path) -> None:
+    """A fresh server over the same DB reconciles stale 'working' jobs."""
+    db_path = tmp_path / "tasks.db"
+    store = SqliteTaskStore(db_path)
+    stale = await store.create_task(types.TaskMetadata(ttl=60000))
+    await store.update_task(stale.taskId, status_message="mid-run")
+
+    async with _connected(with_tasks=True, extra_env={"NINJA_TASKS_DB": str(db_path)}) as (
+        session,
+        _init,
+    ):
+        status = json.loads(
+            _text_of(await session.call_tool("coder_job_status", {"job_id": stale.taskId}))
+        )
+        assert status["status"] == "failed"
+        assert "lost" in (status["status_message"] or "")

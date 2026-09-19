@@ -337,6 +337,56 @@ def test_aider_should_retry_api_error():
     assert isinstance(should_retry, bool)
 
 
+def test_aider_negative_exit_code_is_killed_by_signal_not_auth():
+    """SIGTERM (-15) is killed-by-signal, never auth, and not retryable."""
+    config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
+    strategy = AiderStrategy("aider", config)
+
+    parsed = strategy.parse_output(
+        '{"usage":{"total_tokens":401}} waiting on timeout', "401 Unauthorized", -15
+    )
+
+    assert parsed.success is False
+    assert "SIGTERM" in parsed.summary
+    assert "Authentication" not in parsed.summary
+    assert parsed.retryable_error is False
+
+
+def test_aider_sigkill_classification():
+    """SIGKILL (-9) is classified killed-by-signal."""
+    config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
+    strategy = AiderStrategy("aider", config)
+
+    parsed = strategy.parse_output("killed", "", -9)
+
+    assert parsed.success is False
+    assert "SIGKILL" in parsed.summary
+    assert parsed.retryable_error is False
+
+
+def test_aider_exit_zero_genuine_auth_json_still_auth():
+    """A real ``status":401`` marker is still an auth failure at exit 0."""
+    config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
+    strategy = AiderStrategy("aider", config)
+
+    parsed = strategy.parse_output('{"error":{"status":401,"message":"Unauthorized"}}', "", 0)
+
+    assert parsed.success is False
+    assert "Authentication" in parsed.summary
+    assert parsed.retryable_error is False
+
+
+def test_aider_token_count_containing_401_is_not_auth():
+    """A bare token count containing '401' must never be read as auth."""
+    config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")
+    strategy = AiderStrategy("aider", config)
+
+    parsed = strategy.parse_output('{"usage":{"total_tokens":40123}} normal output', "", 1)
+
+    assert parsed.success is False
+    assert "Authentication" not in parsed.summary
+
+
 def test_aider_timeout_recommendations():
     """Test Aider timeout recommendations."""
     config = NinjaConfig(bin_path="aider", model="test/model", openai_api_key="test")

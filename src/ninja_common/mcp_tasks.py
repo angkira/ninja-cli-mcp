@@ -43,6 +43,8 @@ from mcp.shared.experimental.tasks.message_queue import InMemoryTaskMessageQueue
 from mcp.shared.experimental.tasks.store import TaskStore
 from mcp.types import (
     TASK_STATUS_CANCELLED,
+    TASK_STATUS_FAILED,
+    TASK_STATUS_WORKING,
     CancelTaskRequest,
     CancelTaskResult,
     Result,
@@ -565,6 +567,41 @@ class SqliteTaskStore(TaskStore):
         with self._lock, self._conn:
             cursor = self._conn.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
             return cursor.rowcount > 0
+
+    def sweep_stale_working(self, marker: str) -> int:
+        """Reconcile every stale ``working`` task to terminal ``failed``.
+
+        A daemon restart cannot resume work started by a previous process, so
+        any row left ``working`` is dead weight. This marks them ``failed`` with
+        *marker*, refreshing ``last_updated_at`` and ``expires_at`` per the
+        terminal-transition convention (:meth:`update_task`). Terminal rows are
+        left untouched.
+
+        Args:
+            marker: Human-readable status message recorded on swept rows.
+
+        Returns:
+            The number of rows swept (0 when there is nothing to reconcile).
+        """
+        now = datetime.now(UTC).isoformat()
+        with self._lock, self._conn:
+            self._purge_expired_locked()
+            cursor = self._conn.execute(
+                """
+                UPDATE tasks
+                SET status = ?,
+                    status_message = ?,
+                    last_updated_at = ?,
+                    expires_at = CASE
+                        WHEN ttl IS NOT NULL
+                        THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+' || ttl || ' milliseconds')
+                        ELSE expires_at
+                    END
+                WHERE status = ?
+                """,
+                (TASK_STATUS_FAILED, marker, now, TASK_STATUS_WORKING),
+            )
+            return cursor.rowcount
 
     async def wait_for_update(self, task_id: str) -> None:
         if await self.get_task(task_id) is None:

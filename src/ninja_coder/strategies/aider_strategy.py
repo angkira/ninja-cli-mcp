@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -28,6 +29,47 @@ if TYPE_CHECKING:
     from ninja_coder.driver import NinjaConfig
 
 logger = get_logger(__name__)
+
+
+#: Matches a genuine HTTP 401 authentication marker in context, so a bare token
+#: count (e.g. ``"total_tokens": 40123``) can never be mistaken for auth failure.
+#: Covers ``status":401`` / ``status': 401``, ``error: 401``, ``HTTP 401`` /
+#: ``HTTP/1.1 401``, ``401 Unauthorized``, ``Unauthorized (401)`` /
+#: ``Unauthorized: 401``, and ``Unauthorized`` within a few words of a
+#: standalone ``401``.
+AUTH_401_PATTERN: str = (
+    r"(?:"
+    r"(?:status|error)['\"]?\s*[:=]\s*401\b"
+    r"|HTTP(?:[/ ]1\.[01])?\s*401\b"
+    r"|401\s+Unauthorized\b"
+    r"|Unauthorized\s*[:(]\s*401\b"
+    r"|Unauthorized\W+(?:\w+\W+){0,3}401\b"
+    r"|401\b\W+(?:\w+\W+){0,3}Unauthorized"
+    r")"
+)
+_AUTH_401_RE = re.compile(AUTH_401_PATTERN, re.IGNORECASE)
+_AUTH_MARKERS: tuple[str, ...] = ("AuthenticationError", "User not found")
+
+
+def _signal_failure(exit_code: int) -> ParsedResult:
+    """Build a killed-by-signal failure result for a negative *exit_code*."""
+    try:
+        signal_name = signal.Signals(-exit_code).name
+    except ValueError:
+        signal_name = f"SIG{-exit_code}"
+    message = f"Process killed by {signal_name} (exit code {exit_code})"
+    return ParsedResult(
+        success=False,
+        summary=f"❌ {message}",
+        notes=message,
+        touched_paths=[],
+        retryable_error=False,
+    )
+
+
+def _is_auth_failure(text: str) -> bool:
+    """Whether *text* contains a genuine authentication-failure marker."""
+    return any(marker in text for marker in _AUTH_MARKERS) or _AUTH_401_RE.search(text) is not None
 
 
 class AiderStrategy:
@@ -221,6 +263,20 @@ class AiderStrategy:
         success = exit_code == 0
         combined_output = stdout + "\n" + stderr
 
+        # A negative exit code means the process was killed by a signal (e.g. an
+        # external timeout or cancellation delivered SIGTERM/SIGKILL). That is
+        # neither an auth nor an API failure, and it must never be retried:
+        # retrying a killed run could duplicate side effects. Return immediately
+        # and skip the substring scan below so token counts containing "401" or
+        # unrelated "timeout" text cannot misclassify it.
+        if exit_code is not None and exit_code < 0:
+            return _signal_failure(exit_code)
+
+        # A genuine auth marker is a failure even when the CLI exited 0.
+        auth_failure = _is_auth_failure(combined_output)
+        if auth_failure:
+            success = False
+
         # ENHANCED: Detect aider-specific errors even with exit_code=0
         aider_error_patterns = [
             # Authentication and authorization errors (HIGH PRIORITY)
@@ -228,7 +284,7 @@ class AiderStrategy:
             r"authentication\s+failed",
             r"User\s+not\s+found",
             r"Unauthorized",
-            r"401",
+            AUTH_401_PATTERN,
             r"403\s+Forbidden",
             r"invalid\s+api\s+key",
             r"api\s+key.*?(not\s+found|invalid|missing)",
@@ -374,16 +430,11 @@ class AiderStrategy:
         # Extract brief notes (error messages, warnings) - keep it SHORT
         notes = ""
         if not success:
-            # Priority 0: Authentication and credit errors (most critical)
-            if any(
-                pattern in combined_output
-                for pattern in [
-                    "AuthenticationError",
-                    "User not found",
-                    "Unauthorized",
-                    "401",
-                ]
-            ):
+            killed_by_signal = exit_code is not None and exit_code < 0
+            # Priority 0: Authentication and credit errors (most critical).
+            # Never fires for a signal-killed process (belt-and-braces; the
+            # early return above already handles it).
+            if not killed_by_signal and auth_failure:
                 notes = "❌ Authentication failed. Check OPENROUTER_API_KEY in ~/.ninja-mcp.env or verify account status."
                 summary = "❌ Authentication error"
             elif any(
@@ -464,7 +515,7 @@ class AiderStrategy:
             summary=summary,
             notes=notes,
             touched_paths=suspected_paths,
-            retryable_error=aider_error_detected,
+            retryable_error=aider_error_detected and not auth_failure,
         )
 
     def should_retry(
