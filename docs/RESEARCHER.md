@@ -7,25 +7,30 @@ The Researcher module provides web search and research capabilities for the Ninj
 Ninja Researcher enables AI assistants to:
 - Search the web using multiple providers (DuckDuckGo, Serper.dev)
 - Perform deep research with parallel queries
-- Generate comprehensive reports from sources (coming soon)
-- Fact-check claims against web sources (coming soon)
-- Summarize multiple web sources (coming soon)
+- Generate comprehensive reports from sources
+- Fact-check claims against web sources
+- Summarize multiple web sources
+- Search arXiv for structured papers
+- Fetch paper/page content and extract numbers with context
+- Run deep-research batches serially to respect upstream quotas
 
 ## Features
 
 ### ✅ Available Now
 
 - **Web Search** - Search using DuckDuckGo (free) or Serper.dev (Google Search)
-- **Deep Research** - Multi-query research with parallel agents and deduplication
-- **Rate Limiting** - 30 searches/minute, 10 deep research/minute
-- **Security** - Input validation, resource monitoring
-
-### 🚧 Coming Soon
-
+- **Deep Research** - Multi-query research with parallel agents, deduplication, real
+  page-extracted snippets and domain filters
 - **Report Generation** - Synthesize sources into comprehensive reports
 - **Fact Checking** - Verify claims against web sources
 - **Source Summarization** - Summarize and extract key information
-- **Citation Management** - Track and format citations
+- **arXiv Search** - Structured paper search via the public Atom API
+- **Paper Fetch** - Extract sections and numbers with context from papers/pages
+- **Batch Research** - Serial deep-research batches with retry/backoff
+- **Typed Errors** - Machine-readable error payloads (`rate_limited`, `upstream`,
+  `parse`, `env`)
+- **Rate Limiting** - 30 searches/minute, 10 deep research/minute
+- **Security** - Input validation, resource monitoring
 
 ## Installation
 
@@ -204,7 +209,7 @@ result = await client.call_tool("researcher_deep_research", {
 })
 ```
 
-### researcher_generate_report *(Coming Soon)*
+### researcher_generate_report
 
 Generate a comprehensive report from research sources.
 
@@ -214,7 +219,7 @@ Generate a comprehensive report from research sources.
 - `report_type` (string, optional): Report type ("comprehensive", "summary", "technical", "executive")
 - `parallel_agents` (integer, optional): Parallel synthesis agents (1-8, default: 4)
 
-### researcher_fact_check *(Coming Soon)*
+### researcher_fact_check
 
 Verify a claim against web sources.
 
@@ -222,13 +227,56 @@ Verify a claim against web sources.
 - `claim` (string, required): Claim to verify
 - `sources` (array, optional): URLs to check against (auto-search if empty)
 
-### researcher_summarize_sources *(Coming Soon)*
+### researcher_summarize_sources
 
 Summarize multiple web sources.
 
 **Parameters:**
 - `urls` (array, required): URLs to summarize
 - `max_length` (integer, optional): Max summary length in words (100-5000, default: 500)
+
+### researcher_arxiv_search
+
+Structured arXiv search via the public Atom API.
+
+**Parameters:**
+- `query` (string, required): Search query
+- `categories` (array, optional): arXiv categories ANDed with the query (default `["cs.RO", "cs.LG"]`)
+- `max_results` (integer, optional): Maximum papers (1-50, default: 10)
+- `sort_by` (string, optional): `relevance` | `lastUpdatedDate` | `submittedDate`
+- `full_metadata` (boolean, optional): Include optional fields such as `comment` and `categories`
+
+Returns papers with `id`, `title`, `authors`, `abstract`, `url` and timestamps, excluding
+withdrawn entries.
+
+### researcher_paper_fetch
+
+Fetch and parse an arXiv paper or web page.
+
+**Parameters:**
+- `source` (string, required): arXiv URL/id (abs, pdf, ar5iv) or a generic URL
+- `sections` (array, optional): Section headings to extract (case-insensitive)
+- `extract_numbers` (boolean, optional): Extract numeric tokens with sentence context
+
+Prefers the ar5iv HTML rendering for arXiv papers, falling back to the abstract page.
+
+### researcher_deep_research_batch
+
+Run up to 5 deep-research requests strictly serially.
+
+**Parameters:**
+- `requests` (array, required): 1-5 deep-research requests
+- `mode` (string, optional): Only `serial` is supported
+- `inter_call_delay_s` (number, optional): Delay between calls (0-120, default: 15)
+- `on_error` (string, optional): `continue` | `abort` | `retry_backoff` (default)
+
+### Deep research parameters
+
+- `enrich` (boolean, optional): Fetch pages to replace provider snippets with real
+  extracted text (default: true)
+- `include_domains` (array, optional): Keep only hosts matching these
+- `exclude_domains` (array, optional): Drop hosts matching these (subdomains too)
+- `prefer_domains` (array, optional): Order matching hosts first, preserving relative order
 
 ## Usage Examples
 
@@ -263,7 +311,7 @@ research = await client.call_tool("researcher_deep_research", {
 sources = research["sources"]
 print(f"Found {len(sources)} sources")
 
-# 3. Generate report (coming soon)
+# 3. Generate report
 # report = await client.call_tool("researcher_generate_report", {
 #     "topic": "MCP protocol best practices",
 #     "sources": sources,

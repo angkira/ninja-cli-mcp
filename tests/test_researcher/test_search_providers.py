@@ -14,6 +14,7 @@ import pytest
 from ninja_researcher.search_providers import (
     DuckDuckGoProvider,
     PerplexityProvider,
+    ProviderError,
     SearchProviderFactory,
     SerperProvider,
 )
@@ -57,7 +58,7 @@ class TestDuckDuckGoProvider:
             assert results[0]["title"] == "Test Result 1"
             assert results[0]["url"] == "https://example.com/1"
             assert results[0]["snippet"] == "Test snippet 1"
-            assert "score" in results[0]
+            assert "score" not in results[0]
 
     @pytest.mark.asyncio
     async def test_search_handles_empty_results(self):
@@ -74,16 +75,15 @@ class TestDuckDuckGoProvider:
 
     @pytest.mark.asyncio
     async def test_search_handles_exception(self):
-        """Test that DuckDuckGo handles exceptions gracefully."""
+        """Test that DuckDuckGo raises a typed ProviderError on failure."""
         with patch("ninja_researcher.search_providers.DDGS") as mock_ddgs:
             mock_instance = MagicMock()
             mock_instance.text.side_effect = Exception("API Error")
             mock_ddgs.return_value = mock_instance
 
             provider = DuckDuckGoProvider()
-            results = await provider.search("test query", max_results=5)
-
-            assert len(results) == 0
+            with pytest.raises(ProviderError):
+                await provider.search("test query", max_results=5)
 
     def test_is_available(self):
         """Test that DuckDuckGo is always available."""
@@ -136,16 +136,17 @@ class TestSerperProvider:
 
     @pytest.mark.asyncio
     async def test_search_without_api_key(self):
-        """Test that Serper returns empty results without API key."""
+        """Test that Serper raises a typed env error without an API key."""
         provider = SerperProvider(api_key="")
 
-        results = await provider.search("test query", max_results=5)
+        with pytest.raises(ProviderError) as excinfo:
+            await provider.search("test query", max_results=5)
 
-        assert len(results) == 0
+        assert excinfo.value.kind == "env"
 
     @pytest.mark.asyncio
     async def test_search_handles_http_error(self):
-        """Test that Serper handles HTTP errors."""
+        """Test that Serper raises a typed ProviderError on HTTP errors."""
         provider = SerperProvider(api_key="test_key")
 
         with patch("httpx.AsyncClient") as mock_client:
@@ -153,9 +154,8 @@ class TestSerperProvider:
                 side_effect=Exception("HTTP Error")
             )
 
-            results = await provider.search("test query", max_results=5)
-
-            assert len(results) == 0
+            with pytest.raises(ProviderError):
+                await provider.search("test query", max_results=5)
 
     def test_is_available_with_key(self):
         """Test that Serper is available with API key."""
@@ -213,12 +213,13 @@ class TestPerplexityProvider:
 
     @pytest.mark.asyncio
     async def test_search_without_api_key(self):
-        """Test that Perplexity returns empty results without API key."""
+        """Test that Perplexity raises a typed env error without an API key."""
         provider = PerplexityProvider(api_key="")
 
-        results = await provider.search("test query", max_results=5)
+        with pytest.raises(ProviderError) as excinfo:
+            await provider.search("test query", max_results=5)
 
-        assert len(results) == 0
+        assert excinfo.value.kind == "env"
 
     @pytest.mark.asyncio
     async def test_search_limits_results(self):

@@ -24,9 +24,12 @@ from mcp.types import CallToolResult, TextContent, Tool, ToolExecution
 from ninja_common.logging_utils import get_logger, setup_logging
 from ninja_common.mcp_tasks import install_tasks, refresh_task_after_cancel, server_task_scope
 from ninja_researcher.models import (
+    ArxivSearchRequest,
+    DeepResearchBatchRequest,
     DeepResearchRequest,
     FactCheckRequest,
     GenerateReportRequest,
+    PaperFetchRequest,
     SummarizeSourcesRequest,
 )
 from ninja_researcher.tools import get_executor
@@ -80,6 +83,26 @@ TOOLS: list[Tool] = [
                     "maximum": 8,
                     "default": 4,
                     "description": "Number of parallel search agents",
+                },
+                "enrich": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Fetch pages to replace provider snippets with real extracted text",
+                },
+                "include_domains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "If set, keep only sources whose host matches one of these",
+                },
+                "exclude_domains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Drop sources whose host matches any of these (subdomains too)",
+                },
+                "prefer_domains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Order matching sources first, preserving relative order",
                 },
             },
             "required": ["topic"],
@@ -193,6 +216,135 @@ TOOLS: list[Tool] = [
             "required": ["urls"],
         },
     ),
+    Tool(
+        name="researcher_arxiv_search",
+        execution=ToolExecution(taskSupport="optional"),
+        description=(
+            "Search arXiv for papers via the public Atom API. Returns structured papers with "
+            "id, title, authors, abstract and canonical URL, excluding withdrawn entries. "
+            "\n\n"
+            "Use when: finding primary sources for a research question, discovering papers by "
+            "topic or category (cs.RO, cs.LG, ...), or replacing ad-hoc scraping of "
+            "export.arxiv.org."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"},
+                "categories": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "default": ["cs.RO", "cs.LG"],
+                    "description": "arXiv categories ANDed with the query",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "default": 10,
+                    "description": "Maximum number of papers",
+                },
+                "sort_by": {
+                    "type": "string",
+                    "enum": ["relevance", "lastUpdatedDate", "submittedDate"],
+                    "default": "relevance",
+                    "description": "arXiv sort order",
+                },
+                "full_metadata": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include optional fields such as comment and categories",
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    Tool(
+        name="researcher_paper_fetch",
+        execution=ToolExecution(taskSupport="optional"),
+        description=(
+            "Fetch and parse the content of an arXiv paper or web page. Extracts title, "
+            "abstract and requested sections, and can extract numeric tokens with their "
+            "containing sentence. Prefers the ar5iv HTML rendering for arXiv papers. "
+            "\n\n"
+            "Use when: page-confirmed numbers are needed from a primary source, reading a "
+            "specific section, or grounding a claim in paper text."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": "arXiv URL/id (abs, pdf, ar5iv) or a generic URL",
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Section headings to extract (case-insensitive)",
+                },
+                "extract_numbers": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Extract numeric tokens with sentence context",
+                },
+            },
+            "required": ["source"],
+        },
+    ),
+    Tool(
+        name="researcher_deep_research_batch",
+        execution=ToolExecution(taskSupport="optional"),
+        description=(
+            "Run up to 5 deep-research requests strictly serially with a configurable delay, "
+            "avoiding the parallel-burst pattern that triggers upstream rate limits. Supports "
+            "continue/abort/retry_backoff error policies and returns per-request typed errors. "
+            "\n\n"
+            "Use when: multiple research topics are needed in one session and client-side "
+            "parallel blocks would be rejected."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "requests": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "topic": {"type": "string"},
+                            "queries": {"type": "array", "items": {"type": "string"}},
+                            "max_sources": {"type": "integer", "minimum": 1, "maximum": 100},
+                            "parallel_agents": {"type": "integer", "minimum": 1, "maximum": 8},
+                            "enrich": {"type": "boolean"},
+                        },
+                        "required": ["topic"],
+                    },
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "description": "Deep research requests (1..5)",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["serial"],
+                    "default": "serial",
+                    "description": "Execution mode",
+                },
+                "inter_call_delay_s": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 120,
+                    "default": 15,
+                    "description": "Delay between calls in seconds",
+                },
+                "on_error": {
+                    "type": "string",
+                    "enum": ["continue", "abort", "retry_backoff"],
+                    "default": "retry_backoff",
+                    "description": "Behavior when a request returns a typed error",
+                },
+            },
+            "required": ["requests"],
+        },
+    ),
 ]
 
 # Look up tool definitions by name (used for task-mode validation).
@@ -211,9 +363,13 @@ def create_server() -> Server:
 📋 WHAT RESEARCHER DOES:
    ✅ Search the web for information (DuckDuckGo, Serper/Google, Perplexity AI)
    ✅ Perform deep research with multiple queries
-   ✅ Aggregate and deduplicate sources
-   ✅ Generate comprehensive reports (coming soon)
-   ✅ Fact-check claims (coming soon)
+   ✅ Aggregate and deduplicate sources, with real page-extracted snippets
+   ✅ Generate comprehensive reports
+   ✅ Fact-check claims
+   ✅ Summarize multiple web sources
+   ✅ Search arXiv for structured papers
+   ✅ Fetch paper/page content and extract numbers with context
+   ✅ Run deep-research batches serially to respect upstream quotas
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -221,16 +377,26 @@ def create_server() -> Server:
 
 • researcher_deep_research
   Multi-query research with parallel agents using Perplexity AI.
-  Returns: Aggregated and deduplicated sources with AI-generated insights.
+  Returns: Aggregated and deduplicated sources with real titles/snippets.
+  Params: enrich, include_domains, exclude_domains, prefer_domains.
 
-• researcher_generate_report (coming soon)
+• researcher_generate_report
   Generate comprehensive reports from sources.
 
-• researcher_fact_check (coming soon)
+• researcher_fact_check
   Verify claims against web sources.
 
-• researcher_summarize_sources (coming soon)
+• researcher_summarize_sources
   Summarize multiple web sources.
+
+• researcher_arxiv_search
+  Structured arXiv search via the public Atom API (id, title, authors, abstract, url).
+
+• researcher_paper_fetch
+  Fetch and parse an arXiv paper or web page; extract sections and numbers with context.
+
+• researcher_deep_research_batch
+  Run up to 5 deep-research requests strictly serially with retry/backoff policies.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -304,6 +470,18 @@ def create_server() -> Server:
                 elif name == "researcher_summarize_sources":
                     request = SummarizeSourcesRequest(**arguments)
                     result = await executor.summarize_sources(request, client_id=client_id)
+
+                elif name == "researcher_arxiv_search":
+                    request = ArxivSearchRequest(**arguments)
+                    result = await executor.arxiv_search(request, client_id=client_id)
+
+                elif name == "researcher_paper_fetch":
+                    request = PaperFetchRequest(**arguments)
+                    result = await executor.paper_fetch(request, client_id=client_id)
+
+                elif name == "researcher_deep_research_batch":
+                    request = DeepResearchBatchRequest(**arguments)
+                    result = await executor.deep_research_batch(request, client_id=client_id)
 
                 else:
                     return [

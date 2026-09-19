@@ -13,6 +13,7 @@ import pytest_asyncio
 
 from ninja_researcher.models import (
     DeepResearchRequest,
+    ErrorKind,
     FactCheckRequest,
     GenerateReportRequest,
     SummarizeSourcesRequest,
@@ -62,7 +63,7 @@ class TestWebSearch:
         assert first_result.title
         assert first_result.url
         assert first_result.snippet
-        assert first_result.score >= 0.0
+        assert first_result.score is None or first_result.score >= 0.0
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -97,7 +98,9 @@ class TestWebSearch:
         # Should return error status (error is caught in executor)
         result = await executor.web_search(request, client_id=client_id)
         assert result.status == "error"
-        assert "Unsupported search provider" in result.error_message
+        assert result.error is not None
+        assert result.error.kind == ErrorKind.parse
+        assert "Unsupported search provider" in result.error.message
 
 
 class TestDeepResearch:

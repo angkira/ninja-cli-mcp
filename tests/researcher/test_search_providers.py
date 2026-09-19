@@ -96,8 +96,7 @@ async def test_duckduckgo_search():
         assert "title" in result
         assert "url" in result
         assert "snippet" in result
-        assert "score" in result
-        assert isinstance(result["score"], float)
+        assert "score" not in result
 
 
 @pytest.mark.skipif(
@@ -118,4 +117,4 @@ async def test_serper_search():
         assert "title" in result
         assert "url" in result
         assert "snippet" in result
-        assert "score" in result
+        assert "score" not in result

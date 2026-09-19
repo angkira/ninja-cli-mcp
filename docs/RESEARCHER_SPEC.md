@@ -17,9 +17,12 @@
 │  │                  MCP Tools Layer                       │ │
 │  │  • researcher_web_search                               │ │
 │  │  • researcher_deep_research                            │ │
-│  │  • researcher_generate_report (planned)                │ │
-│  │  • researcher_fact_check (planned)                     │ │
-│  │  • researcher_summarize_sources (planned)              │ │
+│  │  • researcher_generate_report                          │ │
+│  │  • researcher_fact_check                               │ │
+│  │  • researcher_summarize_sources                        │ │
+│  │  • researcher_arxiv_search                             │ │
+│  │  • researcher_paper_fetch                              │ │
+│  │  • researcher_deep_research_batch                      │ │
 │  └────────────────────────────────────────────────────────┘ │
 │                           │                                  │
 │  ┌────────────────────────────────────────────────────────┐ │
@@ -64,9 +67,12 @@
 **Tools Exposed:**
 - `researcher_web_search` - Web search
 - `researcher_deep_research` - Multi-query research
-- `researcher_generate_report` - Report generation (planned)
-- `researcher_fact_check` - Fact checking (planned)
-- `researcher_summarize_sources` - Source summarization (planned)
+- `researcher_generate_report` - Report generation
+- `researcher_fact_check` - Fact checking
+- `researcher_summarize_sources` - Source summarization
+- `researcher_arxiv_search` - Structured arXiv search
+- `researcher_paper_fetch` - Paper/page content extraction
+- `researcher_deep_research_batch` - Serial deep-research batches
 
 **Configuration:**
 - Server name: "ninja-researcher"
@@ -84,9 +90,12 @@
 **Methods:**
 - `web_search()` - Single web search
 - `deep_research()` - Multi-query research
-- `generate_report()` - Report generation (planned)
-- `fact_check()` - Fact checking (planned)
-- `summarize_sources()` - Summarization (planned)
+- `generate_report()` - Report generation
+- `fact_check()` - Fact checking
+- `summarize_sources()` - Summarization
+- `arxiv_search()` - Structured arXiv search
+- `paper_fetch()` - Paper/page content extraction
+- `deep_research_batch()` - Serial deep-research batches
 
 **Security:**
 - Rate limiting: `@rate_limited` decorator
@@ -241,7 +250,7 @@ def get_default_provider():
 
 - **Web Search**: 30 calls/minute per client
 - **Deep Research**: 10 calls/minute per client
-- **Report Generation**: 5 calls/minute per client (planned)
+- **Report Generation**: 5 calls/minute per client
 
 ### Implementation
 
@@ -475,10 +484,10 @@ Metrics stored in `~/.cache/ninja-mcp/researcher/metrics/`:
 - [x] Integration tests
 - [x] Documentation
 
-### Phase 2: Report Generation 🚧
+### Phase 2: Report Generation ✅
 
-- [ ] Source fetching and parsing
-- [ ] Content extraction (BeautifulSoup)
+- [x] Source fetching and parsing
+- [x] Content extraction (BeautifulSoup)
 - [ ] LLM-based synthesis
 - [ ] Parallel sub-agent analysis
 - [ ] Report formatting (Markdown)

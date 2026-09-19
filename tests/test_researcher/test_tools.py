@@ -12,6 +12,7 @@ import pytest
 
 from ninja_researcher.models import (
     DeepResearchRequest,
+    ErrorKind,
     FactCheckRequest,
     GenerateReportRequest,
     SummarizeSourcesRequest,
@@ -311,7 +312,9 @@ class TestFactCheck:
             result = await executor.fact_check(request, client_id="test")
 
             assert result.status == "error"
-            assert "Search failed" in result.verdict
+            assert result.verdict == ""
+            assert result.error is not None
+            assert result.error.kind == ErrorKind.upstream
 
 
 class TestSummarizeSources:
@@ -419,4 +422,6 @@ class TestSummarizeSources:
             result = await executor.summarize_sources(request, client_id="test")
 
             assert result.status == "error"
-            assert "No sources could be fetched successfully" in result.combined_summary
+            assert result.combined_summary == ""
+            assert result.error is not None
+            assert "No sources" in result.error.message
