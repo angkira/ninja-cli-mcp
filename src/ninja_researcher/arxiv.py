@@ -94,13 +94,42 @@ def _collapse(text: str | None) -> str:
     return " ".join(text.split())
 
 
+def _arxiv_error_from_status(response: httpx.Response) -> ProviderError:
+    """Map an arXiv API HTTP error response to a :class:`ProviderError`.
+
+    HTTP 406 from export.arxiv.org signals throttling under burst load, so it
+    is classified as retryable ``rate_limited``. All other statuses delegate
+    to the shared :func:`provider_error_from_status` classifier unchanged.
+    """
+    if response.status_code == 406:
+        return ProviderError(
+            ErrorKind.rate_limited,
+            "arXiv throttled the request (HTTP 406); retry after a pause",
+            30.0,
+        )
+    return provider_error_from_status(response)
+
+
 def _build_search_query(query: str, categories: list[str] | None) -> str:
     """Build an arXiv ``search_query`` value from a query and category list."""
-    parts = [f"all:{query}"]
-    for category in categories or []:
-        cleaned = category.strip()
-        if cleaned:
-            parts.append(f"cat:{cleaned}")
+    cleaned_query = query.strip() if query else ""
+    cleaned_categories = [c.strip() for c in categories or [] if c.strip()]
+    if not cleaned_query and not cleaned_categories:
+        raise ValueError("Search query must not be empty")
+    parts: list[str] = []
+    if cleaned_query:
+        has_whitespace = any(ch.isspace() for ch in cleaned_query)
+        already_grouped = len(cleaned_query) >= 2 and (
+            (cleaned_query.startswith('"') and cleaned_query.endswith('"'))
+            or (cleaned_query.startswith("(") and cleaned_query.endswith(")"))
+        )
+        if has_whitespace and not already_grouped:
+            escaped = cleaned_query.replace('"', '\\"')
+            parts.append(f'all:"{escaped}"')
+        else:
+            parts.append(f"all:{cleaned_query}")
+    for cleaned in cleaned_categories:
+        parts.append(f"cat:{cleaned}")
     return " AND ".join(parts)
 
 
@@ -203,7 +232,7 @@ async def arxiv_search(
             response.raise_for_status()
             text = response.text
     except httpx.HTTPStatusError as exc:
-        raise provider_error_from_status(exc.response) from exc
+        raise _arxiv_error_from_status(exc.response) from exc
     except httpx.TimeoutException as exc:
         raise ProviderError(ErrorKind.upstream, "arXiv request timed out") from exc
     except httpx.HTTPError as exc:

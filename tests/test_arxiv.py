@@ -156,6 +156,33 @@ async def test_arxiv_search_clamps_max_results() -> None:
 
 
 @pytest.mark.asyncio
+async def test_arxiv_search_multiword_query_is_quoted() -> None:
+    """Multi-word free text is emitted as a quoted all:"..." clause."""
+    _FakeAsyncClient.response = _FakeResponse(ATOM_FIXTURE)
+    with patch("ninja_researcher.arxiv.httpx.AsyncClient", _FakeAsyncClient):
+        await arxiv_search("attention is all you need", categories=["cs.CL"])
+
+    assert _FakeAsyncClient.last_params["search_query"] == (
+        'all:"attention is all you need" AND cat:cs.CL'
+    )
+
+
+@pytest.mark.asyncio
+async def test_arxiv_search_406_is_rate_limited() -> None:
+    """A 406 from the arXiv API becomes rate_limited with retry_after 30s."""
+    _FakeAsyncClient.response = _FakeResponse(status_code=406)
+    executor = ResearchToolExecutor()
+
+    with patch("ninja_researcher.arxiv.httpx.AsyncClient", _FakeAsyncClient):
+        result = await executor.arxiv_search(ArxivSearchRequest(query="robot"))
+
+    assert result.status == "error"
+    assert result.error is not None
+    assert result.error.kind == ErrorKind.rate_limited
+    assert result.error.retry_after_s == 30.0
+
+
+@pytest.mark.asyncio
 async def test_arxiv_search_429_is_rate_limited() -> None:
     """A 429 response becomes a rate_limited ErrorInfo with retry_after_s."""
     _FakeAsyncClient.response = _FakeResponse(status_code=429, headers={"Retry-After": "5"})
