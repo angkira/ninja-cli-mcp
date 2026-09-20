@@ -2,12 +2,79 @@
 
 ## Session Information
 
-**Session ID:** junie-models-effort-20260916
-**Started At:** 2026-09-16
-**Last Updated:** 2026-09-16
-**Session Type:** Feature - Junie versioned models + normalizer + effort (NO COMMIT per instructions)
+**Session ID:** researcher-postmortem-20260919
+**Started At:** 2026-09-19
+**Last Updated:** 2026-09-19
+**Session Type:** Post-mortem intake + implementation + delivery (3 commits, see below)
 
-## Latest Session (2026-09-16): Junie catalog / normalizer / effort
+## Latest Session (2026-09-19): delivery — all work committed
+
+**Commits (main, NOT pushed):**
+1. `bbc84e6` feat(researcher): P0+P1 — typed errors (ErrorKind/ErrorInfo),
+   bs4→base deps, researcher_arxiv_search, paper_fetch, deep_research_batch,
+   domain filters, enrichment/source_type, docs sync. 20 files.
+2. `f78cfe9` fix(coder): orphan prevention — JobManager.run_tracked (durable
+   rows for sync tools), request_key idempotency, signal-kill classification
+   (no more SIGTERM→"Authentication failed"), startup sweep of stale working
+   jobs, progress refresh. 9 files. Separate commit per user request.
+3. `5a5189d` fix(researcher): quote arXiv free-text terms (phrase search, was
+   OR-ed by arXiv), map arXiv HTTP 406 → rate_limited/retry 30s.
+4. `7d7353c` feat(coder): NINJA_FALLBACK_MODELS chain — retryable model-side
+   failures (429/503/quota/overload) swap to next model; 22 tests, gates green.
+5. `cd61711` refactor(mcp): handshake trim — coder instr 5253B→746B,
+   researcher 3127B→632B; descriptions ~23KB→~2.7KB total. Schemas untouched.
+6. `5568ab7` refactor(mcp): all-tool descriptions 4571B→3471B (4 servers),
+   usage guards kept (submit→status→result, serial rule, misused params).
+
+**Verified:** ruff+mypy+pytest green on all touched files both in worktrees and
+on main. Live: summarize_sources returns real bs4-parsed summary (P0-2 fixed
+in prod env bs4 4.15.0); registry sweep proven (zombie e3a438da → failed
+"lost: daemon restart before completion", 0 working rows of 101 jobs); new
+tools (arxiv_search/batch/paper_fetch) registered on live researcher daemon.
+Researcher daemon PID 3173620, coder 549476 (both restarted today); agent
+untouched. Worktrees/branches for all three plan runs pruned.
+
+**Notes:**
+- arXiv IP throttled this host during testing (HTTP 406 storm). Quoted-query
+  fix is unit-covered; live end-to-end for arxiv_search still pending a
+  clean-window probe: single `researcher_arxiv_search(query="attention is all
+  you need", categories=["cs.CL"], max_results=3)` expected to return
+  1706.03762. Do NOT burst.
+- MCP submit-timeout incident (see .session post-mortem): orphan killed,
+  root-caused, fixed in f78cfe9.
+- Session's own coder/researcher MCP client pipes died with the daemon
+  restarts; ninja-coder tools detached from this session afterward. New
+  sessions re-handshake automatically and will see the new tools.
+- Pre-existing failures left untouched: test_provider_factory_default
+  (default perplexity vs asserted duckduckgo), ruff debt in
+  tests/test_strategies.py, logger lines not reaching daemon logs at startup
+  (stderr plumbing), sqlite ResourceWarning leak in provider path.
+
+## Latest Session (2026-09-19): ninja-researcher post-mortem
+
+**Context:** User supplied a usage post-mortem (visual-student research session) +
+prioritized API spec. Explore agent verified all claims against code.
+
+**Confirmed root causes:**
+1. `bs4` only in `[researcher]` extra; live daemon env (uv tool, bare install) lacks it
+   → `No module named 'bs4'` leaks into `combined_summary` (tools.py:487, 582-587).
+2. No typed errors — failures surface as `sources_found:0` / `status:"error"` with
+   message buried in summary fields (tools.py:189-195 etc.).
+3. Providers swallow exceptions → [] (search_providers.py:94-96, 169-174, 276-281);
+   burst rate-limit overflow indistinguishable from "no results".
+4. Fake artifacts: "Search result N" titles, copied snippets, score ladder
+   (search_providers.py:251-256). No arXiv code. Stale "(coming soon)" docs
+   (server.py:215-232, docs/RESEARCHER.md, RESEARCHER_SPEC.md).
+
+**Filed:**
+- `.session/2026-09-19_ninja-researcher-postmortem.md` (full verdicts + P0/P1/P2 spec
+  + operating rules for agents using ninja-researcher until fixed)
+- ROADMAP.md: new CRITICAL task "ninja-researcher reliability & API overhaul"
+
+**Pending user decision:** implementation scope (P0 vs P0+P1); approval to reinstall
+live uv tool env + restart researcher daemon (required for bs4 fix; restart not reload).
+
+## Previous Session (2026-09-16): Junie catalog / normalizer / effort
 
 **Verified live first (3 cheap `say hi` probes, junie CLI):**
 - `gpt-5.6-luna` → SUPPORTED (exit 0, "Hi!") — despite being a Codex-model id.

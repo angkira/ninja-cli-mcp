@@ -110,6 +110,122 @@ Refactor the ninja configuration system to use a hierarchical, component-first a
 
 ## Active Tasks
 
+### Task: ninja-researcher reliability & API overhaul (post-mortem 2026-09-19)
+**Priority:** CRITICAL (P0s are session-killers)
+**Status:** COMPLETED 2026-09-19 — commits `bbc84e6` + `5a5189d` (NOT pushed)
+
+**Description:**
+(All spec details: `.session/2026-09-19_ninja-researcher-postmortem.md`.)
+Delivered via ninja-coder sequential plan (job 28e9cb80, all 8 steps ok):
+- [x] P0-1 Typed errors `{error_kind, message, retry_after_s}` — models.py + tools.py
+      error paths; providers raise ProviderError instead of swallowing
+- [x] P0-2 bs4 → base deps (pyproject + uv.lock regen); tool env reinstalled
+      (bs4 4.15.0, verified live: summarize_sources returns real parsed summary);
+      "(coming soon)" removed (server.py, RESEARCHER.md, RESEARCHER_SPEC.md)
+- [x] P0-3 `researcher_arxiv_search` (export.arxiv.org Atom, 3s spacing lock,
+      withdrawn filter); follow-up `5a5189d`: quoted phrase terms + 406 →
+      rate_limited. Live e2e pending clean-window probe (arXiv IP-throttled
+      during testing — retry once, spaced, expected 1706.03762)
+- [x] P1-1 `researcher_paper_fetch(source, sections[], extract_numbers)`
+- [x] P1-2 `researcher_deep_research_batch` (serial, delay, retry_backoff, 600s cap)
+- [x] P1-3 Domain filters include/exclude/prefer
+- [x] P1-4 Real titles + per-source snippets + source_type; fake score ladder dropped
+- [~] P2 items — NOT done; remain backlog
+
+**Verification:** ruff/mypy/pytest green (118+ passed per suite); live probe
+confirmed 7/7 tools registered + sweep in tasks.db. Sole test failure is
+pre-existing (test_provider_factory_default — see backlog).
+
+**Description:**
+Fix the failure modes that derailed the visual-student research session: burst-killed
+deep_research calls misread as "topic too complex" (zero diagnostics), summarize_sources
+dead from missing bs4 in the live env, snippet-only output forcing webfetch fallback.
+Root causes verified in code — see `.session/2026-09-19_ninja-researcher-postmortem.md`.
+
+**Files (planned):**
+- [ ] P0-1 Typed errors `{error_kind, message, retry_after_s}` — models.py + tools.py
+      error paths (189-195, 404-412, 456-464, 582-588); providers must stop swallowing
+      exceptions (search_providers.py:94-96, 169-174, 276-281)
+- [ ] P0-2 bs4 → base deps (pyproject.toml:19-39); reinstall live uv tool env; error
+      field instead of combined_summary leak; remove "(coming soon)" (server.py:215-232,
+      docs/RESEARCHER.md, docs/RESEARCHER_SPEC.md)
+- [ ] P0-3 `researcher_arxiv_search` via export.arxiv.org Atom XML (stdlib parser)
+- [ ] P1-1 `researcher_paper_fetch(source, sections[], extract_numbers)`
+- [ ] P1-2 `researcher_deep_research_batch` (serial queue, inter_call_delay_s, backoff)
+- [ ] P1-3 Domain filters include/exclude/prefer
+- [ ] P1-4 Real titles + per-source snippets + source_type; drop fake score ladder
+      (search_providers.py:87, 161-162, 251-256)
+- [ ] P2-1 dedup/cache · P2-2 extract_claims · P2-3 fact_check source weighting ·
+      P2-4 doc/schema reconciliation
+
+### Task: coder model fallback (NINJA_FALLBACK_MODELS)
+**Priority:** Medium
+**Status:** COMPLETED 2026-09-19 — commit `7d7353c` (NOT pushed)
+
+Retryable model-side failures (429/503/quota/overload) advance to the next
+model in the comma-separated env chain; unset = today's behavior. Simple +
+sequential/parallel paths; 22 tests green; ruff/mypy clean. Enable:
+`export NINJA_FALLBACK_MODELS="model-a,model-b"`.
+
+### Task: MCP handshake token trim
+**Priority:** Medium
+**Status:** COMPLETED 2026-09-19 — commit `cd61711` (NOT pushed)
+
+Coder instructions 5253B→746B, researcher 3127B→632B; all `━━━` gone;
+duplicated DOES/DOES-NOT, workflows, examples removed (canonical text stays
+in docs//skills//commands/). Schemas/params/behavior unchanged; no test
+asserted on those strings. Follow-up pass 2 (`5568ab7`): all 35 tool
+descriptions across coder/researcher/agent/secretary 4571B→3471B, keeping
+the guards that prevent wasted calls (submit→status→result chain, serial
+rule, misused params).
+
+---
+
+### Task: coder MCP submit-timeout orphan runs (incident 2026-09-19)
+**Priority:** HIGH
+**Status:** COMPLETED 2026-09-19 — commit `f78cfe9` (NOT pushed, separate commit)
+
+**Description:**
+MCP client timeout on `coder_execute_plan_sequential` left a daemon-side execution
+running with NO registry entry; resubmission duplicated the run. Root-caused via
+logs/JSONL, orphan SIGTERMed, then fixed + verified + landed (job b6d229f9, 6 steps).
+Full evidence in `.session/2026-09-19_ninja-researcher-postmortem.md` (INCIDENT section).
+
+**Fixes (all delivered + gates green):**
+- [x] Register job BEFORE spawning execution (JobManager.run_tracked covers all
+      4 sync tools — no more invisible orphans)
+- [x] request_key idempotency (same key joins instead of duplicating, sync + submit)
+- [x] Negative exit codes → killed-by-signal, NOT "Authentication failed"
+      (substr "401"/"Unauthorized" restricted to contextual 401 patterns)
+- [x] Startup sweep: stale 'working' → 'failed' "lost: daemon restart before
+      completion" (live-proven: zombie e3a438da swept at restart, 0/101 working)
+- [x] last_updated_at/status_message refresh via 10s progress tick
+
+**New backlog found during this work:**
+- [ ] ninja_mcp logger lines never reach daemon logs at startup (stderr plumbing) —
+      the sweep's "Reconciled" INFO is invisible in coder.log (verified via DB instead)
+- [ ] sqlite3 connection ResourceWarning leak in provider/config path
+- [ ] test_provider_factory_default asserts duckduckgo, real default is perplexity
+      (pre-existing on HEAD; update assertion)
+- [ ] ruff debt in tests/test_strategies.py (pre-existing)
+
+**Description:**
+MCP client timeout on `coder_execute_plan_sequential` left a daemon-side execution
+running with NO registry entry; resubmission duplicated the run (two concurrent 8-step
+plans, 96% CPU). Orphan killed manually (SIGTERM); partial work quarantined on branch
+`ninja/sequential-plan-1789807154-46b3ea`. Full evidence in
+`.session/2026-09-19_ninja-researcher-postmortem.md` (INCIDENT section).
+
+**Fixes:**
+- [ ] Register job in registry BEFORE spawning execution (registry-after-response today)
+- [ ] Submit idempotency: client request key + dedup so retry joins, never duplicates
+- [ ] Map negative exit codes (signal kills) to cancelled/killed, NOT "Authentication
+      failed" (misparse observed with exit -15)
+- [ ] Reconcile registry on daemon restart: stale 'working' → 'lost' (zombie e3a438da)
+- [ ] Refresh job `last_updated_at` / progress during execution
+
+---
+
 ### Task: Worktree-based task isolation for ninja-coder
 **Priority:** CRITICAL
 **Status:** COMPLETED (no git commits, per instructions)
