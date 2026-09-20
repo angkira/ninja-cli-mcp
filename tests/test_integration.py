@@ -201,7 +201,7 @@ async def test_quick_task_execution(skip_if_no_api_key, real_driver, test_repo):
     assert result.success is True, f"Task failed: {result.summary}"
     assert result.model_used is not None
     assert len(result.suspected_touched_paths) > 0, "No files were modified"
-    assert "example.py" in result.suspected_touched_paths
+    assert any(Path(p).name == "example.py" for p in result.suspected_touched_paths)
 
     # Check that file was actually modified
     example_content = (test_repo / "example.py").read_text()
@@ -248,7 +248,7 @@ async def test_multi_agent_task_execution(
     assert result.success is True, f"Task failed: {result.summary}"
     assert result.model_used is not None
     assert len(result.suspected_touched_paths) >= 1, "No files were created"
-    assert "calculator.py" in result.suspected_touched_paths
+    assert any(Path(p).name == "calculator.py" for p in result.suspected_touched_paths)
 
     # Verify the calculator module was created
     calc_file = test_repo / "calculator.py"

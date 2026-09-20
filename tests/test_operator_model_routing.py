@@ -131,6 +131,11 @@ def test_from_env_junie_defaults_to_junie_model(monkeypatch: pytest.MonkeyPatch)
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("NINJA_CODE_BIN", "junie")
+    # Hermetic binary resolution: the `junie` CLI is not installed, so without
+    # this `from_env` falls back to whichever ambient binary `shutil.which`
+    # finds on PATH (e.g. aider) and returns *its* default model instead of
+    # junie's. An empty PATH forces "junie" to survive as bin_path.
+    monkeypatch.setenv("PATH", "")
     config = NinjaConfig.from_env()
     assert config.model == operator_default_model("junie")
 
