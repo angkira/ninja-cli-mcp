@@ -45,7 +45,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_deep_research",
         execution=ToolExecution(taskSupport="optional"),
-        description=("Deep research on a topic via sub-queries and parallel search agents."),
+        description="Deep research a topic via sub-queries and parallel agents; one call at a time, >=15s apart (use batch for multiple). Supports enrich and include/exclude/prefer_domains.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -100,9 +100,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_generate_report",
         execution=ToolExecution(taskSupport="optional"),
-        description=(
-            "Synthesize sources into a structured report (comprehensive, summary, technical, executive)."
-        ),
+        description="Synthesize sources into a report (comprehensive, summary, technical, executive).",
         inputSchema={
             "type": "object",
             "properties": {
@@ -139,7 +137,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_fact_check",
         execution=ToolExecution(taskSupport="optional"),
-        description=("Verify a claim against web sources; returns verdict with confidence."),
+        description=("Verify a claim against web sources with verdict and confidence."),
         inputSchema={
             "type": "object",
             "properties": {
@@ -160,7 +158,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_summarize_sources",
         execution=ToolExecution(taskSupport="optional"),
-        description=("Summarize multiple sources into per-source plus combined summaries."),
+        description=("Summarize URLs into per-source plus combined summaries."),
         inputSchema={
             "type": "object",
             "properties": {
@@ -183,9 +181,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_arxiv_search",
         execution=ToolExecution(taskSupport="optional"),
-        description=(
-            "Search arXiv papers via the public Atom API (id, title, authors, abstract, url)."
-        ),
+        description="Search arXiv papers; categories default [cs.RO, cs.LG] ANDed with the query.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -221,9 +217,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_paper_fetch",
         execution=ToolExecution(taskSupport="optional"),
-        description=(
-            "Fetch an arXiv paper or web page; extract sections and numbers with context."
-        ),
+        description="Fetch an arXiv paper or web page; extract sections and numbers with context.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -248,9 +242,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_deep_research_batch",
         execution=ToolExecution(taskSupport="optional"),
-        description=(
-            "Run up to 5 deep-research requests strictly serially to respect upstream quotas."
-        ),
+        description="Run up to 5 deep-research requests strictly serially (upstream quotas).",
         inputSchema={
             "type": "object",
             "properties": {

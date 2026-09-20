@@ -45,10 +45,7 @@ logger = get_logger(__name__)
 TOOLS: list[Tool] = [
     Tool(
         name="secretary_analyse_file",
-        description=(
-            "Analyze a file to extract structure, functions, classes, and provide a summary. "
-            "Useful for understanding code organization and content."
-        ),
+        description="Analyze a file: structure, functions, classes, summary.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -62,10 +59,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="secretary_file_search",
-        description=(
-            "Search for files matching a glob pattern and optionally filter by regex pattern. "
-            "Useful for finding specific files or code patterns in a codebase."
-        ),
+        description="Search files by glob pattern with optional content-regex filter.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -87,10 +81,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="secretary_codebase_report",
-        description=(
-            "Generate a comprehensive report about a codebase including structure, "
-            "file counts, languages used, and overall metrics."
-        ),
+        description="Report on codebase structure, file counts, languages, and metrics.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -114,10 +105,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="secretary_document_summary",
-        description=(
-            "Summarize documentation files (markdown, text) in a directory. "
-            "Extracts headings, sections, and key information."
-        ),
+        description="Summarize docs in a directory: headings, sections, key info.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -136,9 +124,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="secretary_update_documentation",
-        description=(
-            "Update or create documentation files. Useful for maintaining project documentation."
-        ),
+        description="Update or create project documentation files.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -167,10 +153,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="secretary_session_report",
-        description=(
-            "Get a report of the current session including tracked operations, "
-            "file accesses, and session metadata."
-        ),
+        description="Report current session: tracked ops, file accesses, metadata.",
         inputSchema={
             "type": "object",
             "properties": {

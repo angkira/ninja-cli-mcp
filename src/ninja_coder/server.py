@@ -264,11 +264,10 @@ TOOLS: list[Tool] = [
         name="coder_simple_task",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Write tiny code edits (1-2 lines, one file/function: field, typo, small bugfix). "
-            "In-place on current branch with safety-commit, no worktree. "
-            "Quick model, short timeout — not for multi-file work, use sequential instead. "
-            "Returns summary only (files changed, brief description), no source code."
-            + _REQUEST_KEY_NOTE
+            "Tiny 1-2 line fix in one file/function (typo, field, small bugfix), "
+            "in-place with safety-commit, no worktree. "
+            "Quick model — not for multi-file work, use sequential. "
+            "Summary only, no source code." + _REQUEST_KEY_NOTE
         ),
         inputSchema={
             "type": "object",
@@ -318,9 +317,8 @@ TOOLS: list[Tool] = [
         name="coder_execute_plan_sequential",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Run a multi-step plan sequentially where order matters (multi-file features, "
-            "refactors, class rewrites). Heavy model, longer timeout, isolated ninja/* worktree."
-            + _REQUEST_KEY_NOTE
+            "Ordered multi-step plan (multi-file features, refactors, rewrites). "
+            "Heavy model, isolated ninja/* worktree." + _REQUEST_KEY_NOTE
         ),
         inputSchema={
             "type": "object",
@@ -444,9 +442,9 @@ TOOLS: list[Tool] = [
         name="coder_execute_plan_parallel",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Run independent steps in parallel (atomic, non-overlapping files). Choose "
-            "complexity every call: 'simple' = trivial edits in-place with safety-commit, "
-            "no worktree; 'complex' = real work in ninja/* worktree. Never mix — split into two calls."
+            "Independent steps in parallel (atomic, non-overlapping files). "
+            "complexity every call: 'simple' = trivial edits in-place, no worktree; "
+            "'complex' = real work in ninja/* worktree. Never mix — split into two calls."
             + _REQUEST_KEY_NOTE
         ),
         inputSchema={
@@ -537,7 +535,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="coder_get_agents",
-        description="List specialized agents for multi-agent orchestration (architect, frontend, backend, devops, reviewer, docs, explorer).",
+        description="List specialized agents for multi-agent orchestration.",
         inputSchema={
             "type": "object",
             "properties": {},
@@ -548,7 +546,7 @@ TOOLS: list[Tool] = [
         name="coder_multi_agent_task",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Run a complex task with coordinated specialized agents (full-stack, system design, large refactors)."
+            "Complex task with coordinated specialized agents (full-stack, system design, large refactors)."
             + _REQUEST_KEY_NOTE
         ),
         inputSchema={
@@ -579,7 +577,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="coder_query_logs",
-        description="Query structured JSONL logs for debugging (filter by session, task, CLI, level; limit/offset for paging).",
+        description="Query JSONL logs for debugging (filter by session, task, CLI, level; limit/offset paging).",
         inputSchema={
             "type": "object",
             "properties": {
@@ -646,56 +644,45 @@ TOOLS.extend(
     [
         Tool(
             name="coder_submit_simple",
-            description="Async variant of coder_simple_task: returns a job handle to poll.",
+            description="Submit coder_simple_task as a background job: poll coder_job_status until terminal, then coder_job_result.",
             inputSchema=dict(_TOOLS_BY_NAME["coder_simple_task"].inputSchema),
         ),
         Tool(
             name="coder_submit_sequential",
-            description="Async variant of coder_execute_plan_sequential: returns a job handle to poll.",
+            description="Submit coder_execute_plan_sequential as a background job: poll coder_job_status until terminal, then coder_job_result.",
             inputSchema=dict(_TOOLS_BY_NAME["coder_execute_plan_sequential"].inputSchema),
         ),
         Tool(
             name="coder_submit_parallel",
-            description="Async variant of coder_execute_plan_parallel: returns a job handle to poll.",
+            description="Submit coder_execute_plan_parallel as a background job: poll coder_job_status until terminal, then coder_job_result.",
             inputSchema=dict(_TOOLS_BY_NAME["coder_execute_plan_parallel"].inputSchema),
         ),
         Tool(
             name="coder_job_status",
             description=(
-                "Get the status of a background job created by coder_submit_*. "
-                "Returns {job_id, status, created_at, last_updated_at, "
-                "status_message}; status is one of working|completed|failed|"
-                "cancelled. Poll this until it is no longer 'working', then call "
-                "coder_job_result."
+                "Poll a coder_submit_* job until no longer working (working|completed|failed|"
+                "cancelled), then call coder_job_result."
             ),
             inputSchema=dict(_JOB_ID_SCHEMA),
         ),
         Tool(
             name="coder_job_result",
             description=(
-                "Fetch the result payload of a background job created by "
-                "coder_submit_*. While the job is still working it returns "
-                "{job_id, status:'working', poll_interval_ms}; once terminal it "
-                "returns the same JSON payload the synchronous tool would have "
-                "returned."
+                "Fetch a coder_submit_* job result (same payload as the sync tool); "
+                "while working returns poll_interval_ms."
             ),
             inputSchema=dict(_JOB_ID_SCHEMA),
         ),
         Tool(
             name="coder_job_cancel",
             description=(
-                "Cancel a running background job and actually interrupt its work. "
-                "Idempotent and safe for unknown or already-terminal job ids. "
-                "Returns the final job status."
+                "Cancel a running coder_submit_* job; idempotent, safe for unknown or terminal ids."
             ),
             inputSchema=dict(_JOB_ID_SCHEMA),
         ),
         Tool(
             name="coder_jobs_list",
-            description=(
-                "List known background jobs (oldest first) with optional cursor "
-                "pagination. Returns {jobs: [...], next_cursor}."
-            ),
+            description="List background jobs oldest-first with cursor pagination.",
             inputSchema={
                 "type": "object",
                 "properties": {

@@ -60,9 +60,8 @@ TOOLS: list[Tool] = [
         name="agent_exec_command",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Run a guarded, non-interactive shell command (tests, git status, ls, "
-            "builds). Destructive patterns are refused; mutating commands require "
-            "allow_write=True. Output is capped and redacted."
+            "Run a guarded non-interactive shell command (tests, git status, ls, builds). "
+            "Destructive patterns refused; mutations need allow_write=True. Output capped and redacted."
         ),
         inputSchema={
             "type": "object",
@@ -94,10 +93,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="agent_tail_logs",
         execution=ToolExecution(taskSupport="optional"),
-        description=(
-            "Return capped, redacted log tails (daemon .log files / structured logs). "
-            "Never returns more than 200 lines/entries."
-        ),
+        description="Capped, redacted log tails (daemon .log / structured logs); max 200 entries.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -124,7 +120,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="agent_processes",
         execution=ToolExecution(taskSupport="optional"),
-        description=("Snapshot daemon statuses plus host resource stats. Strictly read-only."),
+        description="Daemon statuses plus host resource stats; strictly read-only.",
         inputSchema={
             "type": "object",
             "properties": {},
@@ -134,7 +130,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="agent_jobs_overview",
         execution=ToolExecution(taskSupport="optional"),
-        description=("Summarize pending background jobs/tasks. Strictly read-only."),
+        description="Pending background jobs/tasks summary; strictly read-only.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -150,9 +146,7 @@ TOOLS: list[Tool] = [
         name="agent_analyze",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Analyze a codebase with direct file reads + AST/grep heuristics: "
-            "structure, file/line counts, function/class counts, syntax errors, "
-            "optionally narrowed by a focus term. Never modifies files."
+            "Analyze a codebase (structure, counts, syntax errors) via file reads and AST/grep heuristics; optional focus term. Never modifies files."
         ),
         inputSchema={
             "type": "object",
@@ -178,9 +172,7 @@ TOOLS: list[Tool] = [
         name="agent_review",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Review files without modifying them. Deterministic heuristic static "
-            "analysis: long blocks, empty except handlers, missing docstrings, "
-            "syntax errors."
+            "Heuristic static review of files (long blocks, empty excepts, missing docstrings, syntax errors); never modifies."
         ),
         inputSchema={
             "type": "object",
@@ -206,8 +198,7 @@ TOOLS: list[Tool] = [
         name="agent_run_and_diagnose",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Execute a test suite or command, clean ANSI codes, parse failures/counts, "
-            "and return high-signal condensed output preserving root cause."
+            "Run a test suite or command; strip ANSI, parse failures/counts, keep root cause."
         ),
         inputSchema={
             "type": "object",
@@ -244,8 +235,7 @@ TOOLS: list[Tool] = [
         name="agent_exec_pipeline",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Execute an ordered batch of commands sequentially with wall-clock timing, "
-            "per-step condensed output, and fail-fast logic."
+            "Run ordered commands sequentially with timing, per-step condensed output, and fail-fast logic."
         ),
         inputSchema={
             "type": "object",
@@ -298,8 +288,7 @@ TOOLS: list[Tool] = [
         name="agent_distill_logs",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Retrieve, cluster, and deduplicate repeating log entries, masking dynamic values "
-            "and isolating distinct error tracebacks."
+            "Cluster and deduplicate repeating log entries, masking dynamic values and isolating error tracebacks."
         ),
         inputSchema={
             "type": "object",
