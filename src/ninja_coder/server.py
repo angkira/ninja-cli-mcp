@@ -127,10 +127,7 @@ _REQUEST_KEY_SCHEMA: dict[str, Any] = {
 }
 
 #: Appended to every tool description that accepts a ``request_key``.
-_REQUEST_KEY_NOTE: str = (
-    "\n\nSupply the same request_key to safely retry after a timeout — "
-    "duplicates join the in-flight run instead of re-executing."
-)
+_REQUEST_KEY_NOTE: str = " Same request_key retries join the in-flight run."
 
 
 def _make_job_progress_factory(
@@ -267,24 +264,10 @@ TOOLS: list[Tool] = [
         name="coder_simple_task",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Delegate CODE WRITING to Ninja AI agent using SIMPLE task specification. "
-            "Ninja ONLY writes/edits code files based on your specification. "
-            "\n\n"
-            "✅ USE FOR REALLY simple edits ONLY: 1-2 lines, a tiny fix in ONE "
-            "file/function (add a field, fix a typo, small bugfix). "
-            "Runs IN-PLACE on your current branch with safety-commit, WITHOUT worktree. "
-            "\n\n"
-            "⚠️ WARNING: Runs on the fast 'quick' model with a short timeout. "
-            "NEVER use for rewriting a class, multi-file features, large "
-            "implementations, MR stabilization or big refactors - it will time out. "
-            "Use coder_execute_plan_sequential instead. "
-            "\n\n"
-            "❌ NEVER USE FOR: Running commands, executing tests, checking output, bash/shell operations, "
-            "reading file contents (you should read files yourself if needed for planning). "
-            "\n\n"
-            "YOU provide the specification, Ninja writes the code. "
-            "Ninja returns ONLY a summary (file paths changed, brief description). "
-            "NO source code is returned to you - Ninja writes directly to files."
+            "Write tiny code edits (1-2 lines, one file/function: field, typo, small bugfix). "
+            "In-place on current branch with safety-commit, no worktree. "
+            "Quick model, short timeout — not for multi-file work, use sequential instead. "
+            "Returns summary only (files changed, brief description), no source code."
             + _REQUEST_KEY_NOTE
         ),
         inputSchema={
@@ -335,21 +318,9 @@ TOOLS: list[Tool] = [
         name="coder_execute_plan_sequential",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Execute a multi-step CODE WRITING plan sequentially. "
-            "Each step delegates code writing to Ninja AI agent. "
-            "\n\n"
-            "✅ USE FOR: LONG multi-step plans where order matters and the work is too "
-            "big for coder_simple_task: multi-file features, MR stabilization, big refactors, "
-            "multi-step implementations, rewriting a class. Each step writes code based on your specification. "
-            "Heavy model, longer timeout. Runs ISOLATED in a ninja/* worktree "
-            "(main branch stays untouched; merge the branch when ready). "
-            "\n\n"
-            "📋 DIALOGUE MODE (OpenCode CLI only):\n"
-            "When sequential steps are closely related (same module, feature, files, scope), "
-            "enable dialogue mode by setting use_dialogue_mode=true.\n"
-            "This maintains conversation context across all steps instead of spawning "
-            "separate subprocesses for each step.\n"
-            "Set NINJA_USE_DIALOGUE_MODE=true environment variable." + _REQUEST_KEY_NOTE
+            "Run a multi-step plan sequentially where order matters (multi-file features, "
+            "refactors, class rewrites). Heavy model, longer timeout, isolated ninja/* worktree."
+            + _REQUEST_KEY_NOTE
         ),
         inputSchema={
             "type": "object",
@@ -473,24 +444,10 @@ TOOLS: list[Tool] = [
         name="coder_execute_plan_parallel",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Execute independent CODE WRITING steps in parallel with configurable concurrency. "
-            "Each step delegates code writing to Ninja AI agent. "
-            "You MUST consciously choose `complexity` on every call: "
-            "'simple' for TRULY trivial edits (1-2 lines, tiny fix per step — "
-            "runs IN-PLACE on your branch with safety-commit, NO worktree, "
-            "fast quick-model, short timeout), 'complex' for real implementation "
-            "work (runs ISOLATED in a ninja/* worktree). "
-            "NEVER mix: split a mixed batch into TWO calls (simple separately, "
-            "complex separately). "
-            "Keep each step ATOMIC with non-overlapping file scopes to avoid conflicts. "
-            "\n\n"
-            "Examples: {repo_root, complexity: 'simple', steps: [{id, title, task: 'fix typo'}]} "
-            "vs {repo_root, complexity: 'complex', steps: [{id, title, task: 'implement feature'}]}. "
-            "\n\n"
-            "❌ NEVER USE FOR: Running tests, executing commands, tasks with dependencies. "
-            "\n\n"
-            "Returns summary of each step plus merge report. "
-            "NO source code is returned - Ninja writes directly to files." + _REQUEST_KEY_NOTE
+            "Run independent steps in parallel (atomic, non-overlapping files). Choose "
+            "complexity every call: 'simple' = trivial edits in-place with safety-commit, "
+            "no worktree; 'complex' = real work in ninja/* worktree. Never mix — split into two calls."
+            + _REQUEST_KEY_NOTE
         ),
         inputSchema={
             "type": "object",
@@ -580,20 +537,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="coder_get_agents",
-        description=(
-            "Get information about available specialized agents for multi-agent orchestration. "
-            "\n\n"
-            "Returns list of 7 specialized agents:\n"
-            "• Chief AI Architect - System design and architecture\n"
-            "• Frontend Engineer - React, Vue, UI components\n"
-            "• Backend Engineer - APIs, databases, server logic\n"
-            "• DevOps Engineer - CI/CD, Docker, infrastructure\n"
-            "• Oracle - Decision making and code review\n"
-            "• Librarian - Documentation and organization\n"
-            "• Explorer - Code analysis and refactoring\n"
-            "\n\n"
-            "✅ USE FOR: Understanding what agents are available for complex tasks."
-        ),
+        description="List specialized agents for multi-agent orchestration (architect, frontend, backend, devops, reviewer, docs, explorer).",
         inputSchema={
             "type": "object",
             "properties": {},
@@ -604,16 +548,7 @@ TOOLS: list[Tool] = [
         name="coder_multi_agent_task",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Execute a complex task with multi-agent orchestration (oh-my-opencode). "
-            "Automatically selects and coordinates specialized agents based on task requirements. "
-            "\n\n"
-            "✅ USE FOR: Full-stack applications, complex architectures, tasks requiring multiple "
-            "specialized skills, large-scale refactoring, system design + implementation. "
-            "\n\n"
-            "🤖 AGENTS: Chief Architect, Frontend Engineer, Backend Engineer, DevOps, Oracle, "
-            "Librarian, Explorer work in parallel with shared context. "
-            "\n\n"
-            "⏱️ NOTE: Multi-agent tasks take longer but provide comprehensive solutions."
+            "Run a complex task with coordinated specialized agents (full-stack, system design, large refactors)."
             + _REQUEST_KEY_NOTE
         ),
         inputSchema={
@@ -644,18 +579,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="coder_query_logs",
-        description=(
-            "Query structured logs with filters for debugging and analysis. "
-            "\n\n"
-            "Logs are stored in JSONL format at ~/.cache/ninja-mcp/logs/ninja-YYYYMMDD.jsonl. "
-            "Each entry includes: timestamp, level, message, session_id, task_id, cli_name, model, and extra metadata. "
-            "\n\n"
-            "✅ USE FOR: Debugging failed tasks, analyzing session history, tracking multi-agent execution, "
-            "monitoring system behavior, finding errors. "
-            "\n\n"
-            "💡 FILTERS: Combine session_id, task_id, cli_name, and level to narrow results. "
-            "Use limit/offset for pagination."
-        ),
+        description="Query structured JSONL logs for debugging (filter by session, task, CLI, level; limit/offset for paging).",
         inputSchema={
             "type": "object",
             "properties": {
@@ -722,38 +646,17 @@ TOOLS.extend(
     [
         Tool(
             name="coder_submit_simple",
-            description=(
-                "Submit a SIMPLE CODE WRITING task to run in the BACKGROUND and "
-                "return a job handle immediately. Works in any MCP host, even "
-                "those without the standard MCP Tasks capability. Returns "
-                "{job_id, status:'working', poll_interval_ms}: poll "
-                "coder_job_status until terminal, then fetch coder_job_result. "
-                "Arguments are identical to coder_simple_task." + _REQUEST_KEY_NOTE
-            ),
+            description="Async variant of coder_simple_task: returns a job handle to poll.",
             inputSchema=dict(_TOOLS_BY_NAME["coder_simple_task"].inputSchema),
         ),
         Tool(
             name="coder_submit_sequential",
-            description=(
-                "Submit a multi-step SEQUENTIAL CODE WRITING plan to run in the "
-                "BACKGROUND and return a job handle immediately. Works in any MCP "
-                "host, even those without the standard MCP Tasks capability. "
-                "Returns {job_id, status:'working', poll_interval_ms}: poll "
-                "coder_job_status until terminal, then fetch coder_job_result. "
-                "Arguments are identical to coder_execute_plan_sequential." + _REQUEST_KEY_NOTE
-            ),
+            description="Async variant of coder_execute_plan_sequential: returns a job handle to poll.",
             inputSchema=dict(_TOOLS_BY_NAME["coder_execute_plan_sequential"].inputSchema),
         ),
         Tool(
             name="coder_submit_parallel",
-            description=(
-                "Submit an INDEPENDENT PARALLEL CODE WRITING plan to run in the "
-                "BACKGROUND and return a job handle immediately. Works in any MCP "
-                "host, even those without the standard MCP Tasks capability. "
-                "Returns {job_id, status:'working', poll_interval_ms}: poll "
-                "coder_job_status until terminal, then fetch coder_job_result. "
-                "Arguments are identical to coder_execute_plan_parallel." + _REQUEST_KEY_NOTE
-            ),
+            description="Async variant of coder_execute_plan_parallel: returns a job handle to poll.",
             inputSchema=dict(_TOOLS_BY_NAME["coder_execute_plan_parallel"].inputSchema),
         ),
         Tool(
@@ -826,110 +729,14 @@ def create_server() -> Server:
     server = Server(
         "ninja-coder",
         version="0.2.0",
-        instructions="""🥷 Ninja Coder: Delegate CODE WRITING to AI Agent (Aider)
+        instructions="""Ninja Coder: delegate code writing to an AI agent.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚠️  CRITICAL: Ninja ONLY writes code. NO bash, NO tests, NO file reading for you.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📋 WHAT NINJA DOES:
-   ✅ Writes/edits code files based on your specification
-   ✅ Creates new files and directories
-   ✅ Refactors existing code
-   ✅ Adds features, fixes bugs, implements functions/classes
-   ✅ Returns ONLY summary: "Modified X files: brief description"
-
-🚫 WHAT NINJA DOES NOT DO:
-   ❌ Run commands (bash, shell, npm, pytest, etc.)
-   ❌ Execute tests or check test output
-   ❌ Read files for you (YOU read files for planning)
-   ❌ Return source code to you (writes directly to disk)
-   ❌ Validate or check anything (YOU validate after)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 YOUR WORKFLOW:
-
-1. 📖 READ files yourself (if needed for planning)
-2. 🧠 PLAN what code needs to be written
-3. 📝 WRITE detailed specification for Ninja
-4. 🥷 CALL coder_simple_task with specification
-5. ✅ REVIEW Ninja's summary (files changed)
-6. 🧪 RUN tests yourself (using bash tool)
-7. 🔄 REPEAT if needed
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📝 SPECIFICATION QUALITY:
-
-❌ BAD:  "add authentication"
-❌ BAD:  "fix the bug"
-❌ BAD:  "improve the code"
-
-✅ GOOD: "Create src/auth.py with User class containing:
-          - email: str field with validation
-          - password_hash: str field
-          - hash_password(password: str) method using bcrypt
-          - verify_password(password: str) -> bool method
-          Add type hints and docstrings."
-
-✅ GOOD: "In src/api/routes.py, add POST /login endpoint that:
-          - Accepts JSON with email and password
-          - Validates credentials using User.verify_password
-          - Returns JWT token on success
-          - Returns 401 on failure
-          Handle all error cases with proper status codes."
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔧 AVAILABLE TOOLS:
-
-• coder_simple_task
-  REALLY simple edits only: 1-2 lines, tiny fix in one file/function.
-  In-place + safety-commit, WITHOUT worktree. NEVER for class rewrites
-  or multi-file work — use sequential. Returns: Summary only (files changed, brief description)
-
-• coder_execute_plan_sequential
-  Long multi-step plans where order matters. WITH ninja/* worktree, heavy model.
-  Returns: Summary per step
-
-• coder_execute_plan_parallel
-  Independent tasks at once (atomic steps, non-overlapping files).
-  complexity='simple' = trivial edits, IN-PLACE without worktree;
-  complexity='complex' (default) = real work, WITH ninja/* worktree.
-  Never mix in one call — split into two calls.
-  Returns: Summary per step + merge report
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 EXAMPLES:
-
-User: "Add user authentication"
-
-You:
-1. Read existing code structure (if needed)
-2. Plan: Need User model, auth routes, password hashing
-3. Call coder_simple_task with detailed spec:
-   "Create authentication system:
-    - src/models/user.py: User class with email, password_hash
-    - src/auth/password.py: hash_password and verify_password using bcrypt
-    - src/api/auth.py: /login and /register endpoints
-    Include type hints, docstrings, error handling"
-4. Review Ninja's summary
-5. Run tests yourself: bash "pytest tests/test_auth.py"
-6. If tests fail, call coder_simple_task again with fix specification
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚡ REMEMBER:
-   • Ninja writes code, YOU orchestrate
-   • Ninja returns summaries, NOT source code
-   • YOU read files, run tests, validate
-   • Write detailed specs, get quality code
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""",
+CRITICAL: Ninja only writes code — no bash, no tests, no file reading for you. You validate.
+Tools: coder_simple_task = tiny 1-2 line fix, in-place with safety-commit, no worktree;
+coder_execute_plan_sequential = ordered multi-step work in an isolated ninja/* worktree;
+coder_execute_plan_parallel = independent atomic steps; complexity='simple' in-place, 'complex' (default) worktree — never mix in one call.
+Spec format: GOOD = file, symbol, behavior, types, error handling (e.g. "In src/api/routes.py add POST /login ... 401 on failure").
+Ninja returns a summary only (files changed, brief description); you read files, run tests, review. Same request_key retries join the in-flight run.""",
     )
 
     # Enable standard MCP Tasks (background/asynchronous tool execution) with a

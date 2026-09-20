@@ -45,18 +45,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_deep_research",
         execution=ToolExecution(taskSupport="optional"),
-        description=(
-            "Perform comprehensive deep research on topics by decomposing them into "
-            "sub-queries and using parallel search agents with Perplexity AI. Gathers multiple sources, "
-            "identifies diverse perspectives, and builds detailed knowledge bases. "
-            "\n\n"
-            "Use when: researching complex topics, needing comprehensive coverage, "
-            "gathering evidence from multiple angles, building knowledge bases, exploring "
-            "trending topics, finding best practices, or when broad topic understanding is needed. "
-            "\n\n"
-            "Better than basic web search for: multi-faceted research, comparing alternatives, "
-            "academic research, market analysis, technical deep-dives."
-        ),
+        description=("Deep research on a topic via sub-queries and parallel search agents."),
         inputSchema={
             "type": "object",
             "properties": {
@@ -112,15 +101,7 @@ TOOLS: list[Tool] = [
         name="researcher_generate_report",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Synthesize research sources into structured, comprehensive reports using parallel "
-            "analysis agents. Analyzes multiple sources simultaneously, identifies key themes, "
-            "and generates organized reports. "
-            "\n\n"
-            "Use when: creating research reports, summarizing findings, organizing information "
-            "by topic, creating analysis documents, producing executive summaries, or synthesizing "
-            "multiple sources into coherent narratives. "
-            "\n\n"
-            "Report types: comprehensive (default), summary, technical, executive."
+            "Synthesize sources into a structured report (comprehensive, summary, technical, executive)."
         ),
         inputSchema={
             "type": "object",
@@ -158,16 +139,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_fact_check",
         execution=ToolExecution(taskSupport="optional"),
-        description=(
-            "Verify claims and statements against reliable web sources. Cross-references "
-            "information, identifies supporting and contradicting evidence, and validates accuracy. "
-            "\n\n"
-            "Use when: validating statements, checking accuracy of claims, finding sources for "
-            "assertions, identifying misinformation, verifying facts before publishing, or "
-            "investigating controversial statements. "
-            "\n\n"
-            "Returns verdict (verified/disputed/uncertain) with confidence score."
-        ),
+        description=("Verify a claim against web sources; returns verdict with confidence."),
         inputSchema={
             "type": "object",
             "properties": {
@@ -188,15 +160,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_summarize_sources",
         execution=ToolExecution(taskSupport="optional"),
-        description=(
-            "Extract key information and main points from multiple sources and create concise "
-            "summaries. Condenses information while preserving essential insights and findings. "
-            "\n\n"
-            "Use when: condensing lengthy sources, extracting key insights, creating quick "
-            "overviews, getting the gist of multiple articles, or preparing briefing materials. "
-            "\n\n"
-            "Returns per-source summaries plus a combined summary respecting max_length."
-        ),
+        description=("Summarize multiple sources into per-source plus combined summaries."),
         inputSchema={
             "type": "object",
             "properties": {
@@ -220,12 +184,7 @@ TOOLS: list[Tool] = [
         name="researcher_arxiv_search",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Search arXiv for papers via the public Atom API. Returns structured papers with "
-            "id, title, authors, abstract and canonical URL, excluding withdrawn entries. "
-            "\n\n"
-            "Use when: finding primary sources for a research question, discovering papers by "
-            "topic or category (cs.RO, cs.LG, ...), or replacing ad-hoc scraping of "
-            "export.arxiv.org."
+            "Search arXiv papers via the public Atom API (id, title, authors, abstract, url)."
         ),
         inputSchema={
             "type": "object",
@@ -263,12 +222,7 @@ TOOLS: list[Tool] = [
         name="researcher_paper_fetch",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Fetch and parse the content of an arXiv paper or web page. Extracts title, "
-            "abstract and requested sections, and can extract numeric tokens with their "
-            "containing sentence. Prefers the ar5iv HTML rendering for arXiv papers. "
-            "\n\n"
-            "Use when: page-confirmed numbers are needed from a primary source, reading a "
-            "specific section, or grounding a claim in paper text."
+            "Fetch an arXiv paper or web page; extract sections and numbers with context."
         ),
         inputSchema={
             "type": "object",
@@ -295,12 +249,7 @@ TOOLS: list[Tool] = [
         name="researcher_deep_research_batch",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Run up to 5 deep-research requests strictly serially with a configurable delay, "
-            "avoiding the parallel-burst pattern that triggers upstream rate limits. Supports "
-            "continue/abort/retry_backoff error policies and returns per-request typed errors. "
-            "\n\n"
-            "Use when: multiple research topics are needed in one session and client-side "
-            "parallel blocks would be rejected."
+            "Run up to 5 deep-research requests strictly serially to respect upstream quotas."
         ),
         inputSchema={
             "type": "object",
@@ -356,78 +305,15 @@ def create_server() -> Server:
     server = Server(
         "ninja-researcher",
         version="0.2.0",
-        instructions="""🔍 Ninja Researcher: Web Search & Report Generation
+        instructions="""Ninja Researcher: web search and report generation.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📋 WHAT RESEARCHER DOES:
-   ✅ Search the web for information (DuckDuckGo, Serper/Google, Perplexity AI)
-   ✅ Perform deep research with multiple queries
-   ✅ Aggregate and deduplicate sources, with real page-extracted snippets
-   ✅ Generate comprehensive reports
-   ✅ Fact-check claims
-   ✅ Summarize multiple web sources
-   ✅ Search arXiv for structured papers
-   ✅ Fetch paper/page content and extract numbers with context
-   ✅ Run deep-research batches serially to respect upstream quotas
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔧 AVAILABLE TOOLS:
-
-• researcher_deep_research
-  Multi-query research with parallel agents using Perplexity AI.
-  Returns: Aggregated and deduplicated sources with real titles/snippets.
-  Params: enrich, include_domains, exclude_domains, prefer_domains.
-
-• researcher_generate_report
-  Generate comprehensive reports from sources.
-
-• researcher_fact_check
-  Verify claims against web sources.
-
-• researcher_summarize_sources
-  Summarize multiple web sources.
-
-• researcher_arxiv_search
-  Structured arXiv search via the public Atom API (id, title, authors, abstract, url).
-
-• researcher_paper_fetch
-  Fetch and parse an arXiv paper or web page; extract sections and numbers with context.
-
-• researcher_deep_research_batch
-  Run up to 5 deep-research requests strictly serially with retry/backoff policies.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 USAGE EXAMPLES:
-
-1. Deep research:
-   researcher_deep_research({
-     "topic": "MCP protocol implementation",
-     "max_sources": 20,
-     "parallel_agents": 4
-   })
-
-3. Custom queries:
-   researcher_deep_research({
-     "topic": "AI code assistants",
-     "queries": [
-       "AI code assistants comparison",
-       "Aider vs Cursor vs GitHub Copilot",
-       "AI code assistant best practices"
-     ],
-     "max_sources": 30
-   })
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚡ RATE LIMITS:
-   • Web search: 30 calls/minute
-   • Deep research: 10 calls/minute
-   • Per-client tracking
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━""",
+Tools: researcher_deep_research (multi-query research); researcher_generate_report (synthesize sources);
+researcher_fact_check (verify claims); researcher_summarize_sources (condense URLs);
+researcher_arxiv_search (structured papers; categories ANDed with query);
+researcher_paper_fetch (sections, numbers with context);
+researcher_deep_research_batch (up to 5 requests, strictly serial).
+Serial-call rule: run ONE deep_research at a time with >=15s between calls; use the batch tool for multiple topics.
+Params: deep_research supports enrich plus include/exclude/prefer_domains.""",
     )
 
     # Enable standard MCP Tasks (background/asynchronous tool execution) with a
