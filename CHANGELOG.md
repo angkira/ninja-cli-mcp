@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.4.0 - 2026-09-20
+
+Researcher overhaul, coder robustness, and MCP efficiency.
+
+### Added
+- **Researcher overhaul (post-mortem)**: typed errors `{error_kind, message,
+  retry_after_s}` with providers raising instead of returning silent `[]`;
+  fixed `summarize_sources` (beautifulsoup4 now in base deps); new tools
+  `researcher_arxiv_search`, `researcher_deep_research_batch`,
+  `researcher_paper_fetch`; domain filters; real titles/snippets/source_type
+  (fake score ladder removed); stale "coming soon" docs removed.
+
+### Changed
+- **Coder robustness**: durable job rows for sync tools (no orphan runs on
+  client timeout); `request_key` idempotency; signal kills no longer misreported
+  as auth failures; startup sweep of stale working jobs; progress refresh;
+  `NINJA_FALLBACK_MODELS` chain for 429/503/quota/overload.
+- **MCP efficiency**: handshake instructions and all tool descriptions trimmed
+  (~30KB to ~4KB total); schemas and behavior unchanged.
+
+### Tests
+- New suites for errors/arxiv/enrichment/domain/batch/paper-fetch/fallback;
+  hermetic model-routing test; basename touched-path assertions.
+
+### Caveat
+- export.arxiv.org throttles aggressively — space calls ≥3s; restart daemons
+  to pick up; PyPI published locally (GitHub token broken, known).
+
 ## 1.3.1 - 2026-09-18
 
 [1.3.1] - 2026-09-18: Native JetBrains Junie MCP host integration, CLI version flag support, and init target test coverage.
