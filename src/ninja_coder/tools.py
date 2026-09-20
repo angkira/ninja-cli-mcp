@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 import uuid
 from datetime import datetime
@@ -40,6 +41,83 @@ from ninja_common.security import InputValidator, monitored, rate_limited
 
 
 logger = get_logger(__name__)
+
+
+#: Env var holding a comma-separated list of backup model ids used when the
+#: primary model fails with a quota/rate-limit/overload error. Empty/unset =
+#: no fallback (historical behavior). Read per call via ``parse_fallback_chain``.
+FALLBACK_MODELS_ENV_VAR = "NINJA_FALLBACK_MODELS"
+
+#: Substrings/patterns identifying a model-side failure (HTTP 429/503,
+#: quota-exhausted, overloaded, rate-limited). Matched case-insensitively
+#: against the combined result text (summary, notes, stdout, stderr).
+_MODEL_SIDE_ERROR_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\b429\b",
+        r"\b503\b",
+        r"quota",
+        r"rate[\s_\-]*limit",
+        r"overload",
+        r"too\s+many\s+requests",
+        r"service\s+unavailable",
+        r"insufficient\s+quota",
+        r"model\s+overloaded",
+    )
+)
+
+
+def parse_fallback_chain(primary_model: str, raw: str | None = None) -> list[str]:
+    """Parse the ``NINJA_FALLBACK_MODELS`` chain into backup model ids.
+
+    Args:
+        primary_model: The primary model id; entries duplicating it are dropped.
+        raw: Raw env value (defaults to the ``NINJA_FALLBACK_MODELS`` env var).
+            Split on commas, stripped, empties dropped, order preserved.
+
+    Returns:
+        Ordered list of fallback model ids (may be empty = no fallback).
+    """
+    if raw is None:
+        raw = os.environ.get(FALLBACK_MODELS_ENV_VAR, "")
+    chain: list[str] = []
+    seen: set[str] = set()
+    primary = (primary_model or "").strip()
+    if primary:
+        seen.add(primary)
+    for part in raw.split(","):
+        model_id = part.strip()
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        chain.append(model_id)
+    return chain
+
+
+def is_model_side_error(result: NinjaResult) -> bool:
+    """Check whether a failed result looks like a model-side failure.
+
+    Matches quota/rate-limit/overload signatures (HTTP 429/503,
+    "quota-exhausted", "overloaded", "rate limit", "insufficient quota",
+    "model overloaded") in the combined result text. Auth/billing errors
+    (e.g. invalid API key, insufficient credits) do not match.
+
+    Args:
+        result: The failed driver result to inspect.
+
+    Returns:
+        True when the error signature indicates the model (not the
+        request/auth) failed and a fallback model is worth trying.
+    """
+    text = "\n".join(
+        [
+            result.summary or "",
+            result.notes or "",
+            result.stdout or "",
+            result.stderr or "",
+        ]
+    )
+    return any(pattern.search(text) for pattern in _MODEL_SIDE_ERROR_PATTERNS)
 
 
 class ToolExecutor:
@@ -191,6 +269,14 @@ class ToolExecutor:
         max_retries = int(os.environ.get("NINJA_MAX_RETRIES", "2"))
         retry_delay_sec = int(os.environ.get("NINJA_RETRY_DELAY_SEC", "5"))
 
+        # Backup models to try when the primary fails with a quota /
+        # rate-limit / overload error. Empty = historical behavior.
+        # The driver honors ``instruction["model_override"]`` (see
+        # ``NinjaDriver._select_model_for_task``), so swapping models is a
+        # call-layer override — no driver changes needed.
+        fallback_chain = parse_fallback_chain(self.driver.config.model)
+        fallback_idx = 0
+
         # Execute with retry logic for aider errors
         last_result = None
         attempt = 0
@@ -236,6 +322,18 @@ class ToolExecutor:
                 )
                 # Continue to retry (unless we're out of attempts)
                 if attempt < max_retries:
+                    # Model-side failure (quota/rate-limit/overload): swap in
+                    # the next fallback model for the next attempt. Non-model
+                    # errors retry with the same model as before.
+                    if is_model_side_error(result) and fallback_idx < len(fallback_chain):
+                        fallback_model = fallback_chain[fallback_idx]
+                        fallback_idx += 1
+                        instruction["model_override"] = fallback_model
+                        logger.warning(
+                            f"Model-side failure detected for client {client_id}; "
+                            f"falling back to model '{fallback_model}' "
+                            f"(attempt {attempt + 2}/{max_retries + 1})"
+                        )
                     continue
                 else:
                     logger.error(
@@ -426,41 +524,63 @@ class ToolExecutor:
             deny_globs=request.global_deny_globs,
         )
 
-        # 3. Execute ONCE
-        try:
-            result = await self.driver.execute_async(
-                repo_root=request.repo_root,
-                step_id=f"sequential_plan_{plan_task_id[:8]}",
-                instruction=instruction,
-                timeout_sec=self._estimate_sequential_timeout(request),
-                task_type="sequential_plan",
-            )
-        except Exception as e:
-            logger.error(f"Sequential plan execution failed: {e}")
-            self._log_outcome(
-                task_id=plan_task_id,
-                tool_name="coder_execute_plan_sequential",
-                success=False,
-                client_id=client_id,
-                reason=f"Execution error: {e!s}",
-            )
-            return PlanExecutionResult(
-                overall_status="failed",
-                steps=[],
-                files_modified=[],
-                notes=f"❌ Execution error: {e!s}",
-            )
-        except BaseException as e:
-            # Guarantee an outcome entry even on interruption (e.g.
-            # CancelledError when the MCP client disconnects mid-flight).
-            self._log_outcome(
-                task_id=plan_task_id,
-                tool_name="coder_execute_plan_sequential",
-                success=False,
-                client_id=client_id,
-                reason=f"Execution interrupted ({type(e).__name__}): {e!s}",
-            )
-            raise
+        # 3. Execute (with model fallback on quota/rate-limit/overload).
+        # The driver honors ``instruction["model_override"]``, so each
+        # attempt can pin a different model without driver changes. Empty
+        # fallback chain = single attempt (historical behavior).
+        fallback_chain = parse_fallback_chain(self.driver.config.model)
+        result = None
+        # First iteration uses the primary model; each subsequent iteration
+        # pins the next fallback via ``model_override``.
+        for fallback_model in [None, *fallback_chain]:
+            if fallback_model is not None:
+                instruction["model_override"] = fallback_model
+                logger.warning(
+                    f"Model-side failure in sequential plan for client {client_id}; "
+                    f"falling back to model '{fallback_model}'"
+                )
+            try:
+                result = await self.driver.execute_async(
+                    repo_root=request.repo_root,
+                    step_id=f"sequential_plan_{plan_task_id[:8]}",
+                    instruction=instruction,
+                    timeout_sec=self._estimate_sequential_timeout(request),
+                    task_type="sequential_plan",
+                )
+            except Exception as e:
+                logger.error(f"Sequential plan execution failed: {e}")
+                self._log_outcome(
+                    task_id=plan_task_id,
+                    tool_name="coder_execute_plan_sequential",
+                    success=False,
+                    client_id=client_id,
+                    reason=f"Execution error: {e!s}",
+                )
+                return PlanExecutionResult(
+                    overall_status="failed",
+                    steps=[],
+                    files_modified=[],
+                    notes=f"❌ Execution error: {e!s}",
+                )
+            except BaseException as e:
+                # Guarantee an outcome entry even on interruption (e.g.
+                # CancelledError when the MCP client disconnects mid-flight).
+                self._log_outcome(
+                    task_id=plan_task_id,
+                    tool_name="coder_execute_plan_sequential",
+                    success=False,
+                    client_id=client_id,
+                    reason=f"Execution interrupted ({type(e).__name__}): {e!s}",
+                )
+                raise
+
+            if result.success:
+                break
+            # Retry only model-side retryable failures with a fallback left;
+            # anything else returns the last error unchanged.
+            if not (getattr(result, "aider_error_detected", False) and is_model_side_error(result)):
+                break
+        assert result is not None  # loop always runs at least once
 
         # 4. Parse structured result
         if result.success:
@@ -588,40 +708,62 @@ class ToolExecutor:
             raise ValueError(
                 f'Invalid complexity {request.complexity!r}: expected "simple" or "complex"'
             )
-        try:
-            result = await self.driver.execute_async(
-                repo_root=request.repo_root,
-                step_id=f"parallel_plan_{plan_task_id[:8]}",
-                instruction=instruction,
-                timeout_sec=self._estimate_parallel_timeout(request),
-                task_type=task_type,
-            )
-        except Exception as e:
-            logger.error(f"Parallel plan execution failed: {e}")
-            self._log_outcome(
-                task_id=plan_task_id,
-                tool_name="coder_execute_plan_parallel",
-                success=False,
-                client_id=client_id,
-                reason=f"Execution error: {e!s}",
-            )
-            return PlanExecutionResult(
-                overall_status="failed",
-                steps=[],
-                files_modified=[],
-                notes=f"❌ Execution error: {e!s}",
-            )
-        except BaseException as e:
-            # Guarantee an outcome entry even on interruption (e.g.
-            # CancelledError when the MCP client disconnects mid-flight).
-            self._log_outcome(
-                task_id=plan_task_id,
-                tool_name="coder_execute_plan_parallel",
-                success=False,
-                client_id=client_id,
-                reason=f"Execution interrupted ({type(e).__name__}): {e!s}",
-            )
-            raise
+        # Execute with model fallback on quota/rate-limit/overload (see
+        # sequential path: ``instruction["model_override"]`` pins the model
+        # per attempt). Empty fallback chain = single attempt (historical).
+        fallback_chain = parse_fallback_chain(self.driver.config.model)
+        result = None
+        # First iteration uses the primary model; each subsequent iteration
+        # pins the next fallback via ``model_override``.
+        for fallback_model in [None, *fallback_chain]:
+            if fallback_model is not None:
+                instruction["model_override"] = fallback_model
+                logger.warning(
+                    f"Model-side failure in parallel plan for client {client_id}; "
+                    f"falling back to model '{fallback_model}'"
+                )
+            try:
+                result = await self.driver.execute_async(
+                    repo_root=request.repo_root,
+                    step_id=f"parallel_plan_{plan_task_id[:8]}",
+                    instruction=instruction,
+                    timeout_sec=self._estimate_parallel_timeout(request),
+                    task_type=task_type,
+                )
+            except Exception as e:
+                logger.error(f"Parallel plan execution failed: {e}")
+                self._log_outcome(
+                    task_id=plan_task_id,
+                    tool_name="coder_execute_plan_parallel",
+                    success=False,
+                    client_id=client_id,
+                    reason=f"Execution error: {e!s}",
+                )
+                return PlanExecutionResult(
+                    overall_status="failed",
+                    steps=[],
+                    files_modified=[],
+                    notes=f"❌ Execution error: {e!s}",
+                )
+            except BaseException as e:
+                # Guarantee an outcome entry even on interruption (e.g.
+                # CancelledError when the MCP client disconnects mid-flight).
+                self._log_outcome(
+                    task_id=plan_task_id,
+                    tool_name="coder_execute_plan_parallel",
+                    success=False,
+                    client_id=client_id,
+                    reason=f"Execution interrupted ({type(e).__name__}): {e!s}",
+                )
+                raise
+
+            if result.success:
+                break
+            # Retry only model-side retryable failures with a fallback left;
+            # anything else returns the last error unchanged.
+            if not (getattr(result, "aider_error_detected", False) and is_model_side_error(result)):
+                break
+        assert result is not None  # loop always runs at least once
 
         # 4. Parse structured result
         if result.success:
