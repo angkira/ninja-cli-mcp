@@ -19,7 +19,7 @@ help_text = "Merge into ~/.junie/mcp/mcp.json."
 
 class _JunieTarget(JsonMcpTarget):
     @property
-    def config_dir(self) -> Path:  # type: ignore[override]
+    def config_dir(self) -> Path:
         return config_dir
 
     @config_dir.setter
@@ -28,7 +28,7 @@ class _JunieTarget(JsonMcpTarget):
         config_dir = val
 
     @property
-    def config_file(self) -> Path:  # type: ignore[override]
+    def config_file(self) -> Path:
         return config_file
 
     @config_file.setter
@@ -37,7 +37,7 @@ class _JunieTarget(JsonMcpTarget):
         config_file = val
 
     @property
-    def detect_dir(self) -> Path:  # type: ignore[override]
+    def detect_dir(self) -> Path:
         return detect_dir
 
     @detect_dir.setter
