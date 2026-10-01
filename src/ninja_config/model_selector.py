@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from ninja_common import codex_discovery as _codex_discovery
 from ninja_common import junie_discovery as _junie_discovery
 from ninja_common.config_manager import ConfigManager
 from ninja_common.defaults import (
@@ -202,6 +203,26 @@ def discover_junie_models() -> list[tuple[str, str, str]]:
         triples = []
     if not triples:
         triples = list(JUNIE_MODELS)
+    return triples
+
+
+def discover_codex_models() -> list[tuple[str, str, str]]:
+    """Dynamically discover Codex models as ``(id, name, description)``.
+
+    Priority: ``~/.codex/config.toml`` → binary strings/JSON metadata →
+    ``~/.codex/state_5.sqlite`` history → static :data:`CODEX_MODELS`
+    last-resort fallback (see ``ninja_common.codex_discovery``).
+    Never raises; never empty while the static catalogue exists.
+
+    Returns:
+        List of model triples.
+    """
+    try:
+        triples = _codex_discovery.discover_codex_model_triples()
+    except Exception:
+        triples = []
+    if not triples:
+        triples = list(CODEX_MODELS)
     return triples
 
 
@@ -657,15 +678,22 @@ class Operator:
         return True
 
     def _load_codex_models(self) -> bool:
-        """Load models for Codex CLI (static list, host-auth — no network probe)."""
-        for model_id, name, desc in CODEX_MODELS:
+        """Load models for Codex CLI (dynamically discovered, host-auth)."""
+        triples = discover_codex_models()
+        try:
+            current = _codex_discovery.read_codex_config_current_model()
+        except Exception:
+            current = None
+        recommended_id = current or (triples[0][0] if triples else "gpt-6-luna")
+
+        for model_id, name, desc in triples:
             self.models.append(
                 Model(
                     id=model_id,
                     name=name,
                     description=desc,
                     provider="codex",
-                    recommended=(model_id == "gpt-5.6-luna"),
+                    recommended=(model_id == recommended_id),
                 )
             )
 
@@ -871,20 +899,27 @@ def _get_junie_models() -> list[Model]:
 
 
 def _get_codex_models() -> list[Model]:
-    """Get models for Codex CLI (static list, host-auth via ChatGPT login).
+    """Get models for Codex CLI (dynamically discovered, host-auth via ChatGPT login).
 
     Returns:
         List of Model objects (Codex flat model ids).
     """
+    triples = discover_codex_models()
+    try:
+        current = _codex_discovery.read_codex_config_current_model()
+    except Exception:
+        current = None
+    recommended_id = current or (triples[0][0] if triples else "gpt-6-luna")
+
     return [
         Model(
             id=model_id,
             name=name,
             description=f"{desc} (via Codex)",
             provider="codex",
-            recommended=(model_id == "gpt-5.6-luna"),
+            recommended=(model_id == recommended_id),
         )
-        for model_id, name, desc in CODEX_MODELS
+        for model_id, name, desc in triples
     ]
 
 

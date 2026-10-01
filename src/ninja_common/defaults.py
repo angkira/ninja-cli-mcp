@@ -152,7 +152,12 @@ JUNIE_EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high")
 # =============================================================================
 
 CODEX_MODELS = [
-    ("gpt-5.6-luna", "GPT-5.6 Luna", "Fast cost-efficient model (default)"),
+    ("gpt-6-luna", "GPT-6-Luna", "Fast and affordable model for easier tasks (default)"),
+    ("gpt-6.1-sol", "GPT-6.1-Sol", "Latest workhorse model for coding and everyday work"),
+    ("gpt-6-sol", "GPT-6-Sol", "Previous generation workhorse model"),
+    ("gpt-6-astra", "GPT-6-Astra", "Frontier intelligence for the most demanding work"),
+    ("gpt-5.6-luna", "GPT-5.6 Luna", "Older fast and efficient model"),
+    ("gpt-5.6-sol", "GPT-5.6-Sol", "Older generation workhorse model"),
     ("gpt-5.4", "GPT-5.4", "Latest balanced coding agent model"),
     ("gpt-5.4-mini", "GPT-5.4 Mini", "Fast exploration model for subagents"),
     ("gpt-5.3-codex-spark", "GPT-5.3 Codex Spark", "Near-instant text-only iteration"),

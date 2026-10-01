@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 
+from ninja_common.codex_discovery import get_codex_catalog
 from ninja_common.defaults import (
     CLAUDE_CODE_MODELS,
     CODEX_MODELS,
@@ -24,10 +25,9 @@ from ninja_common.junie_discovery import get_junie_catalog
 
 
 #: Operators whose model ids are fully determined by a static catalogue.
-#: ``junie`` keeps its static entry as the last-resort fallback, but at
-#: runtime its catalogue is dynamic (``junie --model`` probe → settings.json
-#: → static; see ``ninja_common.junie_discovery``). Compatibility and
-#: validation for junie consult the cached dynamic catalogue.
+#: ``codex`` and ``junie`` keep their static entry as the last-resort fallback,
+#: but at runtime their catalogue is dynamic. Compatibility and
+#: validation for codex and junie consult the cached dynamic catalogue.
 OPERATOR_NATIVE_MODELS: dict[str, frozenset[str]] = {
     "codex": frozenset(mid for mid, _n, _d in CODEX_MODELS),
     "junie": frozenset(mid for mid, _n, _d in JUNIE_MODELS),
@@ -108,11 +108,19 @@ def is_model_compatible(model: str, operator: str | None) -> bool:
         # id (e.g. openrouter/…) belongs to another operator and must be
         # replaced by agy's default.
         return "/" not in model
-    if op in ("codex", "claude"):
+    if op == "claude":
         native = OPERATOR_NATIVE_MODELS.get(op)
         if native is None:
             return True
         return model in native
+    if op == "codex":
+        try:
+            catalog = get_codex_catalog()
+        except Exception:
+            catalog = [mid for mid, _n, _d in CODEX_MODELS]
+        lowered = model.lower()
+        candidate = model.split("/")[-1].strip().lower()
+        return any(known.lower() == lowered or known.lower() == candidate for known in catalog)
     if op == "junie":
         try:
             catalog = get_junie_catalog()
@@ -146,6 +154,10 @@ def resolve_operator_model(model: str | None, operator: str | None) -> str:
         normalized = normalize_junie_model(model)
         if is_model_compatible(normalized, operator):
             return normalized
+    if (operator or "").lower() == "codex" and model:
+        stripped = model.removeprefix("codex/").removeprefix("openai/")
+        if is_model_compatible(stripped, operator):
+            return stripped
     if is_model_compatible(model or "", operator):
         return str(model)
     return operator_default_model(operator) or str(model or "")
