@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.1 - 2026-10-01
+
+Dynamic model discovery for OpenAI Codex CLI.
+
+### Added
+- **Codex dynamic discovery**: Multi-source model discovery for Codex operator:
+  reads active model and NUX flags from `~/.codex/config.toml`, scans embedded
+  JSON models from the `codex` binary, and queries recent models from SQLite history.
+  Adds full native support for `gpt-6-luna`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-astra`.
+
 ## 1.4.0 - 2026-09-20
 
 Researcher overhaul, coder robustness, and MCP efficiency.
