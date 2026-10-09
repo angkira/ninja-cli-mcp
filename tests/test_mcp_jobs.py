@@ -567,3 +567,125 @@ async def test_progress_factory_swallows_store_failure(tmp_path: Path) -> None:
 
     store.update_task = boom  # type: ignore[method-assign]
     await callback(1.0, None, "whatever")  # must not raise
+
+
+# --- status fidelity: failed payloads mark the job failed ------------------
+
+
+async def test_run_tracked_failed_payload_marks_status_failed_with_reason(
+    tmp_path: Path,
+) -> None:
+    """A work payload reporting overall_status=failed marks the job ``failed``."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    jobs = JobManager(store)
+
+    async def work() -> types.CallToolResult:
+        return types.CallToolResult(
+            content=[
+                types.TextContent(
+                    type="text",
+                    text=json.dumps({"overall_status": "failed", "error": "boom"}),
+                )
+            ],
+            isError=False,
+        )
+
+    await jobs.run_tracked(work, status_message="unit-task")
+
+    listed, _ = await jobs.list_jobs()
+    assert len(listed) == 1
+    assert listed[0].status == "failed"
+    assert "boom" in (listed[0].statusMessage or "")
+    # The payload is still stored for clients that read the result.
+    assert await jobs.result(listed[0].taskId) is not None
+
+
+async def test_run_tracked_failed_payload_uses_reason_fallback(tmp_path: Path) -> None:
+    """overall_status=failed with no error uses the ``reason`` field."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    jobs = JobManager(store)
+
+    async def work() -> types.CallToolResult:
+        return types.CallToolResult(
+            content=[
+                types.TextContent(
+                    type="text",
+                    text=json.dumps({"overall_status": "failed", "reason": "nope"}),
+                )
+            ],
+            isError=False,
+        )
+
+    await jobs.run_tracked(work, status_message="unit-task")
+    listed, _ = await jobs.list_jobs()
+    assert listed[0].status == "failed"
+    assert "nope" in (listed[0].statusMessage or "")
+
+
+async def test_run_tracked_status_error_marks_failed(tmp_path: Path) -> None:
+    """A payload with status=error marks the job ``failed``."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    jobs = JobManager(store)
+
+    async def work() -> types.CallToolResult:
+        return types.CallToolResult(
+            content=[
+                types.TextContent(type="text", text=json.dumps({"status": "error", "error": "bad"}))
+            ],
+            isError=False,
+        )
+
+    await jobs.run_tracked(work, status_message="unit-task")
+    listed, _ = await jobs.list_jobs()
+    assert listed[0].status == "failed"
+    assert "bad" in (listed[0].statusMessage or "")
+
+
+async def test_run_tracked_partial_payload_stays_completed(tmp_path: Path) -> None:
+    """overall_status=partial is not a failure: the job completes."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    jobs = JobManager(store)
+
+    async def work() -> types.CallToolResult:
+        return types.CallToolResult(
+            content=[
+                types.TextContent(type="text", text=json.dumps({"overall_status": "partial"}))
+            ],
+            isError=False,
+        )
+
+    await jobs.run_tracked(work, status_message="unit-task")
+    listed, _ = await jobs.list_jobs()
+    assert listed[0].status == "completed"
+
+
+async def test_run_tracked_non_dict_payload_stays_completed(tmp_path: Path) -> None:
+    """A non-dict (non-JSON) payload keeps the job ``completed``."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    jobs = JobManager(store)
+
+    async def work() -> types.CallToolResult:
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text="plain text output")],
+            isError=False,
+        )
+
+    await jobs.run_tracked(work, status_message="unit-task")
+    listed, _ = await jobs.list_jobs()
+    assert listed[0].status == "completed"
+
+
+async def test_run_tracked_dict_payload_failure_marks_failed(tmp_path: Path) -> None:
+    """A plain dict failure payload is stored and marks the job ``failed``."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    jobs = JobManager(store)
+
+    async def work() -> object:
+        return {"overall_status": "failed", "reason": "dict-reason"}
+
+    await jobs.run_tracked(work, status_message="unit-task")  # type: ignore[arg-type]
+
+    listed, _ = await jobs.list_jobs()
+    assert listed[0].status == "failed"
+    assert "dict-reason" in (listed[0].statusMessage or "")
+    assert await jobs.result(listed[0].taskId) is not None

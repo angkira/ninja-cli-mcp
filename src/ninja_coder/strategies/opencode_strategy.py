@@ -436,8 +436,15 @@ class OpenCodeStrategy:
         if exit_code is not None and exit_code < 0:
             return _signal_failure(exit_code)
 
+        # Error classification scans only the tail of the output. Agent runs
+        # may legitimately echo auth/API error markers when they read or grep
+        # source files (including this module), and scanning megabytes of
+        # transcript produced self-sabotaging false positives. Genuine CLI
+        # errors are emitted at the very end of the run.
+        error_window = combined_output[-8000:]
+
         # A genuine auth marker is a failure even when the CLI exited 0.
-        if _is_auth_failure(combined_output):
+        if _is_auth_failure(error_window):
             success = False
 
         # OpenCode-specific error patterns (comprehensive)
@@ -477,7 +484,7 @@ class OpenCodeStrategy:
         error_msg = ""
 
         for pattern in error_patterns:
-            match = re.search(pattern, combined_output, re.IGNORECASE)
+            match = re.search(pattern, error_window, re.IGNORECASE)
             if match:
                 # Rate limits and timeouts are retryable
                 if any(
@@ -488,8 +495,8 @@ class OpenCodeStrategy:
 
                 # Extract context around the error
                 start = max(0, match.start() - 60)
-                end = min(len(combined_output), match.end() + 60)
-                error_msg = combined_output[start:end].strip()
+                end = min(len(error_window), match.end() + 60)
+                error_msg = error_window[start:end].strip()
                 error_msg = " ".join(error_msg.split())
                 break
 

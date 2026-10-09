@@ -25,8 +25,9 @@ this manager, reusing the same store as standard Tasks so both views agree.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING
 
 from mcp.shared.experimental.tasks.helpers import is_terminal
@@ -75,6 +76,85 @@ JobWork = Callable[[], Awaitable[Result]]
 
 #: Builds the progress callback once a job's id is known.
 ProgressCallbackFactory = Callable[[str], ProgressCallback]
+
+
+def _extract_status_payload(result: object) -> Mapping[str, object] | None:
+    """Extract a JSON object describing *result*'s outcome, or ``None``.
+
+    Accepts either a plain mapping or an MCP ``Result`` whose first text content
+    block holds a JSON object. Anything else (a non-JSON text block, a bare
+    string, ``None``) yields ``None`` so the caller treats it as a plain
+    success.
+
+    Args:
+        result: Payload returned by a job's work callable.
+
+    Returns:
+        The outcome mapping, or ``None`` when none can be recovered.
+    """
+    if isinstance(result, Mapping):
+        return result
+    content = getattr(result, "content", None)
+    if isinstance(content, (list, tuple)) and content:
+        text = getattr(content[0], "text", None)
+        if isinstance(text, str):
+            try:
+                parsed = json.loads(text)
+            except (ValueError, TypeError):
+                return None
+            if isinstance(parsed, Mapping):
+                return parsed
+    return None
+
+
+def _outcome_terminal_status(result: object) -> tuple[TaskStatus, str | None]:
+    """Derive the terminal status a finished job should carry.
+
+    A job whose work returned without raising must still be marked ``failed``
+    when the returned payload reports an overall failure:
+
+    * ``overall_status == "failed"`` → failed;
+    * ``status`` in ``("error", "failed")`` → failed;
+    * anything else (success, partial, non-dict/non-JSON payloads) → completed.
+
+    Args:
+        result: Payload returned by a job's work callable.
+
+    Returns:
+        ``(status, reason)`` where *status* is the terminal task status and
+        *reason* is the human-readable failure reason (``None`` on success).
+    """
+    payload = _extract_status_payload(result)
+    if payload is None:
+        return JOB_STATUS_COMPLETED, None
+    if payload.get("overall_status") == "failed":
+        reason = payload.get("error") or payload.get("reason") or "overall_status=failed"
+        return JOB_STATUS_FAILED, str(reason)
+    status = payload.get("status")
+    if status in ("error", "failed"):
+        reason = payload.get("error") or payload.get("reason") or f"status={status}"
+        return JOB_STATUS_FAILED, str(reason)
+    return JOB_STATUS_COMPLETED, None
+
+
+def _storable_result(result: object) -> Result:
+    """Coerce *result* into an MCP ``Result`` suitable for ``store_result``.
+
+    Work callables normally return an MCP ``Result``; a plain mapping is
+    validated into a ``Result`` (which permits extra fields) so the payload can
+    still be persisted and read back by clients.
+
+    Args:
+        result: Payload returned by a job's work callable.
+
+    Returns:
+        A ``Result``-compatible payload.
+    """
+    if hasattr(result, "model_dump"):
+        return result  # type: ignore[return-value]
+    if isinstance(result, Mapping):
+        return Result.model_validate(dict(result))
+    return result  # type: ignore[return-value]
 
 
 class JobManager:
@@ -200,8 +280,12 @@ class JobManager:
                 if cancellation.is_set():
                     await self._set_terminal(job_id, JOB_STATUS_CANCELLED)
                     raise TaskCancelledError(f"Job {job_id} was cancelled")
-                await self._store.store_result(job_id, result)
-                await self._store.update_task(job_id, status=JOB_STATUS_COMPLETED)
+                await self._store.store_result(job_id, _storable_result(result))
+                terminal_status, reason = _outcome_terminal_status(result)
+                if terminal_status == JOB_STATUS_FAILED:
+                    await self._set_terminal(job_id, JOB_STATUS_FAILED, reason)
+                else:
+                    await self._store.update_task(job_id, status=JOB_STATUS_COMPLETED)
                 return result
         except TaskCancelledError:
             await self._set_terminal(job_id, JOB_STATUS_CANCELLED)
@@ -314,8 +398,12 @@ class JobManager:
                 if cancellation.is_set():
                     await self._set_terminal(job_id, JOB_STATUS_CANCELLED)
                     return
-                await self._store.store_result(job_id, result)
-                await self._store.update_task(job_id, status=JOB_STATUS_COMPLETED)
+                await self._store.store_result(job_id, _storable_result(result))
+                terminal_status, reason = _outcome_terminal_status(result)
+                if terminal_status == JOB_STATUS_FAILED:
+                    await self._set_terminal(job_id, JOB_STATUS_FAILED, reason)
+                else:
+                    await self._store.update_task(job_id, status=JOB_STATUS_COMPLETED)
         except TaskCancelledError:
             await self._set_terminal(job_id, JOB_STATUS_CANCELLED)
         except asyncio.CancelledError:

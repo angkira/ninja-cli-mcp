@@ -346,6 +346,10 @@ class PlanExecutionResult(BaseModel):
         default_factory=list,
         description="All files modified across all steps",
     )
+    patch_path: str | None = Field(
+        None,
+        description="Path to a git patch of the agent's changes (worktree mode)",
+    )
     notes: str = Field(default="", description="Additional notes or warnings")
     execution_time: float | None = Field(
         None,

@@ -39,7 +39,7 @@ from ninja_coder.models import (
 from ninja_coder.safety import validate_task_safety
 from ninja_coder.sessions import SessionManager
 from ninja_coder.strategies import CLIStrategyRegistry
-from ninja_coder.worktree import WorktreeInfo, WorktreeManager
+from ninja_coder.worktree import WorktreeGitError, WorktreeInfo, WorktreeManager
 from ninja_common.defaults import (
     DEFAULT_ABSOLUTE_TIMEOUT_PARALLEL_SEC,
     DEFAULT_ABSOLUTE_TIMEOUT_QUICK_SEC,
@@ -67,7 +67,7 @@ from ninja_common.operator_models import (
     resolve_junie_effort,
     resolve_operator_model,
 )
-from ninja_common.path_utils import ensure_internal_dirs, safe_join
+from ninja_common.path_utils import ensure_internal_dirs, get_cache_dir, safe_join
 
 
 logger = get_logger(__name__)
@@ -311,6 +311,7 @@ class NinjaResult:
     session_id: str | None = None  # Session ID if session was used
     worktree_branch: str | None = None  # Feature branch when worktree isolation was used
     worktree_path: str | None = None  # Detached worktree path when isolation was used
+    patch_path: str | None = None  # Path to the written agent-output patch (worktree mode)
 
 
 class InstructionBuilder:
@@ -1889,6 +1890,7 @@ class NinjaDriver:
         """
         task_logger = create_task_logger(repo_root, step_id)
         worktree_info: WorktreeInfo | None = None
+        worktree_commit_warning: str | None = None
 
         try:
             # Safety check with automatic enforcement (AUTO mode by default)
@@ -2197,6 +2199,23 @@ class NinjaDriver:
                 total_time = asyncio.get_event_loop().time() - start_time
                 task_logger.info(f"Task completed in {total_time:.1f}s")
 
+                # Persist the agent's output on the feature branch BEFORE any
+                # touched-path/diff computation, so the work is committed and
+                # the git-grounded diff below sees it. A commit failure is a
+                # warning, never a failed run.
+                if worktree_info is not None:
+                    try:
+                        WorktreeManager().commit_changes(
+                            worktree_info.path,
+                            f"[ninja-coder] agent output for {step_id}",
+                        )
+                    except WorktreeGitError as commit_exc:
+                        logger.warning(f"Failed to commit agent output in worktree: {commit_exc}")
+                        worktree_commit_warning = (
+                            f"⚠️ Could not commit agent output on "
+                            f"'{worktree_info.branch}': {commit_exc}"
+                        )
+
             except TimeoutError as e:
                 task_logger.warning(f"Task timed out ({e}), killing process group")
                 try:
@@ -2285,13 +2304,46 @@ class NinjaDriver:
             # which is the isolation worktree when worktree mode is active)
             parsed = self._strategy.parse_output(stdout, stderr, exit_code, repo_root=execution_dir)
 
+            # In worktree mode the agent's output is already committed; derive
+            # the touched files from git (authoritative) instead of trusting the
+            # model's self-report. Fall back to the parsed paths only if git
+            # fails. Also write a binary patch of the agent's changes.
+            touched_paths = parsed.touched_paths
+            patch_path: str | None = None
+            if worktree_info is not None:
+                baseline = worktree_info.snapshot_commit or worktree_info.baseline_commit
+                manager = WorktreeManager()
+                try:
+                    touched_paths = manager.changed_files(worktree_info.path, baseline)
+                except WorktreeGitError as diff_exc:
+                    logger.warning(
+                        f"Git-grounded file list unavailable ({diff_exc}); "
+                        "falling back to parsed paths"
+                    )
+                    touched_paths = parsed.touched_paths
+                try:
+                    patch_path = manager.write_patch(
+                        worktree_info.path,
+                        baseline,
+                        get_cache_dir()
+                        / "patches"
+                        / f"{worktree_info.branch.replace('/', '__')}.patch",
+                    )
+                except WorktreeGitError as patch_exc:
+                    logger.warning(f"Could not write worktree patch: {patch_exc}")
+
+            notes = parsed.notes
+            if worktree_commit_warning:
+                notes = f"{notes}\n{worktree_commit_warning}" if notes else worktree_commit_warning
+
             # Build result from parsed output
             result = self._attach_worktree_info(
                 NinjaResult(
                     success=parsed.success,
                     summary=parsed.summary,
-                    notes=parsed.notes,
-                    suspected_touched_paths=parsed.touched_paths,
+                    notes=notes,
+                    suspected_touched_paths=touched_paths,
+                    patch_path=patch_path,
                     raw_logs_path=task_logger.save(),
                     exit_code=exit_code,
                     stdout=stdout,

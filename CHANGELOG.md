@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.5.0 - 2026-10-09
+
+Worktree transfer and job-status fidelity.
+
+### Added
+- **Post-run commit**: agent output in a worktree is committed to the `ninja/*`
+  feature branch after each run, so `git merge ninja/<branch>` actually
+  transfers the work (it previously carried only the pre-task snapshot).
+- **Git-grounded results**: `files_modified` is computed from
+  `git diff <baseline>..HEAD` instead of agent-claimed paths (fixes bare-path
+  phantoms like `pytest.ini`); new `patch_path` artifact (`git diff --binary`
+  under `<cache>/ninja-mcp/patches/`) attached to plan results.
+- **`parse_output` baseline fix**: under worktree mode the diff baseline is the
+  snapshot commit, not HEAD~1 (fixes snapshot files misattributed as agent
+  output).
+
+### Fixed
+- **Status fidelity**: `run_tracked` marks a job `failed` (with reason in the
+  list view) when the returned payload reports `overall_status: failed` or
+  `status: error|failed` — jobs no longer list `completed` for failed runs.
+- **Auth false positive**: error classification scans only the last 8000 chars
+  of CLI output; agents grepping strategy sources no longer self-sabotage
+  successful runs into "Authentication failed".
+
 ## 1.4.1 - 2026-10-01
 
 Dynamic model discovery for OpenAI Codex CLI.

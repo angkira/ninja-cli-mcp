@@ -130,6 +130,15 @@ class WorktreeInfo:
     path: Path
     branch: str
     snapshot_commit: str | None = None
+    baseline_commit: str | None = None
+
+
+class WorktreeGitError(RuntimeError):
+    """Raised when a git command inside a worktree fails unexpectedly.
+
+    Only genuine git failures are wrapped; an empty index (nothing to commit)
+    is not an error and is reported as ``None`` instead.
+    """
 
 
 class WorktreeManager:
@@ -254,6 +263,9 @@ class WorktreeManager:
                 return None
 
             root = Path(repo_root).resolve()
+            # The commit the feature branch is created at — the fallback
+            # baseline for agent-output diffs when no snapshot shifts HEAD.
+            baseline_commit = GitSafetyChecker.get_current_commit(repo_root)
             branch = self._build_branch_name(task_hint=task_hint, step_id=step_id)
             worktree_path = self._worktree_path(root, branch)
             worktree_path.parent.mkdir(parents=True, exist_ok=True)
@@ -283,11 +295,111 @@ class WorktreeManager:
                 path=worktree_path,
                 branch=branch,
                 snapshot_commit=snapshot_commit,
+                baseline_commit=baseline_commit,
             )
 
         except Exception as e:
             logger.warning(f"Worktree isolation unavailable ({e}); falling back to repo_root")
             return None
+
+    def commit_changes(self, worktree_path: Path | str, message: str) -> str | None:
+        """Commit every pending change in *worktree_path*.
+
+        Used after the AI CLI subprocess finishes so the agent's output is
+        actually recorded on the feature branch (and can be diffed, patched and
+        merged).
+
+        Args:
+            worktree_path: Worktree (or any git work tree) to commit in.
+            message: Commit message.
+
+        Returns:
+            The new commit SHA when a commit was created, or ``None`` when the
+            tree was already clean (nothing to commit).
+
+        Raises:
+            WorktreeGitError: If a git command fails for a real reason.
+        """
+        path = Path(worktree_path)
+        status = self._run_git(path, ["status", "--porcelain"], text=True)
+        if status.returncode != 0:
+            raise WorktreeGitError(self._git_error("status", path, status))
+        if not status.stdout.strip():
+            return None
+
+        add = self._run_git(path, ["add", "-A"], text=True)
+        if add.returncode != 0:
+            raise WorktreeGitError(self._git_error("add", path, add))
+
+        commit = self._run_git(path, ["commit", "-m", message], text=True)
+        if commit.returncode != 0:
+            raise WorktreeGitError(self._git_error("commit", path, commit))
+
+        return self._rev_parse(path)
+
+    def changed_files(self, worktree_path: Path | str, baseline: str | None) -> list[str]:
+        """List files changed between *baseline* and HEAD in a worktree.
+
+        Args:
+            worktree_path: Worktree to inspect.
+            baseline: Baseline commit to diff against. When falsy the list is
+                empty (there is nothing to compare).
+
+        Returns:
+            Repo-relative paths changed since *baseline* (renames report the
+            new path).
+
+        Raises:
+            WorktreeGitError: If the git diff fails.
+        """
+        if not baseline:
+            return []
+        path = Path(worktree_path)
+        result = self._run_git(path, ["diff", "--name-status", f"{baseline}..HEAD"], text=True)
+        if result.returncode != 0:
+            raise WorktreeGitError(self._git_error("diff --name-status", path, result))
+
+        files: list[str] = []
+        for line in result.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            files.append(parts[-1].strip())
+        return files
+
+    def write_patch(
+        self,
+        worktree_path: Path | str,
+        baseline: str | None,
+        out_path: Path | str,
+    ) -> str | None:
+        """Write the binary diff between *baseline* and HEAD to *out_path*.
+
+        Args:
+            worktree_path: Worktree to inspect.
+            baseline: Baseline commit to diff against. When falsy nothing is
+                written and ``None`` is returned.
+            out_path: Destination file for the patch.
+
+        Returns:
+            The written path, or ``None`` when there is no diff.
+
+        Raises:
+            WorktreeGitError: If the git diff fails.
+        """
+        if not baseline:
+            return None
+        path = Path(worktree_path)
+        result = self._run_git(path, ["diff", "--binary", f"{baseline}..HEAD"], text=False)
+        if result.returncode != 0:
+            raise WorktreeGitError(self._git_error("diff --binary", path, result))
+        if not result.stdout:
+            return None
+
+        destination = Path(out_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(result.stdout)
+        return str(destination)
 
     def prune(self, max_age_days: int | None = None) -> int:
         """Remove isolation worktrees older than max_age_days.
@@ -483,6 +595,51 @@ class WorktreeManager:
         repo_hash = hashlib.sha256(str(repo_root).encode()).hexdigest()[:_REPO_HASH_LEN]
         branch_dir = branch.replace("/", "__")
         return get_cache_dir() / "worktrees" / repo_hash / branch_dir
+
+    @staticmethod
+    def _run_git(
+        path: Path,
+        args: list[str],
+        *,
+        text: bool,
+    ) -> subprocess.CompletedProcess:
+        """Run a git command in *path* capturing its output.
+
+        Args:
+            path: Working directory for the git command.
+            args: Git arguments (without the leading ``git``).
+            text: Decode stdout/stderr as text (False keeps raw bytes, needed
+                for ``--binary`` patches).
+
+        Returns:
+            The completed process; the caller inspects ``returncode``.
+        """
+        return subprocess.run(
+            ["git", *args],
+            cwd=path,
+            capture_output=True,
+            text=text,
+            timeout=_GIT_TIMEOUT_SEC,
+            check=False,
+        )
+
+    @staticmethod
+    def _git_error(op: str, path: Path, result: subprocess.CompletedProcess) -> str:
+        """Build a human-readable message for a failed git command.
+
+        Args:
+            op: The git operation label (e.g. "commit").
+            path: Working directory the command ran in.
+            result: The failed completed process.
+
+        Returns:
+            A message including the decoded stderr (or the exit code).
+        """
+        stderr = result.stderr
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode(errors="replace")
+        detail = (stderr or "").strip() or f"exit {result.returncode}"
+        return f"git {op} failed in {path}: {detail}"
 
     def _rev_parse(self, path: Path) -> str | None:
         """Resolve HEAD in the given work tree.

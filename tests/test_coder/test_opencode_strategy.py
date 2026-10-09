@@ -247,7 +247,31 @@ class TestParseOutput:
         parsed = strategy.parse_output(stdout, "", 0)
 
         assert parsed.success is True
+
+    def test_echoed_source_auth_markers_are_not_auth(self, strategy):
+        """Auth markers echoed mid-output (e.g. agent grepping this module's
+        own source) must not fail an otherwise successful run."""
+        echoed_source = (
+            "grep -n auth src/ninja_coder/strategies/opencode_strategy.py\n"
+            "446:             r\"AuthenticationError\",\n"
+            "448:             r\"User\\s+not\\s+found\",\n"
+            "449:             r\"Unauthorized\",\n"
+        )
+        stdout = "x" * 12000 + echoed_source + "y" * 9000 + "\nWrote src/ninja_common/jobs.py"
+
+        parsed = strategy.parse_output(stdout, "", 0)
+
+        assert parsed.success is True
         assert "Authentication" not in parsed.summary
+
+    def test_genuine_auth_marker_in_tail_still_fails(self, strategy):
+        """A real auth marker at the very end of output still fails the run."""
+        stdout = "x" * 12000 + "\nERROR: User not found"
+
+        parsed = strategy.parse_output(stdout, "", 0)
+
+        assert parsed.success is False
+        assert "Authentication" in parsed.summary
 
 
 if __name__ == "__main__":

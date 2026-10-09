@@ -2,7 +2,7 @@
 
 SHELL := /bin/sh
 
-VERSION ?= 1.4.1
+VERSION ?= 1.5.0
 IMAGE ?= ninja-mcp:local-$(VERSION)
 PROFILE ?= coder
 COMPOSE_PROJECT_NAME ?= ninja-mcp

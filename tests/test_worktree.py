@@ -7,14 +7,10 @@ patterns) and the execute_async integration with a mocked CLI subprocess.
 from __future__ import annotations
 
 import subprocess
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 from ninja_coder.driver import NinjaConfig, NinjaDriver
 from ninja_coder.safety import SafetyMode, validate_task_safety
@@ -571,3 +567,191 @@ async def test_execute_async_non_git_repo_falls_back(
     assert result.success is True
     assert result.worktree_branch is None
     assert captured["cwd"] == str(plain)
+
+
+# ---------------------------------------------------------------------------
+# commit_changes — persist the agent's output on the feature branch
+# ---------------------------------------------------------------------------
+
+
+def test_commit_changes_commits_dirty_worktree(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A dirty worktree is committed and the new SHA returned."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    manager = WorktreeManager()
+    info = manager.create(repo_root=str(git_repo), step_id="commitstep")
+    assert info is not None
+
+    (info.path / "agent.py").write_text("# agent output\n")
+    sha = manager.commit_changes(info.path, "[ninja-coder] agent output for step1")
+
+    assert sha is not None
+    subject = _git(info.path, "log", "-1", "--pretty=%s").stdout.strip()
+    assert subject == "[ninja-coder] agent output for step1"
+    # The worktree is clean once the output is committed.
+    assert _git(info.path, "status", "--porcelain").stdout == ""
+
+
+def test_commit_changes_clean_worktree_returns_none(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A clean worktree has nothing to commit: ``None`` and no new commit."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    manager = WorktreeManager()
+    info = manager.create(repo_root=str(git_repo), step_id="cleancommit")
+    assert info is not None
+    head_before = _git(info.path, "rev-parse", "HEAD").stdout.strip()
+
+    assert manager.commit_changes(info.path, "nothing to do") is None
+    assert _git(info.path, "rev-parse", "HEAD").stdout.strip() == head_before
+
+
+# ---------------------------------------------------------------------------
+# changed_files / write_patch — git-grounded result artifacts
+# ---------------------------------------------------------------------------
+
+
+def test_changed_files_lists_agent_changes(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """changed_files lists exactly the files changed since the baseline."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    manager = WorktreeManager()
+    info = manager.create(repo_root=str(git_repo), step_id="changedstep")
+    assert info is not None
+    baseline = info.snapshot_commit or info.baseline_commit
+
+    # Clean start: nothing changed yet.
+    assert manager.changed_files(info.path, baseline) == []
+
+    (info.path / "new_file.py").write_text("# new\n")
+    (info.path / "README.md").write_text("# changed\n")
+    manager.commit_changes(info.path, "agent output")
+
+    assert set(manager.changed_files(info.path, baseline)) == {"new_file.py", "README.md"}
+
+
+def test_write_patch_contains_diff(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """write_patch writes the agent diff to the requested path."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    manager = WorktreeManager()
+    info = manager.create(repo_root=str(git_repo), step_id="patchstep")
+    assert info is not None
+    baseline = info.snapshot_commit or info.baseline_commit
+
+    (info.path / "patched.py").write_text("# patched\n")
+    manager.commit_changes(info.path, "agent output")
+
+    out = tmp_path / "patches" / "agent.patch"
+    written = manager.write_patch(info.path, baseline, out)
+
+    assert written == str(out)
+    assert out.exists()
+    content = out.read_text()
+    assert "patched.py" in content
+    assert "diff --git" in content
+
+
+def test_write_patch_returns_none_without_changes(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No diff since the baseline: no patch file is written."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    manager = WorktreeManager()
+    info = manager.create(repo_root=str(git_repo), step_id="nopatchstep")
+    assert info is not None
+    baseline = info.snapshot_commit or info.baseline_commit
+
+    out = tmp_path / "empty.patch"
+    assert manager.write_patch(info.path, baseline, out) is None
+    assert not out.exists()
+
+
+def test_changed_files_ignores_snapshot_files_with_dirty_repo(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: the snapshot commit must be the baseline, not branch HEAD.
+
+    Under worktree isolation a dirty main tree is snapshotted as a commit on
+    the feature branch, shifting HEAD. Diffing the agent's output against the
+    branch-creation commit would misattribute the pre-existing snapshot files
+    to the agent; the snapshot commit is the correct baseline.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    _make_dirty(git_repo)  # README.md modified + untracked.py added by the user
+
+    manager = WorktreeManager()
+    info = manager.create(repo_root=str(git_repo), step_id="snapshotbase")
+    assert info is not None
+    assert info.snapshot_commit is not None
+    assert info.baseline_commit is not None
+
+    # Simulate the agent modifying exactly one file, then commit its output.
+    (info.path / "agent_output.py").write_text("# agent\n")
+    manager.commit_changes(info.path, "[ninja-coder] agent output")
+
+    baseline = info.snapshot_commit or info.baseline_commit
+    listed = manager.changed_files(info.path, baseline)
+    assert listed == ["agent_output.py"]
+    # Pre-existing snapshot files are NOT attributed to the agent.
+    assert "README.md" not in listed
+    assert "untracked.py" not in listed
+
+    # Sanity check: the branch-creation baseline would wrongly include them.
+    naive = manager.changed_files(info.path, info.baseline_commit)
+    assert "README.md" in naive
+
+
+@pytest.mark.asyncio
+async def test_execute_async_worktree_suspected_paths_are_agent_only(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: execute_async reports only the agent's files, not snapshot ones.
+
+    With a dirty main tree the snapshot commit shifts HEAD; the driver must use
+    the snapshot commit as the diff baseline so the pre-existing dirty files are
+    not attributed to the agent.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.delenv(WORKTREE_MODE_ENV, raising=False)
+    _make_dirty(git_repo)  # README.md modified + untracked.py added by the user
+
+    async def mock_subprocess(*args: object, **kwargs: object) -> MagicMock:
+        cwd = str(kwargs.get("cwd"))
+        # Simulate the agent writing exactly one file inside the worktree.
+        with (Path(cwd) / "agent_output.py").open("w") as handle:
+            handle.write("# agent output\n")
+        process = MagicMock()
+        process.returncode = 0
+        return process
+
+    async def mock_stream(
+        self: NinjaDriver,
+        process: object,
+        max_timeout: float,
+        inactivity_timeout: float = 60.0,
+        cpu_check_threshold: float = 1.0,
+    ) -> tuple[str, str]:
+        return "Applied edit to agent_output.py\n", ""
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", mock_subprocess)
+    monkeypatch.setattr(NinjaDriver, "_stream_with_activity_timeout", mock_stream)
+
+    driver = _build_driver()
+    result = await driver.execute_async(
+        repo_root=str(git_repo),
+        step_id="agent_only",
+        instruction={"task": "add a file", "file_scope": {"context_paths": []}},
+        task_type="sequential",
+    )
+
+    assert result.success is True
+    assert result.suspected_touched_paths == ["agent_output.py"]
+    assert "README.md" not in result.suspected_touched_paths
+    assert "untracked.py" not in result.suspected_touched_paths
+    # A patch of the agent's change was written and is non-empty.
+    assert result.patch_path is not None
+    assert Path(result.patch_path).exists()

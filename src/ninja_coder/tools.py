@@ -43,6 +43,32 @@ from ninja_common.security import InputValidator, monitored, rate_limited
 logger = get_logger(__name__)
 
 
+def _paths_within_worktree(paths: list[str], worktree_path: str | None) -> list[str]:
+    """Drop paths that resolve outside *worktree_path*.
+
+    Results are git-grounded relative to the worktree, but a defensive filter
+    keeps a stray absolute/``..`` path from escaping the isolated tree. When no
+    worktree was used the list is returned unchanged.
+
+    Args:
+        paths: Candidate repo-relative (or absolute) paths.
+        worktree_path: Worktree root, or ``None`` when isolation was not used.
+
+    Returns:
+        The subset of *paths* that stay inside the worktree.
+    """
+    if not worktree_path:
+        return paths
+    root = Path(worktree_path).resolve()
+    kept: list[str] = []
+    for raw in paths:
+        candidate = Path(raw)
+        resolved = (candidate if candidate.is_absolute() else root / candidate).resolve()
+        if resolved == root or root in resolved.parents:
+            kept.append(raw)
+    return kept
+
+
 #: Env var holding a comma-separated list of backup model ids used when the
 #: primary model fails with a quota/rate-limit/overload error. Empty/unset =
 #: no fallback (historical behavior). Read per call via ``parse_fallback_chain``.
@@ -601,7 +627,9 @@ class ToolExecutor:
                         )
                         for step in request.steps
                     ],
-                    files_modified=result.suspected_touched_paths,
+                    files_modified=_paths_within_worktree(
+                        result.suspected_touched_paths, result.worktree_path
+                    ),
                     notes=(result.notes or result.summary)[:500],
                 )
         else:
@@ -616,6 +644,7 @@ class ToolExecutor:
             plan_result.notes = (
                 f"{plan_result.notes}\n{result.notes}" if plan_result.notes else result.notes
             )[:500]
+        plan_result.patch_path = result.patch_path
 
         # 5. Record metrics
         duration = time.time() - start_time
@@ -784,7 +813,9 @@ class ToolExecutor:
                         )
                         for step in request.steps
                     ],
-                    files_modified=result.suspected_touched_paths,
+                    files_modified=_paths_within_worktree(
+                        result.suspected_touched_paths, result.worktree_path
+                    ),
                     notes=(result.notes or result.summary)[:500],
                 )
         else:
@@ -799,6 +830,7 @@ class ToolExecutor:
             plan_result.notes = (
                 f"{plan_result.notes}\n{result.notes}" if plan_result.notes else result.notes
             )[:500]
+        plan_result.patch_path = result.patch_path
 
         # 5. Record metrics
         duration = time.time() - start_time
