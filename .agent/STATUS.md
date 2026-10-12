@@ -10,7 +10,11 @@
 ## Latest Session (2026-10-11): Pi integration (pi.dev)
 
 **Active Task:** Add Pi (pi.dev) as a possible ninja CLI to run (coder strategy) and as an init/integration target (`ninja-mcp init pi`).
-**Status:** COMPLETED (uncommitted, per instructions).
+**Status:** COMPLETED and released (v1.5.1 released and pushed to origin/main).
+
+**Commits (main, pushed):**
+1. `2de71e3` feat(pi): Pi (pi.dev) CLI operator and MCP init integration
+2. `b83dff6` chore(release): bump version to 1.5.1 (tag v1.5.1)
 
 **Components delivered:**
 1. **Init Target (`ninja-mcp init pi`):**
