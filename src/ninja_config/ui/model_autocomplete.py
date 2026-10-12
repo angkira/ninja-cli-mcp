@@ -48,6 +48,7 @@ from ninja_config.ui.model_cache import (
     cached_discover_providers,
     cached_get_codex_models,
     cached_get_junie_models,
+    cached_get_pi_models,
     cached_get_provider_models,
     filter_models,
 )
@@ -84,6 +85,11 @@ def _native_provider_models(provider: str) -> set[str]:
             return {m.id for m in cached_get_codex_models()}
         except Exception:
             pass
+    if provider == "pi":
+        try:
+            return {m.id for m in cached_get_pi_models()}
+        except Exception:
+            pass
     return {mid for mid, _name, _desc in PROVIDER_MODELS.get(provider, [])}
 
 
@@ -110,6 +116,11 @@ def resolve_search_models(operator: str, provider: str) -> list[Model]:
     if operator == "codex":
         try:
             return cached_get_codex_models()
+        except Exception:
+            return []
+    if operator == "pi":
+        try:
+            return cached_get_pi_models()
         except Exception:
             return []
     return cached_get_provider_models(operator, provider)
@@ -145,6 +156,8 @@ def guess_provider(model_id: str, operator: str | None = None) -> str:
         return "google"
     if low.startswith("junie/"):
         return "junie"
+    if low.startswith("pi/"):
+        return "pi"
     if low.startswith("claude") or "anthropic/" in low:
         return "anthropic"
     if low.startswith("gpt") or low.startswith("o1") or low.startswith("o3") or "openai/" in low:

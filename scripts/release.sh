@@ -208,7 +208,7 @@ fi
 # ── Build ────────────────────────────────────────────────────────────────────
 
 info "Building distributions"
-run rm -rf dist
+run rm -f dist/*.whl dist/*.tar.gz
 run uv build
 if [ "$DRY_RUN" -eq 0 ]; then
     ls -1 dist/ | grep -q "ninja_mcp-${VERSION}" || die "Build did not produce $VERSION artifacts"

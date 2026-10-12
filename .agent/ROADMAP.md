@@ -2,6 +2,27 @@
 
 ## Active Milestones
 
+### Task: Pi (pi.dev) CLI operator & MCP init integration
+**Priority:** High
+**Status:** COMPLETED 2026-10-11
+
+**Description:**
+Add Pi (pi.dev) as a possible ninja CLI operator in ninja-coder (`pi` strategy, dynamic discovery, thinking levels) and as an MCP init target (`ninja-mcp init pi` merges ninja servers into `~/.pi/agent/mcp.json`).
+
+**Files:**
+- [x] `src/ninja_common/init_targets/pi.py` — `JsonMcpTarget` for `~/.pi/agent/mcp.json`
+- [x] `src/ninja_common/init_cli.py` — registered `pi` target and detection
+- [x] `src/ninja_coder/strategies/pi_strategy.py` — `PiStrategy` (JSONL events parsing, timeout, retryable errors)
+- [x] `src/ninja_coder/strategies/__init__.py` & `registry.py` — strategy registration & detection
+- [x] `src/ninja_coder/driver.py` — `resolve_pi_thinking` flag wiring
+- [x] `src/ninja_common/defaults.py` — `PI_MODELS`, `PI_THINKING_LEVELS`, operator defaults
+- [x] `src/ninja_common/pi_discovery.py` — dynamic discovery (`pi --list-models`, settings.json)
+- [x] `src/ninja_common/operator_models.py` — operator model routing, normalizer, thinking resolution
+- [x] `src/ninja_config/` (model_selector, config_shared, modern_tui, tui_installer, ui, settings_registry) — full config & UI integration
+- [x] `tests/test_pi_strategy.py`, `tests/test_pi_discovery.py`, `tests/test_init_targets.py`, `tests/test_init_cli.py` — comprehensive test suite (all green)
+
+---
+
 ### Task: Release automation (local publish)
 **Priority:** High
 **Status:** COMPLETED 2026-09-13 (commits `4058142`)

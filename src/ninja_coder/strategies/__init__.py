@@ -14,6 +14,7 @@ from ninja_coder.strategies.base import (
 from ninja_coder.strategies.claude_strategy import ClaudeStrategy
 from ninja_coder.strategies.codex_strategy import CodexStrategy, check_codex_auth
 from ninja_coder.strategies.junie_strategy import JunieStrategy, check_junie_auth
+from ninja_coder.strategies.pi_strategy import PiStrategy, check_pi_auth
 from ninja_coder.strategies.registry import CLIStrategyRegistry
 
 
@@ -26,6 +27,8 @@ __all__ = [
     "CodexStrategy",
     "JunieStrategy",
     "ParsedResult",
+    "PiStrategy",
     "check_codex_auth",
     "check_junie_auth",
+    "check_pi_auth",
 ]

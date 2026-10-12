@@ -66,6 +66,7 @@ from ninja_common.operator_models import (
     operator_from_bin,
     resolve_junie_effort,
     resolve_operator_model,
+    resolve_pi_thinking,
 )
 from ninja_common.path_utils import ensure_internal_dirs, get_cache_dir, safe_join
 
@@ -902,6 +903,10 @@ class NinjaDriver:
             effort = resolve_junie_effort(task_type=task_type)
             if effort is not None:
                 flags["effort"] = effort
+        elif self._strategy.name == "pi":
+            thinking = resolve_pi_thinking(task_type=task_type)
+            if thinking is not None:
+                flags["thinking"] = thinking
         return flags or None
 
     def _build_prompt_text(self, instruction: dict[str, Any], repo_root: str) -> str:

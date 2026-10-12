@@ -252,6 +252,7 @@ class ResultParser:
             overall_status=data["overall_status"],
             steps=step_results,
             files_modified=data.get("files_modified", []),
+            patch_path=data.get("patch_path"),
             notes=overall_summary,
             execution_time=0,  # TODO: Add proper execution time tracking
         )

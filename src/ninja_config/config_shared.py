@@ -154,6 +154,7 @@ OPERATORS: list[OperatorDef] = [
     OperatorDef("agy", "Antigravity", "Google Antigravity CLI (host-auth)", ("agy",)),
     OperatorDef("junie", "Junie", "JetBrains coding agent CLI (host-auth)", ("junie",)),
     OperatorDef("codex", "Codex", "OpenAI Codex CLI (host-auth, subagents)", ("codex",)),
+    OperatorDef("pi", "Pi", "Pi coding agent CLI (pi.dev)", ("pi",)),
     OperatorDef("cursor", "Cursor", "AI code editor", ("openai", "anthropic")),
 ]
 
@@ -197,7 +198,7 @@ def get_fallback_models(provider: str | None = None) -> list[tuple[str, str, str
 
 def detect_tools() -> dict[str, str]:
     tools: dict[str, str] = {}
-    for name in ("aider", "opencode", "agy", "claude", "junie", "codex", "cursor"):
+    for name in ("aider", "opencode", "agy", "claude", "junie", "codex", "pi", "cursor"):
         path = shutil.which(name)
         if path:
             tools[name] = path

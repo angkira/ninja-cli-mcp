@@ -16,11 +16,13 @@ from pathlib import Path
 
 from ninja_common import codex_discovery as _codex_discovery
 from ninja_common import junie_discovery as _junie_discovery
+from ninja_common import pi_discovery as _pi_discovery
 from ninja_common.config_manager import ConfigManager
 from ninja_common.defaults import (
     CLAUDE_CODE_MODELS,
     CODEX_MODELS,
     JUNIE_MODELS,
+    PI_MODELS,
 )
 from ninja_common.defaults import OPENCODE_PROVIDERS as _CANONICAL_OPENCODE_PROVIDERS
 from ninja_config.config_shared import MCP_SERVER_COMMANDS
@@ -64,6 +66,9 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "openai": "OpenAI",
     "github-copilot": "GitHub Copilot",
     "litellm": "LiteLLM",
+    "codex": "Codex",
+    "junie": "Junie",
+    "pi": "Pi",
 }
 
 
@@ -223,6 +228,25 @@ def discover_codex_models() -> list[tuple[str, str, str]]:
         triples = []
     if not triples:
         triples = list(CODEX_MODELS)
+    return triples
+
+
+def discover_pi_models() -> list[tuple[str, str, str]]:
+    """Dynamically discover Pi models as ``(id, name, description)``.
+
+    Priority: CLI discovery (pi --list-models) → ~/.pi/agent/settings.json
+    → static PI_MODELS last-resort fallback (see ``ninja_common.pi_discovery``).
+    Never raises; never empty while the static catalogue exists.
+
+    Returns:
+        List of model triples.
+    """
+    try:
+        triples = _pi_discovery.discover_pi_model_triples()
+    except Exception:
+        triples = []
+    if not triples:
+        triples = list(PI_MODELS)
     return triples
 
 
@@ -497,6 +521,8 @@ class Operator:
             return self._load_junie_models()
         elif self.id == "codex":
             return self._load_codex_models()
+        elif self.id == "pi":
+            return self._load_pi_models()
 
         return False
 
@@ -693,6 +719,28 @@ class Operator:
                     name=name,
                     description=desc,
                     provider="codex",
+                    recommended=(model_id == recommended_id),
+                )
+            )
+
+        return True
+
+    def _load_pi_models(self) -> bool:
+        """Load models for Pi CLI (dynamically discovered, host-auth)."""
+        triples = discover_pi_models()
+        try:
+            current = _pi_discovery.read_pi_settings_current_model()
+        except Exception:
+            current = None
+        recommended_id = current or (triples[0][0] if triples else "deepseek-v4.1-flash")
+
+        for model_id, name, desc in triples:
+            self.models.append(
+                Model(
+                    id=model_id,
+                    name=name,
+                    description=desc,
+                    provider="pi",
                     recommended=(model_id == recommended_id),
                 )
             )
@@ -923,6 +971,31 @@ def _get_codex_models() -> list[Model]:
     ]
 
 
+def _get_pi_models() -> list[Model]:
+    """Get models for Pi CLI (dynamically discovered, host-auth via pi.dev).
+
+    Returns:
+        List of Model objects (Pi model ids).
+    """
+    triples = discover_pi_models()
+    try:
+        current = _pi_discovery.read_pi_settings_current_model()
+    except Exception:
+        current = None
+    recommended_id = current or (triples[0][0] if triples else "deepseek-v4.1-flash")
+
+    return [
+        Model(
+            id=model_id,
+            name=name,
+            description=f"{desc} (via Pi)",
+            provider="pi",
+            recommended=(model_id == recommended_id),
+        )
+        for model_id, name, desc in triples
+    ]
+
+
 def get_provider_models(operator: str, provider: str) -> list[Model]:
     """Get models for a specific provider from an operator.
 
@@ -947,6 +1020,7 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
         "agy": lambda _p: _get_agy_models(),
         "junie": lambda _p: _get_junie_models(),
         "codex": lambda _p: _get_codex_models(),
+        "pi": lambda _p: _get_pi_models(),
     }
 
     # Check if operator has a dedicated handler
@@ -1063,6 +1137,12 @@ OPERATORS = [
         binary_name="codex",
         description="OpenAI Codex CLI - host-auth via ChatGPT login, native subagents",
     ),
+    Operator(
+        id="pi",
+        name="Pi",
+        binary_name="pi",
+        description="Pi coding agent CLI (pi.dev) - host-auth, thinking models",
+    ),
 ]
 
 
@@ -1076,6 +1156,7 @@ NATIVE_OPERATOR_PROVIDERS: dict[str, str] = {
     "junie": "junie",
     "claude": "anthropic",
     "agy": "agy",
+    "pi": "pi",
 }
 
 
@@ -1095,6 +1176,9 @@ def normalize_operator(raw: str | None) -> str:
     value = (raw or "").strip().lower()
     if not value:
         return "opencode"
+    name = Path(value).name
+    if name in ("pi", "pi.exe") or name.startswith("pi-") or name.startswith("pi."):
+        return "pi"
     for op in OPERATORS:
         if op.id in value:
             return op.id
@@ -1288,6 +1372,25 @@ def check_operator_auth(operator: Operator) -> dict[str, bool]:
                 auth_status["codex"] = result.returncode == 0
             except Exception:
                 auth_status["codex"] = False
+
+    elif operator.id == "pi":
+        # Pi is host-authorized (pi.dev) — just check the
+        # binary exists and responds to a lightweight --help (no network).
+        pi_bin = operator.binary_path or shutil.which("pi")
+        if not pi_bin:
+            auth_status["pi"] = False
+        else:
+            try:
+                result = subprocess.run(
+                    [pi_bin, "--help"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                auth_status["pi"] = result.returncode == 0
+            except Exception:
+                auth_status["pi"] = False
 
     return auth_status
 

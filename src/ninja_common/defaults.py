@@ -164,6 +164,30 @@ CODEX_MODELS = [
 ]
 
 # =============================================================================
+# PI MODELS (Pi coding agent CLI, pi.dev)
+# =============================================================================
+
+PI_MODELS = [
+    ("deepseek-v4.1-flash", "DeepSeek V4.1 Flash", "Fast default model with thinking support"),
+    ("glm-5.3-flash-nvfp4", "GLM 5.3 Flash", "1M context fast model"),
+    ("qwen3.8-flash-next", "Qwen 3.8 Flash Next", "Fast reasoning model"),
+    ("qwen36-50-qwen38-50", "Qwen 36-50 / 38-50", "Extended context coding model"),
+    ("claude-sonnet", "Claude Sonnet", "Anthropic Claude Sonnet via Pi"),
+    ("gpt-4o", "GPT-4o", "OpenAI GPT-4o via Pi"),
+]
+
+#: Valid ``--thinking`` levels for the Pi CLI.
+PI_THINKING_LEVELS: tuple[str, ...] = (
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+)
+
+# =============================================================================
 # ANTHROPIC MODELS (Native API)
 # =============================================================================
 
@@ -697,6 +721,7 @@ OPERATOR_DEFAULT_MODELS: dict[str, str] = {
     "junie": JUNIE_MODELS[0][0],
     "claude": "claude-sonnet-4",
     "agy": "default",
+    "pi": PI_MODELS[0][0],
 }
 
 # Operator → static model catalogue, used by the config autocomplete fallback
@@ -707,6 +732,7 @@ OPERATOR_STATIC_MODELS: dict[str, list[tuple[str, str, str]]] = {
     "junie": JUNIE_MODELS,
     "claude": CLAUDE_CODE_MODELS,
     "aider": OPENROUTER_MODELS,
+    "pi": PI_MODELS,
 }
 
 # Maps OpenCode provider names to their available model lists.
@@ -722,4 +748,5 @@ PROVIDER_MODELS = {
     "openrouter": OPENROUTER_MODELS,
     "junie": JUNIE_MODELS,
     "codex": CODEX_MODELS,
+    "pi": PI_MODELS,
 }

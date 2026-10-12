@@ -66,6 +66,7 @@ OPERATOR_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     "claude": ("ANTHROPIC_API_KEY",),
     "junie": (),
     "codex": (),
+    "pi": (),
     "cursor": ("OPENAI_API_KEY",),
 }
 

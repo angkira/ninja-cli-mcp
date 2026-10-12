@@ -20,18 +20,22 @@ from ninja_common.defaults import (
     JUNIE_MODEL_ALIASES,
     JUNIE_MODELS,
     OPERATOR_DEFAULT_MODELS,
+    PI_MODELS,
+    PI_THINKING_LEVELS,
 )
 from ninja_common.junie_discovery import get_junie_catalog
+from ninja_common.pi_discovery import get_pi_catalog
 
 
 #: Operators whose model ids are fully determined by a static catalogue.
-#: ``codex`` and ``junie`` keep their static entry as the last-resort fallback,
+#: ``codex``, ``junie``, and ``pi`` keep their static entry as the last-resort fallback,
 #: but at runtime their catalogue is dynamic. Compatibility and
-#: validation for codex and junie consult the cached dynamic catalogue.
+#: validation for codex, junie, and pi consult the cached dynamic catalogue.
 OPERATOR_NATIVE_MODELS: dict[str, frozenset[str]] = {
     "codex": frozenset(mid for mid, _n, _d in CODEX_MODELS),
     "junie": frozenset(mid for mid, _n, _d in JUNIE_MODELS),
     "claude": frozenset(mid for mid, _n, _d in CLAUDE_CODE_MODELS),
+    "pi": frozenset(mid for mid, _n, _d in PI_MODELS),
 }
 
 #: Operators that accept ``provider/model`` ids dynamically (opencode: any
@@ -63,6 +67,11 @@ def operator_from_bin(bin_path: str | None) -> str | None:
     value = (bin_path or "").strip().lower()
     if not value:
         return None
+    from pathlib import Path
+
+    name = Path(value).name
+    if name in ("pi", "pi.exe") or name.startswith("pi-") or name.startswith("pi."):
+        return "pi"
     for marker, operator in _BIN_MARKERS:
         if marker in value:
             return operator
@@ -129,6 +138,14 @@ def is_model_compatible(model: str, operator: str | None) -> bool:
         normalized = normalize_junie_model(model)
         lowered = normalized.lower()
         return any(known.lower() == lowered for known in catalog)
+    if op == "pi":
+        try:
+            catalog = get_pi_catalog()
+        except Exception:
+            catalog = [mid for mid, _n, _d in PI_MODELS]
+        lowered = model.lower()
+        candidate = model.split("/")[-1].strip().lower()
+        return any(known.lower() == lowered or known.lower() == candidate for known in catalog)
     native = OPERATOR_NATIVE_MODELS.get(op)
     if native is None:
         return True
@@ -158,6 +175,10 @@ def resolve_operator_model(model: str | None, operator: str | None) -> str:
         stripped = model.removeprefix("codex/").removeprefix("openai/")
         if is_model_compatible(stripped, operator):
             return stripped
+    if (operator or "").lower() == "pi" and model:
+        normalized = normalize_pi_model(model)
+        if is_model_compatible(normalized, operator):
+            return normalized
     if is_model_compatible(model or "", operator):
         return str(model)
     return operator_default_model(operator) or str(model or "")
@@ -269,5 +290,76 @@ def resolve_junie_effort(explicit: str | None = None, task_type: str | None = No
     if value not in JUNIE_EFFORT_LEVELS:
         raise ValueError(
             f"Invalid Junie effort {raw!r}. Expected one of: {', '.join(JUNIE_EFFORT_LEVELS)}"
+        )
+    return value
+
+
+def normalize_pi_model(model: str | None) -> str:
+    """Normalize a Pi model id without validating it (never raises).
+
+    Strips ``pi/`` or provider prefix if the bare model is known in the
+    Pi catalog, and canonicalizes against the known catalogue.
+
+    Args:
+        model: Raw model id (may be provider-qualified or a bare model name).
+
+    Returns:
+        Normalized model id, or ``""`` for empty input.
+    """
+    raw = (model or "").strip()
+    if not raw:
+        return ""
+    try:
+        catalog = get_pi_catalog()
+    except Exception:
+        catalog = [mid for mid, _n, _d in PI_MODELS]
+    candidate = raw.removeprefix("pi/").strip() or raw
+    candidate_bare = candidate.split("/")[-1].strip() or candidate
+    lowered = candidate.lower()
+    lowered_bare = candidate_bare.lower()
+    for known in catalog:
+        if known.lower() == lowered:
+            return known
+    for known in catalog:
+        if known.lower() == lowered_bare:
+            return known
+    for mid, _name, _desc in PI_MODELS:
+        if mid.lower() == lowered or mid.lower() == lowered_bare:
+            return mid
+    return candidate
+
+
+def resolve_pi_thinking(explicit: str | None = None, task_type: str | None = None) -> str | None:
+    """Resolve the Pi ``--thinking`` level.
+
+    Valid levels: ``off``, ``minimal``, ``low``, ``medium``, ``high``, ``xhigh``, ``max``.
+
+    Precedence: explicit per-call value → per-task-type env
+    (``NINJA_PI_THINKING_QUICK/SEQUENTIAL/PARALLEL``) → global
+    ``NINJA_PI_THINKING`` → ``None`` (flag omitted, CLI decides).
+
+    Args:
+        explicit: Per-call override (e.g. from ``additional_flags``).
+        task_type: Task type (``quick``/``sequential``/``parallel``,
+            ``*_plan`` suffixes accepted).
+
+    Returns:
+        Validated thinking level, or ``None`` when unset.
+
+    Raises:
+        ValueError: If a set value is not a valid thinking level.
+    """
+    raw: str | None = (explicit or "").strip() or None
+    if raw is None and task_type:
+        base = task_type.removesuffix("_plan").upper()
+        raw = (os.environ.get(f"NINJA_PI_THINKING_{base}") or "").strip() or None
+    if raw is None:
+        raw = (os.environ.get("NINJA_PI_THINKING") or "").strip() or None
+    if raw is None:
+        return None
+    value = raw.lower()
+    if value not in PI_THINKING_LEVELS:
+        raise ValueError(
+            f"Invalid Pi thinking level {raw!r}. Expected one of: {', '.join(PI_THINKING_LEVELS)}"
         )
     return value

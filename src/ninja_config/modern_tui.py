@@ -520,7 +520,7 @@ class NinjaConfigApp(App):
                         "↓/↑ + Enter picks, Enter on raw text saves custom.[/dim]"
                     )
                     yield Static(
-                        "[bold]Coder operator[/bold] [dim](coding CLI: opencode / codex / claude / aider / …)[/dim]"
+                        "[bold]Coder operator[/bold] [dim](coding CLI: opencode / codex / junie / pi / claude / aider / …)[/dim]"
                     )
                     yield Static(
                         self._operator_status("NINJA_CODE_BIN"),
@@ -965,7 +965,7 @@ class NinjaConfigApp(App):
         for op in OPERATORS:
             if op.id in installed:
                 mark = "[#a3be8c]✓ installed[/#a3be8c]"
-                auth = "host-auth" if op.id in ("codex", "junie") else "API key"
+                auth = "host-auth" if op.id in ("codex", "junie", "pi") else "API key"
             else:
                 mark = "[dim]✗ not installed[/dim]"
                 auth = "[dim]—[/dim]"
@@ -1012,7 +1012,7 @@ class NinjaConfigApp(App):
             except Exception:
                 auth = {}
             providers = ", ".join(p for p, ok in auth.items() if ok)
-            host = op.id in ("codex", "junie")
+            host = op.id in ("codex", "junie", "pi")
             usable = bool(providers) or host
             status = "[#a3be8c]available[/#a3be8c]" if usable else "[#ebcb8b]unavailable[/#ebcb8b]"
             detail = providers or ("host-auth" if host else "no credentials")

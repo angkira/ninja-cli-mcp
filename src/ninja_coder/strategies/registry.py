@@ -16,6 +16,7 @@ from ninja_coder.strategies.claude_strategy import ClaudeStrategy
 from ninja_coder.strategies.codex_strategy import CodexStrategy
 from ninja_coder.strategies.junie_strategy import JunieStrategy
 from ninja_coder.strategies.opencode_strategy import OpenCodeStrategy
+from ninja_coder.strategies.pi_strategy import PiStrategy
 
 
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ class CLIStrategyRegistry:
         "claude": ClaudeStrategy,
         "junie": JunieStrategy,
         "codex": CodexStrategy,
+        "pi": PiStrategy,
     }
 
     @classmethod
@@ -82,6 +84,8 @@ class CLIStrategyRegistry:
             strategy_name = "junie"
         elif "codex" in bin_name:
             strategy_name = "codex"
+        elif bin_name in ("pi", "pi.exe") or bin_name.startswith("pi-") or bin_name.endswith("-pi"):
+            strategy_name = "pi"
         else:
             # No specific strategy found - return generic if available
             raise ValueError(

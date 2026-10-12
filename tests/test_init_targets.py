@@ -236,3 +236,212 @@ class TestJunieTarget:
         finally:
             junie.config_dir = orig_dir
             junie.config_file = orig_file
+
+
+class TestPiTarget:
+    """Unit tests for the pi target module."""
+
+    def test_detect_true_when_dir_exists(self, tmp_path: Path) -> None:
+        """detect() returns True when detect_dir (~/.pi) exists."""
+        from ninja_common.init_targets import pi
+
+        orig_detect = pi.detect_dir
+        try:
+            fake_dir = tmp_path / ".pi"
+            fake_dir.mkdir(parents=True, exist_ok=True)
+            pi.detect_dir = fake_dir
+
+            assert pi.detect() is True
+        finally:
+            pi.detect_dir = orig_detect
+
+    def test_detect_false_when_dir_missing(self, tmp_path: Path) -> None:
+        """detect() returns False when detect_dir does not exist."""
+        from ninja_common.init_targets import pi
+
+        orig_detect = pi.detect_dir
+        try:
+            fake_dir = tmp_path / "nonexistent_pi_dir"
+            pi.detect_dir = fake_dir
+
+            assert pi.detect() is False
+        finally:
+            pi.detect_dir = orig_detect
+
+    def test_install_fresh(self, tmp_path: Path) -> None:
+        """install() creates ~/.pi/agent/ subdirectory and mcp.json with all 4 servers."""
+        from ninja_common.init_targets import pi
+
+        orig_dir = pi.config_dir
+        orig_file = pi.config_file
+        try:
+            target_dir = tmp_path / ".pi" / "agent"
+            target_file = target_dir / "mcp.json"
+            pi.config_dir = target_dir
+            pi.config_file = target_file
+
+            rc = pi.install(_make_args())
+            assert rc == 0
+            assert target_dir.is_dir()
+            assert target_file.is_file()
+
+            data = json.loads(target_file.read_text(encoding="utf-8"))
+            servers = data.get("mcpServers", {})
+            assert "ninja-coder" in servers
+            assert "ninja-researcher" in servers
+            assert "ninja-secretary" in servers
+            assert "ninja-agent" in servers
+        finally:
+            pi.config_dir = orig_dir
+            pi.config_file = orig_file
+
+    def test_install_dry_run_no_write(self, tmp_path: Path) -> None:
+        """install(--dry-run) does not create directories or files."""
+        from ninja_common.init_targets import pi
+
+        orig_dir = pi.config_dir
+        orig_file = pi.config_file
+        try:
+            target_dir = tmp_path / ".pi" / "agent"
+            target_file = target_dir / "mcp.json"
+            pi.config_dir = target_dir
+            pi.config_file = target_file
+
+            rc = pi.install(_make_args(dry_run=True))
+            assert rc == 0
+            assert not target_file.exists()
+            assert not target_dir.exists()
+        finally:
+            pi.config_dir = orig_dir
+            pi.config_file = orig_file
+
+    def test_install_merges_existing_servers(self, tmp_path: Path) -> None:
+        """install() preserves existing non-conflicting servers in mcp.json."""
+        from ninja_common.init_targets import pi
+
+        orig_dir = pi.config_dir
+        orig_file = pi.config_file
+        try:
+            target_dir = tmp_path / ".pi" / "agent"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_file = target_dir / "mcp.json"
+
+            existing: dict[str, Any] = {
+                "mcpServers": {
+                    "custom-tool": {
+                        "command": "custom-cmd",
+                        "args": ["--foo"],
+                    }
+                }
+            }
+            target_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+            pi.config_dir = target_dir
+            pi.config_file = target_file
+
+            rc = pi.install(_make_args())
+            assert rc == 0
+
+            data = json.loads(target_file.read_text(encoding="utf-8"))
+            servers = data.get("mcpServers", {})
+            assert "custom-tool" in servers
+            assert "ninja-coder" in servers
+        finally:
+            pi.config_dir = orig_dir
+            pi.config_file = orig_file
+
+    def test_install_conflict_without_force_fails(self, tmp_path: Path) -> None:
+        """install() exits non-zero without writing when servers conflict."""
+        from ninja_common.init_targets import pi
+
+        orig_dir = pi.config_dir
+        orig_file = pi.config_file
+        try:
+            target_dir = tmp_path / ".pi" / "agent"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_file = target_dir / "mcp.json"
+
+            existing: dict[str, Any] = {
+                "mcpServers": {
+                    "ninja-coder": {
+                        "command": "old-coder",
+                        "args": [],
+                    }
+                }
+            }
+            target_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+            pi.config_dir = target_dir
+            pi.config_file = target_file
+
+            rc = pi.install(_make_args(force=False))
+            assert rc != 0
+
+            data = json.loads(target_file.read_text(encoding="utf-8"))
+            assert data["mcpServers"]["ninja-coder"]["command"] == "old-coder"
+        finally:
+            pi.config_dir = orig_dir
+            pi.config_file = orig_file
+
+    def test_install_conflict_with_force_overwrites(self, tmp_path: Path) -> None:
+        """install(--force) overwrites conflicting server entries."""
+        from ninja_common.init_targets import pi
+
+        orig_dir = pi.config_dir
+        orig_file = pi.config_file
+        try:
+            target_dir = tmp_path / ".pi" / "agent"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_file = target_dir / "mcp.json"
+
+            existing: dict[str, Any] = {
+                "mcpServers": {
+                    "ninja-coder": {
+                        "command": "old-coder",
+                        "args": [],
+                    }
+                }
+            }
+            target_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+            pi.config_dir = target_dir
+            pi.config_file = target_file
+
+            rc = pi.install(_make_args(force=True))
+            assert rc == 0
+
+            data = json.loads(target_file.read_text(encoding="utf-8"))
+            assert data["mcpServers"]["ninja-coder"]["command"] == "ninja-mcp"
+            assert data["mcpServers"]["ninja-coder"]["args"] == ["daemon", "connect", "coder"]
+        finally:
+            pi.config_dir = orig_dir
+            pi.config_file = orig_file
+
+    def test_install_backup_created(self, tmp_path: Path) -> None:
+        """install() creates .pre-ninja.bak on first modification."""
+        from ninja_common.init_targets import pi
+
+        orig_dir = pi.config_dir
+        orig_file = pi.config_file
+        try:
+            target_dir = tmp_path / ".pi" / "agent"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_file = target_dir / "mcp.json"
+            target_file.write_text('{"mcpServers": {}}', encoding="utf-8")
+
+            pi.config_dir = target_dir
+            pi.config_file = target_file
+
+            rc = pi.install(_make_args())
+            assert rc == 0
+
+            bak = Path(str(target_file) + ".pre-ninja.bak")
+            assert bak.is_file()
+            first_mtime = bak.stat().st_mtime
+
+            # Second write does not overwrite backup
+            pi.install(_make_args(force=True))
+            assert bak.stat().st_mtime == first_mtime
+        finally:
+            pi.config_dir = orig_dir
+            pi.config_file = orig_file

@@ -183,6 +183,7 @@ def configure_operators(config_manager: ConfigManager, config: dict[str, str]) -
         "claude": ("Claude Code", "Anthropic's official CLI", ["anthropic"]),
         "junie": ("Junie", "JetBrains coding agent CLI (host-auth)", ["junie"]),
         "codex": ("Codex", "OpenAI Codex CLI (host-auth, subagents)", ["codex"]),
+        "pi": ("Pi", "Pi coding agent CLI (pi.dev)", ["pi"]),
         "cursor": ("Cursor", "AI code editor", ["openai", "anthropic"]),
     }
 
@@ -233,6 +234,8 @@ def configure_operators(config_manager: ConfigManager, config: dict[str, str]) -
     elif selected == "junie":
         print("\n💡 Junie is already authorized via JetBrains Account — just launching.")
         print("   If login is needed, run 'junie' interactively once.")
+    elif selected == "pi":
+        print("\n💡 Pi uses host authentication and models from ~/.pi/agent/settings.json.")
     elif selected == "aider":
         print("\n💡 Set OPENROUTER_API_KEY in 'API Key Management'")
 

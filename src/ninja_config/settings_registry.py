@@ -82,7 +82,7 @@ SETTINGS: list[SettingDef] = [
     SettingDef(
         "NINJA_CODE_BIN",
         "Code Operator",
-        "Which AI coding CLI to use (opencode, aider, claude, agy, junie, ...)",
+        "Which AI coding CLI to use (opencode, aider, claude, agy, junie, codex, pi, ...)",
         "opencode",
     ),
     SettingDef("NINJA_CODER_PROVIDER", "Coder Provider", "Default OpenCode provider", "openrouter"),
@@ -271,6 +271,39 @@ SETTINGS: list[SettingDef] = [
     ),
     SettingDef(
         "NINJA_CODEX_TIMEOUT", "Codex Timeout (s)", "Timeout for the Codex strategy", "600", "int"
+    ),
+    SettingDef("NINJA_PI_TIMEOUT", "Pi Timeout (s)", "Timeout for the Pi strategy", "600", "int"),
+    SettingDef(
+        "NINJA_PI_THINKING",
+        "Pi Thinking Level",
+        "Thinking level for Pi tasks (off|minimal|low|medium|high|xhigh|max); empty = CLI default",
+        "",
+        "choice",
+        ("off", "minimal", "low", "medium", "high", "xhigh", "max"),
+    ),
+    SettingDef(
+        "NINJA_PI_THINKING_QUICK",
+        "Pi Thinking (Quick)",
+        "Thinking override for quick tasks; empty = follow NINJA_PI_THINKING",
+        "",
+        "choice",
+        ("off", "minimal", "low", "medium", "high", "xhigh", "max"),
+    ),
+    SettingDef(
+        "NINJA_PI_THINKING_SEQUENTIAL",
+        "Pi Thinking (Sequential)",
+        "Thinking override for sequential tasks; empty = follow NINJA_PI_THINKING",
+        "",
+        "choice",
+        ("off", "minimal", "low", "medium", "high", "xhigh", "max"),
+    ),
+    SettingDef(
+        "NINJA_PI_THINKING_PARALLEL",
+        "Pi Thinking (Parallel)",
+        "Thinking override for parallel tasks; empty = follow NINJA_PI_THINKING",
+        "",
+        "choice",
+        ("off", "minimal", "low", "medium", "high", "xhigh", "max"),
     ),
     # ── Retries ──────────────────────────────────────────────────────────
     SettingDef("NINJA_MAX_RETRIES", "Max Retries", "Retry count for tool calls", "2", "int"),

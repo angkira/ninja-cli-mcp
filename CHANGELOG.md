@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.1 - 2026-10-12
+
+Pi coding agent (pi.dev) CLI operator & MCP init integration.
+
+### Added
+- **Pi init target (`ninja-mcp init pi`)**: Merge Ninja MCP servers directly into `~/.pi/agent/mcp.json` with `exposure: "direct"` and automatic host detection at `~/.pi/`.
+- **Pi CLI strategy (`PiStrategy`)**: Native support for Pi as a coding operator in `ninja-coder` (`NINJA_CODE_BIN=pi`) using non-interactive JSON mode (`pi -p --mode json`), JSONL tool event parsing for `write` and `edit`, retryable error handling, and timeout configuration.
+- **Pi thinking levels & dynamic discovery**: Supports `--thinking` (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) with per-task overrides, dynamic model discovery from `pi --list-models` and `~/.pi/agent/settings.json`, and full TUI model selection / autocomplete integration.
+
 ## 1.5.0 - 2026-10-09
 
 Worktree transfer and job-status fidelity.

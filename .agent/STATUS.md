@@ -2,10 +2,47 @@
 
 ## Session Information
 
-**Session ID:** researcher-postmortem-20260919
-**Started At:** 2026-09-19
-**Last Updated:** 2026-09-19
-**Session Type:** Post-mortem intake + implementation + delivery (3 commits, see below)
+**Session ID:** pi-cli-integration-20261011
+**Started At:** 2026-10-11
+**Last Updated:** 2026-10-11
+**Session Type:** Feature - Pi (pi.dev) CLI operator & MCP init target integration
+
+## Latest Session (2026-10-11): Pi integration (pi.dev)
+
+**Active Task:** Add Pi (pi.dev) as a possible ninja CLI to run (coder strategy) and as an init/integration target (`ninja-mcp init pi`).
+**Status:** COMPLETED (uncommitted, per instructions).
+
+**Components delivered:**
+1. **Init Target (`ninja-mcp init pi`):**
+   - `src/ninja_common/init_targets/pi.py`: `JsonMcpTarget` for `~/.pi/agent/mcp.json` with detection at `~/.pi/`.
+   - `src/ninja_common/init_cli.py`: registered `pi` target in `ninja-mcp init` and `ninja-mcp init detect`.
+2. **Pi Strategy & Driver Integration:**
+   - `src/ninja_coder/strategies/pi_strategy.py`: `PiStrategy` implementing `CLIStrategy`, with non-interactive `pi -p --mode json [--model <model>] [--thinking <level>] "<prompt>"`, JSONL tool execution events parsing (`write`/`edit`), retryable error classification, timeout management.
+   - `src/ninja_coder/strategies/__init__.py`: exported `PiStrategy`, `check_pi_auth`.
+   - `src/ninja_coder/strategies/registry.py`: registered `pi` with safe binary-name detection (`pi`, `pi.exe`, `pi-*`).
+   - `src/ninja_coder/driver.py`: passes `thinking` flag for Pi via `resolve_pi_thinking(task_type)`.
+3. **Defaults, Discovery & Operator Models:**
+   - `src/ninja_common/defaults.py`: `PI_MODELS`, `PI_THINKING_LEVELS` (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`), `OPERATOR_DEFAULT_MODELS["pi"] = "deepseek-v4.1-flash"`, `OPERATOR_STATIC_MODELS["pi"]`, `PROVIDER_MODELS["pi"]`.
+   - `src/ninja_common/pi_discovery.py`: dynamic discovery via `pi --list-models` table parsing, `~/.pi/agent/settings.json` (`defaultModel`), and static fallback with TTL caching.
+   - `src/ninja_common/operator_models.py`: `OPERATOR_NATIVE_MODELS["pi"]`, `is_model_compatible`, `resolve_operator_model`, `normalize_pi_model`, `resolve_pi_thinking`.
+4. **Configuration, TUI & UI:**
+   - `src/ninja_config/model_selector.py`: `discover_pi_models`, `_load_pi_models`, `_get_pi_models`, added to `OPERATORS` and `NATIVE_OPERATOR_PROVIDERS`, `check_operator_auth`.
+   - `src/ninja_config/ui/model_cache.py`: `cached_get_pi_models`.
+   - `src/ninja_config/ui/model_autocomplete.py`: autocomplete and native provider matching for `pi`.
+   - `src/ninja_config/config_shared.py`: `OperatorDef("pi", ...)`, `detect_tools`.
+   - `src/ninja_config/modern_tui.py`: host-auth handling for `pi`.
+   - `src/ninja_config/tui_installer.py`: `OPERATOR_REQUIRED_KEYS["pi"] = ()`.
+   - `src/ninja_config/ui/operator_config.py` & `src/ninja_config/ui/base.py`: detection and interactive selection.
+   - `src/ninja_config/settings_registry.py`: `NINJA_PI_TIMEOUT`, `NINJA_PI_THINKING`, `NINJA_PI_THINKING_QUICK/SEQUENTIAL/PARALLEL`.
+5. **Tests:**
+   - `tests/test_init_targets.py` & `tests/test_init_cli.py`: `TestPiTarget` and `TestPi` testing fresh install, dry run, merge, conflict, backup.
+   - `tests/test_pi_strategy.py`: 22 unit tests for command generation, auth check, registry, JSONL output parsing, error classification, driver flag attachment, timeout, thinking resolution.
+   - `tests/test_pi_discovery.py`: unit tests for `pi --list-models` output parsing, settings current model reading, catalog caching.
+
+**Verification:**
+- Quality gates: `ruff check` clean on all touched files, `ruff format --check` clean, `mypy` 0 errors on all touched files.
+- Pytest: 133/133 tests passed across pi strategy, pi discovery, init targets, init cli, codex, and junie strategy.
+- Live probe: `ninja-mcp init pi --dry-run` generated valid `mcp.json`, `ninja-mcp init detect` detected live `~/.pi/agent/mcp.json`, `discover_pi_models()` discovered 6 models live, and live `NinjaDriver` execution in isolated temp repo successfully invoked `pi` to create files and parsed touched files.
 
 ## Latest Session (2026-09-19): delivery — all work committed
 

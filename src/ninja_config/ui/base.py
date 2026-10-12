@@ -75,6 +75,10 @@ def detect_installed_tools() -> dict[str, str]:
     if shutil.which("codex"):
         tools["codex"] = shutil.which("codex")
 
+    # Check for pi (pi.dev, host-auth)
+    if shutil.which("pi"):
+        tools["pi"] = shutil.which("pi")
+
     # Check for cursor
     if shutil.which("cursor"):
         tools["cursor"] = shutil.which("cursor")
