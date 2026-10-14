@@ -27,7 +27,7 @@ import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from mcp import types
@@ -35,7 +35,12 @@ from mcp.client.experimental.task_handlers import ExperimentalTaskHandlers
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from ninja_common.mcp_tasks import SqliteTaskStore, emit_progress, task_scope
+from ninja_common.mcp_tasks import (
+    SqliteTaskStore,
+    emit_progress,
+    is_process_demonstrably_dead,
+    task_scope,
+)
 
 
 if TYPE_CHECKING:
@@ -557,3 +562,95 @@ async def test_schema_migration_preserves_existing_data(tmp_path: Path) -> None:
     # Legacy task is preserved across sweep
     swept = store.sweep_stale_working("lost: restart")
     assert swept == 0
+
+
+def _concurrent_startup_worker(db_path: str, barrier: Any) -> None:
+    """Worker for concurrent legacy startup regression test."""
+    barrier.wait(timeout=10.0)
+    store = SqliteTaskStore(db_path)
+    owner = store.get_task_owner("legacy-1")
+    assert owner == (None, None)
+
+
+def test_concurrent_multiprocess_startup_legacy_schema(tmp_path: Path) -> None:
+    """Multiple real processes concurrently initializing a legacy DB without owner columns."""
+    import multiprocessing as mp
+    import sqlite3 as raw_sqlite3
+
+    db_path = str(tmp_path / "tasks.db")
+    old_schema = """
+    CREATE TABLE tasks (
+        task_id         TEXT PRIMARY KEY,
+        status          TEXT NOT NULL,
+        status_message  TEXT,
+        created_at      TEXT NOT NULL,
+        last_updated_at TEXT NOT NULL,
+        ttl             INTEGER,
+        poll_interval   INTEGER,
+        result_json     TEXT,
+        expires_at      TEXT
+    );
+    """
+    conn = raw_sqlite3.connect(db_path)
+    conn.execute(old_schema)
+    now = "2026-10-14T12:00:00Z"
+    conn.execute(
+        """
+        INSERT INTO tasks (task_id, status, status_message, created_at, last_updated_at)
+        VALUES ('legacy-1', 'working', 'old-run', ?, ?)
+        """,
+        (now, now),
+    )
+    conn.commit()
+    conn.close()
+
+    ctx = mp.get_context("fork" if hasattr(os, "fork") else "spawn")
+    num_procs = 4
+    barrier = ctx.Barrier(num_procs)
+    procs = [
+        ctx.Process(target=_concurrent_startup_worker, args=(db_path, barrier))
+        for _ in range(num_procs)
+    ]
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join(timeout=15.0)
+
+    for p in procs:
+        assert p.exitcode == 0, f"Process {p.pid} failed with exitcode {p.exitcode}"
+
+    # Verify final schema and data integrity
+    store = SqliteTaskStore(db_path)
+    owner = store.get_task_owner("legacy-1")
+    assert owner == (None, None)
+
+
+@pytest.mark.parametrize(
+    "malformed_token",
+    ["nan", "-nan", "inf", "-inf", "not-a-number", "unknown"],
+)
+async def test_malformed_nan_inf_token_live_owner_preserved(
+    tmp_path: Path, malformed_token: str
+) -> None:
+    """Tasks with live PID but malformed/nan/inf tokens are treated as unknown and preserved."""
+    current_pid = os.getpid()
+
+    # Direct helper validation: live process with malformed/nonfinite token is NOT demonstrably dead.
+    assert is_process_demonstrably_dead(current_pid, malformed_token) is False
+
+    # Store sweep validation: working task with live pid and malformed token is preserved.
+    store = SqliteTaskStore(tmp_path / f"tasks_{malformed_token}.db")
+    task = await store.create_task(
+        types.TaskMetadata(ttl=60000),
+        owner_pid=current_pid,
+        owner_token=malformed_token,
+    )
+    await store.update_task(task.taskId, status_message="live-with-malformed-token")
+
+    swept = store.sweep_stale_working("lost: test restart sweep")
+    assert swept == 0
+
+    preserved = await store.get_task(task.taskId)
+    assert preserved is not None
+    assert preserved.status == "working"
+    assert preserved.statusMessage == "live-with-malformed-token"

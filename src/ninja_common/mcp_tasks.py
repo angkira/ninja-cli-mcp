@@ -25,10 +25,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import signal
 import sqlite3
 import threading
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -346,7 +348,7 @@ def get_process_start_time(pid: int) -> float | None:
         return float(proc.create_time())
     except (psutil.NoSuchProcess, psutil.ZombieProcess):
         return None
-    except (psutil.AccessDenied, Exception) as exc:
+    except Exception as exc:
         logger.debug("Failed to inspect process %d: %s", pid, exc)
         return None
 
@@ -389,15 +391,12 @@ def is_process_demonstrably_dead(pid: int | None, token: str | None) -> bool:
     # Process exists. Check if PID was reused by comparing start token.
     try:
         expected_time = float(token)
-        if abs(create_time - expected_time) < 0.05:
-            # Same process, alive!
+        if not math.isfinite(expected_time):
             return False
-        # PID was reused by a new process -> original owner is demonstrably dead.
-        return True
     except (ValueError, TypeError):
-        if str(create_time) == str(token):
-            return False
-        return True
+        return False
+
+    return abs(create_time - expected_time) >= 0.05
 
 
 _SCHEMA: Final[str] = """
@@ -449,16 +448,49 @@ class SqliteTaskStore(TaskStore):
         cursor = self._conn.execute("PRAGMA table_info(tasks)")
         columns = {row["name"] for row in cursor.fetchall()}
         if "owner_pid" not in columns:
-            self._conn.execute("ALTER TABLE tasks ADD COLUMN owner_pid INTEGER")
+            try:
+                self._conn.execute("ALTER TABLE tasks ADD COLUMN owner_pid INTEGER")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" in str(exc).lower():
+                    pass
+                else:
+                    raise
         if "owner_token" not in columns:
-            self._conn.execute("ALTER TABLE tasks ADD COLUMN owner_token TEXT")
+            try:
+                self._conn.execute("ALTER TABLE tasks ADD COLUMN owner_token TEXT")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" in str(exc).lower():
+                    pass
+                else:
+                    raise
+
+    def _set_journal_mode_locked(self) -> None:
+        for _ in range(50):
+            try:
+                mode = self._conn.execute("PRAGMA journal_mode").fetchone()
+                if mode and str(mode[0]).lower() == "wal":
+                    return
+                self._conn.execute("PRAGMA journal_mode=WAL")
+                return
+            except sqlite3.OperationalError as exc:
+                if "locked" in str(exc).lower() or "busy" in str(exc).lower():
+                    time.sleep(0.05)
+                    continue
+                raise
+        self._conn.execute("PRAGMA journal_mode=WAL")
 
     def _init_schema(self) -> None:
-        with self._lock, self._conn:
-            self._conn.execute("PRAGMA journal_mode=WAL")
+        with self._lock:
+            self._set_journal_mode_locked()
             self._conn.execute("PRAGMA synchronous=NORMAL")
-            self._conn.execute(_SCHEMA)
-            self._migrate_schema_locked()
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._conn.execute(_SCHEMA)
+                self._migrate_schema_locked()
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def _purge_expired_locked(self) -> None:
         now = datetime.now(UTC).isoformat()
@@ -540,10 +572,7 @@ class SqliteTaskStore(TaskStore):
             row = self._fetch_locked(task_id)
         if row is None:
             return None
-        return (
-            row["owner_pid"] if "owner_pid" in row.keys() else None,
-            row["owner_token"] if "owner_token" in row.keys() else None,
-        )
+        return (row["owner_pid"], row["owner_token"])
 
     async def get_task(self, task_id: str) -> Task | None:
         # ``with self._conn`` commits the lazy-expiry DELETE so reads never
