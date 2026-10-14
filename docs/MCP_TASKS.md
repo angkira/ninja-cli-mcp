@@ -137,6 +137,20 @@ across sessions (servers, daemons, `--http`).
 State uses WAL, a busy timeout, and lazy TTL expiry. A task created with a TTL
 expires automatically after it becomes terminal.
 
+### Owner tracking & stale reconciliation
+
+Each task record stores owner identity metadata (`owner_pid` and `owner_token`,
+derived from the creating process PID and its OS process start timestamp via `psutil`).
+When a server starts up, it reconciles stale `working` tasks via `sweep_stale_working()`:
+- Only tasks whose owner process is **demonstrably dead** (the process no longer
+  exists, or its PID was recycled by the OS for a different process with a newer
+  creation timestamp) are transitioned to `failed`.
+- Tasks belonging to live concurrent sibling processes (e.g. coexisting stdio
+  servers or background daemons) remain `working` and are never swept.
+- Legacy tasks with unknown or missing ownership are never guessed dead.
+- Terminal task records are immutable against progress and status-message updates,
+  ensuring terminal failure reasons are never overwritten by late heartbeats.
+
 ## Progress notifications
 
 While a CLI streams, the driver emits `notifications/progress` (about every 10s
@@ -156,6 +170,11 @@ affects the run.
 - Task store is local SQLite; it is not a distributed queue.
 - Live `tasks/result` waiters are in-process (`InMemoryTaskMessageQueue`);
   durability is shared via SQLite, live wake-ups are not.
+- **Owner-based reconciliation limits**: task owner tracking uses host-local PID
+  and creation timestamps. Liveness inspection is valid only within the local
+  host's PID namespace. If `NINJA_TASKS_DB` is mounted across different machines
+  or container boundaries without a shared PID namespace, foreign process liveness
+  cannot be inspected and their tasks will not be guessed dead.
 - The MCP Tasks capability is *experimental* in the SDK/protocol; capability
   detection is per client. Servers keep the synchronous path for clients that do
   not advertise it.

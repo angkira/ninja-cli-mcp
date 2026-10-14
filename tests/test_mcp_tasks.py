@@ -327,16 +327,32 @@ async def test_task_scope_and_emit_progress_round_trip() -> None:
 
 
 async def test_sweep_stale_working_marks_only_working_failed(tmp_path: Path) -> None:
-    """Only ``working`` rows are swept; terminal rows are left untouched."""
+    """Only ``working`` rows with dead owners are swept; terminal rows are left untouched."""
     store = SqliteTaskStore(tmp_path / "tasks.db")
 
-    working = await store.create_task(types.TaskMetadata(ttl=60000))
+    working = await store.create_task(
+        types.TaskMetadata(ttl=60000),
+        owner_pid=999999,
+        owner_token="dead-token",
+    )
     await store.update_task(working.taskId, status_message="mid")
-    done = await store.create_task(types.TaskMetadata(ttl=60000))
+    done = await store.create_task(
+        types.TaskMetadata(ttl=60000),
+        owner_pid=999999,
+        owner_token="dead-token",
+    )
     await store.update_task(done.taskId, status="completed")
-    failed = await store.create_task(types.TaskMetadata(ttl=60000))
+    failed = await store.create_task(
+        types.TaskMetadata(ttl=60000),
+        owner_pid=999999,
+        owner_token="dead-token",
+    )
     await store.update_task(failed.taskId, status="failed")
-    cancelled = await store.create_task(types.TaskMetadata(ttl=60000))
+    cancelled = await store.create_task(
+        types.TaskMetadata(ttl=60000),
+        owner_pid=999999,
+        owner_token="dead-token",
+    )
     await store.update_task(cancelled.taskId, status="cancelled")
 
     swept = store.sweep_stale_working("lost: daemon restart before completion")
@@ -363,10 +379,14 @@ def test_sweep_stale_working_is_zero_on_empty_db(tmp_path: Path) -> None:
 
 
 async def test_daemon_startup_sweeps_working_jobs(tmp_path: Path) -> None:
-    """A fresh server over the same DB reconciles stale 'working' jobs."""
+    """A fresh server over the same DB reconciles stale 'working' jobs from dead owners."""
     db_path = tmp_path / "tasks.db"
     store = SqliteTaskStore(db_path)
-    stale = await store.create_task(types.TaskMetadata(ttl=60000))
+    stale = await store.create_task(
+        types.TaskMetadata(ttl=60000),
+        owner_pid=999999,
+        owner_token="dead-token",
+    )
     await store.update_task(stale.taskId, status_message="mid-run")
 
     async with _connected(with_tasks=True, extra_env={"NINJA_TASKS_DB": str(db_path)}) as (
@@ -378,3 +398,162 @@ async def test_daemon_startup_sweeps_working_jobs(tmp_path: Path) -> None:
         )
         assert status["status"] == "failed"
         assert "lost" in (status["status_message"] or "")
+
+
+async def test_two_stores_same_db_live_foreign_owner_survives_startup(tmp_path: Path) -> None:
+    """A task owned by a live foreign process survives startup and sweep_stale_working."""
+    db_path = tmp_path / "tasks.db"
+    store1 = SqliteTaskStore(db_path)
+    # Created by current process (alive)
+    live_task = await store1.create_task(types.TaskMetadata(ttl=60000))
+    await store1.update_task(live_task.taskId, status_message="in-progress")
+
+    # Store2 in the same or coexisting live process sweeps
+    store2 = SqliteTaskStore(db_path)
+    swept = store2.sweep_stale_working("lost: daemon restart")
+    assert swept == 0
+
+    survived = await store2.get_task(live_task.taskId)
+    assert survived is not None
+    assert survived.status == "working"
+    assert survived.statusMessage == "in-progress"
+
+    # Also verify daemon server startup over the same DB does not sweep it
+    async with _connected(with_tasks=True, extra_env={"NINJA_TASKS_DB": str(db_path)}) as (
+        session,
+        _init,
+    ):
+        status = json.loads(
+            _text_of(await session.call_tool("coder_job_status", {"job_id": live_task.taskId}))
+        )
+        assert status["status"] == "working"
+        assert status["status_message"] == "in-progress"
+
+
+async def test_dead_owner_becomes_failed_reason(tmp_path: Path) -> None:
+    """A dead owner's working task transitions to failed with the reconciliation reason."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    task = await store.create_task(
+        types.TaskMetadata(ttl=60000),
+        owner_pid=999999,
+        owner_token="dead-token",
+    )
+    await store.update_task(task.taskId, status_message="halfway")
+
+    swept = store.sweep_stale_working("lost: owner process died unexpectedly")
+    assert swept == 1
+
+    reconciled = await store.get_task(task.taskId)
+    assert reconciled is not None
+    assert reconciled.status == "failed"
+    assert reconciled.statusMessage == "lost: owner process died unexpectedly"
+
+
+async def test_pid_reuse_considered(tmp_path: Path) -> None:
+    """PID reuse (existing PID with mismatched creation token) detects dead owner."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    # Use current process's PID, but an old creation token from a prior run
+    task = await store.create_task(
+        types.TaskMetadata(ttl=60000),
+        owner_pid=os.getpid(),
+        owner_token="1000000.000000",  # clearly mismatched start token
+    )
+    await store.update_task(task.taskId, status_message="reused-pid-run")
+
+    swept = store.sweep_stale_working("lost: pid reused by new process")
+    assert swept == 1
+
+    reconciled = await store.get_task(task.taskId)
+    assert reconciled is not None
+    assert reconciled.status == "failed"
+    assert reconciled.statusMessage == "lost: pid reused by new process"
+
+
+async def test_legacy_unknown_ownership_not_wrongly_failed(tmp_path: Path) -> None:
+    """Legacy tasks with unknown ownership (NULL owner) are never guessed dead."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    task = await store.create_task(
+        types.TaskMetadata(ttl=60000),
+        owner_pid=None,
+        owner_token=None,
+    )
+    await store.update_task(task.taskId, status_message="legacy-task-running")
+
+    swept = store.sweep_stale_working("lost: daemon restart")
+    assert swept == 0
+
+    untouched = await store.get_task(task.taskId)
+    assert untouched is not None
+    assert untouched.status == "working"
+    assert untouched.statusMessage == "legacy-task-running"
+
+
+async def test_terminal_failure_reason_not_overwritten_by_progress(tmp_path: Path) -> None:
+    """Terminal failure reason is immutable and cannot be overwritten by progress updates."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    task = await store.create_task(types.TaskMetadata(ttl=60000))
+    await store.update_task(
+        task.taskId, status="failed", status_message="SyntaxError: invalid syntax"
+    )
+
+    # Late progress update arriving after terminal failure
+    updated = await store.update_task(task.taskId, status_message="coder: heartbeat 15")
+    assert updated.status == "failed"
+    assert updated.statusMessage == "SyntaxError: invalid syntax"
+
+    fetched = await store.get_task(task.taskId)
+    assert fetched is not None
+    assert fetched.status == "failed"
+    assert fetched.statusMessage == "SyntaxError: invalid syntax"
+
+    # Late completion attempt after terminal failure
+    attempt = await store.update_task(task.taskId, status="completed")
+    assert attempt.status == "failed"
+    assert attempt.statusMessage == "SyntaxError: invalid syntax"
+
+
+async def test_schema_migration_preserves_existing_data(tmp_path: Path) -> None:
+    """Opening an existing database without owner columns migrates schema safely."""
+    import sqlite3 as raw_sqlite3
+
+    db_path = tmp_path / "tasks.db"
+    # Create old schema table
+    old_schema = """
+    CREATE TABLE tasks (
+        task_id         TEXT PRIMARY KEY,
+        status          TEXT NOT NULL,
+        status_message  TEXT,
+        created_at      TEXT NOT NULL,
+        last_updated_at TEXT NOT NULL,
+        ttl             INTEGER,
+        poll_interval   INTEGER,
+        result_json     TEXT,
+        expires_at      TEXT
+    );
+    """
+    conn = raw_sqlite3.connect(db_path)
+    conn.execute(old_schema)
+    now = "2026-10-14T12:00:00Z"
+    conn.execute(
+        """
+        INSERT INTO tasks (task_id, status, status_message, created_at, last_updated_at)
+        VALUES ('legacy-1', 'working', 'old-run', ?, ?)
+        """,
+        (now, now),
+    )
+    conn.commit()
+    conn.close()
+
+    # Open with SqliteTaskStore which performs schema migration
+    store = SqliteTaskStore(db_path)
+    task = await store.get_task("legacy-1")
+    assert task is not None
+    assert task.status == "working"
+    assert task.statusMessage == "old-run"
+
+    owner = store.get_task_owner("legacy-1")
+    assert owner == (None, None)
+
+    # Legacy task is preserved across sweep
+    swept = store.sweep_stale_working("lost: restart")
+    assert swept == 0

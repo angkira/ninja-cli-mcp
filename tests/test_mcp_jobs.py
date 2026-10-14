@@ -569,6 +569,23 @@ async def test_progress_factory_swallows_store_failure(tmp_path: Path) -> None:
     await callback(1.0, None, "whatever")  # must not raise
 
 
+async def test_progress_factory_does_not_overwrite_terminal_failure(tmp_path: Path) -> None:
+    """Invoking the progress callback on a terminal failed task preserves failure message."""
+    store = SqliteTaskStore(tmp_path / "tasks.db")
+    factory = _make_job_progress_factory(store, "unit")
+    callback = factory("job-terminal")
+    await store.create_task(types.TaskMetadata(ttl=60000), task_id="job-terminal")
+    await store.update_task(
+        "job-terminal", status="failed", status_message="fatal: out of memory"
+    )
+
+    await callback(1.0, 3.0, "step after fail")
+    task = await store.get_task("job-terminal")
+    assert task is not None
+    assert task.status == "failed"
+    assert task.statusMessage == "fatal: out of memory"
+
+
 # --- status fidelity: failed payloads mark the job failed ------------------
 
 

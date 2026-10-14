@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast
 
 import anyio
+import psutil
 from mcp.shared.exceptions import McpError
 from mcp.shared.experimental.tasks.helpers import cancel_task, create_task_state, is_terminal
 from mcp.shared.experimental.tasks.message_queue import InMemoryTaskMessageQueue
@@ -338,6 +339,67 @@ def _expiry_iso(ttl_ms: int | None) -> str | None:
     return (datetime.now(UTC) + timedelta(milliseconds=ttl_ms)).isoformat()
 
 
+def get_process_start_time(pid: int) -> float | None:
+    """Return the start time (epoch timestamp) of *pid*, or None if unavailable."""
+    try:
+        proc = psutil.Process(pid)
+        return float(proc.create_time())
+    except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        return None
+    except (psutil.AccessDenied, Exception) as exc:
+        logger.debug("Failed to inspect process %d: %s", pid, exc)
+        return None
+
+
+def get_current_process_identity() -> tuple[int, str]:
+    """Return (pid, start_token) for the current process."""
+    pid = os.getpid()
+    create_time = get_process_start_time(pid)
+    token = f"{create_time:.6f}" if create_time is not None else "unknown"
+    return pid, token
+
+
+def is_process_demonstrably_dead(pid: int | None, token: str | None) -> bool:
+    """Determine if a process is demonstrably dead.
+
+    Returns True ONLY if we can prove the process is dead.
+    Returns False if the process is alive, or if ownership is legacy/unknown,
+    or if inspection is inconclusive.
+    """
+    if pid is None or pid <= 0 or not token or token == "unknown":
+        # Legacy or unknown ownership: do not guess dead.
+        return False
+
+    try:
+        proc = psutil.Process(pid)
+        if proc.status() == psutil.STATUS_ZOMBIE:
+            return True
+        create_time = proc.create_time()
+    except (psutil.NoSuchProcess, ProcessLookupError):
+        # Process does not exist in the OS -> demonstrably dead.
+        return True
+    except (psutil.AccessDenied, PermissionError):
+        # Process exists but we lack permission to inspect create_time.
+        # It is either a live system process or foreign process: never guess dead!
+        return False
+    except Exception as exc:
+        logger.debug("Error probing process %d: %s", pid, exc)
+        return False
+
+    # Process exists. Check if PID was reused by comparing start token.
+    try:
+        expected_time = float(token)
+        if abs(create_time - expected_time) < 0.05:
+            # Same process, alive!
+            return False
+        # PID was reused by a new process -> original owner is demonstrably dead.
+        return True
+    except (ValueError, TypeError):
+        if str(create_time) == str(token):
+            return False
+        return True
+
+
 _SCHEMA: Final[str] = """
 CREATE TABLE IF NOT EXISTS tasks (
     task_id         TEXT PRIMARY KEY,
@@ -348,9 +410,13 @@ CREATE TABLE IF NOT EXISTS tasks (
     ttl             INTEGER,
     poll_interval   INTEGER,
     result_json     TEXT,
-    expires_at      TEXT
+    expires_at      TEXT,
+    owner_pid       INTEGER,
+    owner_token     TEXT
 )
 """
+
+_SENTINEL_OWNER: Final[object] = object()
 
 
 class SqliteTaskStore(TaskStore):
@@ -379,11 +445,20 @@ class SqliteTaskStore(TaskStore):
 
     # -- internals ----------------------------------------------------------
 
+    def _migrate_schema_locked(self) -> None:
+        cursor = self._conn.execute("PRAGMA table_info(tasks)")
+        columns = {row["name"] for row in cursor.fetchall()}
+        if "owner_pid" not in columns:
+            self._conn.execute("ALTER TABLE tasks ADD COLUMN owner_pid INTEGER")
+        if "owner_token" not in columns:
+            self._conn.execute("ALTER TABLE tasks ADD COLUMN owner_token TEXT")
+
     def _init_schema(self) -> None:
         with self._lock, self._conn:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.execute(_SCHEMA)
+            self._migrate_schema_locked()
 
     def _purge_expired_locked(self) -> None:
         now = datetime.now(UTC).isoformat()
@@ -417,8 +492,19 @@ class SqliteTaskStore(TaskStore):
         self,
         metadata: TaskMetadata,
         task_id: str | None = None,
+        *,
+        owner_pid: int | None | object = _SENTINEL_OWNER,
+        owner_token: str | None | object = _SENTINEL_OWNER,
     ) -> Task:
         task = create_task_state(metadata, task_id)
+        if owner_pid is _SENTINEL_OWNER and owner_token is _SENTINEL_OWNER:
+            eff_owner_pid, eff_owner_token = get_current_process_identity()
+        else:
+            eff_owner_pid = cast("int | None", None if owner_pid is _SENTINEL_OWNER else owner_pid)
+            eff_owner_token = cast(
+                "str | None", None if owner_token is _SENTINEL_OWNER else owner_token
+            )
+
         with self._lock, self._conn:
             self._purge_expired_locked()
             try:
@@ -426,8 +512,9 @@ class SqliteTaskStore(TaskStore):
                     """
                     INSERT INTO tasks (
                         task_id, status, status_message, created_at,
-                        last_updated_at, ttl, poll_interval, result_json, expires_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        last_updated_at, ttl, poll_interval, result_json, expires_at,
+                        owner_pid, owner_token
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         task.taskId,
@@ -439,11 +526,24 @@ class SqliteTaskStore(TaskStore):
                         task.pollInterval,
                         None,
                         _expiry_iso(task.ttl),
+                        eff_owner_pid,
+                        eff_owner_token,
                     ),
                 )
             except sqlite3.IntegrityError as exc:
                 raise ValueError(f"Task with ID {task.taskId} already exists") from exc
         return task
+
+    def get_task_owner(self, task_id: str) -> tuple[int | None, str | None] | None:
+        """Return (owner_pid, owner_token) for *task_id*, or None if task not found."""
+        with self._lock, self._conn:
+            row = self._fetch_locked(task_id)
+        if row is None:
+            return None
+        return (
+            row["owner_pid"] if "owner_pid" in row.keys() else None,
+            row["owner_token"] if "owner_token" in row.keys() else None,
+        )
 
     async def get_task(self, task_id: str) -> Task | None:
         # ``with self._conn`` commits the lazy-expiry DELETE so reads never
@@ -467,20 +567,20 @@ class SqliteTaskStore(TaskStore):
                 raise ValueError(f"Task with ID {task_id} not found")
             current = self._row_to_task(row)
 
+            if is_terminal(current.status):
+                # Terminal records are immutable against progress/status-message-only updates
+                # or any late status transitions.
+                logger.warning(
+                    "Ignoring update of terminal task %s (%s, requested status=%s, status_message=%s)",
+                    task_id,
+                    current.status,
+                    status,
+                    status_message,
+                )
+                return current
+
             new_status = current.status
             if status is not None and status != current.status:
-                if is_terminal(current.status):
-                    # Terminal states MUST NOT transition. The SDK can race a
-                    # cancellation against auto-completion; swallow that race
-                    # (log it) instead of raising inside the background task
-                    # group, which would tear down task support.
-                    logger.warning(
-                        "Ignoring transition of terminal task %s (%s -> %s)",
-                        task_id,
-                        current.status,
-                        status,
-                    )
-                    return current
                 new_status = status
                 status_changed = True
 
@@ -489,14 +589,28 @@ class SqliteTaskStore(TaskStore):
             expires_at = row["expires_at"]
             if is_terminal(new_status) and current.ttl is not None:
                 expires_at = _expiry_iso(current.ttl)
-            self._conn.execute(
+            cursor = self._conn.execute(
                 """
                 UPDATE tasks
                 SET status = ?, status_message = ?, last_updated_at = ?, expires_at = ?
-                WHERE task_id = ?
+                WHERE task_id = ? AND status = ?
                 """,
-                (new_status, new_message, now.isoformat(), expires_at, task_id),
+                (new_status, new_message, now.isoformat(), expires_at, task_id, current.status),
             )
+            if cursor.rowcount == 0:
+                # Concurrent update occurred. Re-fetch current state.
+                row = self._fetch_locked(task_id)
+                if row is None:
+                    raise ValueError(f"Task with ID {task_id} not found")
+                current = self._row_to_task(row)
+                if is_terminal(current.status):
+                    logger.warning(
+                        "Concurrent update to terminal task %s (%s)",
+                        task_id,
+                        current.status,
+                    )
+                return current
+
             updated = Task.model_validate(
                 {
                     "taskId": task_id,
@@ -569,13 +683,10 @@ class SqliteTaskStore(TaskStore):
             return cursor.rowcount > 0
 
     def sweep_stale_working(self, marker: str) -> int:
-        """Reconcile every stale ``working`` task to terminal ``failed``.
+        """Reconcile stale ``working`` tasks belonging to dead owners to terminal ``failed``.
 
-        A daemon restart cannot resume work started by a previous process, so
-        any row left ``working`` is dead weight. This marks them ``failed`` with
-        *marker*, refreshing ``last_updated_at`` and ``expires_at`` per the
-        terminal-transition convention (:meth:`update_task`). Terminal rows are
-        left untouched.
+        Only tasks whose owner process is demonstrably dead are swept. Foreign
+        live owners and legacy tasks with unknown ownership are preserved.
 
         Args:
             marker: Human-readable status message recorded on swept rows.
@@ -583,25 +694,61 @@ class SqliteTaskStore(TaskStore):
         Returns:
             The number of rows swept (0 when there is nothing to reconcile).
         """
-        now = datetime.now(UTC).isoformat()
+        # Step 1: Fetch candidate working tasks without holding a long transaction.
         with self._lock, self._conn:
             self._purge_expired_locked()
             cursor = self._conn.execute(
-                """
-                UPDATE tasks
-                SET status = ?,
-                    status_message = ?,
-                    last_updated_at = ?,
-                    expires_at = CASE
-                        WHEN ttl IS NOT NULL
-                        THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+' || ttl || ' milliseconds')
-                        ELSE expires_at
-                    END
-                WHERE status = ?
-                """,
-                (TASK_STATUS_FAILED, marker, now, TASK_STATUS_WORKING),
+                "SELECT task_id, owner_pid, owner_token FROM tasks WHERE status = ?",
+                (TASK_STATUS_WORKING,),
             )
-            return cursor.rowcount
+            candidates = [
+                (str(row["task_id"]), row["owner_pid"], row["owner_token"])
+                for row in cursor.fetchall()
+            ]
+
+        if not candidates:
+            return 0
+
+        # Step 2: Probe candidate processes OUTSIDE database locks/transactions.
+        dead_candidates: list[tuple[str, int | None, str | None]] = []
+        for task_id, owner_pid, owner_token in candidates:
+            if is_process_demonstrably_dead(owner_pid, owner_token):
+                dead_candidates.append((task_id, owner_pid, owner_token))
+
+        if not dead_candidates:
+            return 0
+
+        # Step 3: Optimistically sweep confirmed dead tasks.
+        now = datetime.now(UTC).isoformat()
+        total_swept = 0
+        with self._lock, self._conn:
+            for task_id, owner_pid, owner_token in dead_candidates:
+                cursor = self._conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status = ?,
+                        status_message = ?,
+                        last_updated_at = ?,
+                        expires_at = CASE
+                            WHEN ttl IS NOT NULL
+                            THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+' || ttl || ' milliseconds')
+                            ELSE expires_at
+                        END
+                    WHERE task_id = ? AND status = ? AND owner_pid IS ? AND owner_token IS ?
+                    """,
+                    (
+                        TASK_STATUS_FAILED,
+                        marker,
+                        now,
+                        task_id,
+                        TASK_STATUS_WORKING,
+                        owner_pid,
+                        owner_token,
+                    ),
+                )
+                total_swept += cursor.rowcount
+
+        return total_swept
 
     async def wait_for_update(self, task_id: str) -> None:
         if await self.get_task(task_id) is None:
@@ -676,9 +823,11 @@ __all__ = [
     "TaskCancellation",
     "TaskCancelledError",
     "emit_progress",
+    "get_current_process_identity",
     "get_progress_callback",
     "get_task_cancellation",
     "install_tasks",
+    "is_process_demonstrably_dead",
     "make_session_progress_callback",
     "refresh_task_after_cancel",
     "request_cancel",

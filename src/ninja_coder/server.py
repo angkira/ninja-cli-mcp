@@ -734,12 +734,13 @@ Ninja returns a summary only (files changed, brief description); you read files,
     # The same store backs the always-available submit/poll job API below, so
     # both views agree on jobs and survive across calls and processes.
     store = SqliteTaskStore()
-    # A previous daemon run cannot be resumed: any row still 'working' is a
-    # zombie. Reconcile them to 'failed' so they are observable and cancellable
-    # rather than forever-in-flight.
+    # A previous daemon run cannot be resumed: any row still 'working' owned by
+    # a demonstrably dead process is reconciled to 'failed' so it is observable
+    # and cancellable. Tasks owned by live coexisting stdio/daemon processes
+    # or legacy rows with unknown ownership are preserved.
     swept = store.sweep_stale_working("lost: daemon restart before completion")
     if swept:
-        logger.info("Reconciled %d stale working jobs from previous daemon run", swept)
+        logger.info("Reconciled %d stale working jobs from dead owners", swept)
     install_tasks(server, store=store)
     jobs = JobManager(store)
 
