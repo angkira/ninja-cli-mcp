@@ -575,9 +575,7 @@ async def test_progress_factory_does_not_overwrite_terminal_failure(tmp_path: Pa
     factory = _make_job_progress_factory(store, "unit")
     callback = factory("job-terminal")
     await store.create_task(types.TaskMetadata(ttl=60000), task_id="job-terminal")
-    await store.update_task(
-        "job-terminal", status="failed", status_message="fatal: out of memory"
-    )
+    await store.update_task("job-terminal", status="failed", status_message="fatal: out of memory")
 
     await callback(1.0, 3.0, "step after fail")
     task = await store.get_task("job-terminal")
