@@ -6,7 +6,7 @@ For each task execution in a git repository, a feature branch
 out into a detached git worktree OUTSIDE the repository (under
 ``$XDG_CACHE_HOME/ninja-mcp/worktrees/<repo-hash>/<branch>``). Uncommitted
 changes from the main working tree are snapshotted into the worktree and
-committed on the feature branch with the ``[ninja-auto-save]`` message format.
+committed on the feature branch with a generated commit message.
 The AI CLI subprocess then runs with ``cwd=<worktree>`` so the user's main
 working tree and current branch stay byte-for-byte untouched.
 
@@ -26,8 +26,9 @@ Limitations (deliberate, to keep the change minimal):
   continuity across steps conflicts with per-call worktrees.
 - The opencode serve-pool path (NINJA_OPENCODE_SERVE_MODE=1) keeps legacy
   behavior; the long-running server is rooted at the user's repo_root.
-- ``NINJA_WORKTREE_MODE=off`` disables isolation entirely and preserves the
-  legacy AUTO-mode behavior (auto-commit on the user's current branch).
+- ``NINJA_WORKTREE_MODE=off`` disables isolation entirely; the run then executes
+  in the main repo with a safety tag only. No commit is ever made on the user's
+  current branch.
 - Per-type policy: ``NINJA_WORKTREE_QUICK`` (default ``off`` → in-place +
   safety-commit), ``NINJA_WORKTREE_SEQUENTIAL``/``NINJA_WORKTREE_PARALLEL``
   (default ``on`` → isolated worktree). Values on/off/auto (auto = global mode).
@@ -46,7 +47,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from ninja_coder.safety import GitSafetyChecker
+from ninja_coder.safety import GitSafetyChecker, build_commit_message, identity_args
 from ninja_common.defaults import (
     DEFAULT_WORKTREE_MAX_AGE_DAYS,
     DEFAULT_WORKTREE_MODE,
@@ -71,6 +72,9 @@ WORKTREE_PARALLEL_ENV = "NINJA_WORKTREE_PARALLEL"
 #: Prefix for feature branches created for task isolation.
 _BRANCH_PREFIX = "ninja/"
 
+#: Full-match pattern for branches the merge/discard tools may act on.
+_BRANCH_NAME_RE = re.compile(r"ninja/[A-Za-z0-9][A-Za-z0-9._/-]*")
+
 #: Max length of the sanitized slug segment of a branch name. Keeps the full
 #: branch name (prefix + slug + timestamp + unique suffix) at <= 40 chars.
 _MAX_SLUG_LEN = 16
@@ -84,6 +88,10 @@ _REPO_HASH_LEN = 16
 
 #: Timeout for all git subprocess calls (consistent with safety.py: 5-15s).
 _GIT_TIMEOUT_SEC = 15
+
+#: Timeout for removing a worktree. Checkouts can hold GB of dependencies, so
+#: this is far longer than the normal git timeout.
+_REMOVE_TIMEOUT_SEC = 600
 
 #: Seconds per day, used by prune() to convert max_age_days to a cutoff.
 _SECONDS_PER_DAY = 86_400
@@ -175,7 +183,7 @@ class WorktreeManager:
         Policy (per-type env, default: quick=off, sequential/parallel=on):
         - ``NINJA_WORKTREE_<TYPE>`` = on/off/auto (auto = global mode).
         - Global ``NINJA_WORKTREE_MODE=off`` disables isolation entirely
-          (legacy AUTO safety-commit behavior), regardless of per-type values.
+          (in-place with a safety tag only), regardless of per-type values.
 
         Args:
             task_type: Raw task type ("quick", "sequential", "sequential_plan",
@@ -302,16 +310,23 @@ class WorktreeManager:
             logger.warning(f"Worktree isolation unavailable ({e}); falling back to repo_root")
             return None
 
-    def commit_changes(self, worktree_path: Path | str, message: str) -> str | None:
-        """Commit every pending change in *worktree_path*.
+    def commit_changes(
+        self,
+        worktree_path: Path | str,
+        task_hint: str,
+        changed_files: list[str] | None = None,
+    ) -> str | None:
+        """Commit every pending change in *worktree_path* with a generated message.
 
         Used after the AI CLI subprocess finishes so the agent's output is
-        actually recorded on the feature branch (and can be diffed, patched and
-        merged).
+        recorded on the feature branch (and can be diffed, patched and merged).
+        The message is generated from *task_hint* and the changed files, so
+        the history stays readable without a fixed placeholder.
 
         Args:
             worktree_path: Worktree (or any git work tree) to commit in.
-            message: Commit message.
+            task_hint: Task description used for the commit subject.
+            changed_files: Files touched by the run, used for the commit body.
 
         Returns:
             The new commit SHA when a commit was created, or ``None`` when the
@@ -331,7 +346,12 @@ class WorktreeManager:
         if add.returncode != 0:
             raise WorktreeGitError(self._git_error("add", path, add))
 
-        commit = self._run_git(path, ["commit", "-m", message], text=True)
+        message = build_commit_message(task_hint, changed_files)
+        commit = self._run_git(
+            path,
+            [*identity_args(path), "commit", "--no-verify", "--no-gpg-sign", "-m", message],
+            text=True,
+        )
         if commit.returncode != 0:
             raise WorktreeGitError(self._git_error("commit", path, commit))
 
@@ -400,6 +420,125 @@ class WorktreeManager:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(result.stdout)
         return str(destination)
+
+    def remove_worktree(self, worktree_path: Path | str) -> bool:
+        """Remove an isolation worktree directory and keep its branch.
+
+        Args:
+            worktree_path: Worktree directory to remove.
+
+        Returns:
+            True if the directory no longer exists afterwards.
+        """
+        return self._remove_worktree(Path(worktree_path))
+
+    def list_branches(self, repo_root: str) -> list[dict[str, str]]:
+        """List ``ninja/*`` feature branches of a repository, newest first.
+
+        Args:
+            repo_root: Repository root.
+
+        Returns:
+            One dict per branch with ``branch``, ``head``, ``committed_at`` and
+            ``subject`` keys.
+
+        Raises:
+            WorktreeGitError: If git cannot list the branches.
+        """
+        path = Path(repo_root)
+        result = self._run_git(
+            path,
+            [
+                "for-each-ref",
+                "--sort=-committerdate",
+                "--format=%(refname:short)%09%(objectname:short)%09%(committerdate:iso-strict)%09%(subject)",
+                f"refs/heads/{_BRANCH_PREFIX}",
+            ],
+            text=True,
+        )
+        if result.returncode != 0:
+            raise WorktreeGitError(self._git_error("for-each-ref", path, result))
+
+        branches: list[dict[str, str]] = []
+        for line in result.stdout.splitlines():
+            parts = line.split("\t", 3)
+            if len(parts) != 4:
+                continue
+            branch, head, committed_at, subject = parts
+            branches.append(
+                {
+                    "branch": branch,
+                    "head": head,
+                    "committed_at": committed_at,
+                    "subject": subject,
+                }
+            )
+        return branches
+
+    def merge_branch(self, repo_root: str, branch: str) -> str | None:
+        """Merge a ``ninja/*`` branch into the current branch of *repo_root*.
+
+        A conflicting merge is aborted so the repository is left as it was.
+
+        Args:
+            repo_root: Repository whose current branch receives the merge.
+            branch: Feature branch to merge (must be a ``ninja/*`` branch).
+
+        Returns:
+            The new HEAD commit SHA after the merge.
+
+        Raises:
+            ValueError: If *branch* is not a valid ``ninja/*`` branch name.
+            WorktreeGitError: If a merge is already in progress or git fails
+                (including conflicts).
+        """
+        self.validate_branch(branch)
+        path = Path(repo_root)
+
+        in_progress = self._run_git(path, ["rev-parse", "-q", "--verify", "MERGE_HEAD"], text=True)
+        if in_progress.returncode == 0:
+            raise WorktreeGitError(f"a merge is already in progress in {path}; finish or abort it")
+
+        result = self._run_git(path, ["merge", "--no-edit", branch], text=True)
+        if result.returncode != 0:
+            self._run_git(path, ["merge", "--abort"], text=True)
+            raise WorktreeGitError(self._git_error(f"merge {branch}", path, result))
+        return self._rev_parse(path)
+
+    def delete_branch(self, repo_root: str, branch: str, force: bool = False) -> None:
+        """Delete a ``ninja/*`` branch.
+
+        Args:
+            repo_root: Repository that owns the branch.
+            branch: Feature branch to delete (must be a ``ninja/*`` branch).
+            force: Delete even when the branch has commits not merged elsewhere.
+
+        Raises:
+            ValueError: If *branch* is not a valid ``ninja/*`` branch name.
+            WorktreeGitError: If git refuses the deletion.
+        """
+        self.validate_branch(branch)
+        path = Path(repo_root)
+        result = self._run_git(path, ["branch", "-D" if force else "-d", branch], text=True)
+        if result.returncode != 0:
+            raise WorktreeGitError(self._git_error(f"branch delete {branch}", path, result))
+
+    @staticmethod
+    def validate_branch(branch: str) -> str:
+        """Return *branch* when it names a ``ninja/*`` branch.
+
+        Args:
+            branch: Candidate branch name.
+
+        Returns:
+            The unchanged branch name.
+
+        Raises:
+            ValueError: If the name is not a ``ninja/*`` branch.
+        """
+        if not _BRANCH_NAME_RE.fullmatch(branch) or ".." in branch:
+            raise ValueError(f"Not a ninja/* branch: {branch!r}")
+        return branch
 
     def prune(self, max_age_days: int | None = None) -> int:
         """Remove isolation worktrees older than max_age_days.
@@ -474,8 +613,8 @@ class WorktreeManager:
         Tracked modifications are replayed via ``git diff HEAD --binary`` |
         ``git apply``; untracked files (respecting .gitignore via porcelain
         status) are copied with shutil. The snapshot is committed on the
-        feature branch with the [ninja-auto-save] message format. The main
-        working tree is only READ, never modified.
+        feature branch with a generated message. The main working tree is
+        only READ, never modified.
 
         Args:
             repo_root: Main repository root (read-only source).
@@ -547,13 +686,12 @@ class WorktreeManager:
                     except OSError as e:
                         logger.warning(f"Worktree snapshot: failed to copy {rel_path}: {e}")
 
-            # 3. Commit the snapshot on the feature branch (auto_commit_changes
-            #    runs with cwd=worktree_path, so the main repo is untouched).
-            committed = GitSafetyChecker.auto_commit_changes(
-                str(worktree_path), task_hint, changed_files
-            )
-            if not committed:
-                logger.warning("Worktree snapshot commit failed; task continues without it")
+            # 3. Commit the snapshot on the feature branch (runs with
+            #    cwd=worktree_path, so the main repo is untouched).
+            try:
+                self.commit_changes(worktree_path, task_hint, changed_files)
+            except WorktreeGitError as e:
+                logger.warning(f"Worktree snapshot commit failed ({e}); task continues without it")
                 return None
 
             new_head = self._rev_parse(worktree_path)
@@ -674,14 +812,28 @@ class WorktreeManager:
         """
         repo_dir = self._locate_main_repo(worktree_dir)
         if repo_dir is not None:
-            result = subprocess.run(
-                ["git", "-C", str(repo_dir), "worktree", "remove", "--force", str(worktree_dir)],
-                capture_output=True,
-                timeout=_GIT_TIMEOUT_SEC,
-                check=False,
-            )
-            if result.returncode == 0:
-                return True
+            try:
+                result = subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        str(repo_dir),
+                        "worktree",
+                        "remove",
+                        "--force",
+                        str(worktree_dir),
+                    ],
+                    capture_output=True,
+                    timeout=_REMOVE_TIMEOUT_SEC,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    f"git worktree remove timed out for {worktree_dir}; deleting directly"
+                )
+            else:
+                if result.returncode == 0:
+                    return True
 
         # Fallback: plain directory removal (leaves stale admin entries for
         # `git worktree prune`, which is acceptable for a manual helper).

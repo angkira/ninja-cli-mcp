@@ -31,6 +31,85 @@ class SafetyMode(str, Enum):
     OFF = "off"  # Disable safety checks
 
 
+#: Identity used for ninja commits when git has no user.name/user.email.
+FALLBACK_GIT_NAME = "ninja-coder"
+FALLBACK_GIT_EMAIL = "ninja@localhost"
+
+#: Subject length cap for generated commit messages.
+_COMMIT_SUBJECT_MAX = 72
+
+#: Number of changed files listed in a generated commit body.
+_COMMIT_BODY_MAX_FILES = 20
+
+
+def identity_args(repo_root: str | Path) -> list[str]:
+    """Return ``git -c`` args that supply a fallback identity when none is set.
+
+    Args:
+        repo_root: Repository (or work tree) the commit runs in.
+
+    Returns:
+        Empty list when git already has a name and email, otherwise the
+        ``-c user.name=... -c user.email=...`` pair.
+    """
+    name = subprocess.run(
+        ["git", "config", "user.name"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    email = subprocess.run(
+        ["git", "config", "user.email"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    if (
+        name.returncode == 0
+        and name.stdout.strip()
+        and email.returncode == 0
+        and email.stdout.strip()
+    ):
+        return []
+    logger.warning("Git identity not configured; using fallback ninja-coder identity")
+    return [
+        "-c",
+        f"user.name={FALLBACK_GIT_NAME}",
+        "-c",
+        f"user.email={FALLBACK_GIT_EMAIL}",
+    ]
+
+
+def build_commit_message(task_description: str, changed_files: list[str] | None = None) -> str:
+    """Generate a commit message for an agent run from its task and files.
+
+    The subject is the task (first line, truncated); the body lists the
+    changed files. No fixed placeholder text is used.
+
+    Args:
+        task_description: Task text the agent was given.
+        changed_files: Files changed by the run.
+
+    Returns:
+        Commit message: subject line, then optional file list.
+    """
+    first_line = " ".join((task_description or "").split())
+    subject = first_line or "agent output"
+    if len(subject) > _COMMIT_SUBJECT_MAX:
+        subject = subject[: _COMMIT_SUBJECT_MAX - 3].rstrip() + "..."
+    files = sorted(set(changed_files or []))
+    if not files:
+        return subject
+    listed = [f"- {path}" for path in files[:_COMMIT_BODY_MAX_FILES]]
+    if len(files) > _COMMIT_BODY_MAX_FILES:
+        listed.append(f"- ... and {len(files) - _COMMIT_BODY_MAX_FILES} more")
+    return subject + "\n\n" + "\n".join(listed)
+
+
 class GitSafetyChecker:
     """Check git repository safety before executing tasks."""
 
@@ -154,9 +233,6 @@ class GitSafetyChecker:
             True if committed successfully, False otherwise.
         """
         try:
-            import time
-
-            # Stage all changes atomically — avoids per-file add failures for renames etc.
             add_result = subprocess.run(
                 ["git", "add", "-A"],
                 cwd=repo_root,
@@ -168,62 +244,17 @@ class GitSafetyChecker:
                 logger.warning(f"Failed to git add -A: {add_result.stderr.decode()}")
                 return False
 
-            # Create commit message
-            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-            task_summary = (
-                task_description[:60] + "..." if len(task_description) > 60 else task_description
-            )
-            file_hint = f"\nFiles detected: {len(changed_files)}" if changed_files else ""
-            commit_msg = f"[ninja-auto-save] Before task: {task_summary}\n\nTimestamp: {timestamp}{file_hint}\nAutomatic safety commit by ninja-coder"
-
-            # Detect whether git identity is configured; inject a fallback if not
-            name_result = subprocess.run(
-                ["git", "config", "user.name"],
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            email_result = subprocess.run(
-                ["git", "config", "user.email"],
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-
-            has_identity = (
-                name_result.returncode == 0
-                and bool(name_result.stdout.strip())
-                and email_result.returncode == 0
-                and bool(email_result.stdout.strip())
-            )
-
-            identity_args: list[str] = []
-            if not has_identity:
-                logger.warning("Git identity not configured; using fallback ninja-coder identity")
-                identity_args = [
-                    "-c",
-                    "user.name=ninja-coder",
-                    "-c",
-                    "user.email=ninja@localhost",
-                ]
-
-            commit_cmd = [
-                "git",
-                *identity_args,
-                "commit",
-                "--no-verify",
-                "--no-gpg-sign",
-                "-m",
-                commit_msg,
-            ]
-
-            # Commit changes, bypassing hooks and signing requirements
+            message = build_commit_message(task_description, changed_files)
             result = subprocess.run(
-                commit_cmd,
+                [
+                    "git",
+                    *identity_args(repo_root),
+                    "commit",
+                    "--no-verify",
+                    "--no-gpg-sign",
+                    "-m",
+                    message,
+                ],
                 cwd=repo_root,
                 capture_output=True,
                 timeout=10,
@@ -231,7 +262,7 @@ class GitSafetyChecker:
             )
 
             if result.returncode == 0:
-                logger.info("✅ Auto-committed changes for safety")
+                logger.info("✅ Committed changes")
                 return True
             elif b"nothing to commit" in result.stdout:
                 logger.info("No changes to commit")
@@ -241,7 +272,7 @@ class GitSafetyChecker:
                 return False
 
         except Exception as e:
-            logger.warning(f"Failed to auto-commit: {e}")
+            logger.warning(f"Failed to commit: {e}")
             return False
 
     @staticmethod
@@ -342,7 +373,7 @@ def validate_task_safety(
     task_description: str,
     context_paths: list[str] | None = None,
     safety_mode: SafetyMode | str | None = None,
-    skip_auto_commit: bool = False,
+    isolated: bool = False,
 ) -> dict[str, Any]:
     """Validate task safety before execution with automatic enforcement.
 
@@ -351,10 +382,9 @@ def validate_task_safety(
         task_description: Task description to analyze.
         context_paths: Files that will be modified.
         safety_mode: Safety enforcement mode (auto-detected from env if None).
-        skip_auto_commit: When True, AUTO mode never creates the
-            [ninja-auto-save] commit on the current branch (used when
-            worktree isolation snapshots the dirty state onto a feature
-            branch instead). The safety tag on HEAD is still created.
+        isolated: True when the run uses a worktree; the dirty state is then
+            carried by the run's ninja/* branch. Either way AUTO mode never
+            commits on the user's branch and only tags HEAD.
 
     Returns:
         Safety validation results with recommendations and enforcement actions.
@@ -402,49 +432,17 @@ def validate_task_safety(
         changed_files = git_check.get("changed_files", [])
 
         if safety_mode == SafetyMode.AUTO:
-            if skip_auto_commit:
-                # Worktree isolation is active: the dirty state is snapshotted
-                # onto a feature branch in a detached worktree, so the main
-                # repo must NOT get an auto-save commit. Only tag HEAD.
-                logger.info(
-                    f"🔀 AUTO MODE: worktree isolation active, leaving "
-                    f"{len(changed_files)} uncommitted file(s) untouched"
-                )
-                results["action_taken"] = "worktree_isolation"
+            # AUTO never commits on the user's branch: uncommitted changes stay in
+            # the main working tree and HEAD is tagged as the recovery point.
+            # Isolated runs snapshot the changes onto their own ninja/* branch.
+            logger.info(f"🔀 AUTO MODE: leaving {len(changed_files)} uncommitted file(s) untouched")
+            results["action_taken"] = "worktree_isolation" if isolated else "tagged_uncommitted"
+            tag = GitSafetyChecker.create_safety_tag(repo_root)
+            if tag:
+                results["git_info"]["safety_tag"] = tag
                 results["warnings"].append(
-                    f"🔀 Worktree isolation: {len(changed_files)} uncommitted file(s) "
-                    "preserved in the main working tree (snapshot on feature branch)"
+                    f"✅ Safety tag created: {tag} (recover with: git reset --hard {tag})"
                 )
-                tag = GitSafetyChecker.create_safety_tag(repo_root)
-                if tag:
-                    results["git_info"]["safety_tag"] = tag
-                    results["warnings"].append(
-                        f"✅ Safety tag created: {tag} (recover with: git reset --hard {tag})"
-                    )
-            else:
-                # AUTO: Automatically commit changes; never deny the task
-                logger.info(f"🔒 AUTO MODE: Committing {len(changed_files)} uncommitted file(s)")
-                committed = GitSafetyChecker.auto_commit_changes(
-                    repo_root, task_description, changed_files
-                )
-
-                if committed:
-                    results["action_taken"] = "auto_committed"
-                    results["warnings"].append(
-                        f"✅ Auto-committed {len(changed_files)} file(s) for safety"
-                    )
-                    # Create safety tag after commit
-                    tag = GitSafetyChecker.create_safety_tag(repo_root)
-                    if tag:
-                        results["git_info"]["safety_tag"] = tag
-                        results["warnings"].append(
-                            f"✅ Safety tag created: {tag} (recover with: git reset --hard {tag})"
-                        )
-                else:
-                    results["warnings"].append(
-                        "⚠️ Could not create safety commit — proceeding without a git recovery point"
-                    )
-                    # safe stays True — never deny a task due to a dirty worktree
 
         else:  # WARN mode
             # WARN: Just log warnings

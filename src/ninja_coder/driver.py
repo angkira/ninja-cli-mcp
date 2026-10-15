@@ -1694,8 +1694,9 @@ class NinjaDriver:
         result.worktree_branch = worktree_info.branch
         result.worktree_path = str(worktree_info.path)
         hint = (
-            f"🔀 Worktree isolation: changes on branch '{worktree_info.branch}' "
-            f"at {worktree_info.path}. Review/merge: git merge {worktree_info.branch}"
+            f"🔀 Worktree isolation: changes committed on branch '{worktree_info.branch}' "
+            f"(checkout removed to save disk). Merge: coder_branch_merge or "
+            f"git merge {worktree_info.branch}; discard: coder_branch_discard"
         )
         result.notes = f"{result.notes}\n{hint}" if result.notes else hint
         return result
@@ -1944,7 +1945,7 @@ class NinjaDriver:
                 repo_root=repo_root,
                 task_description=task_desc,
                 context_paths=context_paths,
-                skip_auto_commit=worktree_info is not None,
+                isolated=worktree_info is not None,
             )
 
             # Log all warnings
@@ -1955,11 +1956,6 @@ class NinjaDriver:
             # Log recommendations
             for rec in safety_results.get("recommendations", []):
                 task_logger.info(f"💡 {rec}")
-
-            # Log action taken
-            action_taken = safety_results.get("action_taken")
-            if action_taken == "auto_committed":
-                logger.info("✅ Automatic safety commit created")
 
             # ENFORCE SAFETY: Refuse to run if safety check failed
             if not safety_results.get("safe", True):
@@ -2212,7 +2208,8 @@ class NinjaDriver:
                     try:
                         WorktreeManager().commit_changes(
                             worktree_info.path,
-                            f"[ninja-coder] agent output for {step_id}",
+                            task_desc,
+                            self._worktree_changed_files(worktree_info),
                         )
                     except WorktreeGitError as commit_exc:
                         logger.warning(f"Failed to commit agent output in worktree: {commit_exc}")
@@ -2434,6 +2431,67 @@ class NinjaDriver:
                 worktree_info,
             )
 
+        finally:
+            self._release_worktree(worktree_info, task_logger, task_desc)
+
+    @staticmethod
+    def _worktree_changed_files(worktree_info: WorktreeInfo) -> list[str]:
+        """List files changed by the run so far, for the commit message body.
+
+        Args:
+            worktree_info: Worktree created for this run.
+
+        Returns:
+            Changed paths relative to the run's baseline, or an empty list when
+            git cannot report them (the commit message then has no file list).
+        """
+        baseline = worktree_info.snapshot_commit or worktree_info.baseline_commit
+        try:
+            return WorktreeManager().changed_files(worktree_info.path, baseline)
+        except WorktreeGitError:
+            return []
+
+    def _release_worktree(
+        self,
+        worktree_info: WorktreeInfo | None,
+        task_logger: Any,
+        task_desc: str,
+    ) -> None:
+        """Commit leftover agent output and delete the isolation checkout.
+
+        The ``ninja/*`` branch is kept, so the work stays reachable through
+        git (``coder_branch_merge`` / ``git merge``). Only the working
+        directory is removed, which frees its disk usage. Never raises.
+
+        Args:
+            worktree_info: Worktree created for this run, or None.
+            task_logger: Task logger for the run.
+            task_desc: Task text used for the generated commit message.
+        """
+        if worktree_info is None:
+            return
+        manager = WorktreeManager()
+        try:
+            manager.commit_changes(
+                worktree_info.path,
+                task_desc,
+                self._worktree_changed_files(worktree_info),
+            )
+        except Exception as commit_exc:
+            # Keep the checkout: deleting it would lose uncommitted agent output.
+            logger.warning(f"Keeping worktree {worktree_info.path}; commit failed: {commit_exc}")
+            task_logger.warning(f"Kept worktree {worktree_info.path} (commit failed)")
+            return
+        try:
+            removed = manager.remove_worktree(worktree_info.path)
+        except Exception as remove_exc:
+            logger.warning(f"Failed to remove worktree {worktree_info.path}: {remove_exc}")
+            removed = False
+        if not removed:
+            task_logger.warning(f"Could not remove worktree {worktree_info.path}")
+        else:
+            task_logger.info(f"🧹 Removed worktree checkout; branch kept: {worktree_info.branch}")
+
     async def execute_async_with_opencode_session(
         self,
         repo_root: str,
@@ -2511,11 +2569,6 @@ class NinjaDriver:
             # Log recommendations
             for rec in safety_results.get("recommendations", []):
                 task_logger.info(f"💡 {rec}")
-
-            # Log action taken
-            action_taken = safety_results.get("action_taken")
-            if action_taken == "auto_committed":
-                logger.info("✅ Automatic safety commit created")
 
             # ENFORCE SAFETY: Refuse to run if safety check failed
             if not safety_results.get("safe", True):

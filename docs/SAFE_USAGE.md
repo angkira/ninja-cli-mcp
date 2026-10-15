@@ -13,7 +13,7 @@ Ninja-coder automatically:
 4. ✅ Validates task descriptions for dangerous patterns
 5. ✅ Provides recovery commands if something goes wrong
 
-**Default Mode: AUTO** - Automatically commits before running any task.
+**Default Mode: AUTO** - Never commits on your branch. Tags HEAD as a recovery point and leaves your changes in place.
 
 ### Safety Modes
 
@@ -52,15 +52,13 @@ AI coding tools (Aider, OpenCode, etc.) can sometimes **overwrite entire files**
 
 ### 1. Automatic Protection (Enabled by Default)
 
-Ninja-coder now **automatically protects** your code:
+Ninja-coder protects your code with a safety tag, without committing on your branch:
 
 ```bash
-# Just run your task - auto-commit happens automatically!
 ninja-coder simple_task --task "Add error handling" --repo-root .
 
 # Output:
-# 🔒 AUTO MODE: Committing 5 uncommitted file(s)
-# ✅ Auto-committed 5 file(s) for safety
+# 🔀 AUTO MODE: leaving 5 uncommitted file(s) untouched
 # ✅ Safety tag created: ninja-safety-1737123456
 # 🔖 Recovery point: git reset --hard ninja-safety-1737123456
 ```

@@ -35,6 +35,9 @@ from mcp.types import (
 from pydantic import ValidationError
 
 from ninja_coder.models import (
+    BranchDiscardRequest,
+    BranchListRequest,
+    BranchMergeRequest,
     GetAgentsRequest,
     MultiAgentTaskRequest,
     ParallelPlanRequest,
@@ -681,6 +684,70 @@ TOOLS.extend(
             inputSchema=dict(_JOB_ID_SCHEMA),
         ),
         Tool(
+            name="coder_branches_list",
+            description=(
+                "List ninja/* isolation branches (committed agent work, checkout already "
+                "removed), newest first. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo_root": {
+                        "type": "string",
+                        "description": "Absolute path to the repository root",
+                    },
+                },
+                "required": ["repo_root"],
+            },
+        ),
+        Tool(
+            name="coder_branch_merge",
+            description=(
+                "Merge a ninja/* isolation branch into the repo's current branch. "
+                "A conflicting merge is aborted and the repo is left unchanged."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo_root": {
+                        "type": "string",
+                        "description": "Absolute path to the repository root",
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "ninja/* branch to merge (see coder_branches_list)",
+                    },
+                },
+                "required": ["repo_root", "branch"],
+            },
+        ),
+        Tool(
+            name="coder_branch_discard",
+            description=(
+                "Delete a ninja/* isolation branch. Refuses unmerged work unless force=true; "
+                "only merge or discard after reviewing the changes."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo_root": {
+                        "type": "string",
+                        "description": "Absolute path to the repository root",
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "ninja/* branch to delete (see coder_branches_list)",
+                    },
+                    "force": {
+                        "type": "boolean",
+                        "description": "Delete even if the branch has unmerged commits",
+                        "default": False,
+                    },
+                },
+                "required": ["repo_root", "branch"],
+            },
+        ),
+        Tool(
             name="coder_jobs_list",
             description="List background jobs oldest-first with cursor pagination.",
             inputSchema={
@@ -722,6 +789,7 @@ CRITICAL: Ninja only writes code — no bash, no tests, no file reading for you.
 Tools: coder_simple_task = tiny 1-2 line fix, in-place with safety-commit, no worktree;
 coder_execute_plan_sequential = ordered multi-step work in an isolated ninja/* worktree;
 coder_execute_plan_parallel = independent atomic steps; complexity='simple' in-place, 'complex' (default) worktree — never mix in one call.
+Isolated plan work is committed to a ninja/* branch and its checkout is removed right after the run. Review and integrate it with coder_branches_list, coder_branch_merge (ninja/* only, conflicts aborted), and coder_branch_discard.
 Spec format: GOOD = file, symbol, behavior, types, error handling (e.g. "In src/api/routes.py add POST /login ... 401 on failure").
 Ninja returns a summary only (files changed, brief description); you read files, run tests, review. Same request_key retries join the in-flight run.""",
     )
@@ -916,7 +984,13 @@ Ninja returns a summary only (files changed, brief description); you read files,
             logger.info(f"[{client_id}] Tool called: {name}")
             logger.debug(f"[{client_id}] Arguments: {json.dumps(arguments, indent=2)}")
             executor = get_executor()
-            SKIP_DEDUP = {"coder_get_agents", "coder_query_logs"}
+            SKIP_DEDUP = {
+                "coder_get_agents",
+                "coder_query_logs",
+                "coder_branches_list",
+                "coder_branch_merge",
+                "coder_branch_discard",
+            }
             request_key = str(arguments.get("request_key") or "") or None
 
             async def _dispatch() -> Any:
@@ -938,6 +1012,15 @@ Ninja returns a summary only (files changed, brief description); you read files,
                 elif name == "coder_query_logs":
                     request = QueryLogsRequest(**arguments)
                     return await executor.query_logs(request, client_id=client_id)
+                elif name == "coder_branches_list":
+                    request = BranchListRequest(**arguments)
+                    return await executor.list_branches(request, client_id=client_id)
+                elif name == "coder_branch_merge":
+                    request = BranchMergeRequest(**arguments)
+                    return await executor.merge_branch(request, client_id=client_id)
+                elif name == "coder_branch_discard":
+                    request = BranchDiscardRequest(**arguments)
+                    return await executor.discard_branch(request, client_id=client_id)
                 else:
                     raise ValueError(f"Unknown tool: {name}")
 

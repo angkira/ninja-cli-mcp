@@ -421,6 +421,58 @@ class MultiAgentTaskResult(BaseModel):
 # ============================================================================
 
 
+class BranchListRequest(BaseModel):
+    """Request to list isolation branches (ninja/*) in a repository."""
+
+    repo_root: str = Field(..., description="Absolute path to repository root")
+
+
+class BranchListResult(BaseModel):
+    """Result of listing isolation branches."""
+
+    status: Literal["ok", "error"] = Field(..., description="Status")
+    branches: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="ninja/* branches, newest first (branch, head, committed_at, subject)",
+    )
+    message: str = Field(..., description="Result message")
+
+
+class BranchMergeRequest(BaseModel):
+    """Request to merge an isolation branch into the current branch."""
+
+    repo_root: str = Field(..., description="Absolute path to repository root")
+    branch: str = Field(..., description="ninja/* branch to merge, e.g. ninja/sequential-plan-...")
+
+
+class BranchMergeResult(BaseModel):
+    """Result of merging an isolation branch."""
+
+    status: Literal["ok", "error"] = Field(..., description="Status")
+    branch: str = Field(..., description="Branch that was merged")
+    head: str | None = Field(None, description="HEAD commit after the merge")
+    message: str = Field(..., description="Result message")
+
+
+class BranchDiscardRequest(BaseModel):
+    """Request to delete an isolation branch."""
+
+    repo_root: str = Field(..., description="Absolute path to repository root")
+    branch: str = Field(..., description="ninja/* branch to delete")
+    force: bool = Field(
+        False,
+        description="Delete even if the branch has commits not merged into the current branch",
+    )
+
+
+class BranchDiscardResult(BaseModel):
+    """Result of discarding an isolation branch."""
+
+    status: Literal["ok", "error"] = Field(..., description="Status")
+    branch: str = Field(..., description="Branch that was deleted")
+    message: str = Field(..., description="Result message")
+
+
 class QueryLogsRequest(BaseModel):
     """Request to query structured logs."""
 

@@ -8,13 +8,19 @@ complex plan that should leave the main checkout untouched.
 
 | Task type | Public route | Default | Result |
 | --- | --- | --- | --- |
-| `quick` | `coder_simple_task` | in place | An automatic `[ninja-auto-save]` commit protects the current branch |
+| `quick` | `coder_simple_task` | in place | Changes stay uncommitted; a safety tag on HEAD is the recovery point |
 | `sequential` | `coder_execute_plan_sequential` | isolated | A detached `ninja/*` worktree under the Ninja cache |
 | `parallel` | `coder_execute_plan_parallel` | isolated | A detached `ninja/*` worktree under the Ninja cache |
 
-Sequential and parallel worktrees create a snapshot commit inside the
-worktree. Review the branch and merge it when ready. The main checkout is not
-modified by the normal isolated path.
+Sequential and parallel worktrees commit the agent's output on their
+`ninja/*` branch with a generated message (from the task and changed files),
+then remove the checkout directory to free disk. The branch is kept. Review
+it and merge with `coder_branch_merge` (or `git merge`), or drop it with
+`coder_branch_discard`. The main checkout is not modified by the isolated path.
+
+Ninja never creates `[ninja-auto-save]` commits on your branch. If git has no
+`user.name`/`user.email`, ninja commits use the fallback identity
+`ninja-coder <ninja@localhost>`.
 
 Parallel routing also has a complexity choice: `simple` is for independent
 small work, while `complex` uses the full plan/worktree path.

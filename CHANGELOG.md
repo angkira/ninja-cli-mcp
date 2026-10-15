@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.6.0 - 2026-10-15
+
+Isolated-run cleanup, direct branch tools, and no safety commits.
+
+### Added
+- **Branch tools for isolated work**: `coder_branches_list`, `coder_branch_merge`
+  and `coder_branch_discard` act on `ninja/*` branches only. A conflicting merge
+  is aborted and leaves the repository unchanged; discard refuses unmerged work
+  unless `force` is set.
+
+### Changed
+- **No safety commits**: AUTO mode never commits on the user's branch. Changes
+  stay uncommitted and HEAD is tagged as the recovery point. The
+  `[ninja-auto-save]` commit and its `auto_committed` action are removed.
+- **Generated commit messages**: agent output commits use the task text as the
+  subject and list the changed files in the body (no fixed placeholder).
+
+### Fixed
+- **Agent output commit failed without git identity**: every ninja commit now
+  uses the fallback identity `ninja-coder <ninja@localhost>` when none is
+  configured.
+- **Worktree checkouts leaked disk space**: after each isolated run the leftover
+  output is committed and the checkout directory is removed. The `ninja/*` branch
+  is kept, so the work stays reachable. Previously each checkout (often with a
+  multi-GB `node_modules`) stayed until the 2-day age prune.
+
 ## 1.5.1 - 2026-10-12
 
 Pi coding agent (pi.dev) CLI operator & MCP init integration.

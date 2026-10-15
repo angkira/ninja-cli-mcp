@@ -20,6 +20,12 @@ from pathlib import Path
 from ninja_coder.driver import InstructionBuilder, NinjaDriver, NinjaResult
 from ninja_coder.models import (
     AgentInfo,
+    BranchDiscardRequest,
+    BranchDiscardResult,
+    BranchListRequest,
+    BranchListResult,
+    BranchMergeRequest,
+    BranchMergeResult,
     ExecutionMode,
     GetAgentsRequest,
     GetAgentsResult,
@@ -34,6 +40,7 @@ from ninja_coder.models import (
     SimpleTaskResult,
     StepResult,
 )
+from ninja_coder.worktree import WorktreeGitError, WorktreeManager
 from ninja_common.logging_utils import get_logger
 from ninja_common.metrics import MetricsTracker, create_task_metrics
 from ninja_common.path_utils import validate_repo_root
@@ -1006,6 +1013,95 @@ class ToolExecutor:
                 summary=f"❌ Failed to execute multi-agent task: {str(e)[:100]}",
                 notes=str(e),
                 agents_used=[],
+            )
+
+    async def list_branches(
+        self,
+        request: BranchListRequest,
+        client_id: str = "default",
+    ) -> BranchListResult:
+        """List ``ninja/*`` isolation branches of a repository.
+
+        Args:
+            request: Branch list request.
+            client_id: Client identifier for logging.
+
+        Returns:
+            Branch list result (never raises).
+        """
+        logger.info(f"[{client_id}] Listing isolation branches in {request.repo_root}")
+        try:
+            validate_repo_root(request.repo_root)
+            branches = WorktreeManager().list_branches(request.repo_root)
+            return BranchListResult(
+                status="ok",
+                branches=branches,
+                message=f"✅ Found {len(branches)} isolation branch(es)",
+            )
+        except (ValueError, WorktreeGitError) as e:
+            return BranchListResult(status="error", branches=[], message=f"❌ {e!s}"[:300])
+
+    async def merge_branch(
+        self,
+        request: BranchMergeRequest,
+        client_id: str = "default",
+    ) -> BranchMergeResult:
+        """Merge a ``ninja/*`` isolation branch into the repository's current branch.
+
+        Args:
+            request: Branch merge request.
+            client_id: Client identifier for logging.
+
+        Returns:
+            Branch merge result (never raises). A conflicting merge is aborted.
+        """
+        logger.info(f"[{client_id}] Merging {request.branch} into {request.repo_root}")
+        try:
+            validate_repo_root(request.repo_root)
+            head = WorktreeManager().merge_branch(request.repo_root, request.branch)
+            return BranchMergeResult(
+                status="ok",
+                branch=request.branch,
+                head=head,
+                message=f"✅ Merged {request.branch} into the current branch",
+            )
+        except (ValueError, WorktreeGitError) as e:
+            return BranchMergeResult(
+                status="error",
+                branch=request.branch,
+                head=None,
+                message=f"❌ Merge failed (aborted, repository unchanged): {e!s}"[:500],
+            )
+
+    async def discard_branch(
+        self,
+        request: BranchDiscardRequest,
+        client_id: str = "default",
+    ) -> BranchDiscardResult:
+        """Delete a ``ninja/*`` isolation branch.
+
+        Args:
+            request: Branch discard request.
+            client_id: Client identifier for logging.
+
+        Returns:
+            Branch discard result (never raises). Without ``force`` git refuses
+            to delete a branch whose commits are not merged.
+        """
+        logger.info(f"[{client_id}] Discarding {request.branch} in {request.repo_root}")
+        try:
+            validate_repo_root(request.repo_root)
+            WorktreeManager().delete_branch(request.repo_root, request.branch, force=request.force)
+            return BranchDiscardResult(
+                status="ok",
+                branch=request.branch,
+                message=f"✅ Deleted branch {request.branch}",
+            )
+        except (ValueError, WorktreeGitError) as e:
+            return BranchDiscardResult(
+                status="error",
+                branch=request.branch,
+                message=f"❌ {e!s}"[:500],
             )
 
     async def query_logs(

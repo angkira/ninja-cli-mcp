@@ -21,6 +21,7 @@ from ninja_coder.worktree import (
     WORKTREE_PARALLEL_ENV,
     WORKTREE_QUICK_ENV,
     WORKTREE_SEQUENTIAL_ENV,
+    WorktreeGitError,
     WorktreeManager,
 )
 
@@ -53,9 +54,7 @@ def git_repo(tmp_path: Path) -> Path:
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run a git command in repo and return the completed process."""
-    return subprocess.run(
-        ["git", *args], cwd=repo, capture_output=True, text=True, check=True
-    )
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True)
 
 
 def _make_dirty(repo: Path) -> None:
@@ -81,9 +80,7 @@ def test_create_dirty_repo_snapshots_and_leaves_main_untouched(
     branch_before = _git(git_repo, "branch", "--show-current").stdout.strip()
     status_before = _git(git_repo, "status", "--porcelain").stdout
 
-    info = WorktreeManager().create(
-        repo_root=str(git_repo), task_hint="test task", step_id="step1"
-    )
+    info = WorktreeManager().create(repo_root=str(git_repo), task_hint="test task", step_id="step1")
 
     assert info is not None
     assert info.path.exists()
@@ -99,7 +96,8 @@ def test_create_dirty_repo_snapshots_and_leaves_main_untouched(
     # Snapshot commit on the feature branch contains the dirty changes
     assert info.snapshot_commit is not None
     wt_log = _git(info.path, "log", "-1", "--format=%s").stdout
-    assert "ninja-auto-save" in wt_log
+    assert "ninja-auto-save" not in wt_log
+    assert "test task" in wt_log
     assert (info.path / "README.md").read_text() == "# Modified\n"
     assert (info.path / "untracked.py").read_text() == "# new\n"
     # .gitignore is respected: ignored untracked files are not snapshotted
@@ -183,7 +181,12 @@ def test_should_isolate_defaults_quick_inplace_plans_worktree(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Defaults: quick → in-place (False), sequential/parallel → worktree (True)."""
-    for var in (WORKTREE_MODE_ENV, WORKTREE_QUICK_ENV, WORKTREE_SEQUENTIAL_ENV, WORKTREE_PARALLEL_ENV):
+    for var in (
+        WORKTREE_MODE_ENV,
+        WORKTREE_QUICK_ENV,
+        WORKTREE_SEQUENTIAL_ENV,
+        WORKTREE_PARALLEL_ENV,
+    ):
         monkeypatch.delenv(var, raising=False)
 
     assert WorktreeManager.should_isolate("quick") is False
@@ -234,12 +237,16 @@ def test_create_respects_task_type_policy(
 ) -> None:
     """create(task_type=...): quick → None (in-place), sequential → worktree."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    for var in (WORKTREE_MODE_ENV, WORKTREE_QUICK_ENV, WORKTREE_SEQUENTIAL_ENV, WORKTREE_PARALLEL_ENV):
+    for var in (
+        WORKTREE_MODE_ENV,
+        WORKTREE_QUICK_ENV,
+        WORKTREE_SEQUENTIAL_ENV,
+        WORKTREE_PARALLEL_ENV,
+    ):
         monkeypatch.delenv(var, raising=False)
 
     assert (
-        WorktreeManager().create(repo_root=str(git_repo), step_id="q1", task_type="quick")
-        is None
+        WorktreeManager().create(repo_root=str(git_repo), step_id="q1", task_type="quick") is None
     )
 
     info = WorktreeManager().create(
@@ -333,14 +340,14 @@ def test_snapshot_excludes_heavy_dirs(
 
 
 # ---------------------------------------------------------------------------
-# validate_task_safety — skip_auto_commit
+# validate_task_safety — isolated run
 # ---------------------------------------------------------------------------
 
 
-def test_validate_task_safety_skip_auto_commit_preserves_dirty_state(
+def test_validate_task_safety_isolated_preserves_dirty_state(
     git_repo: Path,
 ) -> None:
-    """skip_auto_commit=True: AUTO mode creates no commit, leaves main dirty."""
+    """isolated=True: AUTO mode creates no commit, leaves main dirty."""
     _make_dirty(git_repo)
     head_before = _git(git_repo, "rev-parse", "HEAD").stdout.strip()
     status_before = _git(git_repo, "status", "--porcelain").stdout
@@ -349,7 +356,7 @@ def test_validate_task_safety_skip_auto_commit_preserves_dirty_state(
         repo_root=str(git_repo),
         task_description="test task",
         safety_mode=SafetyMode.AUTO,
-        skip_auto_commit=True,
+        isolated=True,
     )
 
     assert results["safe"] is True
@@ -444,10 +451,10 @@ async def test_execute_async_runs_in_worktree_and_leaves_main_untouched(
 
 
 @pytest.mark.asyncio
-async def test_execute_async_quick_runs_inplace_with_safety_commit(
+async def test_execute_async_quick_runs_inplace_without_commit(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """execute_async quick: in-place run + legacy AUTO safety-commit, NO worktree."""
+    """execute_async quick: in-place run, no commit on the branch, NO worktree."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.delenv(WORKTREE_MODE_ENV, raising=False)
     for var in (WORKTREE_QUICK_ENV, WORKTREE_SEQUENTIAL_ENV, WORKTREE_PARALLEL_ENV):
@@ -472,11 +479,12 @@ async def test_execute_async_quick_runs_inplace_with_safety_commit(
     assert result.worktree_branch is None
     assert result.worktree_path is None
 
-    # In-place: subprocess ran in the main repo, dirty state auto-committed
+    # In-place: subprocess ran in the main repo; no commit was made and the
+    # dirty state is left for the user (only a safety tag marks HEAD).
     assert captured["cwd"] == str(git_repo)
     main_log = _git(git_repo, "log", "-1", "--format=%s").stdout
-    assert "ninja-auto-save" in main_log
-    assert _git(git_repo, "status", "--porcelain").stdout == ""
+    assert "ninja-auto-save" not in main_log
+    assert _git(git_repo, "status", "--porcelain").stdout != ""
 
 
 @pytest.mark.asyncio
@@ -509,10 +517,10 @@ async def test_execute_async_parallel_and_plan_suffix_use_worktree(
 
 
 @pytest.mark.asyncio
-async def test_execute_async_worktree_mode_off_uses_legacy_auto_commit(
+async def test_execute_async_worktree_mode_off_runs_in_place_without_commit(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """NINJA_WORKTREE_MODE=off: legacy path — auto-commit on the current branch."""
+    """NINJA_WORKTREE_MODE=off: in-place run, no commit on the current branch."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv(WORKTREE_MODE_ENV, "off")
     _make_dirty(git_repo)
@@ -535,12 +543,11 @@ async def test_execute_async_worktree_mode_off_uses_legacy_auto_commit(
     assert result.worktree_branch is None
     assert result.worktree_path is None
 
-    # Legacy behavior: subprocess ran in the main repo and the dirty state
-    # was auto-committed on the current branch
+    # Subprocess ran in the main repo; no commit was made on the current branch
     assert captured["cwd"] == str(git_repo)
     main_log = _git(git_repo, "log", "-1", "--format=%s").stdout
-    assert "ninja-auto-save" in main_log
-    assert _git(git_repo, "status", "--porcelain").stdout == ""
+    assert "ninja-auto-save" not in main_log
+    assert _git(git_repo, "status", "--porcelain").stdout != ""
 
 
 @pytest.mark.asyncio
@@ -755,3 +762,191 @@ async def test_execute_async_worktree_suspected_paths_are_agent_only(
     # A patch of the agent's change was written and is non-empty.
     assert result.patch_path is not None
     assert Path(result.patch_path).exists()
+
+
+# ---------------------------------------------------------------------------
+# Checkout cleanup and direct branch tools
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_execute_async_removes_checkout_and_keeps_branch(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A finished isolated run frees its checkout but keeps the committed branch."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.delenv(WORKTREE_MODE_ENV, raising=False)
+    captured: dict[str, str] = {}
+    _mock_cli(monkeypatch, captured)
+
+    driver = _build_driver()
+    result = await driver.execute_async(
+        repo_root=str(git_repo),
+        step_id="cleanup_step",
+        instruction={"task": "Add a file", "file_scope": {"context_paths": []}},
+        task_type="sequential",
+    )
+
+    assert result.worktree_branch is not None
+    assert result.worktree_path is not None
+    assert not Path(result.worktree_path).exists()
+    _git(git_repo, "rev-parse", "--verify", result.worktree_branch)
+    listed = _git(git_repo, "worktree", "list").stdout
+    assert result.worktree_path not in listed
+
+
+@pytest.mark.asyncio
+async def test_execute_async_cleans_up_when_cli_fails(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Cleanup runs on the error path too, so failed runs do not leak checkouts."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.delenv(WORKTREE_MODE_ENV, raising=False)
+
+    async def _missing_cli(*args: object, **kwargs: object) -> MagicMock:
+        raise FileNotFoundError("aider")
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _missing_cli)
+
+    driver = _build_driver()
+    result = await driver.execute_async(
+        repo_root=str(git_repo),
+        step_id="failed_step",
+        instruction={"task": "Anything", "file_scope": {"context_paths": []}},
+        task_type="sequential",
+    )
+
+    assert result.success is False
+    assert result.worktree_path is not None
+    assert not Path(result.worktree_path).exists()
+
+
+def test_list_branches_returns_only_ninja_branches(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """list_branches reports ninja/* branches and ignores other branches."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    _git(git_repo, "branch", "feature/other")
+    info = WorktreeManager().create(repo_root=str(git_repo), step_id="listed")
+    assert info is not None
+    WorktreeManager().remove_worktree(info.path)
+
+    branches = WorktreeManager().list_branches(str(git_repo))
+
+    names = [b["branch"] for b in branches]
+    assert names == [info.branch]
+
+
+def test_merge_branch_transfers_committed_work(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Merging a ninja/* branch brings its committed output into the main branch."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    manager = WorktreeManager()
+    info = manager.create(repo_root=str(git_repo), step_id="merged")
+    assert info is not None
+    (info.path / "agent.py").write_text("# agent output\n")
+    manager.commit_changes(info.path, "[ninja-coder] agent output for merged")
+    manager.remove_worktree(info.path)
+
+    head = manager.merge_branch(str(git_repo), info.branch)
+
+    assert head is not None
+    assert (git_repo / "agent.py").read_text() == "# agent output\n"
+    assert _git(git_repo, "rev-parse", "HEAD").stdout.strip() == head
+
+
+def test_merge_branch_conflict_is_aborted(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A conflicting merge is aborted and the main repo is left unchanged."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    manager = WorktreeManager()
+    info = manager.create(repo_root=str(git_repo), step_id="conflict")
+    assert info is not None
+    (info.path / "README.md").write_text("# from agent\n")
+    manager.commit_changes(info.path, "[ninja-coder] agent output for conflict")
+    manager.remove_worktree(info.path)
+
+    (git_repo / "README.md").write_text("# from main\n")
+    _git(git_repo, "commit", "-am", "main change")
+    head_before = _git(git_repo, "rev-parse", "HEAD").stdout.strip()
+
+    with pytest.raises(WorktreeGitError):
+        manager.merge_branch(str(git_repo), info.branch)
+
+    assert _git(git_repo, "rev-parse", "HEAD").stdout.strip() == head_before
+    assert _git(git_repo, "status", "--porcelain").stdout == ""
+    assert not (git_repo / ".git" / "MERGE_HEAD").exists()
+
+
+def test_merge_and_discard_reject_non_ninja_branches(git_repo: Path) -> None:
+    """Only ninja/* branches may be merged or deleted through the manager."""
+    manager = WorktreeManager()
+    _git(git_repo, "branch", "main-feature")
+
+    with pytest.raises(ValueError):
+        manager.merge_branch(str(git_repo), "main-feature")
+    with pytest.raises(ValueError):
+        manager.delete_branch(str(git_repo), "main-feature", force=True)
+    with pytest.raises(ValueError):
+        manager.delete_branch(str(git_repo), "ninja/../../main", force=True)
+    _git(git_repo, "rev-parse", "--verify", "main-feature")
+
+
+def test_discard_refuses_unmerged_branch_unless_forced(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Discard needs force for unmerged work, and force deletes the branch."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    manager = WorktreeManager()
+    info = manager.create(repo_root=str(git_repo), step_id="discard")
+    assert info is not None
+    (info.path / "agent.py").write_text("# unmerged\n")
+    manager.commit_changes(info.path, "[ninja-coder] agent output for discard")
+    manager.remove_worktree(info.path)
+
+    with pytest.raises(WorktreeGitError):
+        manager.delete_branch(str(git_repo), info.branch)
+    manager.delete_branch(str(git_repo), info.branch, force=True)
+
+    listed = _git(git_repo, "branch", "--list", info.branch).stdout
+    assert listed.strip() == ""
+
+
+def test_commit_changes_without_identity_uses_fallback_and_generated_message(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No git identity: the agent-output commit still succeeds with a generated message."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    manager = WorktreeManager()
+    info = manager.create(repo_root=str(git_repo), step_id="noid")
+    assert info is not None
+
+    _git(info.path, "config", "--unset", "user.name")
+    _git(info.path, "config", "--unset", "user.email")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    (info.path / "agent.py").write_text("# agent output\n")
+
+    sha = manager.commit_changes(info.path, "Add retry to the HTTP client", ["agent.py"])
+
+    assert sha is not None
+    subject, author = _git(info.path, "log", "-1", "--format=%s%n%an").stdout.splitlines()[:2]
+    assert subject == "Add retry to the HTTP client"
+    assert author == "ninja-coder"
+    assert "- agent.py" in _git(info.path, "log", "-1", "--format=%B").stdout
+
+
+def test_build_commit_message_is_generated_from_task_and_files() -> None:
+    """Subject comes from the task; body lists sorted, de-duplicated files."""
+    from ninja_coder.safety import build_commit_message
+
+    msg = build_commit_message("  Fix   the parser\nand tests ", ["b.py", "a.py", "a.py"])
+    assert msg == "Fix the parser and tests\n\n- a.py\n- b.py"
+
+    long_msg = build_commit_message("x" * 200, [])
+    assert len(long_msg) <= 72
+    assert long_msg.endswith("...")
+    assert "ninja-auto-save" not in build_commit_message("", None)
+    assert build_commit_message("", None) == "agent output"

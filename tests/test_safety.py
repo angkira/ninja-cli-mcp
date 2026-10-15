@@ -68,7 +68,7 @@ def test_has_uncommitted_changes_rename_returns_new_path(git_repo: Path) -> None
 
 
 # ---------------------------------------------------------------------------
-# auto_commit_changes — per-change-type success
+# auto_commit_changes — per-change-type success (generated message)
 # ---------------------------------------------------------------------------
 
 
@@ -86,7 +86,7 @@ def test_auto_commit_new_untracked_file(git_repo: Path) -> None:
         text=True,
         check=True,
     )
-    assert "ninja-auto-save" in log.stdout
+    assert "ninja-auto-save" not in log.stdout
 
 
 def test_auto_commit_modified_tracked_file(git_repo: Path) -> None:
@@ -103,7 +103,7 @@ def test_auto_commit_modified_tracked_file(git_repo: Path) -> None:
         text=True,
         check=True,
     )
-    assert "ninja-auto-save" in log.stdout
+    assert "ninja-auto-save" not in log.stdout
 
 
 def test_auto_commit_renamed_file(git_repo: Path) -> None:
@@ -125,7 +125,7 @@ def test_auto_commit_renamed_file(git_repo: Path) -> None:
         text=True,
         check=True,
     )
-    assert "ninja-auto-save" in log.stdout
+    assert "ninja-auto-save" not in log.stdout
 
 
 def test_auto_commit_deleted_file(git_repo: Path) -> None:
@@ -147,7 +147,7 @@ def test_auto_commit_deleted_file(git_repo: Path) -> None:
         text=True,
         check=True,
     )
-    assert "ninja-auto-save" in log.stdout
+    assert "ninja-auto-save" not in log.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +192,7 @@ def test_auto_commit_no_identity_uses_fallback(
         text=True,
         check=True,
     )
-    assert "ninja-auto-save" in log.stdout
+    assert "ninja-auto-save" not in log.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +210,9 @@ def test_auto_commit_bypasses_failing_pre_commit_hook(git_repo: Path) -> None:
 
     result = GitSafetyChecker.auto_commit_changes(str(git_repo), "hook bypass test")
 
-    assert result is True, "auto_commit_changes must bypass failing pre-commit hooks via --no-verify"
+    assert result is True, (
+        "auto_commit_changes must bypass failing pre-commit hooks via --no-verify"
+    )
     log = subprocess.run(
         ["git", "log", "--oneline", "-1"],
         cwd=git_repo,
@@ -218,7 +220,7 @@ def test_auto_commit_bypasses_failing_pre_commit_hook(git_repo: Path) -> None:
         text=True,
         check=True,
     )
-    assert "ninja-auto-save" in log.stdout
+    assert "ninja-auto-save" not in log.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +239,11 @@ def test_validate_task_safety_auto_dirty_repo_commits_and_tags(git_repo: Path) -
     )
 
     assert results["safe"] is True
-    assert results["action_taken"] == "auto_committed"
+    assert results["action_taken"] == "tagged_uncommitted"
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=git_repo, capture_output=True, text=True, check=True
+    )
+    assert "dirty.py" in status.stdout
     git_info = results.get("git_info", {})
     assert git_info.get("safety_tag") is not None, (
         "A safety tag must be created after a successful auto-commit"
