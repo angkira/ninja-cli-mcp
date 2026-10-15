@@ -638,7 +638,9 @@ def test_agy_explicit_model_is_forwarded():
     config = NinjaConfig(bin_path="agy", model="default", openai_api_key="test")
     strategy = AgyStrategy("agy", config)
 
-    result = strategy.build_command(prompt="Task", repo_root="/tmp/repo", model="gemini-3.8-flash-high")
+    result = strategy.build_command(
+        prompt="Task", repo_root="/tmp/repo", model="gemini-3.8-flash-high"
+    )
 
     assert "--model" in result.command
     model_idx = result.command.index("--model")
@@ -908,10 +910,7 @@ def test_opencode_does_not_prepend_opencode_prefix(monkeypatch):
     )
     strategy = OpenCodeStrategy("opencode", config)
 
-    assert (
-        _opencode_model_arg(strategy)
-        == "opencode/nemotron-3.5-lightning-free"
-    )
+    assert _opencode_model_arg(strategy) == "opencode/nemotron-3.5-lightning-free"
 
 
 def test_opencode_does_not_prepend_openrouter_prefix(monkeypatch):
@@ -924,21 +923,25 @@ def test_opencode_does_not_prepend_openrouter_prefix(monkeypatch):
     )
     strategy = OpenCodeStrategy("opencode", config)
 
-    assert (
-        _opencode_model_arg(strategy)
-        == "openrouter/anthropic/claude-haiku-4.5"
-    )
+    assert _opencode_model_arg(strategy) == "openrouter/anthropic/claude-haiku-4.5"
 
 
-def test_opencode_prepends_default_provider_for_bare_id(monkeypatch):
-    """Bare model ids get the default opencode-go prefix."""
+def test_opencode_leaves_bare_id_unprefixed_by_default(monkeypatch):
+    """Without an explicit provider, bare ids are left for OpenCode v2 to resolve."""
     monkeypatch.delenv("NINJA_CODER_OPENCODE_PROVIDER", raising=False)
-    config = NinjaConfig(
-        bin_path="opencode", model="deepseek-v4-flash", openai_api_key="test"
-    )
+    config = NinjaConfig(bin_path="opencode", model="deepseek-v4-flash", openai_api_key="test")
     strategy = OpenCodeStrategy("opencode", config)
 
-    assert _opencode_model_arg(strategy) == "opencode-go/deepseek-v4-flash"
+    assert _opencode_model_arg(strategy) == "deepseek-v4-flash"
+
+
+def test_opencode_prefixes_bare_id_when_provider_set(monkeypatch):
+    """An explicit NINJA_CODER_OPENCODE_PROVIDER prefixes bare ids."""
+    monkeypatch.setenv("NINJA_CODER_OPENCODE_PROVIDER", "openrouter")
+    config = NinjaConfig(bin_path="opencode", model="deepseek-v4-flash", openai_api_key="test")
+    strategy = OpenCodeStrategy("opencode", config)
+
+    assert _opencode_model_arg(strategy) == "openrouter/deepseek-v4-flash"
 
 
 def test_opencode_does_not_double_prepend_configured_provider(monkeypatch):

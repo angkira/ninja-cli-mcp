@@ -65,7 +65,8 @@ class TestSimpleSubprocessMode:
 
         assert "--format" in result.command
         assert result.command[result.command.index("--format") + 1] == "json"
-        assert "--dangerously-skip-permissions" in result.command
+        assert "--auto" in result.command
+        assert "--dangerously-skip-permissions" not in result.command
 
     def test_working_directory(self, strategy):
         """Test working directory is set correctly."""
@@ -253,9 +254,9 @@ class TestParseOutput:
         own source) must not fail an otherwise successful run."""
         echoed_source = (
             "grep -n auth src/ninja_coder/strategies/opencode_strategy.py\n"
-            "446:             r\"AuthenticationError\",\n"
-            "448:             r\"User\\s+not\\s+found\",\n"
-            "449:             r\"Unauthorized\",\n"
+            '446:             r"AuthenticationError",\n'
+            '448:             r"User\\s+not\\s+found",\n'
+            '449:             r"Unauthorized",\n'
         )
         stdout = "x" * 12000 + echoed_source + "y" * 9000 + "\nWrote src/ninja_common/jobs.py"
 

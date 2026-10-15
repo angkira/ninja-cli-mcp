@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.6.1 - 2026-10-15
+
+OpenCode v2 (2.0.x) integration.
+
+### Changed
+- **OpenCode v2 run flags**: `opencode run` uses `--auto` instead of the removed
+  `--dangerously-skip-permissions`. Verified against `opencode` 2.0.28.
+- **Model references**: bare model ids are no longer prefixed with
+  `opencode-go/`. Ids are used as given (`provider/model[#variant]`). Set
+  `NINJA_CODER_OPENCODE_PROVIDER` to prefix bare ids explicitly.
+- **LiteLLM provider config**: written to the v2 global
+  `~/.config/opencode/opencode.jsonc` (`providers.litellm` with `settings.baseURL`
+  and `modelID`). Existing JSONC comments and other keys are preserved.
+
+### Removed
+- The project LSP-disabling override. It relied on `XDG_CONFIG_HOME`, which
+  OpenCode v2 does not read, so it never took effect.
+
+### Fixed
+- Routing tests no longer depend on locally installed `codex`/`junie` catalogs.
+
+### Not verified
+- A live task through the LiteLLM provider was not run: the proxy rejected the
+  configured key as expired during this release.
+
 ## 1.6.0 - 2026-10-15
 
 Isolated-run cleanup, direct branch tools, and no safety commits.

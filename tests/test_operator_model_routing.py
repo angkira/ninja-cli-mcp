@@ -14,7 +14,7 @@ import pytest
 from ninja_coder.driver import NinjaConfig
 from ninja_coder.model_selector import ModelSelector
 from ninja_coder.models import TaskComplexity
-from ninja_common.defaults import DEFAULT_CODER_MODEL
+from ninja_common.defaults import CODEX_MODELS, DEFAULT_CODER_MODEL, JUNIE_MODELS
 from ninja_common.operator_models import (
     is_model_compatible,
     operator_default_model,
@@ -44,6 +44,17 @@ def _clear_model_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
         "NINJA_MODEL_CLASS_FAST",
     ):
         monkeypatch.delenv(key, raising=False)
+
+    # Pin the codex/junie catalogues to their static lists: a locally installed
+    # CLI would otherwise replace them with its live catalogue and change results.
+    monkeypatch.setattr(
+        "ninja_common.operator_models.get_codex_catalog",
+        lambda: [mid for mid, _n, _d in CODEX_MODELS],
+    )
+    monkeypatch.setattr(
+        "ninja_common.operator_models.get_junie_catalog",
+        lambda: [mid for mid, _n, _d in JUNIE_MODELS],
+    )
 
 
 @pytest.mark.parametrize(

@@ -207,7 +207,7 @@ class TestMetadata:
 
         assert metadata["session_id"] == "sid"
         assert metadata["continue_last"] is False
-        assert metadata["model"] == "opencode-go/test/model"
+        assert metadata["model"] == "test/model"
 
 
 class TestCapabilities:
@@ -300,7 +300,7 @@ class TestCommandStructure:
         assert cmd[0] == "/usr/local/bin/opencode"
         assert cmd[1] == "run"
         model_index = cmd.index("--model")
-        assert cmd[model_index + 1] == "opencode-go/test/model"
+        assert cmd[model_index + 1] == "test/model"
         assert "--session" in cmd
         assert cmd[-1] == "Test task"  # Prompt is last
 
