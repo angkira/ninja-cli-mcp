@@ -21,9 +21,13 @@ OpenCode v2 (2.0.x) integration.
 ### Fixed
 - Routing tests no longer depend on locally installed `codex`/`junie` catalogs.
 
-### Not verified
-- A live task through the LiteLLM provider was not run: the proxy rejected the
-  configured key as expired during this release.
+### Verified
+- Live task through LiteLLM via `opencode run` (`litellm/anthropic/claude-haiku-5-5`)
+  returned `OK`.
+
+### Known issue
+- The LiteLLM model `Agentic-Models-Qwen3.6-27B-FP8` fails with `Jwt is expired`
+  from the proxy backend. This is a server-side token issue, not a client change.
 
 ## 1.6.0 - 2026-10-15
 
