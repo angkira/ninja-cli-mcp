@@ -82,7 +82,11 @@ class ModelSelector:
         """Return ``model`` if the active operator can run it, else its default."""
         if is_model_compatible(model, self.operator):
             return model
-        replacement = operator_default_model(self.operator) or model
+        replacement = (
+            self.default_model
+            if is_model_compatible(self.default_model or "", self.operator)
+            else (operator_default_model(self.operator) or model)
+        )
         logger.info(
             "Model '%s' (%s) is not compatible with operator '%s'; using '%s'",
             model,

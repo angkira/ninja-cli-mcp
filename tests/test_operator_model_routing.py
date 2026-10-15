@@ -88,6 +88,8 @@ def test_aider_requires_provider_prefixed_model() -> None:
 
 def test_opencode_accepts_any_model() -> None:
     assert is_model_compatible("anything/goes", "opencode") is True
+    # OpenCode v2 requires provider/model format; flat model names without slash are rejected
+    assert is_model_compatible("gemini-3.8-flash", "opencode") is False
 
 
 def test_resolve_operator_model_swaps_incompatible() -> None:

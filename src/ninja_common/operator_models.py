@@ -106,7 +106,10 @@ def is_model_compatible(model: str, operator: str | None) -> bool:
         return True
     op = operator.lower()
     if op == "opencode":
-        return True
+        # OpenCode v2 requires provider/model format (e.g. anthropic/claude-sonnet-4-5,
+        # litellm/..., openrouter/...). A flat model id without "/" belongs to
+        # another operator (e.g. codex/junie/agy) and cannot be run by OpenCode.
+        return "/" in model
     if op == "aider":
         # Aider is OpenRouter-backed: it needs ``provider/model`` ids and
         # cannot run another operator's flat id (e.g. codex's gpt-5.6-luna).
