@@ -396,7 +396,7 @@ def is_process_demonstrably_dead(pid: int | None, token: str | None) -> bool:
     except (ValueError, TypeError):
         return False
 
-    return abs(create_time - expected_time) >= 0.05
+    return bool(abs(create_time - expected_time) >= 0.05)
 
 
 _SCHEMA: Final[str] = """
@@ -529,6 +529,8 @@ class SqliteTaskStore(TaskStore):
         owner_token: str | None | object = _SENTINEL_OWNER,
     ) -> Task:
         task = create_task_state(metadata, task_id)
+        eff_owner_pid: int | None
+        eff_owner_token: str | None
         if owner_pid is _SENTINEL_OWNER and owner_token is _SENTINEL_OWNER:
             eff_owner_pid, eff_owner_token = get_current_process_identity()
         else:
