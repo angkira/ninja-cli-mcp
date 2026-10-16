@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.7.0 - 2026-10-16
+
+Researcher: fast + deep research with real report synthesis via Perplexity.
+
+### Added
+- **`researcher_quick_research`**: single-pass research. With Perplexity selected it
+  returns Perplexity's cited answer directly; with other providers it gathers results
+  and writes a short cited answer when a synthesis engine is configured.
+- **Report synthesis engine** (`ninja_researcher.synthesis`): Perplexity-native answers
+  plus an OpenRouter fallback, selected from `NINJA_RESEARCHER_LLM`
+  (`off`/`auto`/`perplexity`/`openrouter`) and `NINJA_RESEARCHER_MODEL`.
+- `researcher_deep_research` now resolves its provider per request
+  (`search_provider`, else `NINJA_SEARCH_PROVIDER`, else auto) and, when synthesis is
+  available, returns a written `report` synthesized from the gathered sources
+  (`synthesize`, `report_type`).
+- `researcher_generate_report` now synthesizes with an LLM when one is configured,
+  falling back to the deterministic template (`use_llm` to force on/off).
+
+### Fixed
+- **Perplexity's answer was discarded**: the provider kept only citation URLs, so
+  reports were bare link lists. The synthesized, cited answer is now preserved
+  (`PerplexityProvider.research`).
+- **Provider selection ignored `NINJA_SEARCH_PROVIDER`** for deep research; the factory
+  now honours it when the named provider is available, and respects
+  `NINJA_RESEARCHER_MODEL` for the Perplexity model.
+
+### Tests
+- Added `tests/test_researcher_quick.py` (quick research, Perplexity deep research,
+  LLM report synthesis + fallbacks) and `tests/test_researcher_synthesis.py`
+  (engine resolution and completion).
+
 ## 1.6.3 - 2026-10-16
 
 OpenCode provider autocomplete robustness.
