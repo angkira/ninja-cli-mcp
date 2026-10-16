@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.6.2 - 2026-10-16
+
+OpenCode model autocomplete & provider discovery fix.
+
+### Fixed
+- **OpenCode provider model autocomplete**: in OpenCode v2, `opencode models` rejects
+  positional provider arguments (`opencode models <provider>` exited 1 with
+  `Unexpected positional argument: "<provider>"`), which broke autocomplete for
+  all OpenCode providers (including OpenCode Go, Anthropic, OpenAI, LiteLLM, Google).
+  Now fetches the full catalog via `opencode models` once and filters by provider
+  prefix in-process.
+- **OpenCode Go provider coverage**: models under both `opencode-go/` and `opencode/`
+  prefixes are matched when searching under the OpenCode Go provider in the config UI.
+
+### Tests
+- Added comprehensive unit and integration test suite (`tests/test_opencode_provider_autocomplete.py`,
+  27 tests) covering dynamic provider discovery, model fetching for all canonical
+  providers (`opencode`, `opencode-go`, `anthropic`, `openai`, `google`, `openrouter`,
+  `litellm`, `github-copilot`, `gitlab`), search/filter queries, and failure/timeout handling.
+
 ## 1.6.1 - 2026-10-15
 
 OpenCode v2 (2.0.x) integration.

@@ -1039,16 +1039,11 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
         return models
 
     try:
-        # Run opencode models {provider} to get provider-specific models
-        result = subprocess.run(
-            [opencode_path, "models", provider],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-        )
-
-        if result.returncode != 0:
+        # OpenCode CLI (v2) `opencode models` takes no positional argument.
+        # It outputs all available models formatted as `provider/model_id`.
+        # We fetch the full list and filter in-process by the requested provider.
+        all_lines = _run_opencode_models()
+        if not all_lines:
             return models
 
         # Create a temporary operator instance to use its helper methods
@@ -1061,16 +1056,18 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
 
         # Parse model IDs from output
         model_ids = []
-        for line in result.stdout.strip().split("\n"):
+        prefix = f"{provider}/"
+        for line in all_lines:
             output_line = line.strip()
-            # Skip INFO lines and empty lines
             if not output_line or output_line.startswith("INFO"):
                 continue
-            # Model ID format: provider/model-name
-            if "/" in output_line:
-                # Filter out non-chat models only; the date/version heuristics
-                # in _is_recent_model are too aggressive for explicitly
-                # requested providers (they hide brand-new models like GLM-5.2).
+            # Match models belonging to requested provider.
+            # For opencode-go, OpenCode v2 catalog may list models under either
+            # 'opencode-go/' or 'opencode/' (the built-in free/go models).
+            matches = output_line.startswith(prefix) or (
+                provider == "opencode-go" and output_line.startswith("opencode/")
+            )
+            if "/" in output_line and matches:
                 if _is_chat_model(output_line):
                     model_ids.append(output_line)
 
