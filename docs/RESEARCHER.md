@@ -19,8 +19,11 @@ Ninja Researcher enables AI assistants to:
 ### ✅ Available Now
 
 - **Web Search** - Search using DuckDuckGo (free) or Serper.dev (Google Search)
+- **Quick Research** - Single-pass cited answer (Perplexity-native when selected)
 - **Deep Research** - Multi-query research with parallel agents, deduplication, real
-  page-extracted snippets and domain filters
+  page-extracted snippets, domain filters and a written report
+- **Report Synthesis** - LLM-written reports (Perplexity or OpenRouter), with a
+  deterministic template fallback
 - **Report Generation** - Synthesize sources into comprehensive reports
 - **Fact Checking** - Verify claims against web sources
 - **Source Summarization** - Summarize and extract key information
@@ -48,11 +51,20 @@ uv sync --all-extras
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `OPENROUTER_API_KEY` | Yes | - | OpenRouter API key (for report generation) |
+| `PERPLEXITY_API_KEY` | No | - | Perplexity key (native cited answers + synthesis) |
+| `OPENROUTER_API_KEY` | No | - | OpenRouter key (synthesis fallback) |
 | `SERPER_API_KEY` | No | - | Serper.dev API key (Google Search) |
-| `NINJA_RESEARCHER_MODEL` | No | `anthropic/claude-sonnet-4` | Model for synthesis |
+| `NINJA_SEARCH_PROVIDER` | No | auto | Search provider: `perplexity`, `serper`, `duckduckgo` |
+| `NINJA_RESEARCHER_MODEL` | No | `sonar-pro` | Synthesis model (`sonar*` for Perplexity, `vendor/model` for OpenRouter) |
+| `NINJA_RESEARCHER_LLM` | No | `auto` | Synthesis engine: `auto`, `perplexity`, `openrouter`, `off` |
 | `NINJA_RESEARCHER_MAX_SOURCES` | No | `20` | Max sources per research |
 | `NINJA_RESEARCHER_PARALLEL_AGENTS` | No | `4` | Parallel search agents |
+
+**Synthesis:** when `NINJA_RESEARCHER_LLM=auto` (default), reports and answers are
+written by Perplexity when a Perplexity key is present, otherwise by OpenRouter using
+`NINJA_RESEARCHER_MODEL`. Set `NINJA_RESEARCHER_LLM=off` to use the deterministic
+template only. When neither engine is available the tools still return sources and a
+template report.
 
 ### Configuration File
 
@@ -159,33 +171,35 @@ result = await client.call_tool("researcher_web_search", {
 })
 ```
 
+### researcher_quick_research
+
+Fast single-pass research. With Perplexity selected it returns Perplexity's cited
+answer directly; with other providers it gathers results and writes a short cited
+answer when a synthesis engine is configured.
+
+**Parameters:**
+- `query` (string, required): Research question
+- `search_provider` (string, optional): `duckduckgo`, `serper` or `perplexity` (defaults to `NINJA_SEARCH_PROVIDER`, then auto)
+- `max_results` (integer, optional): Maximum sources/citations (1-50, default: 10)
+- `enrich` (boolean, optional): Fetch pages for real extracted snippets (default: true)
+- `include_domains` / `exclude_domains` / `prefer_domains` (array, optional): Domain filters
+
+**Returns:** `status`, `query`, `provider`, `model`, `answer`, `sources`, `error`.
+
 ### researcher_deep_research
 
-Perform comprehensive research with multiple queries.
+Perform comprehensive research with multiple queries and produce a written report.
 
 **Parameters:**
 - `topic` (string, required): Research topic
 - `queries` (array, optional): Specific queries (auto-generated if empty)
+- `search_provider` (string, optional): Provider override
 - `max_sources` (integer, optional): Maximum sources (1-100, default: 20)
 - `parallel_agents` (integer, optional): Parallel agents (1-8, default: 4)
+- `synthesize` (boolean, optional): Produce a written report when an engine is available (default: true)
+- `report_type` (string, optional): Report style when synthesizing
 
-**Returns:**
-```json
-{
-  "status": "ok",
-  "topic": "MCP protocol implementation",
-  "sources_found": 25,
-  "sources": [
-    {
-      "title": "MCP Protocol Specification",
-      "url": "https://example.com/mcp-spec",
-      "snippet": "The Model Context Protocol...",
-      "score": 0.98
-    }
-  ],
-  "summary": "Found 25 unique sources across 4 queries"
-}
-```
+**Returns:** `status`, `topic`, `sources_found`, `sources`, `summary`, `report`, `provider`.
 
 **Example:**
 ```python
@@ -218,6 +232,7 @@ Generate a comprehensive report from research sources.
 - `sources` (array, required): Source documents
 - `report_type` (string, optional): Report type ("comprehensive", "summary", "technical", "executive")
 - `parallel_agents` (integer, optional): Parallel synthesis agents (1-8, default: 4)
+- `use_llm` (boolean, optional): Force LLM synthesis on/off (omit for auto: LLM when an engine is configured, else the template)
 
 ### researcher_fact_check
 
@@ -532,9 +547,8 @@ See [API.md](API.md) for complete API reference.
 
 - [x] Web search (DuckDuckGo, Serper.dev)
 - [x] Deep research with parallel agents
-- [ ] Report generation with LLM synthesis
-- [ ] Fact checking
-- [ ] Source summarization
+- [x] Quick single-pass research
+- [x] Report generation with LLM synthesis (Perplexity / OpenRouter)
 - [ ] Citation management
 - [ ] Additional providers (Brave Search, Bing)
 - [ ] Caching and incremental research

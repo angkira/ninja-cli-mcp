@@ -36,6 +36,8 @@ from ninja_researcher.models import (
     GenerateReportRequest,
     PaperFetchRequest,
     PaperFetchResult,
+    QuickResearchRequest,
+    QuickResearchResult,
     ReportResult,
     ResearchResult,
     SearchResult,
@@ -45,6 +47,11 @@ from ninja_researcher.models import (
     WebSearchResult,
 )
 from ninja_researcher.search_providers import ProviderError, SearchProviderFactory
+from ninja_researcher.synthesis import (
+    resolve_synthesis_engine,
+    synthesize_answer,
+    synthesize_report,
+)
 
 
 logger = get_logger(__name__)
@@ -272,6 +279,128 @@ class ResearchToolExecutor:
                 error=_error_from_exception(e),
             )
 
+    def _resolve_provider_name(self, explicit: str | None) -> str:
+        """Resolve a request's provider, honouring an explicit choice first."""
+        if explicit:
+            return self.provider_factory.resolve_provider_name(explicit)
+        return self.provider_factory.get_default_provider()
+
+    async def _synthesize(
+        self,
+        topic: str,
+        sources: list[dict[str, Any]],
+        report_type: str,
+    ) -> str:
+        """
+        Build a written report from gathered sources.
+
+        Uses the configured synthesis engine when available. Returns an empty
+        string when no engine is configured or synthesis fails (the caller then
+        keeps source-only output).
+
+        Args:
+            topic: Report topic.
+            sources: Deduplicated source dicts.
+            report_type: Report style.
+
+        Returns:
+            Markdown report text, or ``""`` when synthesis is unavailable.
+        """
+        engine = resolve_synthesis_engine()
+        if engine is None:
+            return ""
+        try:
+            return await synthesize_report(engine, topic, sources, report_type)
+        except Exception as e:
+            logger.warning(f"Report synthesis failed: {e}")
+            return ""
+
+    @rate_balanced(
+        max_calls=20, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=60.0
+    )
+    @monitored
+    async def quick_research(
+        self, request: QuickResearchRequest, client_id: str = "default"
+    ) -> QuickResearchResult:
+        """
+        Answer a single research question in one pass.
+
+        With Perplexity selected this returns Perplexity's cited answer directly;
+        with other providers it gathers results and, when a synthesis engine is
+        configured, writes a short cited answer from them.
+
+        Args:
+            request: Quick research request.
+            client_id: Client identifier for rate limiting.
+
+        Returns:
+            A quick research result with an answer (when available) and sources.
+        """
+        logger.info(f"Quick research for '{request.query}' (client: {client_id})")
+
+        try:
+            provider_name = self._resolve_provider_name(request.search_provider)
+            provider = self.provider_factory.get_provider(provider_name)
+
+            if not provider.is_available():
+                return QuickResearchResult(
+                    status="error",
+                    query=request.query,
+                    provider=provider_name,
+                    error=ErrorInfo(
+                        kind=ErrorKind.env,
+                        message=f"Provider {provider_name} is not available",
+                    ),
+                )
+
+            answer = ""
+            model = ""
+            sources: list[dict[str, Any]]
+
+            if provider_name == "perplexity":
+                data = await provider.research(request.query, max_results=request.max_results)
+                answer = str(data.get("answer") or "")
+                model = str(data.get("model") or "")
+                sources = list(data.get("sources") or [])
+            else:
+                raw = await provider.search(request.query, max_results=request.max_results)
+                sources = list(raw)
+
+                engine = resolve_synthesis_engine()
+                if engine is not None and sources:
+                    try:
+                        answer = await synthesize_answer(engine, request.query, sources)
+                        model = engine.label
+                    except Exception as e:
+                        logger.warning(f"Quick-research synthesis failed: {e}")
+
+            sources = _apply_domain_filters(
+                sources,
+                request.include_domains,
+                request.exclude_domains,
+                request.prefer_domains,
+            )
+
+            if request.enrich and sources:
+                sources = await enrich_sources(sources)
+
+            return QuickResearchResult(
+                status="ok",
+                query=request.query,
+                provider=provider_name,
+                model=model,
+                answer=answer,
+                sources=sources,
+            )
+
+        except Exception as e:
+            logger.error(f"Quick research failed for client {client_id}: {e}")
+            return QuickResearchResult(
+                status="error",
+                query=request.query,
+                error=_error_from_exception(e),
+            )
+
     @rate_balanced(
         max_calls=10, time_window=60, max_retries=3, initial_backoff=1.0, max_backoff=60.0
     )
@@ -301,7 +430,7 @@ class ResearchToolExecutor:
                     f"{request.topic} best practices",
                 ]
 
-            provider_name = self.provider_factory.get_default_provider()
+            provider_name = self._resolve_provider_name(request.search_provider)
             provider = self.provider_factory.get_provider(provider_name)
 
             semaphore = asyncio.Semaphore(request.parallel_agents)
@@ -312,14 +441,13 @@ class ResearchToolExecutor:
                 async with semaphore:
                     return await provider.search(query, max_results=per_query)
 
-            search_tasks = [search_query(q) for q in queries]
-            all_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+            raw = await asyncio.gather(*[search_query(q) for q in queries], return_exceptions=True)
 
             errors: list[ErrorInfo] = []
             seen_urls: set[str] = set()
             sources: list[dict[str, Any]] = []
 
-            for results in all_results:
+            for results in raw:
                 if isinstance(results, BaseException):
                     logger.warning(f"Search query failed: {results}")
                     errors.append(_error_from_exception(results))
@@ -346,6 +474,10 @@ class ResearchToolExecutor:
             if request.enrich and sources:
                 sources = await enrich_sources(sources)
 
+            report = ""
+            if request.synthesize and sources:
+                report = await self._synthesize(request.topic, sources, request.report_type)
+
             if sources:
                 return ResearchResult(
                     status="ok",
@@ -353,6 +485,8 @@ class ResearchToolExecutor:
                     sources_found=len(sources),
                     sources=sources,
                     summary=f"Found {len(sources)} unique sources across {len(queries)} queries",
+                    report=report,
+                    provider=provider_name,
                 )
 
             if errors:
@@ -362,6 +496,7 @@ class ResearchToolExecutor:
                     sources_found=0,
                     sources=[],
                     summary="",
+                    provider=provider_name,
                     error=_most_severe(errors),
                 )
 
@@ -371,6 +506,7 @@ class ResearchToolExecutor:
                 sources_found=0,
                 sources=[],
                 summary="No sources found",
+                provider=provider_name,
             )
 
         except Exception as e:
@@ -587,57 +723,75 @@ class ResearchToolExecutor:
                     word_count=0,
                 )
 
-            sources_per_agent = max(1, len(request.sources) // request.parallel_agents)
-            source_chunks = [
-                request.sources[i : i + sources_per_agent]
-                for i in range(0, len(request.sources), sources_per_agent)
-            ]
+            report = ""
+            model = ""
 
-            async def analyze_chunk(chunk: list[dict]) -> str:
-                """Analyze a chunk of sources.
+            if request.use_llm is not False:
+                engine = resolve_synthesis_engine()
+                if engine is not None:
+                    try:
+                        report = await synthesize_report(
+                            engine, request.topic, request.sources, request.report_type
+                        )
+                        model = engine.label
+                    except Exception as e:
+                        logger.warning(
+                            f"LLM report synthesis failed; falling back to template: {e}"
+                        )
+                        report = ""
 
-                Each source dict may contain the text body under any of:
-                ``snippet``, ``content``, or ``description``.
-                """
-                analysis = []
-                for source in chunk:
-                    title = source.get("title", "Untitled")
-                    url = source.get("url", "")
-                    snippet = (
-                        source.get("snippet")
-                        or source.get("content")
-                        or source.get("description")
-                        or "No description available"
+            if not report:
+                sources_per_agent = max(1, len(request.sources) // request.parallel_agents)
+                source_chunks = [
+                    request.sources[i : i + sources_per_agent]
+                    for i in range(0, len(request.sources), sources_per_agent)
+                ]
+
+                async def analyze_chunk(chunk: list[dict]) -> str:
+                    """Analyze a chunk of sources.
+
+                    Each source dict may contain the text body under any of:
+                    ``snippet``, ``content``, or ``description``.
+                    """
+                    analysis = []
+                    for source in chunk:
+                        title = source.get("title", "Untitled")
+                        url = source.get("url", "")
+                        snippet = (
+                            source.get("snippet")
+                            or source.get("content")
+                            or source.get("description")
+                            or "No description available"
+                        )
+                        analysis.append(f"- **{title}**: {snippet}\n  Source: {url}")
+                    return "\n".join(analysis)
+
+                semaphore = asyncio.Semaphore(request.parallel_agents)
+
+                async def analyze_with_semaphore(chunk: list[dict]) -> str:
+                    async with semaphore:
+                        return await analyze_chunk(chunk)
+
+                chunk_analyses = await asyncio.gather(
+                    *[analyze_with_semaphore(chunk) for chunk in source_chunks]
+                )
+
+                if request.report_type == "executive":
+                    report = self._generate_executive_report(
+                        request.topic, chunk_analyses, request.sources
                     )
-                    analysis.append(f"- **{title}**: {snippet}\n  Source: {url}")
-                return "\n".join(analysis)
-
-            semaphore = asyncio.Semaphore(request.parallel_agents)
-
-            async def analyze_with_semaphore(chunk: list[dict]) -> str:
-                async with semaphore:
-                    return await analyze_chunk(chunk)
-
-            chunk_analyses = await asyncio.gather(
-                *[analyze_with_semaphore(chunk) for chunk in source_chunks]
-            )
-
-            if request.report_type == "executive":
-                report = self._generate_executive_report(
-                    request.topic, chunk_analyses, request.sources
-                )
-            elif request.report_type == "technical":
-                report = self._generate_technical_report(
-                    request.topic, chunk_analyses, request.sources
-                )
-            elif request.report_type == "summary":
-                report = self._generate_summary_report(
-                    request.topic, chunk_analyses, request.sources
-                )
-            else:  # comprehensive
-                report = self._generate_comprehensive_report(
-                    request.topic, chunk_analyses, request.sources
-                )
+                elif request.report_type == "technical":
+                    report = self._generate_technical_report(
+                        request.topic, chunk_analyses, request.sources
+                    )
+                elif request.report_type == "summary":
+                    report = self._generate_summary_report(
+                        request.topic, chunk_analyses, request.sources
+                    )
+                else:  # comprehensive
+                    report = self._generate_comprehensive_report(
+                        request.topic, chunk_analyses, request.sources
+                    )
 
             word_count = len(report.split())
 
@@ -646,6 +800,7 @@ class ResearchToolExecutor:
                 report=report,
                 sources_used=len(request.sources),
                 word_count=word_count,
+                model=model,
             )
 
         except Exception as e:

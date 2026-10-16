@@ -73,6 +73,14 @@ SETTINGS: list[SettingDef] = [
     SettingDef(
         "NINJA_RESEARCHER_MODEL", "Researcher Model", "Model for web research", "sonar-reasoning"
     ),
+    SettingDef(
+        "NINJA_RESEARCHER_LLM",
+        "Researcher Synthesis",
+        "Report synthesis engine (auto, perplexity, openrouter, off)",
+        "auto",
+        "choice",
+        ("auto", "perplexity", "openrouter", "off"),
+    ),
     SettingDef("NINJA_RESOURCES_MODEL", "Resources Model", "Model for resource templates", ""),
     SettingDef("NINJA_PROMPTS_MODEL", "Prompts Model", "Model for prompt management", ""),
     SettingDef(

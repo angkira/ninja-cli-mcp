@@ -62,12 +62,16 @@
       "command": "ninja-researcher",
       "description": "Web search and research with Perplexity AI integration",
       "icon": "🔍",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "status": "stable",
       "environment_variables": {
         "NINJA_RESEARCHER_MODEL": {
           "default": "openrouter/anthropic/claude-sonnet-4-20250514",
           "description": "The model to use for research analysis"
+        },
+        "NINJA_RESEARCHER_LLM": {
+          "default": "auto",
+          "description": "Report synthesis engine: auto, perplexity, openrouter, or off"
         },
         "NINJA_RESEARCHER_MAX_SOURCES": {
           "default": "20",
@@ -80,22 +84,36 @@
       },
       "tools": [
         {
+          "name": "researcher_quick_research",
+          "description": "Fast single-pass research with a cited answer",
+          "parameters": {
+            "query": "Research question",
+            "search_provider": "Provider: duckduckgo, serper, perplexity (defaults to NINJA_SEARCH_PROVIDER)",
+            "max_results": "Maximum sources/citations (default 10)",
+            "enrich": "Fetch pages for real extracted snippets (default true)"
+          }
+        },
+        {
           "name": "researcher_deep_research",
-          "description": "Multi-query research with parallel agents",
+          "description": "Multi-query research with parallel agents and a written report",
           "parameters": {
             "topic": "Research topic",
             "queries": "Specific queries (auto-generated if empty)",
+            "search_provider": "Provider override",
             "max_sources": "Maximum sources to gather (default 20)",
-            "parallel_agents": "Number of parallel agents (default 4)"
+            "parallel_agents": "Number of parallel agents (default 4)",
+            "synthesize": "Produce a written report when a synthesis engine is available",
+            "report_type": "Report style when synthesize is enabled"
           }
         },
         {
           "name": "researcher_generate_report",
-          "description": "Generate comprehensive reports from sources",
+          "description": "Generate comprehensive reports from sources (LLM synthesis when configured)",
           "parameters": {
             "topic": "Report topic",
             "sources": "Source documents to synthesize",
-            "report_type": "Type: comprehensive, summary, technical, executive"
+            "report_type": "Type: comprehensive, summary, technical, executive",
+            "use_llm": "Force LLM synthesis on/off (omit for auto)"
           }
         },
         {

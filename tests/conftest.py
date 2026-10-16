@@ -70,6 +70,18 @@ def _isolate_secret_store(
         ss._reset_singletons()
 
 
+@pytest.fixture(autouse=True)
+def _disable_researcher_llm(monkeypatch: MonkeyPatch) -> None:
+    """Disable researcher LLM synthesis by default in the test suite.
+
+    The host may carry a real ``OPENROUTER_API_KEY``/``PERPLEXITY_API_KEY`` in the
+    environment, which would make report/deep-research tests perform live network
+    calls. Tests that exercise the synthesis path opt back in by setting
+    ``NINJA_RESEARCHER_LLM`` (e.g. ``perplexity``/``openrouter``) inside the test.
+    """
+    monkeypatch.setenv("NINJA_RESEARCHER_LLM", "off")
+
+
 @pytest.fixture
 def temp_repo() -> Generator[Path, None, None]:
     """Create a temporary repository for testing."""

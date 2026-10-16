@@ -20,6 +20,7 @@
     }
   },
   "tools": [
+    "researcher_quick_research",
     "researcher_deep_research",
     "researcher_fact_check",
     "researcher_summarize_sources",

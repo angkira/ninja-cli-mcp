@@ -11,6 +11,14 @@ from ninja_researcher.search_providers import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _env_only_secrets(monkeypatch):
+    """Resolve secrets from env only, so a developer keyring/store never leaks in."""
+    from ninja_common import secrets
+
+    monkeypatch.setattr(secrets, "get_secret", lambda name: os.environ.get(name))
+
+
 @pytest.mark.unit
 def test_duckduckgo_provider_is_available():
     """Test that DuckDuckGo provider is always available."""

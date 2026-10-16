@@ -22,14 +22,25 @@ Topic -> Query Decomposition -> Parallel Perplexity Searches -> Source Aggregati
 
 ## Available Tools
 
+### `researcher_quick_research`
+Fast single-pass answer to a question. Uses Perplexity's cited answer when selected.
+
+Parameters:
+- `query` (required): Research question
+- `search_provider`: `perplexity` | `serper` | `duckduckgo` (optional)
+- `max_results`: Maximum sources (default: 10)
+- `enrich`: Fetch pages for real snippets (default: true)
+
 ### `researcher_deep_research`
-Comprehensive multi-query research.
+Comprehensive multi-query research with a written report.
 
 Parameters:
 - `topic` (required): Main research topic
 - `queries`: Specific sub-queries (auto-generated if empty)
 - `max_sources`: Maximum sources to gather (default: 20)
 - `parallel_agents`: Concurrent search agents (default: 4)
+- `synthesize`: Produce a written report when an engine is available (default: true)
+- `report_type`: `comprehensive` | `summary` | `technical` | `executive`
 
 ### `researcher_fact_check`
 Verify claims against web sources.

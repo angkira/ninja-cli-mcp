@@ -15,7 +15,7 @@
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │                  MCP Tools Layer                       │ │
-│  │  • researcher_web_search                               │ │
+│  │  • researcher_quick_research                           │ │
 │  │  • researcher_deep_research                            │ │
 │  │  • researcher_generate_report                          │ │
 │  │  • researcher_fact_check                               │ │
@@ -66,7 +66,8 @@
 
 **Tools Exposed:**
 - `researcher_web_search` - Web search
-- `researcher_deep_research` - Multi-query research
+- `researcher_quick_research` - Single-pass cited answer
+- `researcher_deep_research` - Multi-query research + written report
 - `researcher_generate_report` - Report generation
 - `researcher_fact_check` - Fact checking
 - `researcher_summarize_sources` - Source summarization
@@ -220,14 +221,23 @@ User Request
 ### Environment Variables
 
 ```bash
-# Required for report generation (LLM synthesis)
+# Required for Perplexity search/answers (otherwise OpenRouter synthesis)
+PERPLEXITY_API_KEY='pplx-...'
+
+# Optional - OpenRouter for report synthesis fallback
 OPENROUTER_API_KEY='sk-or-...'
 
 # Optional - Serper.dev for Google Search
 SERPER_API_KEY='your-serper-key'
 
-# Model for synthesis (report generation)
-NINJA_RESEARCHER_MODEL='anthropic/claude-sonnet-4'
+# Search provider override (perplexity | serper | duckduckgo)
+NINJA_SEARCH_PROVIDER='perplexity'
+
+# Model for synthesis (sonar* for Perplexity, vendor/model for OpenRouter)
+NINJA_RESEARCHER_MODEL='sonar-pro'
+
+# Synthesis engine (auto | perplexity | openrouter | off)
+NINJA_RESEARCHER_LLM='auto'
 
 # Research parameters
 NINJA_RESEARCHER_MAX_SOURCES=20
@@ -488,12 +498,12 @@ Metrics stored in `~/.cache/ninja-mcp/researcher/metrics/`:
 
 - [x] Source fetching and parsing
 - [x] Content extraction (BeautifulSoup)
-- [ ] LLM-based synthesis
-- [ ] Parallel sub-agent analysis
-- [ ] Report formatting (Markdown)
+- [x] LLM-based synthesis (Perplexity / OpenRouter)
+- [x] Parallel sub-agent analysis
+- [x] Report formatting (Markdown)
 - [ ] Citation management
-- [ ] Multiple report types
-- [ ] Tests and documentation
+- [x] Multiple report types
+- [x] Tests and documentation
 
 ### Phase 3: Advanced Features 📋
 

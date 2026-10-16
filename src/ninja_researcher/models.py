@@ -63,6 +63,41 @@ class WebSearchRequest(BaseModel):
     )
 
 
+class QuickResearchRequest(BaseModel):
+    """Request for a single-pass, fast research question."""
+
+    query: str = Field(..., description="Research question")
+    search_provider: str | None = Field(
+        default=None,
+        description="Search provider to use (defaults to NINJA_SEARCH_PROVIDER, then auto)",
+    )
+    max_results: int = Field(
+        default=10, ge=1, le=50, description="Maximum sources/citations to gather"
+    )
+    enrich: bool = Field(
+        default=True,
+        description="Fetch pages to replace provider snippets with real extracted text",
+    )
+    include_domains: list[str] | None = Field(
+        default=None, description="If set, keep only sources whose host matches one of these"
+    )
+    exclude_domains: list[str] | None = Field(
+        default=None, description="Drop sources whose host matches any of these (subdomains too)"
+    )
+    prefer_domains: list[str] | None = Field(
+        default=None, description="Order matching sources first, preserving relative order"
+    )
+
+    @field_validator("include_domains", "exclude_domains", "prefer_domains")
+    @classmethod
+    def _normalize_domains(cls, value: list[str] | None) -> list[str] | None:
+        """Lowercase domain entries and drop empty strings."""
+        if value is None:
+            return None
+        cleaned = [entry.strip().lower() for entry in value if entry and entry.strip()]
+        return cleaned or None
+
+
 class DeepResearchRequest(BaseModel):
     """Request for deep research with multiple queries."""
 
@@ -71,6 +106,10 @@ class DeepResearchRequest(BaseModel):
         default_factory=list,
         description="Specific queries to research (auto-generated if empty)",
     )
+    search_provider: str | None = Field(
+        default=None,
+        description="Search provider to use (defaults to NINJA_SEARCH_PROVIDER, then auto)",
+    )
     max_sources: int = Field(default=20, ge=1, le=100, description="Maximum sources to gather")
     parallel_agents: int = Field(
         default=4, ge=1, le=8, description="Number of parallel research agents"
@@ -78,6 +117,14 @@ class DeepResearchRequest(BaseModel):
     enrich: bool = Field(
         default=True,
         description="Fetch pages to replace provider snippets with real extracted text",
+    )
+    synthesize: bool = Field(
+        default=True,
+        description="Produce a written report from the gathered findings when an engine is available",
+    )
+    report_type: str = Field(
+        default="comprehensive",
+        description="Report style when synthesize is enabled (comprehensive, summary, technical, executive)",
     )
     include_domains: list[str] | None = Field(
         default=None, description="If set, keep only sources whose host matches one of these"
@@ -110,6 +157,13 @@ class GenerateReportRequest(BaseModel):
     )
     parallel_agents: int = Field(
         default=4, ge=1, le=8, description="Number of parallel synthesis agents"
+    )
+    use_llm: bool | None = Field(
+        default=None,
+        description=(
+            "Force LLM synthesis on/off. None (default) uses an LLM when a synthesis "
+            "engine is configured and falls back to the deterministic template otherwise."
+        ),
     )
 
 
@@ -200,6 +254,18 @@ class WebSearchResult(BaseModel):
     error: ErrorInfo | None = Field(default=None, description="Structured error, if any")
 
 
+class QuickResearchResult(BaseModel):
+    """Result of a single-pass quick research question."""
+
+    status: Literal["ok", "error"] = Field(..., description="Research status")
+    query: str = Field(..., description="Original question")
+    provider: str = Field(default="", description="Search provider used")
+    model: str = Field(default="", description="Synthesis model used, when any")
+    answer: str = Field(default="", description="Synthesized answer text, when available")
+    sources: list[dict] = Field(default_factory=list, description="Supporting sources")
+    error: ErrorInfo | None = Field(default=None, description="Structured error, if any")
+
+
 class ResearchResult(BaseModel):
     """Result of deep research."""
 
@@ -208,6 +274,8 @@ class ResearchResult(BaseModel):
     sources_found: int = Field(..., description="Number of sources found")
     sources: list[dict] = Field(default_factory=list, description="Source documents")
     summary: str = Field(..., description="Brief summary of findings")
+    report: str = Field(default="", description="Written report, when synthesis was available")
+    provider: str = Field(default="", description="Search provider used")
     error: ErrorInfo | None = Field(default=None, description="Structured error, if any")
 
 
@@ -232,6 +300,7 @@ class ReportResult(BaseModel):
     report: str = Field(..., description="Generated report (markdown format)")
     sources_used: int = Field(..., description="Number of sources used")
     word_count: int = Field(..., description="Report word count")
+    model: str = Field(default="", description="Synthesis model used, empty for template fallback")
     error: ErrorInfo | None = Field(default=None, description="Structured error, if any")
 
 

@@ -30,6 +30,7 @@ from ninja_researcher.models import (
     FactCheckRequest,
     GenerateReportRequest,
     PaperFetchRequest,
+    QuickResearchRequest,
     SummarizeSourcesRequest,
 )
 from ninja_researcher.tools import get_executor
@@ -43,9 +44,59 @@ logger = get_logger(__name__)
 # Tool definitions
 TOOLS: list[Tool] = [
     Tool(
+        name="researcher_quick_research",
+        execution=ToolExecution(taskSupport="optional"),
+        description=(
+            "Fast single-pass research: Perplexity's cited answer when selected, else web "
+            "results plus a synthesized answer. Use deep_research for multi-query breadth."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Research question",
+                },
+                "search_provider": {
+                    "type": "string",
+                    "enum": ["duckduckgo", "serper", "perplexity"],
+                    "description": "Provider to use (defaults to NINJA_SEARCH_PROVIDER, then auto)",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "default": 10,
+                    "description": "Maximum sources/citations to gather",
+                },
+                "enrich": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Fetch pages to replace provider snippets with real extracted text",
+                },
+                "include_domains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "If set, keep only sources whose host matches one of these",
+                },
+                "exclude_domains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Drop sources whose host matches any of these (subdomains too)",
+                },
+                "prefer_domains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Order matching sources first, preserving relative order",
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    Tool(
         name="researcher_deep_research",
         execution=ToolExecution(taskSupport="optional"),
-        description="Deep research a topic via sub-queries and parallel agents; one call at a time, >=15s apart (use batch for multiple). Supports enrich and include/exclude/prefer_domains.",
+        description="Deep research a topic via sub-queries and parallel agents; one call at a time, >=15s apart (use batch for multiple). Supports enrich, domain filters, and written-report synthesis.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -58,6 +109,11 @@ TOOLS: list[Tool] = [
                     "items": {"type": "string"},
                     "default": [],
                     "description": "Specific queries (auto-generated if empty)",
+                },
+                "search_provider": {
+                    "type": "string",
+                    "enum": ["duckduckgo", "serper", "perplexity"],
+                    "description": "Provider to use (defaults to NINJA_SEARCH_PROVIDER, then auto)",
                 },
                 "max_sources": {
                     "type": "integer",
@@ -93,6 +149,17 @@ TOOLS: list[Tool] = [
                     "items": {"type": "string"},
                     "description": "Order matching sources first, preserving relative order",
                 },
+                "synthesize": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Produce a written report when a synthesis engine is available",
+                },
+                "report_type": {
+                    "type": "string",
+                    "enum": ["comprehensive", "summary", "technical", "executive"],
+                    "default": "comprehensive",
+                    "description": "Report style when synthesize is enabled",
+                },
             },
             "required": ["topic"],
         },
@@ -100,7 +167,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_generate_report",
         execution=ToolExecution(taskSupport="optional"),
-        description="Synthesize sources into a report (comprehensive, summary, technical, executive).",
+        description="Synthesize sources into a report (comprehensive, summary, technical, executive). Uses an LLM when configured, else a deterministic template.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -129,6 +196,13 @@ TOOLS: list[Tool] = [
                     "maximum": 8,
                     "default": 4,
                     "description": "Number of parallel synthesis agents",
+                },
+                "use_llm": {
+                    "type": "boolean",
+                    "description": (
+                        "Force LLM synthesis on/off. Omit to use an LLM when a "
+                        "synthesis engine is configured, else the template."
+                    ),
                 },
             },
             "required": ["topic", "sources"],
@@ -253,9 +327,15 @@ TOOLS: list[Tool] = [
                         "properties": {
                             "topic": {"type": "string"},
                             "queries": {"type": "array", "items": {"type": "string"}},
+                            "search_provider": {
+                                "type": "string",
+                                "enum": ["duckduckgo", "serper", "perplexity"],
+                            },
                             "max_sources": {"type": "integer", "minimum": 1, "maximum": 100},
                             "parallel_agents": {"type": "integer", "minimum": 1, "maximum": 8},
                             "enrich": {"type": "boolean"},
+                            "synthesize": {"type": "boolean"},
+                            "report_type": {"type": "string"},
                         },
                         "required": ["topic"],
                     },
@@ -296,16 +376,13 @@ def create_server() -> Server:
     """Create and configure the MCP server."""
     server = Server(
         "ninja-researcher",
-        version="0.2.0",
+        version="0.3.0",
         instructions="""Ninja Researcher: web search and report generation.
 
-Tools: researcher_deep_research (multi-query research); researcher_generate_report (synthesize sources);
-researcher_fact_check (verify claims); researcher_summarize_sources (condense URLs);
-researcher_arxiv_search (structured papers; categories ANDed with query);
-researcher_paper_fetch (sections, numbers with context);
-researcher_deep_research_batch (up to 5 requests, strictly serial).
+Tools: researcher_quick_research (single fast pass, cited answer); researcher_deep_research (multi-query research + written report); researcher_generate_report (synthesize sources, LLM when configured); researcher_fact_check (verify claims); researcher_summarize_sources (condense URLs); researcher_arxiv_search (structured papers; categories ANDed with query); researcher_paper_fetch (sections, numbers with context); researcher_deep_research_batch (up to 5 requests, strictly serial).
+Report synthesis uses Perplexity when selected (NINJA_SEARCH_PROVIDER=perplexity or a Perplexity key), else OpenRouter via NINJA_RESEARCHER_MODEL; set NINJA_RESEARCHER_LLM=off to force templates.
 Serial-call rule: run ONE deep_research at a time with >=15s between calls; use the batch tool for multiple topics.
-Params: deep_research supports enrich plus include/exclude/prefer_domains.""",
+Params: deep_research supports enrich, include/exclude/prefer_domains, synthesize and report_type.""",
     )
 
     # Enable standard MCP Tasks (background/asynchronous tool execution) with a
@@ -333,7 +410,11 @@ Params: deep_research supports enrich plus include/exclude/prefer_domains.""",
             executor = get_executor()
 
             try:
-                if name == "researcher_deep_research":
+                if name == "researcher_quick_research":
+                    request = QuickResearchRequest(**arguments)
+                    result = await executor.quick_research(request, client_id=client_id)
+
+                elif name == "researcher_deep_research":
                     request = DeepResearchRequest(**arguments)
                     result = await executor.deep_research(request, client_id=client_id)
 

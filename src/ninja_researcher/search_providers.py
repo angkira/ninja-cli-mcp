@@ -111,6 +111,9 @@ def classify_exception(exc: BaseException) -> ProviderError:
 class SearchProvider(ABC):
     """Base class for search providers."""
 
+    #: Whether the provider can produce a synthesized, cited answer.
+    supports_answers: ClassVar[bool] = False
+
     @abstractmethod
     async def search(self, query: str, max_results: int = 10) -> list[dict[str, Any]]:
         """
@@ -276,6 +279,10 @@ class SerperProvider(SearchProvider):
 class PerplexityProvider(SearchProvider):
     """Perplexity AI search provider."""
 
+    supports_answers: ClassVar[bool] = True
+
+    _DEFAULT_MODEL = "sonar"
+
     def __init__(self, api_key: str | None = None) -> None:
         """
         Initialize Perplexity provider.
@@ -287,6 +294,14 @@ class PerplexityProvider(SearchProvider):
 
         self.api_key = api_key or get_secret("PERPLEXITY_API_KEY") or ""
         self.base_url = "https://api.perplexity.ai/chat/completions"
+
+        # `NINJA_RESEARCHER_MODEL` may name a Perplexity model (sonar*) or an
+        # OpenRouter model (vendor/model). Only sonar* ids are valid here.
+        env_model = os.environ.get("NINJA_RESEARCHER_MODEL", "").strip()
+        if env_model and "/" not in env_model:
+            self.model = env_model
+        else:
+            self.model = self._DEFAULT_MODEL
 
     async def search(self, query: str, max_results: int = 10) -> list[dict[str, Any]]:
         """
@@ -313,7 +328,7 @@ class PerplexityProvider(SearchProvider):
                 response = await client.post(
                     self.base_url,
                     json={
-                        "model": "sonar",
+                        "model": self.model,
                         "messages": [
                             {
                                 "role": "system",
@@ -368,6 +383,87 @@ class PerplexityProvider(SearchProvider):
             raise provider_error_from_status(e.response) from e
         except Exception as e:
             logger.error(f"Perplexity AI search failed: {e}")
+            raise classify_exception(e) from e
+
+    async def research(self, query: str, max_results: int = 10) -> dict[str, Any]:
+        """
+        Produce a synthesized, cited answer for a query (Perplexity-native).
+
+        This is the high-value path: unlike :meth:`search` it keeps Perplexity's
+        written answer instead of discarding it, and returns the citation URLs as
+        sources for enrichment.
+
+        Args:
+            query: The research question.
+            max_results: Maximum number of citation sources to return.
+
+        Returns:
+            A dict with ``answer`` (str), ``sources`` (list[dict]), ``citations``
+            (list[str]) and ``model`` (str).
+
+        Raises:
+            ProviderError: On a real provider failure.
+        """
+        if not self.api_key:
+            raise ProviderError(ErrorKind.env, "Perplexity API key is not configured")
+
+        try:
+            logger.info(f"Perplexity research for: {query} (model: {self.model})")
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self.base_url,
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a meticulous research analyst. Answer the "
+                                    "question with a well-structured, factual response. "
+                                    "Prefer specifics, concrete examples and numbers. "
+                                    "Note uncertainty where it exists. Use Markdown."
+                                ),
+                            },
+                            {"role": "user", "content": query},
+                        ],
+                        "return_citations": True,
+                        "return_related_questions": False,
+                    },
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=90.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            answer = ""
+            if data.get("choices"):
+                answer = str(data["choices"][0].get("message", {}).get("content", "")).strip()
+
+            citations = [c for c in (data.get("citations") or []) if isinstance(c, str)]
+            sources = [
+                {"title": self._title_from_url(url), "url": url, "snippet": ""}
+                for url in citations[:max_results]
+            ]
+
+            logger.info(
+                f"Perplexity research returned {len(answer)} chars and {len(sources)} citations"
+            )
+            return {
+                "answer": answer,
+                "sources": sources,
+                "citations": citations,
+                "model": self.model,
+            }
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Perplexity AI HTTP error: {e.response.status_code}")
+            raise provider_error_from_status(e.response) from e
+        except Exception as e:
+            logger.error(f"Perplexity AI research failed: {e}")
             raise classify_exception(e) from e
 
     @staticmethod
@@ -457,15 +553,44 @@ class SearchProviderFactory:
         """
         Get the default provider.
 
-        Priority: Perplexity > Serper > DuckDuckGo.
+        ``NINJA_SEARCH_PROVIDER`` wins when it names a supported provider that is
+        actually available; otherwise the key-priority fallback applies:
+        Perplexity > Serper > DuckDuckGo.
 
         Returns:
             Default provider name.
         """
         from ninja_common.secrets import get_secret
 
+        configured = os.environ.get("NINJA_SEARCH_PROVIDER", "").strip().lower()
+        if configured == "duckduckgo":
+            return "duckduckgo"
+        if configured == "serper" and get_secret("SERPER_API_KEY"):
+            return "serper"
+        if configured == "perplexity" and get_secret("PERPLEXITY_API_KEY"):
+            return "perplexity"
+
         if get_secret("PERPLEXITY_API_KEY"):
             return "perplexity"
         if get_secret("SERPER_API_KEY"):
             return "serper"
         return "duckduckgo"
+
+    @classmethod
+    def resolve_provider_name(cls, explicit: str | None = None) -> str:
+        """
+        Resolve the provider to use for a request.
+
+        Args:
+            explicit: Provider requested by the caller, if any.
+
+        Returns:
+            The provider name: the explicit request when valid, else
+            ``NINJA_SEARCH_PROVIDER`` (via :meth:`get_default_provider`).
+        """
+        if explicit:
+            cleaned = explicit.strip().lower()
+            if cleaned in {"duckduckgo", "serper", "perplexity"}:
+                return cleaned
+            raise ValueError(f"Unsupported search provider: {explicit}")
+        return cls.get_default_provider()
