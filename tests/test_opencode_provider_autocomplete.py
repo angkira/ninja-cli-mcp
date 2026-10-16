@@ -91,7 +91,7 @@ def test_discover_opencode_providers_parses_all_unique_prefixes(mock_opencode_cl
 
 def test_discover_opencode_providers_fallback_on_failure():
     """When opencode is not found or fails, falls back to canonical OPENCODE_PROVIDERS."""
-    with patch("shutil.which", return_value=None):
+    with patch("ninja_config.model_selector._which_binary", return_value=None):
         providers = discover_opencode_providers()
         assert providers == OPENCODE_PROVIDERS.copy()
 
@@ -141,9 +141,93 @@ def test_get_provider_models_empty_when_no_match(mock_opencode_cli):
 
 def test_get_provider_models_empty_when_binary_missing():
     """Missing opencode binary returns empty list cleanly."""
-    with patch("shutil.which", return_value=None):
+    with patch("ninja_config.model_selector._which_binary", return_value=None):
         models = get_provider_models("opencode", "anthropic")
         assert models == []
+
+
+def test_get_provider_models_accepts_binary_path_operator(mock_opencode_cli):
+    """A NINJA_CODE_BIN *path* value (not just the bare id) resolves to OpenCode."""
+    models = get_provider_models("/home/user/.opencode/bin/opencode", "opencode-go")
+    model_ids = [m.id for m in models]
+    assert "opencode-go/deepseek-v4-pro" in model_ids
+
+
+def test_get_provider_models_unknown_operator_returns_empty(mock_opencode_cli):
+    """An unrelated operator id must not silently fall back to OpenCode."""
+    assert get_provider_models("cursor", "opencode-go") == []
+    assert get_provider_models("totally-unknown", "opencode-go") == []
+
+
+def test_extra_bin_dirs_include_opencode_install_dir(monkeypatch, tmp_path):
+    """~/.opencode/bin is probed so a minimal-PATH TUI still finds opencode."""
+    from ninja_config.model_selector import _extra_bin_dirs
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    dirs = [str(d) for d in _extra_bin_dirs()]
+    assert str(tmp_path / ".opencode" / "bin") in dirs
+
+
+def test_which_binary_finds_opencode_in_extra_dir(monkeypatch, tmp_path):
+    """`_which_binary` locates opencode in ~/.opencode/bin when it is off-PATH."""
+    from ninja_config.model_selector import _which_binary
+
+    bin_dir = tmp_path / ".opencode" / "bin"
+    bin_dir.mkdir(parents=True)
+    fake = bin_dir / "opencode"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+    assert _which_binary("opencode") == str(fake)
+
+
+def test_run_opencode_models_honors_opencode_bin_env(monkeypatch):
+    """OPENCODE_BIN overrides PATH discovery for `opencode models`."""
+    from ninja_config.model_selector import _run_opencode_models
+
+    monkeypatch.setenv("OPENCODE_BIN", "/custom/opencode")
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd, **_kwargs):
+        captured["cmd"] = cmd
+        res = MagicMock()
+        res.returncode = 0
+        res.stdout = "opencode-go/deepseek-v4.1-flash\n"
+        res.stderr = ""
+        return res
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    lines = _run_opencode_models()
+    assert captured["cmd"][0] == "/custom/opencode"
+    assert lines == ["opencode-go/deepseek-v4.1-flash"]
+
+
+def test_get_provider_models_works_when_opencode_off_path(monkeypatch, tmp_path):
+    """Regression: models resolve even when opencode is only in ~/.opencode/bin.
+
+    Reproduces the "OpenCode Go selectable but typing 'deep' finds nothing" bug:
+    the binary is absent from PATH, so only the extra install dirs can find it.
+    """
+    bin_dir = tmp_path / ".opencode" / "bin"
+    bin_dir.mkdir(parents=True)
+    fake = bin_dir / "opencode"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+    monkeypatch.delenv("OPENCODE_BIN", raising=False)
+
+    res = MagicMock()
+    res.returncode = 0
+    res.stdout = MOCK_OPENCODE_MODELS_OUTPUT
+    res.stderr = ""
+    monkeypatch.setattr("subprocess.run", lambda *_a, **_k: res)
+
+    models = get_provider_models("opencode", "opencode-go")
+    model_ids = [m.id for m in models]
+    assert "opencode-go/deepseek-v4-pro" in model_ids
 
 
 def test_get_provider_models_timeout_handled_gracefully():

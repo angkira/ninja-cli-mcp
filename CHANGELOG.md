@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.6.3 - 2026-10-16
+
+OpenCode provider autocomplete robustness.
+
+### Fixed
+- **OpenCode provider models hidden when `opencode` is not on `PATH`**: the
+  config TUI resolved the OpenCode binary with a plain
+  `shutil.which("opencode")`. When the TUI/MCP host ran with a minimal `PATH`
+  that omitted OpenCode's install dir (`~/.opencode/bin`, which the installer
+  only exports on the interactive shell `PATH`), model discovery silently
+  returned nothing while the provider dropdown still showed the static list
+  (e.g. "OpenCode Go") — so typing `deep` in the model autocomplete found no
+  models. `_run_opencode_models`/`get_provider_models` now resolve the binary
+  via `_which_binary` (PATH → `~/.opencode/bin` → other common install dirs) and
+  honour an explicit `OPENCODE_BIN` override.
+- **Path-based `NINJA_CODE_BIN`**: `get_provider_models` accepted only the bare
+  `opencode` id; a full binary path (e.g. `/home/…/.opencode/bin/opencode`)
+  returned no models. Operator values are now normalized before dispatch.
+
+### Tests
+- Extended `tests/test_opencode_provider_autocomplete.py` (33 tests) with
+  off-`PATH` discovery, the `OPENCODE_BIN` override, path-based operator
+  resolution, and `_extra_bin_dirs` coverage.
+
 ## 1.6.2 - 2026-10-16
 
 OpenCode model autocomplete & provider discovery fix.

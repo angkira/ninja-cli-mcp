@@ -76,12 +76,19 @@ def _extra_bin_dirs() -> list[Path]:
     """Common CLI install locations probed when a binary is not on PATH.
 
     The config TUI may run with a minimal PATH (systemd/service, MCP host),
-    unlike an interactive shell, so ``~/.local/bin``, npm/bun globals and nvm
-    are checked explicitly. Resolved at call time (HOME is not fixed at import).
+    unlike an interactive shell, so ``~/.local/bin``, ``~/.opencode/bin``,
+    npm/bun globals and nvm are checked explicitly. Resolved at call time
+    (HOME is not fixed at import).
     """
     home = Path.home()
     dirs = [
         home / ".local" / "bin",
+        # OpenCode's installer drops the binary here and only exports it on the
+        # interactive shell PATH, so a minimal-PATH TUI would otherwise fail to
+        # discover any `opencode` models (provider list still rendered from the
+        # static fallback → "No models found").
+        home / ".opencode" / "bin",
+        home / ".opencode",
         home / ".npm-global" / "bin",
         home / ".bun" / "bin",
         home / ".cargo" / "bin",
@@ -110,10 +117,15 @@ def _which_binary(name: str) -> str | None:
 def _run_opencode_models() -> list[str]:
     """Run ``opencode models`` and return the raw model ID lines.
 
+    The binary is resolved via :func:`_which_binary` (PATH then common install
+    dirs such as ``~/.opencode/bin``) and an explicit ``OPENCODE_BIN`` override
+    is honoured, so model discovery works even when the TUI/MCP host runs with
+    a minimal PATH.
+
     Returns:
         List of ``provider/model`` strings, or empty list on failure.
     """
-    opencode_path = shutil.which("opencode")
+    opencode_path = os.environ.get("OPENCODE_BIN") or _which_binary("opencode")
     if not opencode_path:
         return []
     try:
@@ -1027,16 +1039,20 @@ def get_provider_models(operator: str, provider: str) -> list[Model]:
     if operator in operator_handlers:
         return operator_handlers[operator](provider)
 
-    # OpenCode requires special handling below
+    # OpenCode requires special handling below. ``operator`` may be a raw
+    # NINJA_CODE_BIN value: a bare id ("opencode") or a binary path
+    # ("/home/…/.opencode/bin/opencode"). Normalize so path-based configs still
+    # resolve instead of silently returning no models.
     if operator != "opencode":
-        return []
+        if "opencode" in operator.lower():
+            operator = "opencode"
+        else:
+            normalized = normalize_operator(operator)
+            if normalized in operator_handlers:
+                return operator_handlers[normalized](provider)
+            return []
 
-    models = []
-
-    # Find opencode binary
-    opencode_path = shutil.which("opencode")
-    if not opencode_path:
-        return models
+    models: list[Model] = []
 
     try:
         # OpenCode CLI (v2) `opencode models` takes no positional argument.
