@@ -1,0 +1,18 @@
+[Unit]
+Description=ninja-mcp %i server (supervised singleton)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+ExecStart=%h/.local/bin/ninja-mcp-serve %i
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+SyslogIdentifier=ninja-mcp-%i
+# Secrets come from the ninja encrypted store (~/.ninja/credentials.db); the
+# OS keyring fallback needs the session bus, which user units already have.
+
+[Install]
+WantedBy=default.target

@@ -239,6 +239,7 @@ Use `--dry-run` to preview a supported config change. See
 - [Model selection](docs/MODEL_SELECTION.md)
 - [TUI installer notes](docs/TUI_INSTALLER.md)
 - [Configuration](docs/CONFIGURATION.md)
+- [Running daemons under systemd --user](docs/SYSTEMD.md)
 - [MCP architecture](docs/MCP_ARCHITECTURE.md)
 - [Coder architecture](docs/coder/ARCHITECTURE.md)
 - [Researcher](docs/researcher/README.md)

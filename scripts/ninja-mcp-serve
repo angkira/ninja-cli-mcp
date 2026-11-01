@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#
+# ninja-mcp-serve - Run ONE ninja module server in the foreground (for systemd).
+#
+# Sources ~/.ninja-mcp.env (handles the `export X=...` lines that systemd's
+# EnvironmentFile= cannot parse), then execs the module HTTP server so that
+# systemd supervises the real process (Restart=always).
+#
+# Usage: ninja-mcp-serve <coder|researcher|secretary|agent> [port-override]
+
+set -euo pipefail
+
+readonly MODULE="${1:?usage: $0 <coder|researcher|secretary|agent> [port]}"
+readonly PORT_OVERRIDE="${2:-}"
+readonly PY="${NINJA_MCP_PYTHON:-$HOME/.local/share/uv/tools/ninja-mcp/bin/python3}"
+
+declare -A DEFAULT_PORTS=([coder]=8100 [researcher]=8101 [secretary]=8102 [agent]=8103)
+[[ -n "${DEFAULT_PORTS[$MODULE]:-}" ]] || { printf 'unknown module: %s\n' "$MODULE" >&2; exit 2; }
+
+# Operator CLIs (opencode, agy, codex, ...) live in user-writable dirs.
+for d in "$HOME/.local/bin" "$HOME/.opencode/bin" "$HOME/.bun/bin" "$HOME/.cargo/bin" \
+         "$HOME/.local/share/uv/tools/ninja-mcp/bin" "$HOME"/.nvm/versions/node/*/bin; do
+    [[ -d "$d" ]] && PATH="$d:$PATH"
+done
+export PATH
+
+if [[ -f "$HOME/.ninja-mcp.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$HOME/.ninja-mcp.env"
+    set +a
+fi
+
+port_var="NINJA_${MODULE^^}_PORT"
+PORT="${PORT_OVERRIDE:-${!port_var:-${DEFAULT_PORTS[$MODULE]}}}"
+
+exec "$PY" -m "ninja_${MODULE}.server" --http --port "$PORT"
