@@ -303,6 +303,13 @@ class PerplexityProvider(SearchProvider):
         else:
             self.model = self._DEFAULT_MODEL
 
+    def _refresh_api_key(self) -> None:
+        """Re-resolve the key when it was empty at init (never cache emptiness)."""
+        if not self.api_key:
+            from ninja_common.secrets import get_secret
+
+            self.api_key = get_secret("PERPLEXITY_API_KEY") or ""
+
     async def search(self, query: str, max_results: int = 10) -> list[dict[str, Any]]:
         """
         Search using Perplexity AI.
@@ -317,6 +324,7 @@ class PerplexityProvider(SearchProvider):
         Raises:
             ProviderError: On a real provider failure.
         """
+        self._refresh_api_key()
         if not self.api_key:
             raise ProviderError(ErrorKind.env, "Perplexity API key is not configured")
 
@@ -404,6 +412,7 @@ class PerplexityProvider(SearchProvider):
         Raises:
             ProviderError: On a real provider failure.
         """
+        self._refresh_api_key()
         if not self.api_key:
             raise ProviderError(ErrorKind.env, "Perplexity API key is not configured")
 
@@ -484,6 +493,7 @@ class PerplexityProvider(SearchProvider):
 
     def is_available(self) -> bool:
         """Check if Perplexity API key is configured."""
+        self._refresh_api_key()
         return bool(self.api_key)
 
     def get_name(self) -> str:

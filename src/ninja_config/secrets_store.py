@@ -396,7 +396,17 @@ def _get_credential_manager() -> CredentialManager:
         password = getpass.getpass("ninja-mcp encrypted store password: ")
         set_store_password(password)
 
-    _credential_manager = CredentialManager(password=password)
+    mgr = CredentialManager(password=password)
+    if password and not mgr.can_decrypt():
+        # A bogus resolved password (stale keyring/fd value) must not mask a
+        # passwordless store: prefer the empty password when it opens the DB.
+        empty = CredentialManager(password="")
+        if empty.can_decrypt():
+            _store_password = ""
+            _store_password_source = "passwordless"
+            _credential_manager = empty
+            return empty
+    _credential_manager = mgr
     return _credential_manager
 
 

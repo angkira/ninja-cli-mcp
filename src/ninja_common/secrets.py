@@ -12,8 +12,12 @@ Secrets are never written to ``~/.ninja-mcp.env`` or exported into ``os.environ`
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Final
+
+
+logger = logging.getLogger(__name__)
 
 
 #: Env var names that hold secrets (mirrored by ninja_config.config_shared).
@@ -51,8 +55,14 @@ def get_secret(name: str) -> str | None:
         value = default_store().get(name)
         if value:
             return value
-    except Exception:
-        pass
+    except Exception as exc:
+        # Never log the value; the exception type is enough to diagnose.
+        logger.warning(
+            "Could not read secret %s from the encrypted store (%s); "
+            "falling back to the environment",
+            name,
+            type(exc).__name__,
+        )
     return os.environ.get(name) or None
 
 

@@ -203,6 +203,16 @@ class DaemonManager:
         if not default_db_path().exists():
             return None
 
+        # Passwordless store: try the empty password FIRST. A non-empty value
+        # (typed, keyring, env) would be piped to the daemons and break
+        # decryption, so never prompt or forward anything for such a store.
+        try:
+            if secrets_store.CredentialManager(password="").can_decrypt():
+                self._store_password = ""
+                return self._store_password
+        except Exception:
+            pass
+
         existing = secrets_store.get_store_password()
         if existing is not None:
             self._store_password = existing
@@ -516,7 +526,9 @@ class DaemonManager:
         child_env.pop("NINJA_CREDENTIAL_PASSWORD", None)
         password_fd: int | None = None
         password = self._unlock_store_once()
-        if password is not None:
+        # An empty password means "passwordless store": daemons open it with the
+        # empty-password fallback, so nothing is passed through the fd.
+        if password:
             read_fd, write_fd = os.pipe()
             try:
                 os.write(write_fd, password.encode("utf-8"))
