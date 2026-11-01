@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.7.1 - 2026-11-01
+
+Fix: secrets for passwordless stores; packaging: systemd --user template.
+
+### Fixed
+- A passwordless secret store (`~/.ninja/credentials.db`) is no longer unlocked
+  with a prompted/forwarded non-empty password. `DaemonManager` tries the empty
+  password first, prompts only when the store cannot be opened without one (and
+  stdin is a TTY), and never writes an empty value to `NINJA_CREDENTIAL_FD`.
+  Previously decryption failed silently and Perplexity reported
+  "API key is not configured".
+- A resolved password that cannot decrypt no longer masks a passwordless store.
+- `get_secret()` logs a failed store read at warning level (never the value).
+- `PerplexityProvider` re-resolves its API key when it was empty at init.
+
+### Added
+- `scripts/systemd/ninja-mcp@.service` and `scripts/ninja-mcp-serve`: supervised
+  `systemd --user` units (`Restart=always`); see `docs/SYSTEMD.md`.
+
 ## 1.7.0 - 2026-10-16
 
 Researcher: fast + deep research with real report synthesis via Perplexity.
