@@ -149,10 +149,9 @@ def test_sequential_prompt_structure(sample_steps: list[PlanStep]):
     assert "**ID**: `step-3`" in result
 
     # Check execution instructions
-    assert "### Sequential Execution" in result
+    assert "### Sequential Execution" not in result
     assert "Execute steps in order" in result
-    assert "Maintain context" in result
-    assert "Stop on failure" in result
+    assert "Stop on first failure" in result
 
 
 def test_sequential_prompt_with_context_paths(sample_steps: list[PlanStep]):
@@ -276,14 +275,11 @@ def test_sequential_prompt_output_format(sample_steps: list[PlanStep]):
     assert "## OUTPUT FORMAT" in result
     assert '"id": "step_id"' in result
     assert '"status": "ok | fail | error"' in result
-    assert '"summary": "Brief description' in result
+    assert '"summary": "1-2 sentences' in result
     assert '"suspected_touched_paths"' in result
 
-    # Check status values
-    assert "### Status Values" in result
-    assert "- **ok**: Step completed successfully" in result
-    assert "- **fail**: Step failed validation/tests" in result
-    assert "- **error**: Step encountered an error" in result
+    # Status line is concise single line
+    assert "Status: ok=done" in result
 
 
 # ============================================================================
@@ -419,19 +415,12 @@ def test_parallel_prompt_execution_instructions(parallel_tasks: list[PlanStep]):
     result = prompt.to_prompt()
 
     # Check parallel execution section
-    assert "### Parallel Execution" in result
-    assert "Up to 4 tasks run simultaneously" in result
-    assert "File isolation" in result
-    assert "No shared state" in result
-    assert "Independent validation" in result
+    assert "Up to 4 tasks run concurrently" in result
+    assert "modifies ONLY its own allowed scope" in result
 
-    # Check agent assignment section
-    assert "### Agent Assignment" in result
-    assert "**Frontend Tasks**:" in result
-    assert "**Backend Tasks**:" in result
-    assert "**Database Tasks**:" in result
-    assert "**Testing Tasks**:" in result
-    assert "**DevOps Tasks**:" in result
+    # Agent assignment is slim (no verbose per-domain lists)
+    assert "**Frontend Tasks**:" not in result
+    assert "**Database Tasks**:" not in result
 
 
 def test_parallel_prompt_merge_strategy(parallel_tasks: list[PlanStep]):
@@ -447,14 +436,7 @@ def test_parallel_prompt_merge_strategy(parallel_tasks: list[PlanStep]):
     result = prompt.to_prompt()
 
     # Check merge report in output format
-    assert "After all tasks complete, provide a merge report:" in result
     assert '"strategy": "no-conflicts | manual-review-needed | auto-merged"' in result
-
-    # Check merge strategies
-    assert "### Merge Strategies" in result
-    assert "- **no-conflicts**: All tasks modified different files" in result
-    assert "- **manual-review-needed**: File overlaps detected" in result
-    assert "- **auto-merged**: Minor conflicts resolved automatically" in result
 
 
 # ============================================================================

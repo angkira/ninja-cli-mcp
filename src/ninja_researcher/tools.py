@@ -879,7 +879,10 @@ class ResearchToolExecutor:
         self, request: FactCheckRequest, client_id: str = "default"
     ) -> FactCheckResult:
         """
-        Fact check a claim against sources.
+        Fact check a claim against sources with an LLM verdict when available.
+
+        Without a synthesis engine the result is explicitly ``uncertain`` —
+        never a keyword-overlap guess.
 
         Args:
             request: Fact check request.
@@ -921,38 +924,51 @@ class ResearchToolExecutor:
                         confidence=0.0,
                     )
 
-            claim_lower = request.claim.lower()
-            claim_keywords = set(claim_lower.split())
+            source_dicts = [{"title": "", "url": u, "snippet": ""} for u in sources[:10]]
+            engine = resolve_synthesis_engine()
+            if engine is None:
+                return FactCheckResult(
+                    status="uncertain",
+                    claim=request.claim,
+                    verdict=(
+                        "No synthesis engine configured; cannot verify claim. "
+                        f"Found {len(source_dicts)} source(s) for manual review."
+                    ),
+                    sources=sources[:10],
+                    confidence=0.0,
+                )
 
-            supporting_count = 0
+            from ninja_researcher.synthesis import build_answer_messages, complete
 
-            for url in sources[:10]:
-                if any(keyword in url.lower() for keyword in claim_keywords):
-                    supporting_count += 1
+            messages = build_answer_messages(
+                f"Is the following claim supported by the sources? Claim: {request.claim} "
+                "Reply with VERDICT: verified|disputed|uncertain, confidence 0-1, and 1-2 sentence reason with citations.",
+                source_dicts,
+            )
+            try:
+                content, _ = await complete(engine, messages, max_tokens=512)
+            except Exception as e:
+                logger.warning(f"Fact-check synthesis failed: {e}")
+                return FactCheckResult(
+                    status="uncertain",
+                    claim=request.claim,
+                    verdict="Synthesis failed; verification is uncertain.",
+                    sources=sources[:10],
+                    confidence=0.0,
+                )
 
-            total_sources = len(sources[:10])
-
-            if total_sources == 0:
-                status = "uncertain"
-                verdict = "No sources found to verify the claim"
-                confidence = 0.0
-            elif supporting_count > total_sources * 0.6:
-                status = "verified"
-                verdict = f"The claim appears to be supported by {supporting_count}/{total_sources} sources found"
-                confidence = supporting_count / total_sources
-            elif supporting_count < total_sources * 0.3:
-                status = "disputed"
-                verdict = f"The claim is only supported by {supporting_count}/{total_sources} sources, suggesting it may be disputed"
-                confidence = 1.0 - (supporting_count / total_sources)
+            lowered = content.lower()
+            if "verdict: verified" in lowered or lowered.strip().startswith("verified"):
+                status, confidence = "verified", 0.8
+            elif "verdict: disputed" in lowered or "disputed" in lowered.split():
+                status, confidence = "disputed", 0.8
             else:
-                status = "uncertain"
-                verdict = f"The claim has mixed support ({supporting_count}/{total_sources} sources), verification is uncertain"
-                confidence = 0.5
+                status, confidence = "uncertain", 0.5
 
             return FactCheckResult(
                 status=status,
                 claim=request.claim,
-                verdict=verdict,
+                verdict=content[:1000],
                 sources=sources[:10],
                 confidence=confidence,
             )

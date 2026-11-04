@@ -47,8 +47,7 @@ TOOLS: list[Tool] = [
         name="researcher_quick_research",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Fast single-pass research: Perplexity's cited answer when selected, else web "
-            "results plus a synthesized answer. Use deep_research for multi-query breadth."
+            "Single-question research with cited answer. Use deep_research for multi-query reports."
         ),
         inputSchema={
             "type": "object",
@@ -96,7 +95,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_deep_research",
         execution=ToolExecution(taskSupport="optional"),
-        description="Deep research a topic via sub-queries and parallel agents; one call at a time, >=15s apart (use batch for multiple). Supports enrich, domain filters, and written-report synthesis.",
+        description="Multi-query research with written report. Use quick_research for single questions; batch for multiple topics.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -167,7 +166,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_generate_report",
         execution=ToolExecution(taskSupport="optional"),
-        description="Synthesize sources into a report (comprehensive, summary, technical, executive). Uses an LLM when configured, else a deterministic template.",
+        description="Synthesize provided sources into a cited report (comprehensive, summary, technical, executive).",
         inputSchema={
             "type": "object",
             "properties": {
@@ -211,7 +210,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_fact_check",
         execution=ToolExecution(taskSupport="optional"),
-        description=("Verify a claim against web sources with verdict and confidence."),
+        description=("Verify a claim via LLM verdict over sources (verified|disputed|uncertain)."),
         inputSchema={
             "type": "object",
             "properties": {
@@ -316,7 +315,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="researcher_deep_research_batch",
         execution=ToolExecution(taskSupport="optional"),
-        description="Run up to 5 deep-research requests strictly serially (upstream quotas).",
+        description="Batch up to 5 deep-research topics serially.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -377,12 +376,8 @@ def create_server() -> Server:
     server = Server(
         "ninja-researcher",
         version="0.3.0",
-        instructions="""Ninja Researcher: web search and report generation.
-
-Tools: researcher_quick_research (single fast pass, cited answer); researcher_deep_research (multi-query research + written report); researcher_generate_report (synthesize sources, LLM when configured); researcher_fact_check (verify claims); researcher_summarize_sources (condense URLs); researcher_arxiv_search (structured papers; categories ANDed with query); researcher_paper_fetch (sections, numbers with context); researcher_deep_research_batch (up to 5 requests, strictly serial).
-Report synthesis uses Perplexity when selected (NINJA_SEARCH_PROVIDER=perplexity or a Perplexity key), else OpenRouter via NINJA_RESEARCHER_MODEL; set NINJA_RESEARCHER_LLM=off to force templates.
-Serial-call rule: run ONE deep_research at a time with >=15s between calls; use the batch tool for multiple topics.
-Params: deep_research supports enrich, include/exclude/prefer_domains, synthesize and report_type.""",
+        instructions="""Ninja Researcher: cited web research.
+quick_research: single question + cited answer. deep_research: multi-query + report. generate_report: synthesize given sources. fact_check: LLM verdict. arxiv_search/paper_fetch: papers. batch: up to 5 topics serially.""",
     )
 
     # Enable standard MCP Tasks (background/asynchronous tool execution) with a

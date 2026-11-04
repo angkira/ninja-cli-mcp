@@ -461,10 +461,8 @@ TOOLS: list[Tool] = [
                     "type": "string",
                     "enum": ["simple", "complex"],
                     "description": (
-                        "REQUIRED choice: 'simple' = trivial edits (1-2 lines per step), "
-                        "in-place without worktree; 'complex' = real implementation, "
-                        "isolated ninja/* worktree. Never mix in one call — split mixed "
-                        "batches into two calls."
+                        "REQUIRED: 'simple' = trivial edits in-place; "
+                        "'complex' = real work in worktree. Split mixed batches."
                     ),
                     "default": "complex",
                 },

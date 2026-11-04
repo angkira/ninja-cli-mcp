@@ -370,11 +370,9 @@ class AgentToolExecutor:
 
             text = path.read_text(encoding="utf-8", errors="ignore")
 
-            # Basic line count
-            lines = text.splitlines()
-            findings.extend(self._check_long_lines(rel, lines))
-
-            # Python-specific static checks
+            # Python-specific static checks only (syntax + empty except).
+            # Style signals (long blocks, missing docstrings) are intentionally
+            # excluded: noisy, low signal, better left to LLMs/linters.
             if rel.endswith(".py"):
                 findings.extend(self._check_python(rel, text))
 
@@ -474,7 +472,7 @@ class AgentToolExecutor:
         return findings
 
     def _check_python(self, rel: str, text: str) -> list[AgentReviewFinding]:
-        """Run Python-specific heuristic checks."""
+        """Run Python-specific heuristic checks (errors only, no style noise)."""
         findings: list[AgentReviewFinding] = []
         try:
             tree = ast.parse(text)
@@ -510,26 +508,6 @@ class AgentToolExecutor:
                             message="except block only contains 'pass' - consider logging.",
                         )
                     )
-
-            # Top-level functions missing docstrings
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.body and not (
-                    isinstance(node.body[0], ast.Expr)
-                    and isinstance(node.body[0].value, ast.Constant)
-                    and isinstance(node.body[0].value.value, str)
-                ):
-                    if not any(
-                        isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-                        for parent in _parents_of(tree, node)
-                    ):
-                        findings.append(
-                            AgentReviewFinding(
-                                severity="info",
-                                file_path=rel,
-                                line=node.lineno,
-                                message=f"Function '{node.name}' has no docstring.",
-                            )
-                        )
 
         return findings
 

@@ -457,179 +457,41 @@ class InstructionBuilder:
         }
 
     def _build_quick_instructions(self, task: str, context_paths: list[str]) -> str:
-        """Build instruction text for quick mode with reasoning prompt."""
+        """Build slim instruction text for quick mode."""
         paths_text = ", ".join(context_paths) if context_paths else "the repository"
-
-        return f"""You are Ninja, an AI code writing specialist.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 YOUR TASK:
-{task}
-
-📂 FOCUS AREA: {paths_text}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🧠 REASONING PHASE (spend tokens thinking):
-
-Before writing ANY code, think through:
-
-1. UNDERSTANDING:
-   - What exactly is being asked?
-   - What are the key requirements?
-   - What files need to be created/modified?
-
-2. CONTEXT ANALYSIS:
-   - What existing code is relevant?
-   - What patterns/conventions are used in this codebase?
-   - What dependencies/imports are needed?
-
-3. IMPLEMENTATION PLAN:
-   - What's the logical order of changes?
-   - What edge cases need handling?
-   - What validation/error handling is needed?
-
-4. QUALITY CHECKS:
-   - Are type hints needed?
-   - Are docstrings needed?
-   - Does this follow the codebase style?
-
-5. TEST COVERAGE:
-   - What unit tests are needed for this code?
-   - What test cases cover the main functionality?
-   - What edge cases should be tested?
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ YOUR RESPONSIBILITIES:
-1. Read relevant source files to understand context
-2. Think through the implementation (use reasoning above)
-3. Write clean, well-structured code
-4. Create new files if needed
-5. Add type hints and docstrings where appropriate
-6. **WRITE UNIT TESTS** for all new/modified code
-7. Stay within the allowed file scope
-
-🧪 TESTING REQUIREMENTS:
-   • ALWAYS write unit tests for new functions/classes/methods
-   • Place tests in appropriate test files (tests/ directory or alongside code)
-   • Follow existing test patterns in the codebase
-   • Cover main functionality and edge cases
-   • Use appropriate test framework (pytest, unittest, etc.)
-   • Include docstrings in test functions explaining what they test
-
-⚠️  EXECUTION MODE: Single pass - implement efficiently and correctly.
-
-🔒 SCOPE: You have full read/write access within allowed file patterns.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 REMEMBER:
-   • Think before coding (reasoning phase)
-   • Write quality code, not quick hacks
-   • Follow existing patterns in the codebase
-   • **ALWAYS include unit tests** - untested code is incomplete
-   • The orchestrator will NOT see your code, only a summary
-   • Make your changes count - this is a single pass
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+        return (
+            "You are Ninja, a code-writing agent. Think briefly, then act.\n"
+            f"Task: {task}\n"
+            f"Scope: read {paths_text}; modify only allowed_globs; never touch deny_globs.\n"
+            "Rules: minimal diff, follow repo conventions, no unrelated refactors.\n"
+            "Tests: run related tests if present; add tests only for new behavior.\n"
+            "Output: single JSON {status: ok|fail|error, summary: 1-2 sentences, touched_paths: []}. "
+            "No prose, no code dump."
+        )
 
     def _build_step_instructions(self, step: PlanStep) -> str:
-        """Build instruction text for plan step execution with reasoning."""
+        """Build slim instruction text for plan step execution."""
         if self.mode == ExecutionMode.QUICK:
-            pipeline = "Single coder pass"
+            pipeline = "Single coder pass."
             extra = ""
         else:
-            pipeline = "Full pipeline: coder -> reviewer -> tester -> fix loop -> final review"
-            extra = f"""
-ITERATION BUDGET: Up to {step.max_iterations} fix iterations if tests fail.
-
-TEST COMMANDS TO RUN:
-- Unit tests: {", ".join(step.test_plan.unit) if step.test_plan.unit else "None specified"}
-- E2E tests: {", ".join(step.test_plan.e2e) if step.test_plan.e2e else "None specified"}
-
-After implementing, you MUST:
-1. Self-review your changes
-2. Run the specified tests
-3. If tests fail, analyze and fix (up to {step.max_iterations} iterations)
-4. Perform a final review before completing"""
-
+            pipeline = "Full pipeline: coder -> review -> test-fix loop."
+            unit = ", ".join(step.test_plan.unit) if step.test_plan.unit else "none"
+            e2e = ", ".join(step.test_plan.e2e) if step.test_plan.e2e else "none"
+            extra = (
+                f" Budget: up to {step.max_iterations} fix iterations. "
+                f"Tests: unit [{unit}] e2e [{e2e}]. Self-review, run tests, fix, final check."
+            )
         paths_text = ", ".join(step.context_paths) if step.context_paths else "the repository"
-
-        return f"""You are Ninja, an AI code writing specialist executing: {step.title}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 STEP ID: {step.id}
-
-📋 TASK SPECIFICATION:
-{step.task}
-
-📂 FOCUS AREA: {paths_text}
-
-⚙️  EXECUTION PIPELINE: {pipeline}
-{extra}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🧠 REASONING PHASE (spend tokens thinking):
-
-Before writing ANY code, think through:
-
-1. UNDERSTANDING:
-   - What exactly is this step asking for?
-   - How does it fit into the larger plan?
-   - What are the acceptance criteria?
-
-2. CONTEXT ANALYSIS:
-   - What code from previous steps is relevant?
-   - What existing patterns should I follow?
-   - What dependencies exist?
-
-3. IMPLEMENTATION STRATEGY:
-   - What's the best approach for this step?
-   - What files need changes?
-   - What's the logical order?
-
-4. QUALITY & TESTING:
-   - What edge cases exist?
-   - What validation is needed?
-   - How will this be tested?
-   - What unit tests are required?
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ YOUR RESPONSIBILITIES:
-1. Read relevant source files to understand context
-2. Think through the implementation (use reasoning above)
-3. Implement the required changes with high quality
-4. Create new files if needed
-5. **WRITE UNIT TESTS** for all new/modified code
-6. Validate according to the execution mode
-7. Stay within the allowed file scope
-
-🧪 TESTING REQUIREMENTS:
-   • ALWAYS write unit tests for new functions/classes/methods
-   • Place tests in appropriate test files (tests/ directory or alongside code)
-   • Follow existing test patterns in the codebase
-   • Cover main functionality and edge cases
-   • Use appropriate test framework (pytest, unittest, etc.)
-   • Include docstrings in test functions explaining what they test
-   • Ensure tests are runnable and pass
-
-🔒 SCOPE: You have full read/write access within allowed file patterns.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 REMEMBER:
-   • Think deeply before coding (reasoning phase)
-   • This step is part of a larger plan - make it solid
-   • **ALWAYS include unit tests** - untested code is incomplete
-   • The orchestrator will NOT see your code, only a summary
-   • Quality over speed - get it right
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+        return (
+            f"You are Ninja, executing step {step.id}: {step.title}. Think briefly, then act.\n"
+            f"Task: {step.task}\n"
+            f"Scope: read {paths_text}; modify only allowed_globs; never touch deny_globs.\n"
+            f"Pipeline: {pipeline}{extra}\n"
+            "Rules: minimal diff, follow repo conventions, no unrelated refactors. "
+            "Tests: run related tests if present; add tests only for new behavior.\n"
+            "Output: single JSON {id, status: ok|fail|error, summary: 1-2 sentences, touched_paths: []}."
+        )
 
     def _build_test_instructions(self, commands: list[str]) -> str:
         """Build instruction text for test execution."""
@@ -652,11 +514,10 @@ You have access to run commands and read files as needed for testing."""
     def _build_guarantees(self) -> dict[str, str]:
         """Build guarantee statements."""
         return {
-            "file_access": "You (AI assistant) are responsible for all file read/write operations",
-            "orchestrator_role": "The orchestrator will NOT inspect or modify source files",
-            "scope_enforcement": "You must respect the allowed_globs and deny_globs constraints",
-            "response_format": "Return ONLY a brief summary - the orchestrator does not need source code",
-            "test_coverage": "You MUST write unit tests for all new/modified code - untested code is incomplete",
+            "file_access": "Agent performs all file reads/writes",
+            "scope_enforcement": "Respect allowed_globs and deny_globs",
+            "response_format": "Return single JSON summary only, no source code",
+            "test_coverage": "Add tests only for new behavior when repo has tests",
         }
 
 

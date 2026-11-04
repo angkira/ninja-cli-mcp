@@ -230,7 +230,8 @@ def test_review_flags_missing_docstrings_and_empty_except(tmp_path):
     result = run_async(executor.review(req))
     assert result.success
     messages = [f.message for f in result.findings]
-    assert any("no docstring" in m for m in messages)
+    # style noise removed: no docstring findings; errors-only (empty except kept)
+    assert all("no docstring" not in m for m in messages)
     assert any("pass" in m for m in messages)
     assert "No files modified" in result.summary
 

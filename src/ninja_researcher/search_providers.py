@@ -277,11 +277,13 @@ class SerperProvider(SearchProvider):
 
 
 class PerplexityProvider(SearchProvider):
-    """Perplexity AI search provider."""
+    """Perplexity AI search provider (Search API first, chat fallback)."""
 
     supports_answers: ClassVar[bool] = True
 
-    _DEFAULT_MODEL = "sonar"
+    _DEFAULT_MODEL = "sonar-pro"
+    _SEARCH_URL = "https://api.perplexity.ai/search"
+    _CHAT_URL = "https://api.perplexity.ai/chat/completions"
 
     def __init__(self, api_key: str | None = None) -> None:
         """
@@ -293,7 +295,7 @@ class PerplexityProvider(SearchProvider):
         from ninja_common.secrets import get_secret
 
         self.api_key = api_key or get_secret("PERPLEXITY_API_KEY") or ""
-        self.base_url = "https://api.perplexity.ai/chat/completions"
+        self.base_url = self._CHAT_URL
 
         # `NINJA_RESEARCHER_MODEL` may name a Perplexity model (sonar*) or an
         # OpenRouter model (vendor/model). Only sonar* ids are valid here.
@@ -328,13 +330,45 @@ class PerplexityProvider(SearchProvider):
         if not self.api_key:
             raise ProviderError(ErrorKind.env, "Perplexity API key is not configured")
 
+        # Preferred: Search API returns ranked raw results (titles, URLs, snippets, dates).
         try:
-            logger.info(f"Searching Perplexity AI for: {query}")
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self._SEARCH_URL,
+                    json={"query": query, "max_results": max_results},
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+            results = data.get("results") or []
+            normalized = [
+                {
+                    "title": r.get("title") or self._title_from_url(r.get("url", "")),
+                    "url": r.get("url", ""),
+                    "snippet": r.get("snippet", ""),
+                    "date": r.get("date") or r.get("last_updated") or "",
+                    "score": r.get("score"),
+                }
+                for r in results[:max_results]
+                if r.get("url")
+            ]
+            if normalized:
+                logger.info(f"Perplexity Search API returned {len(normalized)} results")
+                return normalized
+        except Exception as e:
+            logger.warning(f"Perplexity Search API failed, falling back to chat: {e}")
+
+        try:
+            logger.info(f"Searching Perplexity AI (chat fallback) for: {query}")
 
             # Use Perplexity's sonar model for search
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    self.base_url,
+                    self._CHAT_URL,
                     json={
                         "model": self.model,
                         "messages": [
@@ -421,17 +455,17 @@ class PerplexityProvider(SearchProvider):
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    self.base_url,
+                    self._CHAT_URL,
                     json={
                         "model": self.model,
                         "messages": [
                             {
                                 "role": "system",
                                 "content": (
-                                    "You are a meticulous research analyst. Answer the "
-                                    "question with a well-structured, factual response. "
-                                    "Prefer specifics, concrete examples and numbers. "
-                                    "Note uncertainty where it exists. Use Markdown."
+                                    "You are a meticulous research analyst. Start with a direct "
+                                    "1-2 sentence answer, then Markdown sections (max 5). Cite every "
+                                    "factual sentence inline like [web:1]. Prefer specifics, numbers "
+                                    "and examples. Note uncertainty explicitly."
                                 ),
                             },
                             {"role": "user", "content": query},

@@ -19,6 +19,8 @@ from .models import ExecutionMode, PlanStep
 # ============================================================================
 
 MAX_CONTEXT_FILE_SIZE = 50 * 1024  # 50KB limit per file
+MAX_CONTEXT_SNIPPET_CHARS = 4000  # per-file inline cap for prompts
+MAX_TOTAL_CONTEXT_CHARS = 12000  # total inline budget across files
 
 
 # ============================================================================
@@ -171,76 +173,55 @@ class SequentialPlanPrompt:
 
     def _execution_instructions(self) -> list[str]:
         """Generate execution instructions."""
-        return [
+        lines = [
             "## EXECUTION INSTRUCTIONS",
             "",
-            "### Sequential Execution",
-            "",
-            "1. **Execute steps in order**: Complete Step 1 before Step 2, Step 2 before Step 3, etc.",
-            "2. **Maintain context**: Each step can reference outputs from previous steps.",
-            "3. **Stop on failure**: If any step fails, stop execution and report the failure.",
-            "4. **Validate thoroughly**: Ensure each step's requirements are met before proceeding.",
-            "",
-            "### Context Flow",
-            "",
-            "- Previous steps may create files, modify code, or establish patterns",
-            "- Later steps can build upon these changes",
-            "- Maintain consistency across all steps",
-            "",
-            "### Multi-Agent Activation",
-            "",
-            "If specialized agents are available (Frontend, Backend, Database, etc.):",
-            "",
-            "1. **Analyze each step's task** to identify the most relevant agent",
-            "2. **Activate appropriate agents** based on keywords and file patterns:",
-            "   - Frontend: React, Vue, Angular, UI components, styling",
-            "   - Backend: API, routes, services, controllers, business logic",
-            "   - Database: Models, migrations, schemas, queries, ORM",
-            "   - Testing: Tests, specs, fixtures, mocks",
-            "   - DevOps: CI/CD, Docker, deployment, infrastructure",
-            "3. **Use general-purpose agent** if no specialist matches",
+            "1. Execute steps in order; each step may use previous outputs.",
+            "2. Stop on first failure and report it.",
+            "3. Use specialist subagents if available; else general-purpose.",
             "",
             "### Error Handling",
             "",
-            f"- **Mode**: {self.mode.value}",
+            f"- Mode: {self.mode.value}",
         ]
 
         if self.mode == ExecutionMode.QUICK:
-            return [
-                "- **Quick mode**: Single-pass execution, no test-fix loop",
-                "- If errors occur, report them and stop",
-                "",
-            ]
-        else:
-            return [
-                "- **Full mode**: Test-fix loop enabled",
-                "- Run tests after implementation",
-                "- Fix issues and re-test up to max_iterations",
-                "- Report final status",
-                "",
-            ]
-
-    def _format_context_files(self) -> list[str]:
-        """Format context files section."""
-        lines = [
-            "## CONTEXT FILES",
-            "",
-            f"The following {len(self.context_files)} files are provided for context:",
-            "",
-        ]
-
-        for path, content in self.context_files.items():
             lines.extend(
                 [
-                    f"### `{path}`",
-                    "",
-                    "```",
-                    content,
-                    "```",
+                    "- Quick mode: single pass, no test-fix loop.",
                     "",
                 ]
             )
+        else:
+            lines.extend(
+                [
+                    "- Full mode: test-fix loop up to max_iterations per step.",
+                    "",
+                ]
+            )
+        return lines
 
+    def _format_context_files(self) -> list[str]:
+        """Format context files section with a total inline budget."""
+        lines = [
+            "## CONTEXT FILES",
+            "",
+            f"Read-only excerpts ({len(self.context_files)} files, budget {MAX_TOTAL_CONTEXT_CHARS} chars). "
+            "Read full files from disk when needed.",
+            "",
+        ]
+        budget = MAX_TOTAL_CONTEXT_CHARS
+        for path, content in self.context_files.items():
+            if budget <= 0:
+                lines.extend(["", f"...[{len(self.context_files)} files total, budget exhausted]"])
+                break
+            excerpt = content[: min(len(content), MAX_CONTEXT_SNIPPET_CHARS, budget)]
+            truncated = len(content) > len(excerpt)
+            lines.extend([f"### `{path}`", "", "```", excerpt, "```", ""])
+            if truncated:
+                lines.append(f"...[truncated {len(content) - len(excerpt)} chars]")
+                lines.append("")
+            budget -= len(excerpt)
         return lines
 
     def _output_format(self) -> list[str]:
@@ -248,40 +229,22 @@ class SequentialPlanPrompt:
         return [
             "## OUTPUT FORMAT",
             "",
-            "For each step, provide a structured result:",
+            "Return exactly one JSON object per step, no prose, no code:",
             "",
             "```json",
             json.dumps(
                 {
                     "id": "step_id",
                     "status": "ok | fail | error",
-                    "summary": "Brief description of what was accomplished",
-                    "notes": "Additional details, warnings, or recommendations",
-                    "suspected_touched_paths": ["path/to/file1.py", "path/to/file2.ts"],
+                    "summary": "1-2 sentences, files touched",
+                    "notes": "warnings / follow-ups",
+                    "suspected_touched_paths": ["path/to/file1.py"],
                 },
                 indent=2,
             ),
             "```",
             "",
-            "### Status Values",
-            "",
-            "- **ok**: Step completed successfully",
-            "- **fail**: Step failed validation/tests (recoverable)",
-            "- **error**: Step encountered an error (unrecoverable)",
-            "",
-            "### Summary Guidelines",
-            "",
-            "- Be concise (1-3 sentences)",
-            "- Focus on what was accomplished",
-            "- Mention key files created/modified",
-            "- Note any important decisions made",
-            "",
-            "### Notes Guidelines",
-            "",
-            "- Include warnings or caveats",
-            "- Suggest follow-up actions if needed",
-            "- Document any deviations from the plan",
-            "- Highlight dependencies for next steps",
+            "Status: ok=done, fail=validation/tests (recoverable), error=unrecoverable.",
             "",
         ]
 
@@ -420,99 +383,37 @@ class ParallelPlanPrompt:
 
     def _execution_instructions(self) -> list[str]:
         """Generate execution instructions for parallel execution."""
-        lines = [
+        return [
             "## EXECUTION INSTRUCTIONS",
             "",
-            "### Parallel Execution",
-            "",
-            f"1. **Concurrent execution**: Up to {self.fanout} tasks run simultaneously",
-            "2. **File isolation**: Each task modifies only its own files",
-            "3. **No shared state**: Tasks cannot communicate or share data",
-            "4. **Independent validation**: Each task is tested independently",
-            "",
-            "### Agent Assignment",
-            "",
-            "Each task should be analyzed and assigned to the most appropriate agent:",
-            "",
-            "**Frontend Tasks**:",
-            "- React, Vue, Angular, Svelte components",
-            "- UI styling (CSS, Sass, Tailwind)",
-            "- Client-side state management",
-            "- Browser APIs and interactions",
-            "",
-            "**Backend Tasks**:",
-            "- API endpoints and routes",
-            "- Business logic and services",
-            "- Authentication and authorization",
-            "- Server-side processing",
-            "",
-            "**Database Tasks**:",
-            "- Schema design and models",
-            "- Migrations and data transformations",
-            "- Query optimization",
-            "- ORM configuration",
-            "",
-            "**Testing Tasks**:",
-            "- Unit tests and specs",
-            "- Integration tests",
-            "- Test fixtures and mocks",
-            "- Test infrastructure",
-            "",
-            "**DevOps Tasks**:",
-            "- CI/CD pipelines",
-            "- Docker and containerization",
-            "- Deployment scripts",
-            "- Infrastructure as code",
-            "",
-            "**General Tasks**:",
-            "- Documentation",
-            "- Configuration files",
-            "- Multi-domain features",
-            "- Refactoring across boundaries",
-            "",
-            "### Multi-Agent Activation",
-            "",
-            "For each task:",
-            "",
-            "1. **Analyze task keywords** (Frontend, Backend, Database, Test, DevOps, etc.)",
-            "2. **Check file patterns** (frontend/*, backend/*, database/*, etc.)",
-            "3. **Activate specialized agent** if available",
-            "4. **Fall back to general-purpose agent** if no specialist matches",
-            "5. **Execute task** within the agent's context and expertise",
-            "",
-            "### Merge Strategy",
-            "",
-            "After all tasks complete:",
-            "",
-            "1. **Verify no conflicts**: Check that file modifications don't overlap",
-            "2. **Merge changes**: Combine all task branches",
-            "3. **Report conflicts**: Document any merge issues",
+            f"1. Up to {self.fanout} tasks run concurrently; no shared state.",
+            "2. Each task modifies ONLY its own allowed scope; overlapping writes = failure.",
+            "3. Use specialist subagents if available; else general-purpose.",
+            "4. After all tasks: verify no file overlaps, merge, report conflicts.",
             "",
         ]
 
-        return lines
-
     def _format_context_files(self) -> list[str]:
-        """Format context files section."""
+        """Format context files section with a total inline budget."""
         lines = [
             "## CONTEXT FILES",
             "",
-            f"The following {len(self.context_files)} files are provided for context:",
+            f"Read-only excerpts ({len(self.context_files)} files, budget {MAX_TOTAL_CONTEXT_CHARS} chars). "
+            "Read full files from disk when needed.",
             "",
         ]
-
+        budget = MAX_TOTAL_CONTEXT_CHARS
         for path, content in self.context_files.items():
-            lines.extend(
-                [
-                    f"### `{path}`",
-                    "",
-                    "```",
-                    content,
-                    "```",
-                    "",
-                ]
-            )
-
+            if budget <= 0:
+                lines.extend(["", f"...[{len(self.context_files)} files total, budget exhausted]"])
+                break
+            excerpt = content[: min(len(content), MAX_CONTEXT_SNIPPET_CHARS, budget)]
+            truncated = len(content) > len(excerpt)
+            lines.extend([f"### `{path}`", "", "```", excerpt, "```", ""])
+            if truncated:
+                lines.append(f"...[truncated {len(content) - len(excerpt)} chars]")
+                lines.append("")
+            budget -= len(excerpt)
         return lines
 
     def _output_format(self) -> list[str]:
@@ -520,44 +421,30 @@ class ParallelPlanPrompt:
         return [
             "## OUTPUT FORMAT",
             "",
-            "For each task, provide a structured result:",
+            "Return exactly one JSON object per task plus a merge report. No prose, no code:",
             "",
             "```json",
             json.dumps(
                 {
                     "id": "task_id",
                     "status": "ok | fail | error",
-                    "summary": "Brief description of what was accomplished",
-                    "notes": "Additional details, warnings, or recommendations",
-                    "suspected_touched_paths": ["path/to/file1.py", "path/to/file2.ts"],
+                    "summary": "1-2 sentences, files touched",
+                    "notes": "warnings / follow-ups",
+                    "suspected_touched_paths": ["path/to/file1.py"],
                 },
                 indent=2,
             ),
             "```",
-            "",
-            "After all tasks complete, provide a merge report:",
             "",
             "```json",
             json.dumps(
                 {
                     "strategy": "no-conflicts | manual-review-needed | auto-merged",
-                    "notes": "Details about merge process and any conflicts",
+                    "notes": "merge details and conflicts",
                 },
                 indent=2,
             ),
             "```",
-            "",
-            "### Status Values",
-            "",
-            "- **ok**: Task completed successfully",
-            "- **fail**: Task failed validation/tests (recoverable)",
-            "- **error**: Task encountered an error (unrecoverable)",
-            "",
-            "### Merge Strategies",
-            "",
-            "- **no-conflicts**: All tasks modified different files, clean merge",
-            "- **manual-review-needed**: File overlaps detected, manual intervention required",
-            "- **auto-merged**: Minor conflicts resolved automatically",
             "",
         ]
 

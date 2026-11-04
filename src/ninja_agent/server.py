@@ -60,8 +60,9 @@ TOOLS: list[Tool] = [
         name="agent_exec_command",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Run a guarded non-interactive shell command (tests, git status, ls, builds). "
-            "Destructive patterns refused; mutations need allow_write=True. Output capped and redacted."
+            "Single guarded shell command (git status, ls, single test). "
+            "Mutations need allow_write=True. Use run_and_diagnose for tests/lints, "
+            "pipeline for multi-step."
         ),
         inputSchema={
             "type": "object",
@@ -93,7 +94,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="agent_tail_logs",
         execution=ToolExecution(taskSupport="optional"),
-        description="Capped, redacted log tails (daemon .log / structured logs); max 200 entries.",
+        description="Read-only log tails (max 200). Use distill_logs when you need clusters-errors summary.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -172,7 +173,8 @@ TOOLS: list[Tool] = [
         name="agent_review",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Heuristic static review of files (long blocks, empty excepts, missing docstrings, syntax errors); never modifies."
+            "Heuristic static review: syntax errors (critical), empty except/pass (warning). "
+            "No style/docstring noise; never modifies."
         ),
         inputSchema={
             "type": "object",
@@ -198,7 +200,7 @@ TOOLS: list[Tool] = [
         name="agent_run_and_diagnose",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Run a test suite or command; strip ANSI, parse failures/counts, keep root cause."
+            "Run tests/lints and distill failures (counts, file:line, root cause). Prefer over exec_command for verification."
         ),
         inputSchema={
             "type": "object",
@@ -235,7 +237,7 @@ TOOLS: list[Tool] = [
         name="agent_exec_pipeline",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Run ordered commands sequentially with timing, per-step condensed output, and fail-fast logic."
+            "Ordered multi-step shell (build-then-test). Fail-fast by default; per-step condensed output."
         ),
         inputSchema={
             "type": "object",
@@ -288,7 +290,7 @@ TOOLS: list[Tool] = [
         name="agent_distill_logs",
         execution=ToolExecution(taskSupport="optional"),
         description=(
-            "Cluster and deduplicate repeating log entries, masking dynamic values and isolating error tracebacks."
+            "Tail logs + cluster repeats + isolate tracebacks. Use instead of tail_logs for noisy failures."
         ),
         inputSchema={
             "type": "object",

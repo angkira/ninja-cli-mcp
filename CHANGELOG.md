@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.8.0 - 2026-11-04
+
+Slim prompts across coder, agent and researcher: -54% input tokens.
+
+### Changed
+- **Coder prompts** (`driver.py`, `prompt_builder.py`): emoji/ASCII dividers and
+  the 5-step "reasoning phase" lecture removed; single runtime-spec template
+  (task / scope / rules / tests / strict JSON output). Test mandate is now
+  conditional ("add tests only for new behavior") instead of absolute. Plan
+  prompts lost the Frontend/Backend/DB keyword-router lists; context files are
+  inlined as truncated excerpts with a 12KB total budget
+  (`MAX_TOTAL_CONTEXT_CHARS`, 4KB per file) instead of full dumps.
+  Tool description for `coder_execute_plan_parallel` slimmed.
+- **Agent** (`server.py`, `tools.py`): tool descriptions now say when-to-use
+  (`exec` vs `run_and_diagnose` vs `pipeline`, `tail` vs `distill_logs`).
+  `agent_review` is errors-only: long-block and missing-docstring `info` noise
+  removed, syntax errors (critical) and empty-except (warning) kept.
+- **Researcher** (`synthesis.py`, `search_providers.py`, `tools.py`,
+  `server.py`): Perplexity-aligned. `PerplexityProvider.search` tries the
+  Search API (`POST /search`, ranked raw results) first, chat-completions
+  citations as fallback; default model `sonar-pro`. Synthesis prompts require
+  a direct 1-2 sentence answer first, cite every factual sentence inline, max
+  5 sections, per-type token budgets (summary/executive 1024, comprehensive/
+  technical 4096). `fact_check` no longer guesses from URL keywords — LLM
+  verdict when an engine is configured, explicit `uncertain` otherwise.
+  Server instructions and tool descriptions slimmed (config/policy details
+  moved out of prompts).
+
+### Added
+- `scripts/benchmark_prompts.py`: new-vs-HEAD prompt size/token/$ comparison.
+- `tests/test_prompt_e2e_new.py`: e2e coverage for the slim prompts.
+
+### Tests
+- `tests/test_prompt_builder.py`, `tests/test_agent.py` updated to the slim
+  expectations. Full suite green (one flaky `test_metadata_structure` under
+  full-suite load, passes in isolation; unrelated — strategies untouched).
+
 ## 1.7.1 - 2026-11-01
 
 Fix: secrets for passwordless stores; packaging: systemd --user template.

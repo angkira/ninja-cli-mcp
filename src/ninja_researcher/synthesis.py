@@ -32,6 +32,8 @@ logger = get_logger(__name__)
 EngineKind = Literal["perplexity", "openrouter"]
 
 _PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
+_PERPLEXITY_SEARCH_URL = "https://api.perplexity.ai/search"
+_PERPLEXITY_CHAT_URL = "https://api.perplexity.ai/chat/completions"
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 _DEFAULT_PERPLEXITY_MODEL = "sonar-pro"
 _DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4"
@@ -39,10 +41,17 @@ _DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4"
 _DISABLED = {"off", "none", "disable", "disabled", "template", "templates"}
 
 _REPORT_STYLES: dict[str, str] = {
-    "comprehensive": "a comprehensive, well-structured report",
-    "summary": "a concise executive-style summary",
-    "technical": "a technical, in-depth analysis",
-    "executive": "an executive brief focused on decisions and impact",
+    "comprehensive": "a comprehensive, well-structured report (max 5 sections)",
+    "summary": "a concise executive-style summary (max 3 sections)",
+    "technical": "a technical, in-depth analysis (max 5 sections)",
+    "executive": "an executive brief focused on decisions and impact (max 3 sections)",
+}
+
+_REPORT_MAX_TOKENS: dict[str, int] = {
+    "comprehensive": 4096,
+    "technical": 4096,
+    "summary": 1024,
+    "executive": 1024,
 }
 
 
@@ -148,9 +157,14 @@ async def complete(
     if return_citations and engine.kind == "perplexity":
         payload["return_citations"] = True
 
+    url = (
+        _PERPLEXITY_CHAT_URL
+        if engine.kind == "perplexity"
+        else f"{engine.base_url}/chat/completions"
+    )
     async with httpx.AsyncClient(timeout=timeout_s) as client:
         response = await client.post(
-            f"{engine.base_url}/chat/completions",
+            url,
             json=payload,
             headers={
                 "Authorization": f"Bearer {engine.api_key}",
@@ -172,14 +186,16 @@ async def complete(
     return content.strip(), citations
 
 
-def _sources_block(sources: list[dict[str, Any]], limit: int = 40) -> str:
+def _sources_block(sources: list[dict[str, Any]], limit: int = 20) -> str:
     """Render sources as an indexed block for the prompt."""
     lines: list[str] = []
     for index, source in enumerate(sources[:limit], 1):
         title = source.get("title") or "Untitled"
         url = source.get("url") or ""
+        date = source.get("date") or source.get("last_updated") or ""
         body = source.get("snippet") or source.get("content") or source.get("description") or ""
-        lines.append(f"[{index}] {title} ({url})\n{str(body).strip()[:2000]}")
+        date_suffix = f" ({date})" if date else ""
+        lines.append(f"[{index}] {title}{date_suffix} ({url})\n{str(body).strip()[:1500]}")
     return "\n\n".join(lines)
 
 
@@ -189,12 +205,13 @@ def build_report_messages(
     """Build the chat messages that ask for a synthesized report."""
     style = _REPORT_STYLES.get(report_type, _REPORT_STYLES["comprehensive"])
     system = (
-        f"You are a rigorous research analyst. Write {style} on the user's topic.\n"
+        f"You are a meticulous research analyst. Write {style} on the user's topic.\n"
         "Rules:\n"
-        "- Use only the provided sources; do not invent facts, numbers or URLs.\n"
-        "- Cite each claim inline with the source number in brackets, e.g. [1].\n"
-        "- Be specific and factual; note uncertainty or disagreement between sources.\n"
-        "- Write in Markdown with a title, clear sections and a final 'Sources' list."
+        "- Use ONLY the provided sources [1..N]; never invent facts, numbers or URLs.\n"
+        "- Start with a direct 1-2 sentence answer, then Markdown sections (headers, bullets).\n"
+        "- Cite every factual sentence inline, e.g. [1][3].\n"
+        "- Note uncertainty or disagreement between sources explicitly.\n"
+        "- No separate References section needed beyond a final 'Sources' list with [N] links."
     )
     user = f"Topic: {topic}\n\nSources:\n\n{_sources_block(sources)}"
     return [
@@ -206,11 +223,12 @@ def build_report_messages(
 def build_answer_messages(query: str, sources: list[dict[str, Any]]) -> list[dict[str, str]]:
     """Build the chat messages that ask for a direct answer from search results."""
     system = (
-        "Answer the user's question using only the provided search results.\n"
+        "You are a meticulous research analyst answering from provided results only.\n"
         "Rules:\n"
-        "- Be concise (3-6 sentences) and factual; never invent facts or URLs.\n"
-        "- Cite the supporting results inline with brackets, e.g. [1].\n"
-        "- If the results are insufficient to answer, say so explicitly."
+        "- Start with a direct 1-2 sentence answer (3-6 sentences total).\n"
+        "- Cite every factual sentence inline, e.g. [1][2].\n"
+        "- Never invent facts, numbers or URLs.\n"
+        "- If results are insufficient, say so explicitly."
     )
     user = f"Question: {query}\n\nSearch results:\n\n{_sources_block(sources)}"
     return [
@@ -226,7 +244,13 @@ async def synthesize_report(
     report_type: str,
 ) -> str:
     """Synthesize a Markdown report from sources using the engine."""
-    content, _ = await complete(engine, build_report_messages(topic, sources, report_type))
+    max_tokens = _REPORT_MAX_TOKENS.get(report_type, 4096)
+    content, _ = await complete(
+        engine,
+        build_report_messages(topic, sources, report_type),
+        max_tokens=max_tokens,
+        return_citations=engine.kind == "perplexity",
+    )
     return content
 
 
@@ -236,5 +260,10 @@ async def synthesize_answer(
     sources: list[dict[str, Any]],
 ) -> str:
     """Synthesize a short direct answer from search results using the engine."""
-    content, _ = await complete(engine, build_answer_messages(query, sources))
+    content, _ = await complete(
+        engine,
+        build_answer_messages(query, sources),
+        max_tokens=1024,
+        return_citations=engine.kind == "perplexity",
+    )
     return content
