@@ -1,12 +1,12 @@
 """
-Live battle E2E: sequential plan, parallel plan, agent delegation.
+Live battle E2E: quick task, sequential plan, parallel plan.
 
-Boots real MCP servers (ninja-coder, ninja-agent) over stdio, connects an
+Boots the real ninja-coder MCP server over stdio, connects an
 MCP client, and drives real tool calls against a temp git repo using the
 host's configured CLI + OPENROUTER key. These are REAL model runs.
 
 Run via ``scripts/e2e_live.sh`` (or directly: ``uv run python scripts/e2e_live.py``).
-Set ``E2E_SCOPE`` to ``sequential`` / ``parallel`` / ``delegate`` / ``all`` and
+Set ``E2E_SCOPE`` to ``quick`` / ``sequential`` / ``parallel`` / ``all`` and
 ``REPO_PATH`` to choose the target repo.
 """
 
@@ -134,15 +134,14 @@ async def _coder_parallel(session: ClientSession) -> dict:
     )
 
 
-async def _agent_delegate(session: ClientSession) -> dict:
+async def _coder_quick(session: ClientSession) -> dict:
     return await _tool_call(
         session,
-        "agent_delegate_coder",
+        "coder_simple_task",
         {
-            "subtask": (
-                "Create utils.py in the repo with an is_even(n) function returning n % 2 == 0."
-            ),
             "repo_root": str(REPO),
+            "task": "Create utils.py with an is_even(n) function returning n % 2 == 0.",
+            "allowed_globs": ["utils.py"],
         },
     )
 
@@ -156,11 +155,6 @@ async def main() -> None:
     coder_params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "ninja_coder.server"],
-        env={**os.environ},
-    )
-    agent_params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "ninja_agent.server"],
         env={**os.environ},
     )
 
@@ -190,17 +184,15 @@ async def main() -> None:
         print("\nPARALLEL overall_status:", par.get("overall_status"))
         print("PARALLEL steps:", [(s.get("id"), s.get("status")) for s in par.get("steps", [])])
 
-    if SCOPE in ("delegate", "all"):
+    if SCOPE in ("quick", "all"):
         print("\n" + "=" * 70)
-        print("E2E 3: agent_delegate_coder")
+        print("E2E 3: coder_simple_task (utils.py)")
         print("=" * 70)
-        async with stdio_client(agent_params) as (read, write):
+        async with stdio_client(coder_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                results["delegate"] = await _agent_delegate(session)
-        dele = results["delegate"]
-        print("\nDELEGATE success:", dele.get("success"))
-        print("DELEGATE delegate_tool:", dele.get("delegate_tool"))
+                results["quick"] = await _coder_quick(session)
+        print("\nQUICK status:", results["quick"].get("status"))
 
     print("\n" + "=" * 70)
     print("VERIFY files")
@@ -208,7 +200,7 @@ async def main() -> None:
     expected = ["greet.py"]
     if SCOPE in ("parallel", "all"):
         expected += ["math_ops.py", "calc_ops.py"]
-    if SCOPE in ("delegate", "all"):
+    if SCOPE in ("quick", "all"):
         expected += ["utils.py"]
     for f in expected:
         p = REPO / f

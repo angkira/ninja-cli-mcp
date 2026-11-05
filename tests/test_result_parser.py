@@ -195,7 +195,7 @@ class TestJsonCodeBlockExtraction:
         assert step_ids == {"build", "test", "deploy"}
 
     def test_parse_multiple_json_blocks(self):
-        """Test extraction when multiple JSON blocks present (uses first valid)."""
+        """Test extraction when multiple JSON blocks present (invalid skipped, valid used)."""
         output = '''
         Invalid block:
         ```json
@@ -215,11 +215,136 @@ class TestJsonCodeBlockExtraction:
         '''
 
         parser = ResultParser()
-        # The parser tries the first block, finds it invalid, should try the second
-        # However, since the first JSON is syntactically valid, it gets extracted
-        # but then fails validation. This should raise ValueError.
-        with pytest.raises(ValueError):
-            parser.parse_plan_result(output)
+        result = parser.parse_plan_result(output)
+
+        assert result.overall_status == "success"
+        assert len(result.steps) == 1
+        assert result.steps[0].id == "step1"
+
+
+class TestPerStepObjects:
+    """Test parsing of per-step result objects (the format prompts ask for)."""
+
+    def test_parse_live_sequential_output(self):
+        """Real model output: one ```json block per step (from live e2e run)."""
+        output = '''
+```json
+{
+  "id": "s1",
+  "status": "ok",
+  "summary": "Added goodbye(name) function to greet.py; greet left unchanged.",
+  "notes": "",
+  "suspected_touched_paths": ["greet.py"]
+}
+```
+
+```json
+{
+  "id": "s2",
+  "status": "ok",
+  "summary": "Added __main__ block calling greet and goodbye.",
+  "notes": "",
+  "suspected_touched_paths": ["greet.py"]
+}
+```
+        '''
+
+        parser = ResultParser()
+        result = parser.parse_plan_result(output)
+
+        assert result.overall_status == "success"
+        assert len(result.steps) == 2
+        assert result.steps[0].id == "s1"
+        assert result.steps[0].status == "ok"
+        assert result.steps[1].id == "s2"
+        assert result.files_modified == ["greet.py"]
+
+    def test_per_step_with_fail_and_error(self):
+        """Mixed statuses map to partial / failed overall."""
+        output = '''
+```json
+{"id": "s1", "status": "ok", "summary": "Done", "suspected_touched_paths": []}
+```
+```json
+{"id": "s2", "status": "fail", "summary": "Tests red", "notes": "assert x", "suspected_touched_paths": []}
+```
+        '''
+
+        parser = ResultParser()
+        result = parser.parse_plan_result(output)
+
+        assert result.overall_status == "partial"
+        assert result.steps[1].status == "fail"
+        assert result.steps[1].error_message == "assert x"
+
+    def test_per_step_error_means_failed(self):
+        """An error step fails the whole plan."""
+        output = '''```json
+{"id": "s1", "status": "error", "summary": "Crashed", "suspected_touched_paths": []}
+```'''
+
+        parser = ResultParser()
+        result = parser.parse_plan_result(output)
+
+        assert result.overall_status == "failed"
+
+    def test_template_echo_ignored(self):
+        """The prompt's example JSON echoed back must not count as a step."""
+        output = '''
+```json
+{
+  "id": "step_id",
+  "status": "ok | fail | error",
+  "summary": "1-2 sentences, files touched",
+  "notes": "warnings / follow-ups",
+  "suspected_touched_paths": ["path/to/file1.py"]
+}
+```
+```json
+{"id": "real", "status": "ok", "summary": "Did it", "suspected_touched_paths": ["a.py"]}
+```
+        '''
+
+        parser = ResultParser()
+        result = parser.parse_plan_result(output)
+
+        assert len(result.steps) == 1
+        assert result.steps[0].id == "real"
+
+    def test_merge_block_attached_to_notes(self):
+        """A parallel merge report block lands in notes, not in steps."""
+        output = '''
+```json
+{"id": "p1", "status": "ok", "summary": "A", "suspected_touched_paths": ["a.py"]}
+```
+```json
+{"id": "p2", "status": "ok", "summary": "B", "suspected_touched_paths": ["b.py"]}
+```
+```json
+{"strategy": "no-conflicts", "notes": "clean merge"}
+```
+        '''
+
+        parser = ResultParser()
+        result = parser.parse_plan_result(output)
+
+        assert result.overall_status == "success"
+        assert len(result.steps) == 2
+        assert "no-conflicts" in result.notes
+        assert set(result.files_modified) == {"a.py", "b.py"}
+
+    def test_steps_wrapper_object(self):
+        """A {"steps": [...]} wrapper is accepted."""
+        output = '''{"steps": [
+          {"id": "a", "status": "ok", "summary": "A"},
+          {"id": "b", "status": "fail", "summary": "B"}
+        ]}'''
+
+        parser = ResultParser()
+        result = parser.parse_plan_result(output)
+
+        assert result.overall_status == "partial"
+        assert [s.id for s in result.steps] == ["a", "b"]
 
 
 class TestMalformedJson:
@@ -239,7 +364,9 @@ class TestMalformedJson:
         '''
 
         parser = ResultParser()
-        with pytest.raises(ValueError, match="Could not extract valid JSON"):
+        # Fragments inside the broken block still parse as JSON, but none
+        # is a plan result -> structural error, not an extraction error.
+        with pytest.raises(ValueError, match="Invalid plan result structure"):
             parser.parse_plan_result(output)
 
     def test_parse_plan_result_missing_required_fields(self):

@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.8.1 - 2026-11-05
+
+Fix the prompt/parser contract: the model obeyed the new per-step JSON format,
+but the parser only accepted the legacy aggregate schema, so every plan fell
+back to "Completed (details in output)" with empty steps.
+
+### Fixed
+- **Result parser accepts the format prompts actually request**
+  (`src/ninja_coder/result_parser.py`): collects ALL ```json blocks (not just
+  the first) via fenced-block extraction plus a string-aware balanced-brace
+  scan; parses per-step objects `{id, status, summary, ...}` (single, list or
+  `{"steps": [...]}` wrapper), derives `overall_status` (error→failed,
+  fail→partial), unions touched paths, attaches `{"strategy": ...}` merge
+  reports to notes; ignores the prompt's example JSON echoed back. Legacy
+  aggregate `{overall_status, steps_completed, step_summaries}` still parses.
+  Verified by replaying the live e2e stdout: `success`, both steps `ok`.
+- **Prompt disambiguation** (`prompt_builder.py`): "one ```json block per step,
+  in step order; no outer wrapper object".
+- **Stale e2e scope** (`scripts/e2e_live.*`): `--delegate` called the removed
+  `agent_delegate_coder`; replaced with a cheap `coder_simple_task` smoke
+  (`--quick`).
+- **Dead code** (`src/ninja_agent/tools.py`): removed now-unused
+  `_check_long_lines` and `_parents_of` (errors-only review).
+- **Stale daemons after update**: daemons keep serving the pre-update code
+  (found 1.7.1 processes reporting 1.8.0). Restart after reinstall:
+  `ninja-mcp daemon restart`.
+
+### Tests
+- `tests/test_result_parser.py`: multi-block, live-output replay, template
+  echo, merge block, `{"steps": [...]}` wrapper; malformed JSON now reports
+  "Invalid plan result structure". Full affected suites green (225 passed).
+
 ## 1.8.0 - 2026-11-04
 
 Slim prompts across coder, agent and researcher: -54% input tokens.

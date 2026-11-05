@@ -46,7 +46,7 @@ def test_coder_plan_truncates_context(tmp_path) -> None:
     ctx_section = prompt.split("## CONTEXT FILES", 1)[1].split("## OUTPUT FORMAT")[0]
     assert len(ctx_section) < MAX_TOTAL_CONTEXT_CHARS + 2000
     # strict JSON output, no verbose guidelines
-    assert "exactly one JSON object per step" in prompt
+    assert "one ```json block per step" in prompt
     assert "Summary Guidelines" not in prompt
     # no keyword router noise
     assert "Frontend: React" not in prompt

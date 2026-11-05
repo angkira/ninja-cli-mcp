@@ -448,29 +448,6 @@ class AgentToolExecutor:
             await self._get_runner().distill_logs(request),
         )
 
-    def _check_long_lines(self, rel: str, lines: list[str]) -> list[AgentReviewFinding]:
-        """Flag functions that are too long (rough heuristic via line blocks)."""
-        # Track blank-line-delimited function-ish blocks
-        findings: list[AgentReviewFinding] = []
-        block_start = 1
-        for i, line in enumerate(lines, start=1):
-            if not line.strip() or (i > block_start and line[:1].isalnum()):
-                length = i - block_start
-                if length > 80:
-                    findings.append(
-                        AgentReviewFinding(
-                            severity="info",
-                            file_path=rel,
-                            line=block_start,
-                            message=(
-                                f"Long block of {length} lines (starting line {block_start}); "
-                                "consider splitting for readability."
-                            ),
-                        )
-                    )
-                block_start = i + 1
-        return findings
-
     def _check_python(self, rel: str, text: str) -> list[AgentReviewFinding]:
         """Run Python-specific heuristic checks (errors only, no style noise)."""
         findings: list[AgentReviewFinding] = []
@@ -510,13 +487,3 @@ class AgentToolExecutor:
                     )
 
         return findings
-
-
-def _parents_of(tree: ast.AST, target: ast.AST) -> list[ast.AST]:
-    """Return the parent nodes of a target within the tree."""
-    parents: list[ast.AST] = []
-    for node in ast.walk(tree):
-        for child in ast.iter_child_nodes(node):
-            if child is target:
-                parents.append(node)
-    return parents

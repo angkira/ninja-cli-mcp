@@ -2,14 +2,14 @@
 #
 # e2e_live.sh - Run live battle E2E tests against real models.
 #
-# Boots the real ninja-coder and ninja-agent MCP servers over stdio, connects
+# Boots the real ninja-coder MCP server over stdio, connects
 # an MCP client, and drives real tool calls in a temp git repo using the
 # host's configured CLI (opencode by default) + the OPENROUTER key.
 #
 # These are REAL model runs — slow and billable.
 #
 # Usage:
-#   ./scripts/e2e_live.sh [--repo /tmp/opencode/e2e_battle_repo] [--sequential|--parallel|--delegate|--all]
+#   ./scripts/e2e_live.sh [--repo /tmp/opencode/e2e_battle_repo] [--quick|--sequential|--parallel|--all]
 
 set -euo pipefail
 
@@ -23,9 +23,9 @@ SCOPE="all"
 while [ $# -gt 0 ]; do
     case "$1" in
         --repo) REPO="$2"; shift 2 ;;
+        --quick) SCOPE="quick" ; shift ;;
         --sequential) SCOPE="sequential" ; shift ;;
         --parallel) SCOPE="parallel" ; shift ;;
-        --delegate) SCOPE="delegate" ; shift ;;
         --all) SCOPE="all" ; shift ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac

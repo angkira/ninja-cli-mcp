@@ -229,7 +229,8 @@ class SequentialPlanPrompt:
         return [
             "## OUTPUT FORMAT",
             "",
-            "Return exactly one JSON object per step, no prose, no code:",
+            "Return one ```json block per step, in step order. "
+            "No outer wrapper object, no prose, no code:",
             "",
             "```json",
             json.dumps(
@@ -421,7 +422,8 @@ class ParallelPlanPrompt:
         return [
             "## OUTPUT FORMAT",
             "",
-            "Return exactly one JSON object per task plus a merge report. No prose, no code:",
+            "Return one ```json block per task, in order, plus one merge block. "
+            "No outer wrapper object, no prose, no code:",
             "",
             "```json",
             json.dumps(
