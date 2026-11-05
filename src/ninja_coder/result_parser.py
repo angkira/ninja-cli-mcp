@@ -60,7 +60,13 @@ class ResultParser:
             ValueError: If JSON cannot be extracted or parsed
             KeyError: If required fields are missing
         """
-        blocks = self._extract_all_json_blocks(output)
+        # CLI envelopes (e.g. opencode --format json) wrap the model's answer
+        # in per-line JSON objects with the real newlines escaped, so fenced
+        # blocks are invisible until the envelope's text fields are decoded.
+        decoded = self._decode_envelope_text(output)
+        source = f"{decoded}\n{output}" if decoded else output
+
+        blocks = self._extract_all_json_blocks(source)
 
         step_objs = self._collect_step_objects(blocks)
         if step_objs:
@@ -128,9 +134,15 @@ class ResultParser:
             Parsed JSON dict or None if extraction fails
         """
         for block in self._extract_all_json_blocks(output):
-            if isinstance(block, dict) and block:
+            if isinstance(block, dict) and block and not self._is_envelope_part(block):
                 return block
         return None
+
+    @staticmethod
+    def _is_envelope_part(data: dict[str, Any]) -> bool:
+        """Detect CLI-envelope internals (message/tool parts, metadata)."""
+        envelope_keys = ("sessionID", "sessionId", "messageID", "messageId", "snapshot")
+        return any(k in data for k in envelope_keys)
 
     def _extract_all_json_blocks(self, output: str) -> list[Any]:
         """Extract every JSON value from CLI output, in order.
@@ -179,6 +191,45 @@ class ResultParser:
         return found
 
     @staticmethod
+    def _decode_envelope_text(output: str) -> str:
+        """Decode a CLI JSON envelope into the model's plain text.
+
+        CLIs like ``opencode run --format json`` emit one JSON object per
+        line; the model's answer (including its ```json blocks) lives in
+        ``text`` fields with newlines escaped, invisible to regexes run on
+        the raw output. This collects those fields so downstream extraction
+        sees the answer as the model wrote it.
+
+        Args:
+            output: Raw CLI stdout
+
+        Returns:
+            Joined text fields, or "" when the output is not an envelope.
+        """
+        texts: list[str] = []
+
+        def _collect(node: Any) -> None:
+            if isinstance(node, dict):
+                text = node.get("text")
+                if isinstance(text, str) and text.strip() and isinstance(node.get("type"), str):
+                    texts.append(text)
+                for value in node.values():
+                    _collect(value)
+            elif isinstance(node, list):
+                for item in node:
+                    _collect(item)
+
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                _collect(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return "\n".join(texts)
+
+    @staticmethod
     def _scan_balanced_json(text: str, limit: int = 100) -> list[str]:
         """Return balanced {...}/[...] substrings, respecting string escapes.
 
@@ -224,13 +275,32 @@ class ResultParser:
         return any("path/to/" in str(p) for p in touched)
 
     def _collect_step_objects(self, blocks: list[Any]) -> list[dict[str, Any]]:
-        """Collect per-step result objects from parsed blocks, in order."""
+        """Collect per-step result objects from parsed blocks, in order.
+
+        A step object needs a string ``id``, a string ``status`` and at
+        least one content field (summary/notes/touched paths). This keeps
+        CLI-envelope internals (message/tool parts that happen to carry an
+        ``id``) out of the results.
+        """
+        content_keys = (
+            "summary",
+            "notes",
+            "suspected_touched_paths",
+            "touched_paths",
+            "files_touched",
+            "files_modified",
+        )
         steps: list[dict[str, Any]] = []
         seen: set[str] = set()
 
         def _add(obj: dict[str, Any]) -> None:
             step_id = obj.get("id")
+            status = obj.get("status")
             if not isinstance(step_id, str) or not step_id:
+                return
+            if not isinstance(status, str) or not status:
+                return
+            if not any(k in obj for k in content_keys):
                 return
             if step_id in seen or self._is_template_echo(obj):
                 return

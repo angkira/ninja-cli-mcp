@@ -27,7 +27,7 @@ class TestParseValidPlanResult:
 
     def test_parse_plan_result_valid_json(self):
         """Test parsing valid JSON output with all required fields."""
-        output = '''
+        output = """
         Here's the result:
         ```json
         {
@@ -42,7 +42,7 @@ class TestParseValidPlanResult:
           "notes": "All steps completed successfully"
         }
         ```
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -80,7 +80,7 @@ class TestParseValidPlanResult:
 
     def test_parse_plan_result_with_failures(self):
         """Test parsing result with some failed steps."""
-        output = '''
+        output = """
         ```json
         {
           "overall_status": "partial",
@@ -95,7 +95,7 @@ class TestParseValidPlanResult:
           "notes": "Some steps failed"
         }
         ```
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -111,7 +111,7 @@ class TestParseValidPlanResult:
 
     def test_parse_plan_result_all_failed(self):
         """Test parsing result with all steps failed."""
-        output = '''
+        output = """
         {
           "overall_status": "failed",
           "steps_completed": [],
@@ -122,7 +122,7 @@ class TestParseValidPlanResult:
           },
           "files_modified": []
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -136,7 +136,7 @@ class TestJsonCodeBlockExtraction:
 
     def test_parse_plan_result_json_in_code_block(self):
         """Test extraction from standard JSON code block."""
-        output = '''
+        output = """
         Some text before...
 
         ```json
@@ -152,7 +152,7 @@ class TestJsonCodeBlockExtraction:
         ```
 
         Some text after...
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -162,7 +162,7 @@ class TestJsonCodeBlockExtraction:
 
     def test_parse_plan_result_nested_json_in_markdown(self):
         """Test extraction of JSON nested in markdown."""
-        output = '''
+        output = """
         # Results
 
         Here are the results of the execution:
@@ -184,7 +184,7 @@ class TestJsonCodeBlockExtraction:
 
         ## Summary
         Everything went well!
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -196,7 +196,7 @@ class TestJsonCodeBlockExtraction:
 
     def test_parse_multiple_json_blocks(self):
         """Test extraction when multiple JSON blocks present (invalid skipped, valid used)."""
-        output = '''
+        output = """
         Invalid block:
         ```json
         {"invalid": "missing_required_fields"}
@@ -212,7 +212,7 @@ class TestJsonCodeBlockExtraction:
           "files_modified": []
         }
         ```
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -227,7 +227,7 @@ class TestPerStepObjects:
 
     def test_parse_live_sequential_output(self):
         """Real model output: one ```json block per step (from live e2e run)."""
-        output = '''
+        output = """
 ```json
 {
   "id": "s1",
@@ -247,7 +247,7 @@ class TestPerStepObjects:
   "suspected_touched_paths": ["greet.py"]
 }
 ```
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -261,14 +261,14 @@ class TestPerStepObjects:
 
     def test_per_step_with_fail_and_error(self):
         """Mixed statuses map to partial / failed overall."""
-        output = '''
+        output = """
 ```json
 {"id": "s1", "status": "ok", "summary": "Done", "suspected_touched_paths": []}
 ```
 ```json
 {"id": "s2", "status": "fail", "summary": "Tests red", "notes": "assert x", "suspected_touched_paths": []}
 ```
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -279,9 +279,9 @@ class TestPerStepObjects:
 
     def test_per_step_error_means_failed(self):
         """An error step fails the whole plan."""
-        output = '''```json
+        output = """```json
 {"id": "s1", "status": "error", "summary": "Crashed", "suspected_touched_paths": []}
-```'''
+```"""
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -290,7 +290,7 @@ class TestPerStepObjects:
 
     def test_template_echo_ignored(self):
         """The prompt's example JSON echoed back must not count as a step."""
-        output = '''
+        output = """
 ```json
 {
   "id": "step_id",
@@ -303,7 +303,7 @@ class TestPerStepObjects:
 ```json
 {"id": "real", "status": "ok", "summary": "Did it", "suspected_touched_paths": ["a.py"]}
 ```
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -313,7 +313,7 @@ class TestPerStepObjects:
 
     def test_merge_block_attached_to_notes(self):
         """A parallel merge report block lands in notes, not in steps."""
-        output = '''
+        output = """
 ```json
 {"id": "p1", "status": "ok", "summary": "A", "suspected_touched_paths": ["a.py"]}
 ```
@@ -323,7 +323,7 @@ class TestPerStepObjects:
 ```json
 {"strategy": "no-conflicts", "notes": "clean merge"}
 ```
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -335,10 +335,10 @@ class TestPerStepObjects:
 
     def test_steps_wrapper_object(self):
         """A {"steps": [...]} wrapper is accepted."""
-        output = '''{"steps": [
+        output = """{"steps": [
           {"id": "a", "status": "ok", "summary": "A"},
           {"id": "b", "status": "fail", "summary": "B"}
-        ]}'''
+        ]}"""
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -346,13 +346,42 @@ class TestPerStepObjects:
         assert result.overall_status == "partial"
         assert [s.id for s in result.steps] == ["a", "b"]
 
+    def test_opencode_envelope_with_escaped_blocks(self):
+        """Real opencode --format json stdout: per-line envelope objects with
+        the model's fenced blocks escaped inside text fields, plus native
+        envelope parts carrying their own ids (must be ignored)."""
+        output = (
+            '{"type":"step_start","timestamp":1,"sessionID":"ses_1",'
+            '"part":{"id":"prt_aaa","sessionID":"ses_1","messageID":"msg_1",'
+            '"type":"step-start","snapshot":"beef"}}\n'
+            '{"type":"text","timestamp":2,"sessionID":"ses_1",'
+            '"part":{"id":"prt_bbb","sessionID":"ses_1","messageID":"msg_1",'
+            '"type":"text","text":"```json\\n{\\n  \\"id\\": \\"s1\\",'
+            '\\n  \\"status\\": \\"ok\\",\\n  \\"summary\\": \\"Added goodbye\\",'
+            '\\n  \\"notes\\": \\"\\",\\n  \\"suspected_touched_paths\\": '
+            '[\\"greet.py\\"]\\n}\\n```\\n\\n```json\\n{\\n  \\"id\\": \\"s2\\",'
+            '\\n  \\"status\\": \\"ok\\",\\n  \\"summary\\": \\"Added main\\",'
+            '\\n  \\"notes\\": \\"\\",\\n  \\"suspected_touched_paths\\": '
+            '[\\"greet.py\\"]\\n}\\n```"}}\n'
+            '{"type":"step_finish","timestamp":3,"sessionID":"ses_1",'
+            '"part":{"id":"prt_ccc","sessionID":"ses_1","messageID":"msg_1",'
+            '"type":"step-finish","reason":"stop","snapshot":"beef"}}'
+        )
+
+        parser = ResultParser()
+        result = parser.parse_plan_result(output)
+
+        assert result.overall_status == "success"
+        assert [(s.id, s.status) for s in result.steps] == [("s1", "ok"), ("s2", "ok")]
+        assert result.files_modified == ["greet.py"]
+
 
 class TestMalformedJson:
     """Test handling of malformed or invalid JSON."""
 
     def test_parse_plan_result_malformed_json(self):
         """Test handling of malformed JSON."""
-        output = '''
+        output = """
         ```json
         {
           "overall_status": "success",
@@ -361,7 +390,7 @@ class TestMalformedJson:
           "step_summaries": {"step1": "Missing comma above"}
         }
         ```
-        '''
+        """
 
         parser = ResultParser()
         # Fragments inside the broken block still parse as JSON, but none
@@ -371,14 +400,14 @@ class TestMalformedJson:
 
     def test_parse_plan_result_missing_required_fields(self):
         """Test validation with missing required fields."""
-        output = '''
+        output = """
         ```json
         {
           "overall_status": "success",
           "steps_completed": ["step1"]
         }
         ```
-        '''
+        """
 
         parser = ResultParser()
         with pytest.raises(ValueError, match="Invalid plan result structure"):
@@ -386,14 +415,14 @@ class TestMalformedJson:
 
     def test_parse_plan_result_invalid_status(self):
         """Test validation with invalid status value."""
-        output = '''
+        output = """
         {
           "overall_status": "invalid_status",
           "steps_completed": ["step1"],
           "steps_failed": [],
           "step_summaries": {"step1": "Done"}
         }
-        '''
+        """
 
         parser = ResultParser()
         with pytest.raises(ValueError, match="Invalid plan result structure"):
@@ -401,14 +430,14 @@ class TestMalformedJson:
 
     def test_parse_plan_result_wrong_field_types(self):
         """Test validation with wrong field types."""
-        output = '''
+        output = """
         {
           "overall_status": "success",
           "steps_completed": "not_a_list",
           "steps_failed": [],
           "step_summaries": {"step1": "Done"}
         }
-        '''
+        """
 
         parser = ResultParser()
         with pytest.raises(ValueError, match="Invalid plan result structure"):
@@ -428,14 +457,14 @@ class TestSimpleResultParsing:
 
     def test_parse_simple_result_with_json(self):
         """Test simple result parsing when JSON is present."""
-        output = '''
+        output = """
         ```json
         {
           "summary": "Created user authentication module",
           "files_modified": ["src/auth.py", "src/models.py"]
         }
         ```
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_simple_result(output)
@@ -445,12 +474,12 @@ class TestSimpleResultParsing:
 
     def test_parse_simple_result_with_notes_fallback(self):
         """Test fallback to notes field when summary is missing."""
-        output = '''
+        output = """
         {
           "notes": "Task completed successfully",
           "files_modified": ["file.py"]
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_simple_result(output)
@@ -488,12 +517,12 @@ class TestExtractJsonFromOutput:
 
     def test_extract_json_strategy_1_code_blocks(self):
         """Test Strategy 1: JSON code blocks."""
-        output = '''
+        output = """
         Here's the result:
         ```json
         {"status": "ok", "message": "Success"}
         ```
-        '''
+        """
 
         parser = ResultParser()
         json_data = parser._extract_json_from_output(output)
@@ -504,10 +533,10 @@ class TestExtractJsonFromOutput:
 
     def test_extract_json_strategy_2_json_objects(self):
         """Test Strategy 2: JSON objects in text."""
-        output = '''
+        output = """
         The result is: {"status": "ok", "count": 42}
         Additional text here.
-        '''
+        """
 
         parser = ResultParser()
         json_data = parser._extract_json_from_output(output)
@@ -543,7 +572,7 @@ class TestExtractJsonFromOutput:
         may not be fully captured. Strategy 1 (code blocks) handles this correctly.
         """
         # Test with code block (Strategy 1 - works correctly)
-        output_with_block = '''
+        output_with_block = """
 ```json
 {
   "status": "ok",
@@ -555,7 +584,7 @@ class TestExtractJsonFromOutput:
   }
 }
 ```
-        '''
+        """
 
         parser = ResultParser()
         json_data = parser._extract_json_from_output(output_with_block)
@@ -567,12 +596,12 @@ class TestExtractJsonFromOutput:
 
     def test_extract_json_with_arrays(self):
         """Test extraction with array values."""
-        output = '''
+        output = """
         {
           "items": ["apple", "banana", "cherry"],
           "counts": [1, 2, 3]
         }
-        '''
+        """
 
         parser = ResultParser()
         json_data = parser._extract_json_from_output(output)
@@ -770,14 +799,14 @@ class TestStatusMapping:
 
     def test_status_mapping_success(self):
         """Test mapping of 'success' status."""
-        output = '''
+        output = """
         {
           "overall_status": "success",
           "steps_completed": ["step1"],
           "steps_failed": [],
           "step_summaries": {"step1": "Done"}
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -786,7 +815,7 @@ class TestStatusMapping:
 
     def test_status_mapping_partial(self):
         """Test mapping of 'partial' status."""
-        output = '''
+        output = """
         {
           "overall_status": "partial",
           "steps_completed": ["step1"],
@@ -796,7 +825,7 @@ class TestStatusMapping:
             "step2": "Failed"
           }
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -805,7 +834,7 @@ class TestStatusMapping:
 
     def test_status_mapping_failed(self):
         """Test mapping of 'failed' status."""
-        output = '''
+        output = """
         {
           "overall_status": "failed",
           "steps_completed": [],
@@ -815,7 +844,7 @@ class TestStatusMapping:
             "step2": "Failed"
           }
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -824,14 +853,14 @@ class TestStatusMapping:
 
     def test_step_status_mapping_ok(self):
         """Test mapping of step status to 'ok'."""
-        output = '''
+        output = """
         {
           "overall_status": "success",
           "steps_completed": ["step1"],
           "steps_failed": [],
           "step_summaries": {"step1": "Completed"}
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -840,14 +869,14 @@ class TestStatusMapping:
 
     def test_step_status_mapping_fail(self):
         """Test mapping of step status to 'fail'."""
-        output = '''
+        output = """
         {
           "overall_status": "failed",
           "steps_completed": [],
           "steps_failed": ["step1"],
           "step_summaries": {"step1": "Error occurred"}
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -856,7 +885,7 @@ class TestStatusMapping:
 
     def test_step_status_default_to_ok(self):
         """Test that steps default to 'ok' when not explicitly marked as failed."""
-        output = '''
+        output = """
         {
           "overall_status": "success",
           "steps_completed": ["step1", "step2"],
@@ -867,7 +896,7 @@ class TestStatusMapping:
             "step3": "Also done but not in completed list"
           }
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -884,7 +913,7 @@ class TestEdgeCases:
 
     def test_empty_steps(self):
         """Test result with no steps."""
-        output = '''
+        output = """
         {
           "overall_status": "success",
           "steps_completed": [],
@@ -892,7 +921,7 @@ class TestEdgeCases:
           "step_summaries": {},
           "files_modified": []
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -902,14 +931,14 @@ class TestEdgeCases:
 
     def test_step_only_in_summaries(self):
         """Test step that appears only in summaries."""
-        output = '''
+        output = """
         {
           "overall_status": "success",
           "steps_completed": [],
           "steps_failed": [],
           "step_summaries": {"mystery_step": "Appeared somehow"}
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -939,7 +968,7 @@ class TestEdgeCases:
 
     def test_unicode_in_paths_and_summaries(self):
         """Test with unicode characters in paths and summaries."""
-        output = '''
+        output = """
         {
           "overall_status": "success",
           "steps_completed": ["étape1"],
@@ -947,7 +976,7 @@ class TestEdgeCases:
           "step_summaries": {"étape1": "Créé avec succès 🎉"},
           "files_modified": ["src/données.py"]
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -958,7 +987,7 @@ class TestEdgeCases:
 
     def test_special_characters_in_json(self):
         """Test with special characters that need escaping."""
-        output = r'''
+        output = r"""
         {
           "overall_status": "success",
           "steps_completed": ["step1"],
@@ -966,7 +995,7 @@ class TestEdgeCases:
           "step_summaries": {"step1": "Done with \"quotes\" and \n newlines"},
           "files_modified": []
         }
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)
@@ -975,7 +1004,7 @@ class TestEdgeCases:
 
     def test_whitespace_variations(self):
         """Test with various whitespace patterns."""
-        output = '''
+        output = """
 
 
         ```json
@@ -992,7 +1021,7 @@ class TestEdgeCases:
         ```
 
 
-        '''
+        """
 
         parser = ResultParser()
         result = parser.parse_plan_result(output)

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.8.2 - 2026-11-05
+
+The model obeyed the per-step JSON format, but the parser still failed on
+real CLI output: opencode's `--format json` envelope keeps the answer's
+newlines escaped, and envelope internals carry their own `id`s.
+
+### Fixed
+- **Envelope-aware parsing** (`result_parser.py`): decode the CLI JSON
+  envelope's `text` fields first, so fenced blocks are extracted as the model
+  wrote them; step objects now require `id` + `status` + content field, which
+  filters envelope internals (`prt_*`/`call_*`) out of results; first-block
+  extraction skips envelope parts. Verified on the real live stdout:
+  `success`, `s1`/`s2` `ok` with real summaries.
+- Ruff `PLW2901` in the new envelope decoder.
+
+### Tests
+- Real-envelope replay test (escaped fenced blocks + native envelope parts).
+  Parser suite 54/54; affected suites 190 passed.
+
 ## 1.8.1 - 2026-11-05
 
 Fix the prompt/parser contract: the model obeyed the new per-step JSON format,
