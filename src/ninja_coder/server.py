@@ -30,24 +30,42 @@ from mcp.types import (
     Task,
     TextContent,
     Tool,
+    ToolAnnotations,
     ToolExecution,
 )
 from pydantic import ValidationError
 
 from ninja_coder.models import (
     BranchDiscardRequest,
+    BranchDiscardResult,
     BranchListRequest,
+    BranchListResult,
     BranchMergeRequest,
+    BranchMergeResult,
     GetAgentsRequest,
+    GetAgentsResult,
     MultiAgentTaskRequest,
+    MultiAgentTaskResult,
     ParallelPlanRequest,
+    PlanExecutionResult,
     QueryLogsRequest,
+    QueryLogsResult,
     SequentialPlanRequest,
     SimpleTaskRequest,
+    SimpleTaskResult,
 )
 from ninja_coder.tools import get_executor
 from ninja_common.jobs import JOB_STATUS_CANCELLED, JOB_STATUS_WORKING, JobManager
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.mcp_meta import (
+    ToolMeta,
+    apply_tool_meta,
+    dict_result,
+    elicit_confirm,
+    model_result,
+    patch_resource_link,
+    server_icon,
+)
 from ninja_common.mcp_tasks import (
     ProgressCallback,
     SqliteTaskStore,
@@ -206,8 +224,13 @@ def _result_payload(result: Any) -> CallToolResult:
             ],
             isError=True,
         )
+    links = [patch_resource_link(getattr(result, "patch_path", None))]
     return CallToolResult(
-        content=[TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))],
+        content=[
+            TextContent(type="text", text=json.dumps(result.model_dump(), indent=2)),
+            *[link for link in links if link is not None],
+        ],
+        structuredContent=json.loads(json.dumps(result.model_dump(), default=str)),
         isError=False,
     )
 
@@ -232,22 +255,25 @@ def _job_handle_payload(task: Task, poll_interval_ms: int) -> dict[str, Any]:
     }
 
 
-def _stored_result_text(result: Any) -> str | None:
-    """Extract the first text block from a stored task result, if any."""
+def _stored_result(result: Any) -> tuple[str | None, dict[str, Any] | None]:
+    """Extract stored text plus structured payload from a task result, if any."""
     if result is None:
-        return None
+        return None, None
     try:
         dumped = result.model_dump(mode="json", by_alias=True)
     except Exception:
-        return None
+        return None, None
     content = dumped.get("content") if isinstance(dumped, dict) else None
-    if not content:
-        return None
-    first = content[0]
-    if isinstance(first, dict) and first.get("type") == "text":
-        text = first.get("text")
-        return text if isinstance(text, str) else None
-    return None
+    text: str | None = None
+    if content:
+        first = content[0]
+        if isinstance(first, dict) and first.get("type") == "text":
+            maybe_text = first.get("text")
+            text = maybe_text if isinstance(maybe_text, str) else None
+    structured = dumped.get("structuredContent")
+    if not isinstance(structured, dict):
+        structured = None
+    return text, structured
 
 
 def _validation_error_payload(exc: ValidationError) -> dict[str, Any]:
@@ -768,7 +794,76 @@ TOOLS.extend(
     ]
 )
 
-_TOOLS_BY_NAME.update({tool.name: tool for tool in TOOLS if tool.name in JOB_TOOL_NAMES})
+_destructive = ToolAnnotations(destructiveHint=True)
+_idempotent = ToolAnnotations(idempotentHint=True)
+_destructive_idempotent = ToolAnnotations(destructiveHint=True, idempotentHint=True)
+_readonly = ToolAnnotations(readOnlyHint=True, idempotentHint=True)
+
+# Tool metadata: titles, behavior hints, and result models for
+# outputSchema + structuredContent. Job-handle tools return plain dicts.
+_TOOL_META: dict[str, ToolMeta] = {
+    "coder_simple_task": ToolMeta(
+        title="Simple code task",
+        annotations=_destructive_idempotent,
+        result_model=SimpleTaskResult,
+    ),
+    "coder_execute_plan_sequential": ToolMeta(
+        title="Sequential plan",
+        annotations=_destructive_idempotent,
+        result_model=PlanExecutionResult,
+    ),
+    "coder_execute_plan_parallel": ToolMeta(
+        title="Parallel plan",
+        annotations=_destructive_idempotent,
+        result_model=PlanExecutionResult,
+    ),
+    "coder_get_agents": ToolMeta(
+        title="List agents", annotations=_readonly, result_model=GetAgentsResult
+    ),
+    "coder_multi_agent_task": ToolMeta(
+        title="Multi-agent task",
+        annotations=_destructive_idempotent,
+        result_model=MultiAgentTaskResult,
+    ),
+    "coder_query_logs": ToolMeta(
+        title="Query logs", annotations=_readonly, result_model=QueryLogsResult
+    ),
+    "coder_submit_simple": ToolMeta(
+        title="Submit simple task", annotations=_destructive_idempotent
+    ),
+    "coder_submit_sequential": ToolMeta(
+        title="Submit sequential plan", annotations=_destructive_idempotent
+    ),
+    "coder_submit_parallel": ToolMeta(
+        title="Submit parallel plan", annotations=_destructive_idempotent
+    ),
+    "coder_job_status": ToolMeta(title="Job status", annotations=_readonly, result_model=None),
+    "coder_job_result": ToolMeta(title="Job result", annotations=_readonly),
+    "coder_job_cancel": ToolMeta(title="Cancel job", annotations=_destructive_idempotent),
+    "coder_branches_list": ToolMeta(
+        title="List branches", annotations=_readonly, result_model=BranchListResult
+    ),
+    "coder_branch_merge": ToolMeta(
+        title="Merge branch", annotations=_destructive, result_model=BranchMergeResult
+    ),
+    "coder_branch_discard": ToolMeta(
+        title="Discard branch",
+        annotations=_destructive,
+        result_model=BranchDiscardResult,
+    ),
+    "coder_jobs_list": ToolMeta(title="List jobs", annotations=_readonly),
+}
+
+TOOLS = apply_tool_meta(TOOLS, _TOOL_META, server_icon("coder"))
+
+# Rebuild: apply_tool_meta returns new Tool objects, so earlier entries are stale.
+_TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}
+
+
+def _is_unmerged_refusal(message: str | None) -> bool:
+    """Detect a refuse-to-delete-branch outcome caused by unmerged commits."""
+    text = message or ""
+    return "not fully merged" in text or "unmerged" in text.lower()
 
 
 def create_server() -> Server:
@@ -790,6 +885,8 @@ coder_execute_plan_parallel = independent atomic steps; complexity='simple' in-p
 Isolated plan work is committed to a ninja/* branch and its checkout is removed right after the run. Review and integrate it with coder_branches_list, coder_branch_merge (ninja/* only, conflicts aborted), and coder_branch_discard.
 Spec format: GOOD = file, symbol, behavior, types, error handling (e.g. "In src/api/routes.py add POST /login ... 401 on failure").
 Ninja returns a summary only (files changed, brief description); you read files, run tests, review. Same request_key retries join the in-flight run.""",
+        website_url="https://github.com/angkira/ninja-cli-mcp",
+        icons=[server_icon("coder")],
     )
 
     # Enable standard MCP Tasks (background/asynchronous tool execution) with a
@@ -833,7 +930,7 @@ Ninja returns a summary only (files changed, brief description); you read files,
         if tool_definition is not None:
             experimental.validate_for_tool(tool_definition)
 
-        async def _handle_job_tool() -> list[TextContent]:
+        async def _handle_job_tool() -> tuple[list, dict[str, Any] | None]:
             """Serve the always-available submit/poll background-job tools."""
             executor = get_executor()
             request_key = str(arguments.get("request_key") or "") or None
@@ -842,7 +939,7 @@ Ninja returns a summary only (files changed, brief description); you read files,
                 try:
                     simple_request = SimpleTaskRequest(**arguments)
                 except ValidationError as exc:
-                    return [_text_content(_validation_error_payload(exc))]
+                    return dict_result(_validation_error_payload(exc))
 
                 async def _simple_work() -> CallToolResult:
                     result = await executor.simple_task(simple_request, client_id="default")
@@ -857,13 +954,13 @@ Ninja returns a summary only (files changed, brief description); you read files,
                     return _job_handle_payload(task, jobs.poll_interval_ms)
 
                 handle = await _submit_or_join(request_key, _submit_simple)
-                return [_text_content(handle)]
+                return dict_result(handle)
 
             if name == "coder_submit_sequential":
                 try:
                     sequential_request = SequentialPlanRequest(**arguments)
                 except ValidationError as exc:
-                    return [_text_content(_validation_error_payload(exc))]
+                    return dict_result(_validation_error_payload(exc))
 
                 async def _sequential_work() -> CallToolResult:
                     result = await executor.execute_plan_sequential(
@@ -882,13 +979,13 @@ Ninja returns a summary only (files changed, brief description); you read files,
                     return _job_handle_payload(task, jobs.poll_interval_ms)
 
                 handle = await _submit_or_join(request_key, _submit_sequential)
-                return [_text_content(handle)]
+                return dict_result(handle)
 
             if name == "coder_submit_parallel":
                 try:
                     parallel_request = ParallelPlanRequest(**arguments)
                 except ValidationError as exc:
-                    return [_text_content(_validation_error_payload(exc))]
+                    return dict_result(_validation_error_payload(exc))
 
                 async def _parallel_work() -> CallToolResult:
                     result = await executor.execute_plan_parallel(
@@ -907,53 +1004,60 @@ Ninja returns a summary only (files changed, brief description); you read files,
                     return _job_handle_payload(task, jobs.poll_interval_ms)
 
                 handle = await _submit_or_join(request_key, _submit_parallel)
-                return [_text_content(handle)]
+                return dict_result(handle)
 
             job_id = str(arguments.get("job_id", ""))
-            unknown = _text_content(
-                {
-                    "job_id": job_id,
-                    "status": "error",
-                    "error": f"Unknown job: {job_id}",
-                    "error_type": "UnknownJob",
-                }
-            )
+            unknown_payload = {
+                "job_id": job_id,
+                "status": "error",
+                "error": f"Unknown job: {job_id}",
+                "error_type": "UnknownJob",
+            }
 
             if name == "coder_job_status":
                 task = await jobs.status(job_id)
-                return [unknown] if task is None else [_text_content(_job_status_payload(task))]
+                if task is None:
+                    return dict_result(unknown_payload)
+                return dict_result(_job_status_payload(task))
 
             if name == "coder_job_result":
                 task = await jobs.status(job_id)
                 if task is None:
-                    return [unknown]
+                    return dict_result(unknown_payload)
                 if task.status == JOB_STATUS_WORKING:
-                    return [
-                        _text_content(
-                            {
-                                "job_id": job_id,
-                                "status": task.status,
-                                "poll_interval_ms": jobs.poll_interval_ms,
-                            }
-                        )
-                    ]
-                stored_text = _stored_result_text(await jobs.result(job_id))
+                    return dict_result(
+                        {
+                            "job_id": job_id,
+                            "status": task.status,
+                            "poll_interval_ms": jobs.poll_interval_ms,
+                        }
+                    )
+                stored = await jobs.result(job_id)
+                stored_text, stored_structured = _stored_result(stored)
                 if stored_text is None:
-                    stored_text = json.dumps(
+                    return dict_result(
                         {
                             "job_id": job_id,
                             "status": task.status,
                             "status_message": task.statusMessage,
-                        },
-                        indent=2,
+                        }
                     )
-                return [TextContent(type="text", text=stored_text)]
+                if stored_structured is None:
+                    try:
+                        parsed = json.loads(stored_text)
+                        stored_structured = (
+                            parsed if isinstance(parsed, dict) else {"text": stored_text}
+                        )
+                    except (json.JSONDecodeError, TypeError):
+                        stored_structured = {"text": stored_text}
+                blocks: list = [TextContent(type="text", text=stored_text)]
+                return blocks, stored_structured
 
             if name == "coder_job_cancel":
                 task = await jobs.cancel(job_id)
                 if task is None:
-                    return [_text_content({"job_id": job_id, "status": JOB_STATUS_CANCELLED})]
-                return [_text_content(_job_status_payload(task))]
+                    return dict_result({"job_id": job_id, "status": JOB_STATUS_CANCELLED})
+                return dict_result(_job_status_payload(task))
 
             # coder_jobs_list
             try:
@@ -961,21 +1065,17 @@ Ninja returns a summary only (files changed, brief description); you read files,
                     arguments.get("cursor"), arguments.get("limit")
                 )
             except ValueError as exc:
-                return [
-                    _text_content(
-                        {"status": "error", "error": str(exc), "error_type": "InvalidCursor"}
-                    )
-                ]
-            return [
-                _text_content(
-                    {
-                        "jobs": [_job_status_payload(job) for job in listed],
-                        "next_cursor": next_cursor,
-                    }
+                return dict_result(
+                    {"status": "error", "error": str(exc), "error_type": "InvalidCursor"}
                 )
-            ]
+            return dict_result(
+                {
+                    "jobs": [_job_status_payload(job) for job in listed],
+                    "next_cursor": next_cursor,
+                }
+            )
 
-        async def _invoke() -> list[TextContent]:
+        async def _invoke() -> tuple[list, dict[str, Any] | None]:
             if name in JOB_TOOL_NAMES:
                 return await _handle_job_tool()
             client_id = "default"
@@ -1018,7 +1118,27 @@ Ninja returns a summary only (files changed, brief description); you read files,
                     return await executor.merge_branch(request, client_id=client_id)
                 elif name == "coder_branch_discard":
                     request = BranchDiscardRequest(**arguments)
-                    return await executor.discard_branch(request, client_id=client_id)
+                    result = await executor.discard_branch(request, client_id=client_id)
+                    if not request.force and _is_unmerged_refusal(result.message):
+                        confirmed = await elicit_confirm(
+                            request_ctx.session,
+                            f"Branch '{request.branch}' has unmerged commits. Delete it anyway?",
+                            item_label=f"delete branch {request.branch}",
+                        )
+                        if confirmed:
+                            forced = BranchDiscardRequest(
+                                repo_root=request.repo_root,
+                                branch=request.branch,
+                                force=True,
+                            )
+                            result = await executor.discard_branch(forced, client_id=client_id)
+                            if result.status == "ok":
+                                result = result.model_copy(
+                                    update={
+                                        "message": f"{result.message} (confirmed via elicitation)"
+                                    }
+                                )
+                    return result
                 else:
                     raise ValueError(f"Unknown tool: {name}")
 
@@ -1061,24 +1181,23 @@ Ninja returns a summary only (files changed, brief description); you read files,
                     logger.error(
                         f"[{client_id}] Tool {name} returned invalid result: {type(result).__name__}"
                     )
-                    return [
-                        TextContent(
-                            type="text",
-                            text=json.dumps(
-                                {
-                                    "status": "error",
-                                    "error": f"Tool {name} produced no result (internal error)",
-                                    "error_type": "InternalError",
-                                }
-                            ),
-                        )
-                    ]
+                    return dict_result(
+                        {
+                            "status": "error",
+                            "error": f"Tool {name} produced no result (internal error)",
+                            "error_type": "InternalError",
+                        }
+                    )
 
                 result_json = result.model_dump()
                 logger.info(
                     f"[{client_id}] Tool {name} completed with status: {result_json.get('status', 'unknown')}"
                 )
-                return [TextContent(type="text", text=json.dumps(result_json, indent=2))]
+                links = [patch_resource_link(getattr(result, "patch_path", None))]
+                texts, structured = model_result(
+                    result, extra_blocks=[link for link in links if link is not None]
+                )
+                return texts, structured
 
             except ValidationError as e:
                 # Surface our friendly, indexed plan errors instead of pydantic's
@@ -1091,34 +1210,24 @@ Ninja returns a summary only (files changed, brief description); you read files,
                         messages.append(msg)
                 detail = "\n".join(messages) or "Invalid tool input."
                 logger.warning(f"[{client_id}] Tool {name} input rejected: {detail}")
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(
-                            {
-                                "status": "error",
-                                "error": detail,
-                                "error_type": "InvalidPlanInput",
-                            }
-                        ),
-                    )
-                ]
+                return dict_result(
+                    {
+                        "status": "error",
+                        "error": detail,
+                        "error_type": "InvalidPlanInput",
+                    }
+                )
 
             except ValueError as e:
                 if "Unknown tool" in str(e):
-                    return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
+                    return dict_result({"error": str(e)})
                 raise
 
             except Exception as e:
                 logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(
-                            {"status": "error", "error": str(e), "error_type": type(e).__name__}
-                        ),
-                    )
-                ]
+                return dict_result(
+                    {"status": "error", "error": str(e), "error_type": type(e).__name__}
+                )
 
         if experimental.is_task:
             session = request_ctx.session
@@ -1128,13 +1237,15 @@ Ninja returns a summary only (files changed, brief description); you read files,
                 async with server_task_scope(
                     task, session=session, progress_token=progress_token
                 ) as cancellation:
-                    content = await _invoke()
+                    texts, structured = await _invoke()
                     if cancellation.is_set():
                         # The task was cancelled while work was in flight. Sync
                         # the SDK's cached status so it skips auto-completion of
                         # an already-terminal task (avoids tearing down tasks).
                         await refresh_task_after_cancel(task)
-                    return CallToolResult(content=list(content), isError=False)
+                    return CallToolResult(
+                        content=list(texts), structuredContent=structured, isError=False
+                    )
 
             return await experimental.run_task(_work)
 

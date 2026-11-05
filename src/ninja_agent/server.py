@@ -21,7 +21,7 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import CallToolResult, TextContent, Tool, ToolExecution
+from mcp.types import CallToolResult, TextContent, Tool, ToolAnnotations, ToolExecution
 
 from ninja_agent.models import (
     DELEGATE_MIGRATION,
@@ -46,6 +46,13 @@ from ninja_agent.models import (
 )
 from ninja_agent.tools import AgentToolExecutor
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.mcp_meta import (
+    ServerMeta,
+    ToolMeta,
+    apply_tool_meta,
+    server_icon,
+    server_kwargs,
+)
 from ninja_common.mcp_tasks import install_tasks, refresh_task_after_cancel, server_task_scope
 
 
@@ -317,6 +324,46 @@ TOOLS: list[Tool] = [
     ),
 ]
 
+_RO = ToolAnnotations(readOnlyHint=True, idempotentHint=True)
+
+# Tool metadata: titles, behavior hints, and result models for
+# outputSchema + structuredContent.
+_TOOL_META: dict[str, ToolMeta] = {
+    "agent_exec_command": ToolMeta(
+        title="Run shell command",
+        annotations=ToolAnnotations(destructiveHint=True),
+        result_model=AgentExecCommandResult,
+    ),
+    "agent_tail_logs": ToolMeta(
+        title="Tail logs", annotations=_RO, result_model=AgentTailLogsResult
+    ),
+    "agent_processes": ToolMeta(
+        title="Process snapshot", annotations=_RO, result_model=AgentProcessesResult
+    ),
+    "agent_jobs_overview": ToolMeta(
+        title="Jobs overview", annotations=_RO, result_model=AgentJobsOverviewResult
+    ),
+    "agent_analyze": ToolMeta(
+        title="Analyze codebase", annotations=_RO, result_model=AgentAnalyzeResult
+    ),
+    "agent_review": ToolMeta(title="Review files", annotations=_RO, result_model=AgentReviewResult),
+    "agent_run_and_diagnose": ToolMeta(
+        title="Run and diagnose",
+        annotations=ToolAnnotations(destructiveHint=True),
+        result_model=AgentRunAndDiagnoseResult,
+    ),
+    "agent_exec_pipeline": ToolMeta(
+        title="Run pipeline",
+        annotations=ToolAnnotations(destructiveHint=True),
+        result_model=AgentExecPipelineResult,
+    ),
+    "agent_distill_logs": ToolMeta(
+        title="Distill logs", annotations=_RO, result_model=AgentDistillLogsResult
+    ),
+}
+
+TOOLS = apply_tool_meta(TOOLS, _TOOL_META, server_icon("agent"))
+
 # Look up tool definitions by name (used for task-mode validation).
 _TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 
@@ -336,7 +383,15 @@ _REMOVED_TOOLS = frozenset(
 
 def create_server() -> Server:
     """Create and configure the MCP server."""
-    server = Server("ninja-agent")
+    server = Server(
+        "ninja-agent",
+        **server_kwargs(
+            ServerMeta(
+                instructions="""Ninja Agent: autonomous routine ops. exec_command: single guarded shell (mutations need allow_write). run_and_diagnose: tests/lints with failure distillation. exec_pipeline: ordered multi-step. tail_logs/distill_logs: log tails vs clustered errors. processes/jobs_overview: read-only snapshots. analyze/review: read-only codebase analysis.""",
+                kind="agent",
+            )
+        ),
+    )
 
     # Enable standard MCP Tasks (background/asynchronous tool execution) with a
     # durable store and real cancellation of running work.
@@ -358,7 +413,7 @@ def create_server() -> Server:
         if tool_definition is not None:
             experimental.validate_for_tool(tool_definition)
 
-        async def _invoke() -> list[TextContent]:
+        async def _invoke_text() -> list[TextContent]:
             try:
                 client_id = arguments.get("client_id", "default")
 
@@ -482,6 +537,18 @@ def create_server() -> Server:
                     )
                 ]
 
+        async def _invoke() -> tuple[list[TextContent], dict[str, Any]]:
+            texts = await _invoke_text()
+            structured: dict[str, Any] = {}
+            if texts and getattr(texts[0], "type", "") == "text":
+                try:
+                    parsed = json.loads(texts[0].text)
+                    if isinstance(parsed, dict):
+                        structured = parsed
+                except (json.JSONDecodeError, TypeError):
+                    structured = {}
+            return texts, structured
+
         if experimental.is_task:
             session = request_ctx.session
             progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
@@ -490,10 +557,12 @@ def create_server() -> Server:
                 async with server_task_scope(
                     task, session=session, progress_token=progress_token
                 ) as cancellation:
-                    content = await _invoke()
+                    texts, structured = await _invoke()
                     if cancellation.is_set():
                         await refresh_task_after_cancel(task)
-                    return CallToolResult(content=list(content), isError=False)
+                    return CallToolResult(
+                        content=list(texts), structuredContent=structured, isError=False
+                    )
 
             return await experimental.run_task(_work)
 

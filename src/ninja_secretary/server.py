@@ -12,28 +12,38 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import Tool, ToolAnnotations
 
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.mcp_meta import (
+    ServerMeta,
+    ToolMeta,
+    apply_tool_meta,
+    dict_result,
+    model_result,
+    server_icon,
+    server_kwargs,
+)
 from ninja_secretary.models import (
     AnalyseFileRequest,
+    AnalyseFileResult,
     CodebaseReportRequest,
+    CodebaseReportResult,
     DocumentSummaryRequest,
+    DocumentSummaryResult,
     FileSearchRequest,
+    FileSearchResult,
+    SessionReport,
     SessionReportRequest,
     UpdateDocRequest,
+    UpdateDocResult,
 )
 from ninja_secretary.tools import SecretaryToolExecutor
-
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 
 # Set up logging to stderr (stdout is for MCP protocol)
@@ -166,10 +176,58 @@ TOOLS: list[Tool] = [
     ),
 ]
 
+# Tool metadata: titles, behavior hints, and result models for
+# outputSchema + structuredContent.
+_TOOL_META: dict[str, ToolMeta] = {
+    "secretary_analyse_file": ToolMeta(
+        title="Analyze file",
+        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+        result_model=AnalyseFileResult,
+    ),
+    "secretary_file_search": ToolMeta(
+        title="Search files",
+        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+        result_model=FileSearchResult,
+    ),
+    "secretary_codebase_report": ToolMeta(
+        title="Codebase report",
+        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+        result_model=CodebaseReportResult,
+    ),
+    "secretary_document_summary": ToolMeta(
+        title="Summarize docs",
+        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+        result_model=DocumentSummaryResult,
+    ),
+    "secretary_update_documentation": ToolMeta(
+        title="Update documentation",
+        annotations=ToolAnnotations(destructiveHint=True),
+        result_model=UpdateDocResult,
+    ),
+    "secretary_session_report": ToolMeta(
+        title="Session report",
+        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+        result_model=SessionReport,
+    ),
+}
+
+TOOLS = apply_tool_meta(TOOLS, _TOOL_META, server_icon("secretary"))
+
 
 def create_server() -> Server:
     """Create and configure the MCP server."""
-    server = Server("ninja-secretary")
+    server = Server(
+        "ninja-secretary",
+        **server_kwargs(
+            ServerMeta(
+                instructions="""Ninja Secretary: codebase analysis and documentation.
+analyse_file: structure + summary of one file. file_search: glob + content regex.
+codebase_report: structure, languages, metrics. document_summary: docs overview.
+update_documentation: write docs (the only writing tool). session_report: tracked ops.""",
+                kind="secretary",
+            )
+        ),
+    )
     executor = SecretaryToolExecutor()
 
     @server.list_tools()
@@ -178,7 +236,7 @@ def create_server() -> Server:
         return TOOLS
 
     @server.call_tool()
-    async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
+    async def call_tool(name: str, arguments: Any) -> Any:
         """Handle tool execution requests."""
         try:
             client_id = arguments.get("client_id", "default")
@@ -186,50 +244,45 @@ def create_server() -> Server:
             if name == "secretary_analyse_file":
                 request = AnalyseFileRequest(**arguments)
                 result = await executor.analyse_file(request, client_id)
-                return [TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))]
+                return model_result(result)
 
             elif name == "secretary_file_search":
                 request = FileSearchRequest(**arguments)
                 result = await executor.file_search(request, client_id)
-                return [TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))]
+                return model_result(result)
 
             elif name == "secretary_codebase_report":
                 request = CodebaseReportRequest(**arguments)
                 result = await executor.codebase_report(request, client_id)
-                return [TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))]
+                return model_result(result)
 
             elif name == "secretary_document_summary":
                 request = DocumentSummaryRequest(**arguments)
                 result = await executor.document_summary(request, client_id)
-                return [TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))]
+                return model_result(result)
 
             elif name == "secretary_update_documentation":
                 request = UpdateDocRequest(**arguments)
                 result = await executor.update_doc(request, client_id)
-                return [TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))]
+                return model_result(result)
 
             elif name == "secretary_session_report":
                 request = SessionReportRequest(**arguments)
                 result = await executor.session_report(request, client_id)
-                return [TextContent(type="text", text=json.dumps(result.model_dump(), indent=2))]
+                return model_result(result)
 
             else:
                 raise ValueError(f"Unknown tool: {name}")
 
         except Exception as e:
             logger.error(f"Error executing tool {name}: {e}", exc_info=True)
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {
-                            "success": False,
-                            "error": str(e),
-                            "tool": name,
-                        }
-                    ),
-                )
-            ]
+            return dict_result(
+                {
+                    "success": False,
+                    "error": str(e),
+                    "tool": name,
+                }
+            )
 
     return server
 

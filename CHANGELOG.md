@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.9.0 - 2026-11-05
+
+Full current-standard MCP surface: titles, annotations, outputSchema +
+structuredContent, icons, elicitation, resource links.
+
+### Added
+- **Tool metadata everywhere** (all 4 servers): human-readable `title`,
+  behavioral `annotations` (`readOnlyHint`/`destructiveHint`/`idempotentHint`),
+  per-server SVG data-URI `icons` (tool-level and server-level), `website_url`,
+  and server `instructions` (coder/agent/secretary had none).
+- **`outputSchema` + `structuredContent`** on every tool (`ninja_common.mcp_meta`):
+  text blocks keep the historical pretty-JSON (old parsers unaffected);
+  schema-aware clients get validated structured payloads. Error envelopes are
+  part of every schema, so graceful errors never trip output validation.
+  Stored job results keep their structured payloads; `coder_job_result`
+  passes them through.
+- **Elicitation** (`coder_branch_discard`): deleting a branch with unmerged
+  commits now asks the user for confirmation via `elicit_form` when the
+  client supports it, and falls back to the previous refuse message otherwise.
+- **Resource links**: plan results attach a `file://` link to the patch
+  artifact (`agent-output.patch`) when present.
+
+### Fixed
+- `ResourceLink.type` must be `"resource_link"`; pydantic `$defs` hoisted to
+  the wrapper schema root so `$ref`s resolve during output validation.
+
+### Tests
+- New `tests/test_mcp_meta.py` (10 tests): metadata on all tools, schema
+  validation of real payloads with the same `jsonschema` the SDK uses,
+  elicitation fallback paths, icons, server metadata. Full suite: 1819
+  passed; the only 5 failures are pre-existing live-model/environment tests
+  that fail identically on clean HEAD.
+
+### Notes
+- Deliberately NOT adopted (deprecated by SEP-2577, removal track): Roots,
+  Sampling, Logging protocol. Not applicable: `completions` (no
+  prompts/resources to complete), OAuth/CIMD (local stdio servers),
+  `server/discover` + stateless core (SDK transport level, arrives with SDK
+  upgrade). Tasks stay on the experimental API + our submit/poll fallback
+  until the SDK ships the `io.modelcontextprotocol/tasks` extension.
+
 ## 1.8.2 - 2026-11-05
 
 The model obeyed the per-step JSON format, but the parser still failed on

@@ -11,7 +11,6 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import sys
 from typing import Any
@@ -19,19 +18,36 @@ from typing import Any
 import anyio
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import CallToolResult, TextContent, Tool, ToolExecution
+from mcp.types import CallToolResult, Tool, ToolAnnotations, ToolExecution
 
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.mcp_meta import (
+    ServerMeta,
+    ToolMeta,
+    apply_tool_meta,
+    dict_result,
+    model_result,
+    server_icon,
+    server_kwargs,
+)
 from ninja_common.mcp_tasks import install_tasks, refresh_task_after_cancel, server_task_scope
 from ninja_researcher.models import (
     ArxivSearchRequest,
+    ArxivSearchResult,
     DeepResearchBatchRequest,
+    DeepResearchBatchResult,
     DeepResearchRequest,
     FactCheckRequest,
+    FactCheckResult,
     GenerateReportRequest,
     PaperFetchRequest,
+    PaperFetchResult,
     QuickResearchRequest,
+    QuickResearchResult,
+    ReportResult,
+    ResearchResult,
     SummarizeSourcesRequest,
+    SummaryResult,
 )
 from ninja_researcher.tools import get_executor
 
@@ -367,6 +383,42 @@ TOOLS: list[Tool] = [
     ),
 ]
 
+_RO = ToolAnnotations(readOnlyHint=True, idempotentHint=True)
+_RO_WEB = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=True)
+
+# Tool metadata: titles, behavior hints, and result models for
+# outputSchema + structuredContent.
+_TOOL_META: dict[str, ToolMeta] = {
+    "researcher_quick_research": ToolMeta(
+        title="Quick research", annotations=_RO_WEB, result_model=QuickResearchResult
+    ),
+    "researcher_deep_research": ToolMeta(
+        title="Deep research", annotations=_RO_WEB, result_model=ResearchResult
+    ),
+    "researcher_generate_report": ToolMeta(
+        title="Generate report", annotations=_RO, result_model=ReportResult
+    ),
+    "researcher_fact_check": ToolMeta(
+        title="Fact check", annotations=_RO_WEB, result_model=FactCheckResult
+    ),
+    "researcher_summarize_sources": ToolMeta(
+        title="Summarize sources", annotations=_RO_WEB, result_model=SummaryResult
+    ),
+    "researcher_arxiv_search": ToolMeta(
+        title="arXiv search", annotations=_RO_WEB, result_model=ArxivSearchResult
+    ),
+    "researcher_paper_fetch": ToolMeta(
+        title="Fetch paper", annotations=_RO_WEB, result_model=PaperFetchResult
+    ),
+    "researcher_deep_research_batch": ToolMeta(
+        title="Batch deep research",
+        annotations=_RO_WEB,
+        result_model=DeepResearchBatchResult,
+    ),
+}
+
+TOOLS = apply_tool_meta(TOOLS, _TOOL_META, server_icon("researcher"))
+
 # Look up tool definitions by name (used for task-mode validation).
 _TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 
@@ -376,8 +428,13 @@ def create_server() -> Server:
     server = Server(
         "ninja-researcher",
         version="0.3.0",
-        instructions="""Ninja Researcher: cited web research.
+        **server_kwargs(
+            ServerMeta(
+                instructions="""Ninja Researcher: cited web research.
 quick_research: single question + cited answer. deep_research: multi-query + report. generate_report: synthesize given sources. fact_check: LLM verdict. arxiv_search/paper_fetch: papers. batch: up to 5 topics serially.""",
+                kind="researcher",
+            )
+        ),
     )
 
     # Enable standard MCP Tasks (background/asynchronous tool execution) with a
@@ -398,7 +455,7 @@ quick_research: single question + cited answer. deep_research: multi-query + rep
         if tool_definition is not None:
             experimental.validate_for_tool(tool_definition)
 
-        async def _invoke() -> list[TextContent]:
+        async def _invoke() -> tuple[list, dict[str, Any]]:
             client_id = "default"
             logger.info(f"[{client_id}] Tool called: {name}")
 
@@ -438,12 +495,7 @@ quick_research: single question + cited answer. deep_research: multi-query + rep
                     result = await executor.deep_research_batch(request, client_id=client_id)
 
                 else:
-                    return [
-                        TextContent(
-                            type="text",
-                            text=json.dumps({"error": f"Unknown tool: {name}"}),
-                        )
-                    ]
+                    return dict_result({"error": f"Unknown tool: {name}"})
 
                 # Serialize result to JSON
                 result_json = result.model_dump()
@@ -451,27 +503,17 @@ quick_research: single question + cited answer. deep_research: multi-query + rep
                     f"[{client_id}] Tool {name} completed with status: {result_json.get('status', 'unknown')}"
                 )
 
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(result_json, indent=2),
-                    )
-                ]
+                return model_result(result)
 
             except Exception as e:
                 logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(
-                            {
-                                "status": "error",
-                                "error": str(e),
-                                "error_type": type(e).__name__,
-                            }
-                        ),
-                    )
-                ]
+                return dict_result(
+                    {
+                        "status": "error",
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    }
+                )
 
         if experimental.is_task:
             session = request_ctx.session
@@ -481,10 +523,12 @@ quick_research: single question + cited answer. deep_research: multi-query + rep
                 async with server_task_scope(
                     task, session=session, progress_token=progress_token
                 ) as cancellation:
-                    content = await _invoke()
+                    texts, structured = await _invoke()
                     if cancellation.is_set():
                         await refresh_task_after_cancel(task)
-                    return CallToolResult(content=list(content), isError=False)
+                    return CallToolResult(
+                        content=list(texts), structuredContent=structured, isError=False
+                    )
 
             return await experimental.run_task(_work)
 
