@@ -1,3 +1,3 @@
 """Ninja Agent module: orchestrator agent (plan, analyze, delegate, review)."""
 
-__version__ = "1.8.2"
+__version__ = "1.9.0"
