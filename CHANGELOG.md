@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.9.1 - 2026-11-11
+
+Daemon/systemd reconnect fixes plus hang observability for long MCP tasks.
+
+### Fixed
+- **`daemon status` / `daemon connect` see systemd singletons**: `DaemonManager`
+  no longer reports `running:false` / exits 1 when the servers are supervised
+  by `ninja-mcp@*.service` without PID files. Status falls back to port-owner
+  detection plus `systemctl --user is-active` (`source: systemd|port`), and
+  `connect` dials a live ninja server instead of printing `daemon not running`
+  (the opencode disconnects seen on this machine).
+- **Port scan no longer mistakes clients for the server**: `lsof -ti` lists
+  connected clients (claude/opencode) too. Owner resolution now scans all PIDs
+  on the port and picks the one running `ninja_<module>.server`; `start()` no
+  longer reallocates the port and `_cleanup_zombies()` no longer signals a
+  client when our own server holds the port.
+
+### Added
+- **Sync-call heartbeat**: when the MCP client passes a `progressToken`,
+  synchronous coder/agent/researcher tools bind a progress scope, so the
+  driver's ~10s streaming ticks reach the client as `notifications/progress`
+  instead of silence (coder/agent/researcher `server.py`).
+- **Submit/poll guidance**: coder server instructions now steer tasks expected
+  over ~60s to `coder_submit_*` + `coder_job_status`/`coder_job_result`
+  polling, since sync tools block the MCP connection for the whole run.
+
+### Tests
+- New `tests/test_common/test_daemon_systemd_fallback.py` (7 tests): systemd
+  fallback, port-owner fallback, client-PID skipping, pid-file preference.
+
 ## 1.9.0 - 2026-11-05
 
 Full current-standard MCP surface: titles, annotations, outputSchema +
