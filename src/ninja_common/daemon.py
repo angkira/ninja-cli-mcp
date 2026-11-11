@@ -376,6 +376,92 @@ class DaemonManager:
         pid_file = self._get_pid_file(module)
         pid_file.write_text(str(pid))
 
+    def _is_systemd_active(self, module: str) -> bool:
+        """Check if the systemd singleton unit for *module* is active.
+
+        Best-effort: returns False when systemctl is missing, the user
+        bus is unreachable, or the unit does not exist. Never raises.
+        """
+        import subprocess
+
+        unit = f"ninja-mcp@{module}.service"
+        try:
+            result = subprocess.run(
+                ["systemctl", "--user", "is-active", unit],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            return result.returncode == 0 and result.stdout.strip() == "active"
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
+            return False
+
+    def _find_ninja_owner_pid(self, module: str, port: int) -> int | None:
+        """Return the PID serving *port* when it looks like our module server.
+
+        ``lsof -ti`` lists every socket endpoint on the port — including
+        connected *clients* (claude/opencode proxies) — so the first PID is
+        often not the server. Scan all candidates and return the one whose
+        command line contains ``ninja_<module>.server``.
+        """
+        for pid in self._find_pids_using_port(port):
+            try:
+                import psutil
+
+                cmdline = " ".join(psutil.Process(pid).cmdline())
+                if f"ninja_{module}.server" in cmdline:
+                    return pid
+            except Exception:
+                continue
+        return None
+
+    def _find_pids_using_port(self, port: int) -> list[int]:
+        """Return all PIDs with a socket on *port* (listeners and clients)."""
+        import re
+        import subprocess
+
+        pids: list[int] = []
+        try:
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                for part in result.stdout.strip().split():
+                    try:
+                        candidate = int(part.strip().strip(","))
+                    except ValueError:
+                        continue
+                    if candidate not in pids:
+                        pids.append(candidate)
+        except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+            pass
+
+        if not pids:
+            try:
+                result = subprocess.run(
+                    ["ss", "-tlnp", f"sport = :{port}"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                if result.returncode == 0:
+                    for match in re.finditer(r"pid=(\d+)", result.stdout):
+                        try:
+                            candidate = int(match.group(1))
+                        except ValueError:
+                            continue
+                        if candidate not in pids:
+                            pids.append(candidate)
+            except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+                pass
+        return pids
+
     def _is_running(self, pid: int) -> bool:
         """Check if process is running."""
         try:
@@ -442,8 +528,9 @@ class DaemonManager:
         if not self._is_port_in_use(port):
             return
 
-        # Find and kill process using the port
-        pid = self._find_process_using_port(port)
+        # Only ever signal our own server, never a connected client:
+        # lsof/ss list clients too, so resolve the ninja owner explicitly.
+        pid = self._find_ninja_owner_pid(module, port)
         if pid:
             logger.info(f"Found process {pid} using port {port}, attempting cleanup")
             try:
@@ -485,6 +572,12 @@ class DaemonManager:
 
         # Check if port is in use by another process
         if self._is_port_in_use(port):
+            owner_pid = self._find_ninja_owner_pid(module, port)
+            if owner_pid is not None:
+                # Our server (PID-file daemon or systemd singleton) already
+                # serves this port — treat as running, never reallocate.
+                logger.info(f"{module} daemon already serving port {port} (PID {owner_pid})")
+                return True
             port_pid = self._find_process_using_port(port)
             if port_pid and port_pid != pid:
                 # Port is used by something else - find a free port instead
@@ -635,6 +728,12 @@ class DaemonManager:
     def status(self, module: str) -> dict[str, Any]:
         """Get daemon status for module.
 
+        Detects both PID-file daemons (``daemon start``) and systemd
+        singletons (``ninja-mcp@<module>.service``): when no live PID file
+        exists but *port* is served by a matching ``ninja_<module>.server``
+        process — in particular with an active systemd unit — the daemon
+        counts as running so ``daemon connect`` works.
+
         Args:
             module: Module name
 
@@ -647,24 +746,43 @@ class DaemonManager:
         # Get version
         version = self._get_module_version(module)
 
-        if not pid:
+        if pid and self._is_running(pid):
+            running = True
             return {
-                "running": False,
-                "pid": None,
+                "running": running,
+                "pid": pid,
                 "port": port,
                 "url": f"http://127.0.0.1:{port}/sse",
                 "log": str(self._get_log_file(module)),
                 "version": version,
+                "source": "pid",
             }
 
-        running = self._is_running(pid)
+        # No live PID file — fall back to port owner + systemd unit.
+        # This is the normal state on machines supervised by systemd,
+        # where PID files were never written.
+        if self._is_port_in_use(port):
+            owner_pid = self._find_ninja_owner_pid(module, port)
+            if owner_pid is not None:
+                source = "systemd" if self._is_systemd_active(module) else "port"
+                return {
+                    "running": True,
+                    "pid": owner_pid,
+                    "port": port,
+                    "url": f"http://127.0.0.1:{port}/sse",
+                    "log": str(self._get_log_file(module)),
+                    "version": version,
+                    "source": source,
+                }
+
         return {
-            "running": running,
-            "pid": pid if running else None,
+            "running": False,
+            "pid": None,
             "port": port,
-            "url": f"http://127.0.0.1:{port}/sse" if running else None,
+            "url": f"http://127.0.0.1:{port}/sse",
             "log": str(self._get_log_file(module)),
             "version": version,
+            "source": "none",
         }
 
     def _get_module_version(self, module: str) -> str:
@@ -986,10 +1104,23 @@ def main() -> int:
             return 1
         status = manager.status(args.module)
         if not status["running"]:
-            print(f"Error: {args.module} daemon not running", file=sys.stderr)
-            return 1
+            # Belt-and-braces: status() already falls back to port-owner
+            # detection, but re-check here so a race between status and
+            # connect still dials a live ninja server instead of exiting 1
+            # (the opencode "daemon not running" disconnects).
+            port = manager._get_port(args.module)
+            owner = manager._find_ninja_owner_pid(args.module, port)
+            if owner is None:
+                print(f"Error: {args.module} daemon not running", file=sys.stderr)
+                return 1
+            print(
+                f"Warning: {args.module} daemon has no PID file; "
+                f"connecting to port owner pid {owner}",
+                file=sys.stderr,
+            )
+        else:
+            port = status["port"]
 
-        port = manager._get_port(args.module)
         url = f"http://127.0.0.1:{port}/sse"
 
         try:

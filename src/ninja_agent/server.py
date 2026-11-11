@@ -53,7 +53,13 @@ from ninja_common.mcp_meta import (
     server_icon,
     server_kwargs,
 )
-from ninja_common.mcp_tasks import install_tasks, refresh_task_after_cancel, server_task_scope
+from ninja_common.mcp_tasks import (
+    install_tasks,
+    make_session_progress_callback,
+    refresh_task_after_cancel,
+    server_task_scope,
+    task_scope,
+)
 
 
 # Set up logging to stderr (stdout is for MCP protocol)
@@ -387,7 +393,7 @@ def create_server() -> Server:
         "ninja-agent",
         **server_kwargs(
             ServerMeta(
-                instructions="""Ninja Agent: autonomous routine ops. exec_command: single guarded shell (mutations need allow_write). run_and_diagnose: tests/lints with failure distillation. exec_pipeline: ordered multi-step. tail_logs/distill_logs: log tails vs clustered errors. processes/jobs_overview: read-only snapshots. analyze/review: read-only codebase analysis.""",
+                instructions="""Ninja Agent: autonomous routine ops. exec_command: single guarded shell (mutations need allow_write). run_and_diagnose: tests/lints with failure distillation. exec_pipeline: ordered multi-step. tail_logs/distill_logs: log tails vs clustered errors. processes/jobs_overview: read-only snapshots. analyze/review: read-only codebase analysis. Long runs emit progress notifications (~every 10s) when the client passes a progressToken — keep the token to avoid client timeouts.""",
                 kind="agent",
             )
         ),
@@ -565,6 +571,15 @@ def create_server() -> Server:
                     )
 
             return await experimental.run_task(_work)
+
+        # Sync path heartbeat: forward driver progress as
+        # notifications/progress when the client passed a progressToken.
+        progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
+        if progress_token is not None:
+            session = request_ctx.session
+            callback = make_session_progress_callback(session, progress_token)
+            async with task_scope(f"sync-{name}", progress=callback):
+                return await _invoke()
 
         return await _invoke()
 

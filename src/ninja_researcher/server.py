@@ -30,7 +30,13 @@ from ninja_common.mcp_meta import (
     server_icon,
     server_kwargs,
 )
-from ninja_common.mcp_tasks import install_tasks, refresh_task_after_cancel, server_task_scope
+from ninja_common.mcp_tasks import (
+    install_tasks,
+    make_session_progress_callback,
+    refresh_task_after_cancel,
+    server_task_scope,
+    task_scope,
+)
 from ninja_researcher.models import (
     ArxivSearchRequest,
     ArxivSearchResult,
@@ -531,6 +537,15 @@ quick_research: single question + cited answer. deep_research: multi-query + rep
                     )
 
             return await experimental.run_task(_work)
+
+        # Sync path heartbeat: forward progress as notifications/progress
+        # when the client passed a progressToken (keeps long runs alive).
+        progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
+        if progress_token is not None:
+            session = request_ctx.session
+            callback = make_session_progress_callback(session, progress_token)
+            async with task_scope(f"sync-{name}", progress=callback):
+                return await _invoke()
 
         return await _invoke()
 

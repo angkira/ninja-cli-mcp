@@ -70,8 +70,10 @@ from ninja_common.mcp_tasks import (
     ProgressCallback,
     SqliteTaskStore,
     install_tasks,
+    make_session_progress_callback,
     refresh_task_after_cancel,
     server_task_scope,
+    task_scope,
 )
 from ninja_common.security import RequestDeduplicator
 
@@ -884,7 +886,8 @@ coder_execute_plan_sequential = ordered multi-step work in an isolated ninja/* w
 coder_execute_plan_parallel = independent atomic steps; complexity='simple' in-place, 'complex' (default) worktree — never mix in one call.
 Isolated plan work is committed to a ninja/* branch and its checkout is removed right after the run. Review and integrate it with coder_branches_list, coder_branch_merge (ninja/* only, conflicts aborted), and coder_branch_discard.
 Spec format: GOOD = file, symbol, behavior, types, error handling (e.g. "In src/api/routes.py add POST /login ... 401 on failure").
-Ninja returns a summary only (files changed, brief description); you read files, run tests, review. Same request_key retries join the in-flight run.""",
+Ninja returns a summary only (files changed, brief description); you read files, run tests, review. Same request_key retries join the in-flight run.
+LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 min). For anything expected >60s prefer coder_submit_* then poll coder_job_status until terminal, then coder_job_result. Sync calls also emit progress notifications (~every 10s) when the client passes a progressToken — keep the token to avoid client timeouts.""",
         website_url="https://github.com/angkira/ninja-cli-mcp",
         icons=[server_icon("coder")],
     )
@@ -1248,6 +1251,18 @@ Ninja returns a summary only (files changed, brief description); you read files,
                     )
 
             return await experimental.run_task(_work)
+
+        # Sync path: when the client passed a progressToken, bind a progress
+        # scope so the ~10s streaming heartbeats from the driver reach the
+        # client as notifications/progress instead of silence. This keeps
+        # long sync calls (3-15 min) from hitting client timeouts. Without a
+        # token there is nothing to send to — prefer coder_submit_* there.
+        progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
+        if progress_token is not None:
+            session = request_ctx.session
+            callback = make_session_progress_callback(session, progress_token)
+            async with task_scope(f"sync-{name}", progress=callback):
+                return await _invoke()
 
         return await _invoke()
 
