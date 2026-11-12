@@ -90,6 +90,11 @@ DENY_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 #: Heuristic for "this command probably mutates files/state". Anything
 #: matching requires ``allow_write=True``; everything else runs freely.
+#: Matching runs on quote-stripped text (see :func:`_strip_quoted`): a ``>``
+#: inside quotes is a comparison/arrow in a grep pattern, not a shell
+#: redirect. ``find_denied`` intentionally still scans the raw command —
+#: mistaking a destructive command for safe is data loss, while mistaking a
+#: read for a write is only an annoyance.
 WRITE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|[|;&\s])(mkdir|touch|rm |rmdir|mv |cp |ln |tee\b|install\b)"),
     re.compile(
@@ -97,7 +102,6 @@ WRITE_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"clean|reset|revert|rebase|merge|tag|branch|stash)"
     ),
     re.compile(r"(^|[|;&\s])(sed\s+[^|;&]*-i|awk\s+[^|;&]*>\s*\S|chmod|chown)"),
-    re.compile(r"(>>?)\s*\S"),  # shell redirection into a file
     re.compile(
         r"(^|[|;&\s])(pip|pip3|uv|npm|yarn|pnpm|poetry)\s+(install|add|"
         r"remove|uninstall)"
@@ -107,6 +111,15 @@ WRITE_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"compose)"
     ),
 )
+
+#: Shell redirections that target a real file (``> f``, ``>> f``, ``2> f``,
+#: ``&> f``). Matched on quote-stripped text; fd duplications (``2>&1``) and
+#: the null sink (``>/dev/null``) are not file writes — audits use them
+#: constantly — and are exempted in :func:`_has_file_redirect`. The prefix
+#: class covers command separators, whitespace, word chars (``cmd>f``) and
+#: closing brackets (``$(...)>f``); ``-``/``=`` are deliberately excluded so
+#: unquoted arrows (``a->b``, ``a=>b``) never match.
+_REDIRECT_RE: re.Pattern[str] = re.compile(r"(?:^|[|;&\s\w)\]}])(?:\d+)?>>?\s*(\S+)")
 
 #: Redaction patterns — mirrors ``TaskLogger._redact_sensitive_data`` so log
 #: tails and command output redact the same secret shapes.
@@ -150,6 +163,119 @@ def redact_text(text: str) -> str:
     return redacted
 
 
+def _consume_arithmetic(cmd: str, i: int) -> int:
+    """Skip a ``$((...))`` arithmetic expansion starting at *i*.
+
+    Arithmetic never performs redirections, so it is masked outright
+    (``$((a>b))`` must not read as ``> b``). Returns the index past the
+    closing parens, or ``len(cmd)`` when unbalanced.
+
+    Args:
+        cmd: Full command string; ``cmd[i:i+3]`` must be ``$((``.
+
+    Returns:
+        Index to continue scanning from.
+    """
+    depth = 0
+    n = len(cmd)
+    i += 2  # consume ``$(``; the second ``(`` is counted below
+    while i < n:
+        if cmd[i] == "(":
+            depth += 1
+        elif cmd[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return n
+
+
+def _strip_quoted(cmd: str) -> str:
+    """Mask quoted spans the shell would not execute as redirections/commands.
+
+    Single-quoted text is fully inert. Inside double quotes only ``$(...)``
+    and backquoted spans still execute, so their contents are preserved and
+    everything else is masked with ``Q``. ``$((...))`` arithmetic is masked
+    everywhere — it never performs redirections. Unbalanced quotes mask to
+    end of string.
+
+    Args:
+        cmd: Raw shell command string.
+
+    Returns:
+        Command with quoted spans masked.
+    """
+    out: list[str] = []
+    i, n = 0, len(cmd)
+    while i < n:
+        ch = cmd[i]
+        if ch == "'":
+            end = cmd.find("'", i + 1)
+            out.append("Q")
+            i = n if end == -1 else end + 1
+        elif ch == "$" and cmd[i : i + 3] == "$((":
+            i = _consume_arithmetic(cmd, i)
+            out.append("Q")
+        elif ch == '"':
+            i += 1
+            kept: list[str] = []
+            while i < n and cmd[i] != '"':
+                if cmd[i] == "\\" and i + 1 < n:
+                    i += 2
+                elif cmd[i : i + 3] == "$((":
+                    i = _consume_arithmetic(cmd, i)
+                elif cmd[i] == "$" and i + 1 < n and cmd[i + 1] == "(":
+                    depth = 1
+                    i += 2
+                    start = i
+                    while i < n and depth:
+                        if cmd[i] == "(":
+                            depth += 1
+                        elif cmd[i] == ")":
+                            depth -= 1
+                        i += 1
+                    kept.append(cmd[start : i - 1] if depth == 0 else cmd[start:])
+                elif cmd[i] == "`":
+                    end = cmd.find("`", i + 1)
+                    if end == -1:
+                        kept.append(cmd[i + 1 :])
+                        i = n
+                    else:
+                        kept.append(cmd[i + 1 : end])
+                        i = end + 1
+                else:
+                    i += 1
+            joined = " ".join(part for part in kept if part.strip())
+            out.append(joined if joined else "Q")
+            i += 1  # skip closing quote (no-op at end of string)
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+def _has_file_redirect(cmd: str) -> bool:
+    """Whether quote-stripped *cmd* redirects to a real file.
+
+    Args:
+        cmd: Shell command with quoted spans already masked.
+
+    Returns:
+        True for ``> file`` / ``>> file`` / ``2> file`` / ``&> file``;
+        False for fd duplications (``2>&1``) and the null sink
+        (``>/dev/null``), which audits use constantly and which write
+        nothing observable.
+    """
+    for match in _REDIRECT_RE.finditer(cmd):
+        target = match.group(1)
+        if target.startswith("&"):
+            continue
+        if target == "/dev/null":
+            continue
+        return True
+    return False
+
+
 def looks_like_write(cmd: str) -> bool:
     """Heuristically decide whether a shell command mutates state.
 
@@ -159,8 +285,11 @@ def looks_like_write(cmd: str) -> bool:
     Returns:
         True when the command looks like it writes files/state.
     """
-    lowered = cmd.lower()
-    return any(p.search(cmd) or p.search(lowered) for p in WRITE_PATTERNS)
+    stripped = _strip_quoted(cmd)
+    lowered = stripped.lower()
+    if any(p.search(stripped) or p.search(lowered) for p in WRITE_PATTERNS):
+        return True
+    return _has_file_redirect(stripped)
 
 
 def find_denied(cmd: str) -> str | None:

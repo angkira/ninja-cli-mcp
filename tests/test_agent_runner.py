@@ -43,6 +43,42 @@ def test_looks_like_write_splits_read_only_from_mutating():
     assert looks_like_write("echo hi > out.txt")
 
 
+def test_looks_like_write_ignores_stderr_and_null_redirects():
+    # Read-only audits constantly silence stderr or pipe it onward; neither
+    # writes an observable file.
+    assert not looks_like_write("cat /proc/loadavg 2>/dev/null")
+    assert not looks_like_write("cat file.log 2>&1 | tail -5")
+    assert not looks_like_write("df -h / 2>/dev/null | tail -1")
+    assert not looks_like_write("glab api x 2>/dev/null | python3 -c 'print(1)'")
+    assert not looks_like_write("for s in a b; do systemctl status $s 2>&1 | tail -3; done")
+    assert not looks_like_write("cmd > /dev/null")
+    assert not looks_like_write("cmd 2>&1")
+    assert not looks_like_write("cmd &>/dev/null")
+
+
+def test_looks_like_write_ignores_quoted_angles_and_comparisons():
+    assert not looks_like_write('grep -E "a=>b" file')
+    assert not looks_like_write("grep -E 'a->b' file")
+    assert not looks_like_write("awk '$1 > 5' file")
+
+
+def test_looks_like_write_still_catches_real_file_redirects():
+    assert looks_like_write("echo hi > out.txt")
+    assert looks_like_write("echo hi >> out.txt")
+    assert looks_like_write("echo hi 2> err.txt")
+    assert looks_like_write("awk '{print $1}' f > out")
+    assert looks_like_write("cmd &> file.log")
+    assert looks_like_write('echo "$(git status 2>&1)" > out.txt')
+    assert looks_like_write("cmd>/tmp/f")
+    assert looks_like_write("$(git status)>out.txt")
+
+
+def test_looks_like_write_ignores_arithmetic_expansion():
+    assert not looks_like_write("echo $((a>b))")
+    assert not looks_like_write('echo "$((a > b))"')
+    assert not looks_like_write("echo $((n>0 ? 1 : 0))")
+
+
 def test_find_denied_blocks_destructive_patterns():
     assert find_denied("rm -rf /") is not None
     assert find_denied("mkfs.ext4 /dev/sda1") is not None
@@ -313,7 +349,9 @@ tests/test_sample.py ...............                                    [100%]
     assert "OK, 15 passed" in distilled["condensed_output"]
 
     # Also test output with skipped items
-    sample_skipped = "================== 12 passed, 3 skipped, 1 warning in 1.20s ==================="
+    sample_skipped = (
+        "================== 12 passed, 3 skipped, 1 warning in 1.20s ==================="
+    )
     parsed_skipped = DiagnosticsDistiller.parse_test_runner(sample_skipped)
     assert parsed_skipped["passed_count"] == 12
     assert parsed_skipped["skipped_count"] == 3
@@ -605,9 +643,7 @@ def test_runner_run_and_diagnose_safety_and_timeout(tmp_path):
         raise subprocess.TimeoutExpired(cmd, timeout=kwargs.get("timeout", 1))
 
     ex_timeout = RunnerToolExecutor(subprocess_runner=fake_timeout)
-    req_timeout = AgentRunAndDiagnoseRequest(
-        command="sleep 10", repo_root=str(tmp_path), timeout=1
-    )
+    req_timeout = AgentRunAndDiagnoseRequest(command="sleep 10", repo_root=str(tmp_path), timeout=1)
     res_timeout = run_async(ex_timeout.run_and_diagnose(req_timeout))
     assert res_timeout.success is False
     assert "timed out" in res_timeout.summary
@@ -621,7 +657,9 @@ def test_runner_exec_pipeline_sequential(tmp_path):
 
     def fake_run(cmd, **kwargs):
         executed.append(cmd)
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=f"out: {cmd}\n", stderr="")
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=0, stdout=f"out: {cmd}\n", stderr=""
+        )
 
     ex = RunnerToolExecutor(subprocess_runner=fake_run)
     steps = [
@@ -643,7 +681,9 @@ def test_runner_exec_pipeline_sequential(tmp_path):
 def test_runner_exec_pipeline_fail_fast(tmp_path):
     def fake_run(cmd, **kwargs):
         if "step_two" in cmd:
-            return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="failed step")
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=1, stdout="", stderr="failed step"
+            )
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="ok\n", stderr="")
 
     ex = RunnerToolExecutor(subprocess_runner=fake_run)
@@ -669,7 +709,9 @@ def test_runner_exec_pipeline_continue_on_error(tmp_path):
     def fake_run(cmd, **kwargs):
         executed.append(cmd)
         if "step_one" in cmd:
-            return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="step 1 warning")
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=1, stdout="", stderr="step 1 warning"
+            )
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="ok\n", stderr="")
 
     ex = RunnerToolExecutor(subprocess_runner=fake_run)
