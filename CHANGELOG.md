@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.9.2 - 2026-11-12
+
+Agent write-guard false positives: read-only audits with stderr/null
+redirects or quoted comparisons no longer require `allow_write`.
+
+### Fixed
+- `looks_like_write()` (`src/ninja_agent/runner.py`) no longer flags
+  `2>&1`, `2>/dev/null`, `>/dev/null` — fd duplication and the null sink
+  write nothing observable, but the naive `>` regex refused every audit
+  using them (`cat … 2>/dev/null`, `… 2>&1 | tail`, loops over services).
+- Quoted spans are masked before matching (`_strip_quoted`): `grep "a=>b"`,
+  `grep 'a->b'`, `awk '$1 > 5'` are comparisons/arrows in patterns, not
+  shell redirects. `$(…)` content inside double quotes is still scanned;
+  `$((…))` arithmetic is masked everywhere.
+- Redirect detection now also catches spaceless (`cmd>f`) and
+  post-substitution (`$(…)>f`) targets, while unquoted arrows (`a->b`,
+  `a=>b`) still never match. Genuine file writes (`> f`, `2> f`, `&> f`)
+  still require `allow_write=True`.
+
+### Tests
+- `tests/test_agent_runner.py`: redirect exemptions, quoted
+  angles/comparisons, arithmetic expansion, real-redirect retention
+  (31 edge cases + unit suite green).
+
 ## 1.9.1 - 2026-11-11
 
 Daemon/systemd reconnect fixes plus hang observability for long MCP tasks.
