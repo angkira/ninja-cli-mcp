@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.1 - 2026-11-25
+
+### Fixed
+- `ninja-mcp daemon restart` is a no-op on systemd-managed installs: it only acted on
+  PID files, so it reported success while every `MainPID` stayed unchanged and the
+  process kept running the previous release's code. Restart now detects systemd
+  ownership, restarts the `ninja-mcp@<module>.service` unit, verifies that `MainPID`
+  actually changed, and waits for the port to answer before reporting success.
+  `stop` no longer reports success when it stopped nothing.
+- Version reporting no longer claims the running daemon's version. `ninja-mcp version`
+  and `daemon status` now report the on-disk version, the daemon's start time, and a
+  `stale_code` verdict when a daemon started before the installed package changed.
+
 ## 2.0.0 - 2026-11-25
 
 Port to MCP SDK `2.3.0` and protocol revision `2026-07-28`. One server object

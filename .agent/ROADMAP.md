@@ -359,7 +359,7 @@ Create detailed implementation plan with:
 
 ### [Bug] `daemon restart` is a silent no-op under systemd
 **Priority:** HIGH
-**Status:** OPEN (observed 2026-11-25)
+**Status:** FIXED (2.0.1) — commit `12c2e0a` (`fix(daemon): restart systemd-managed units and report stale code honestly`)
 
 **Description:**
 `src/ninja_common/daemon.py` `restart()` (≈:814) is `stop()` + `start()`. `stop()`
@@ -381,7 +381,7 @@ unit; otherwise fall back to the PID-file path. Add a test.
 
 ### [Bug] `ninja-mcp version` / `daemon status` report the wrong version for running daemons
 **Priority:** Medium
-**Status:** OPEN (observed 2026-11-25)
+**Status:** FIXED (2.0.1) — commit `12c2e0a`
 
 **Description:**
 The reported version comes from `__import__(module).__version__` inside the CLI
@@ -474,7 +474,7 @@ elicitation, file uploads) to clients routed through it.
 
 ### [Ops] Upgrade the live `uv/tools/ninja-mcp` install from 1.9.2 to 2.0.0
 **Priority:** Medium
-**Status:** OPEN — manual user action required (verified 2026-11-25)
+**Status:** DONE 2026-11-25 — the install was actually 1.9.0 before the upgrade, not 1.9.2, and it is an editable install of the local checkout
 
 **Description:**
 The live uv-tool install (`~/.local/share/uv/tools/ninja-mcp`, ports
