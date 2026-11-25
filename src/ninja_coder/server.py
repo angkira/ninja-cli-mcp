@@ -21,19 +21,28 @@ import itertools
 import json
 import logging
 import sys
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from mcp.server import Server, ServerRequestContext
+from mcp.server.request_state import RequestStateBoundary, RequestStateSecurity
 from mcp.server.stdio import stdio_server
+from mcp.shared.exceptions import MCPError
 from mcp.types import (
+    INVALID_PARAMS,
     CallToolRequestParams,
     CallToolResult,
+    ElicitRequest,
+    ElicitRequestFormParams,
+    ElicitResult,
+    InputRequiredResult,
     ListToolsResult,
     PaginatedRequestParams,
     TextContent,
     Tool,
     ToolAnnotations,
 )
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import ValidationError
 
 from ninja_coder.models import (
@@ -82,6 +91,8 @@ from ninja_common.security import RequestDeduplicator
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+    from mcp.server.context import HandlerResult
 
     from ninja_common.mcp_ext.models import Task
 
@@ -877,6 +888,186 @@ def _is_unmerged_refusal(message: str | None) -> bool:
     return "not fully merged" in text or "unmerged" in text.lower()
 
 
+#: Key the branch-deletion confirmation is filed under in
+#: ``InputRequiredResult.input_requests`` and, echoed back, in
+#: ``CallToolRequestParams.input_responses``.
+_CONFIRM_INPUT_KEY: str = "confirm_branch_delete"
+
+#: ``op`` claim of the branch-discard ``request_state`` payload, so state minted
+#: for another future operation can never be reused here.
+_BRANCH_DISCARD_OP: str = "branch_discard"
+
+
+def _branch_delete_schema(branch: str) -> dict[str, Any]:
+    """JSON schema for the single ``confirm`` boolean the confirmation asks for."""
+    return {
+        "type": "object",
+        "properties": {
+            "confirm": {
+                "type": "boolean",
+                "title": "Delete branch",
+                "description": f"Confirm: delete branch {branch}",
+            }
+        },
+        "required": ["confirm"],
+    }
+
+
+def _encode_branch_discard_state(request: BranchDiscardRequest) -> str:
+    """Mint the plaintext ``request_state`` for one branch-deletion round.
+
+    The plaintext is handed to ``RequestStateBoundary``, which seals it before it
+    reaches the wire; handlers never touch the codec.
+
+    Args:
+        request: The discard the state belongs to.
+
+    Returns:
+        JSON naming the operation, the branch and the repository it applies to.
+    """
+    return json.dumps(
+        {
+            "op": _BRANCH_DISCARD_OP,
+            "branch": request.branch,
+            "repo_root": request.repo_root,
+            "issued_at": datetime.now(UTC).isoformat(),
+        },
+        sort_keys=True,
+    )
+
+
+def _verify_branch_discard_state(request: BranchDiscardRequest, request_state: str | None) -> None:
+    """Reject an unsealed ``request_state`` that does not describe this discard.
+
+    The boundary already binds the sealed token to the request name and
+    arguments; this second check keeps the handler correct on its own terms.
+
+    Args:
+        request: The discard the retry asks for.
+        request_state: The unsealed state the client echoed back.
+
+    Raises:
+        MCPError: ``request_state`` is missing, malformed, or names another
+            operation, branch, or repository.
+    """
+    if request_state is None:
+        raise MCPError(
+            INVALID_PARAMS,
+            "request_state is required to confirm the deletion of unmerged work",
+        )
+    try:
+        state = json.loads(request_state)
+    except (TypeError, ValueError):
+        state = None
+    expected = {
+        "op": _BRANCH_DISCARD_OP,
+        "branch": request.branch,
+        "repo_root": request.repo_root,
+    }
+    if not isinstance(state, dict) or any(
+        state.get(key) != value for key, value in expected.items()
+    ):
+        raise MCPError(
+            INVALID_PARAMS,
+            "request_state does not match this branch deletion",
+        )
+
+
+def _confirmed(response: object) -> bool:
+    """True only when the client accepted the form and ticked the box."""
+    if not isinstance(response, ElicitResult):
+        return False
+    return response.action == "accept" and (response.content or {}).get("confirm") is True
+
+
+async def _force_discard_branch(
+    executor: Any, request: BranchDiscardRequest, *, client_id: str
+) -> BranchDiscardResult:
+    """Re-run the discard with ``force`` and annotate a successful deletion."""
+    forced = BranchDiscardRequest(
+        repo_root=request.repo_root,
+        branch=request.branch,
+        force=True,
+    )
+    result = await executor.discard_branch(forced, client_id=client_id)
+    if result.status == "ok":
+        result = result.model_copy(
+            update={"message": f"{result.message} (confirmed via elicitation)"}
+        )
+    return result
+
+
+async def _discard_branch_with_confirmation(
+    ctx: ServerRequestContext[Any, Any],
+    params: CallToolRequestParams,
+    request: BranchDiscardRequest,
+    *,
+    executor: Any,
+    client_id: str,
+) -> BranchDiscardResult | InputRequiredResult:
+    """Discard a branch, confirming first when the branch holds unmerged work.
+
+    A plain discard runs unconditionally. An unmerged-branch refusal without
+    ``force`` becomes a confirmation round, carried the way the connection's
+    protocol era allows: 2025-era connections keep the push-style elicitation
+    (a server-initiated request mid-call), while 2026-07-28 connections answer
+    with an ``input_required`` result the client resolves and retries.
+
+    Args:
+        ctx: Request context, used for the protocol version and the legacy session.
+        params: The tool-call params, which carries the client's retry responses.
+        request: The validated discard request.
+        executor: Tool executor performing the git operation.
+        client_id: Client identity for executor logging.
+
+    Returns:
+        The discard result, or the ``input_required`` round asking to confirm.
+
+    Raises:
+        MCPError: A retry carried a ``request_state`` that does not match this
+            branch deletion.
+    """
+    if ctx.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+        # 2025-era connections still allow a server-initiated request mid-call.
+        result = await executor.discard_branch(request, client_id=client_id)
+        if request.force or not _is_unmerged_refusal(result.message):
+            return result
+        confirmed = await elicit_confirm(
+            ctx.session,
+            f"Branch '{request.branch}' has unmerged commits. Delete it anyway?",
+            item_label=f"delete branch {request.branch}",
+        )
+        if confirmed:
+            return await _force_discard_branch(executor, request, client_id=client_id)
+        return result
+
+    if params.input_responses:
+        # The retry round. The state is verified before any git work, so a
+        # tampered echo never triggers an operation; a confirmed answer forces
+        # the deletion, and anything else re-answers with the live outcome.
+        _verify_branch_discard_state(request, params.request_state)
+        if _confirmed(params.input_responses.get(_CONFIRM_INPUT_KEY)):
+            return await _force_discard_branch(executor, request, client_id=client_id)
+        return await executor.discard_branch(request, client_id=client_id)
+
+    result = await executor.discard_branch(request, client_id=client_id)
+    if request.force or not _is_unmerged_refusal(result.message):
+        return result
+
+    # 2026-07-28 has no mid-call back-channel: ask in a retry instead.
+    return InputRequiredResult(
+        input_requests={
+            _CONFIRM_INPUT_KEY: ElicitRequest(
+                params=ElicitRequestFormParams(
+                    message=f"Branch '{request.branch}' has unmerged commits. Delete it anyway?",
+                    requested_schema=_branch_delete_schema(request.branch),
+                )
+            )
+        },
+        request_state=_encode_branch_discard_state(request),
+    )
+
+
 def create_server() -> Server:
     """
     Create and configure the MCP server with detailed instructions.
@@ -916,7 +1107,7 @@ def create_server() -> Server:
     async def call_tool(
         ctx: ServerRequestContext[Any, Any],
         params: CallToolRequestParams,
-    ) -> CallToolResult:
+    ) -> CallToolResult | InputRequiredResult:
         """Handle tool invocations synchronously.
 
         Long-running tools keep the connection busy; callers that expect more
@@ -1084,7 +1275,7 @@ def create_server() -> Server:
 
             raise ValueError(f"Unknown job tool: {name}")
 
-        async def _invoke() -> tuple[list, dict[str, Any] | None]:
+        async def _invoke() -> tuple[list, dict[str, Any] | None] | InputRequiredResult:
             if name in JOB_TOOL_NAMES:
                 return await _handle_job_tool()
             client_id = "default"
@@ -1127,30 +1318,13 @@ def create_server() -> Server:
                     return await executor.merge_branch(request, client_id=client_id)
                 elif name == "coder_branch_discard":
                     request = BranchDiscardRequest(**arguments)
-                    result = await executor.discard_branch(request, client_id=client_id)
-                    if not request.force and _is_unmerged_refusal(result.message):
-                        # Elicitation only works on legacy connections; on
-                        # 2026-07-28 there is no back-channel mid-call and this
-                        # returns None, so we keep refusing.
-                        confirmed = await elicit_confirm(
-                            ctx.session,
-                            f"Branch '{request.branch}' has unmerged commits. Delete it anyway?",
-                            item_label=f"delete branch {request.branch}",
-                        )
-                        if confirmed:
-                            forced = BranchDiscardRequest(
-                                repo_root=request.repo_root,
-                                branch=request.branch,
-                                force=True,
-                            )
-                            result = await executor.discard_branch(forced, client_id=client_id)
-                            if result.status == "ok":
-                                result = result.model_copy(
-                                    update={
-                                        "message": f"{result.message} (confirmed via elicitation)"
-                                    }
-                                )
-                    return result
+                    return await _discard_branch_with_confirmation(
+                        ctx,
+                        params,
+                        request,
+                        executor=executor,
+                        client_id=client_id,
+                    )
                 else:
                     raise ValueError(f"Unknown tool: {name}")
 
@@ -1185,6 +1359,12 @@ def create_server() -> Server:
                         else RequestDeduplicator.make_key(name, arguments)
                     )
                     result = await deduplicator.deduplicate(key, _execute)
+
+                if isinstance(result, InputRequiredResult):
+                    # Multi round-trip: the client resolves the embedded input
+                    # requests and retries this call with `input_responses`.
+                    logger.info(f"[{client_id}] Tool {name} awaits client input before completing")
+                    return result
 
                 if result is None or not hasattr(result, "model_dump"):
                     # Defensive: an executor must always return a result model.
@@ -1235,6 +1415,12 @@ def create_server() -> Server:
                     return dict_result({"error": str(e)})
                 raise
 
+            except MCPError:
+                # Protocol-level failures (a tampered `request_state`, a refused
+                # input request) belong in the JSON-RPC error channel, not in a
+                # tool-result payload the model would read as an answer.
+                raise
+
             except Exception as e:
                 logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
                 return dict_result(
@@ -1250,10 +1436,13 @@ def create_server() -> Server:
         if progress_token is not None:
             callback = make_session_progress_callback(ctx.session, progress_token)
             async with task_scope(f"sync-{name}", progress=callback):
-                texts, structured = await _invoke()
+                outcome = await _invoke()
         else:
-            texts, structured = await _invoke()
+            outcome = await _invoke()
 
+        if isinstance(outcome, InputRequiredResult):
+            return outcome
+        texts, structured = outcome
         return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
 
     # The lowlevel server runs no extension interceptors, so the Tasks
@@ -1262,10 +1451,10 @@ def create_server() -> Server:
     async def call_tool_with_tasks(
         ctx: ServerRequestContext[Any, Any],
         params: CallToolRequestParams,
-    ) -> CallToolResult | dict[str, Any] | None:
+    ) -> CallToolResult | InputRequiredResult | dict[str, Any] | None:
         """Run ``call_tool`` behind the Tasks extension's interceptor."""
 
-        async def call_next(_ctx: ServerRequestContext[Any, Any]) -> CallToolResult:
+        async def call_next(_ctx: ServerRequestContext[Any, Any]) -> HandlerResult:
             return await call_tool(ctx, params)
 
         return await extensions.tasks_ext.intercept_tool_call(params, ctx, call_next)
@@ -1294,6 +1483,18 @@ LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 mi
         on_read_resource=extensions.on_read_resource,
     )
     apply_extensions(server, [extensions.skills_ext, extensions.tasks_ext])
+    # `coder_branch_discard` confirms deletion of unmerged work with a
+    # multi-round-trip `input_required` result on 2026-07-28, where servers
+    # cannot send requests to clients mid-call. This boundary seals the
+    # plaintext `request_state` the handler mints and rejects any tampered,
+    # expired, or replayed echo before the handler runs. Every other request
+    # method (and every result that is not `input_required`) passes through.
+    server.middleware.append(
+        RequestStateBoundary(
+            RequestStateSecurity.ephemeral(),
+            default_audience="ninja-coder",
+        )
+    )
     return server
 
 

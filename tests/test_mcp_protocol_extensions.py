@@ -19,6 +19,7 @@ network call or subprocess is involved.
 
 from __future__ import annotations
 
+import base64
 import importlib
 from typing import TYPE_CHECKING, Any
 
@@ -29,7 +30,12 @@ from pydantic import Field, TypeAdapter
 
 from ninja_agent.models import AgentExecPipelineResult
 from ninja_coder.models import GetAgentsResult
-from ninja_common.mcp_ext.protocol import SKILLS_EXTENSION_ID, TASKS_EXTENSION_ID
+from ninja_common.mcp_ext.files import FILES_ENABLE_ENV, FilesExtension, sha256_digest
+from ninja_common.mcp_ext.protocol import (
+    FILES_EXTENSION_ID,
+    SKILLS_EXTENSION_ID,
+    TASKS_EXTENSION_ID,
+)
 from ninja_common.mcp_ext.tasks_client import TasksClient
 from ninja_researcher.models import QuickResearchResult
 
@@ -61,8 +67,13 @@ class _RawRequest(types.Request[dict[str, Any], str]):
 
 @pytest.fixture(autouse=True)
 def _task_store_path(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
-    """Keep the durable task store out of the developer's ``~/.ninja``."""
+    """Keep the durable task store out of the developer's ``~/.ninja``.
+
+    The Files extension is experimental and off by default; clear any value a
+    developer exported so the advertised surface is deterministic.
+    """
     monkeypatch.setenv("NINJA_TASKS_DB", str(tmp_path / "tasks.db"))
+    monkeypatch.delenv(FILES_ENABLE_ENV, raising=False)
 
 
 def create_server(module: str) -> Any:
@@ -278,3 +289,94 @@ async def test_task_handle_is_returned_before_the_work_finishes(
 
     assert fetched["taskId"] == task_id
     assert fetched["status"] in {"working", "completed"}
+
+
+# --------------------------------------------------------------------------- #
+# (e) Files extension (experimental, opt-in, secretary only)
+# --------------------------------------------------------------------------- #
+
+INGEST_FILE_TOOL = "secretary_ingest_file"
+FILE_BYTES = b"hello, files extension\n"
+FILE_B64 = base64.b64encode(FILE_BYTES).decode("ascii")
+
+
+def file_argument(**overrides: Any) -> dict[str, Any]:
+    """A well-formed inline file argument for the ingest tool."""
+    argument: dict[str, Any] = {
+        "id": "file-1",
+        "name": "greeting.txt",
+        "mimeType": "text/plain",
+        "size": len(FILE_BYTES),
+        "digest": {"algorithm": "sha-256", "value": sha256_digest(FILE_BYTES)},
+        "data": FILE_B64,
+    }
+    argument.update(overrides)
+    return argument
+
+
+async def test_files_extension_is_off_by_default() -> None:
+    """No flag: neither the capability nor the tool is advertised."""
+    async with Client(create_server("ninja_secretary.server")) as client:
+        advertised = client.server_capabilities.extensions or {}
+        listed = await client.list_tools()
+
+    assert FILES_EXTENSION_ID not in advertised
+    assert INGEST_FILE_TOOL not in {tool.name for tool in listed.tools}
+
+
+async def test_files_extension_is_advertised_and_ingests_inline_data(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(FILES_ENABLE_ENV, "1")
+
+    async with Client(create_server("ninja_secretary.server")) as client:
+        advertised = client.server_capabilities.extensions or {}
+        listed = await client.list_tools()
+        tools = {tool.name: tool for tool in listed.tools}
+
+        assert advertised[FILES_EXTENSION_ID] == {
+            "maxInlineBytes": FilesExtension().max_inline_bytes
+        }
+        assert INGEST_FILE_TOOL in tools
+
+        schema = tools[INGEST_FILE_TOOL].input_schema
+        file_schema = schema["properties"]["file"]
+        assert schema["required"] == ["file"]
+        assert file_schema["x-mcp-file"] == {
+            "accept": ["application/pdf", "text/csv", "text/plain", "image/png", "image/jpeg"],
+            "maxSize": FilesExtension().max_inline_bytes,
+        }
+        annotations = tools[INGEST_FILE_TOOL].annotations
+        assert annotations is not None
+        assert annotations.read_only_hint is True
+        assert annotations.idempotent_hint is True
+        assert annotations.open_world_hint is False
+
+        result = await client.call_tool(INGEST_FILE_TOOL, {"file": file_argument()})
+
+    assert result.is_error is False
+    assert result.structured_content == {
+        "name": "greeting.txt",
+        "mime_type": "text/plain",
+        "size": len(FILE_BYTES),
+        "digest": sha256_digest(FILE_BYTES),
+        "first_bytes_hex": FILE_BYTES[:32].hex(),
+    }
+
+
+async def test_files_ingest_rejects_a_bad_file_without_echoing_data(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(FILES_ENABLE_ENV, "1")
+
+    async with Client(create_server("ninja_secretary.server")) as client:
+        result = await client.call_tool(
+            INGEST_FILE_TOOL,
+            {"file": file_argument(digest={"algorithm": "sha-256", "value": sha256_digest(b"x")})},
+        )
+
+    assert result.is_error is True
+    text = " ".join(block.text for block in result.content if isinstance(block, types.TextContent))
+    assert "digest mismatch" in text
+    assert FILE_B64 not in text
+    assert result.structured_content is None

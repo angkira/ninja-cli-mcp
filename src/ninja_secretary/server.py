@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, Final
 
 from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
@@ -30,6 +30,14 @@ from mcp.types import (
 
 from ninja_common.logging_utils import get_logger, setup_logging
 from ninja_common.mcp_ext.apply import apply_extensions
+from ninja_common.mcp_ext.files import (
+    FileArgumentError,
+    FilesExtension,
+    decode_files,
+    sha256_digest,
+    x_mcp_file_schema,
+)
+from ninja_common.mcp_ext.files import is_enabled as files_enabled
 from ninja_common.mcp_ext.wiring import build_protocol_extensions
 from ninja_common.mcp_meta import (
     ServerMeta,
@@ -56,6 +64,10 @@ from ninja_secretary.models import (
     UpdateDocResult,
 )
 from ninja_secretary.tools import SecretaryToolExecutor
+
+
+if TYPE_CHECKING:
+    from mcp.server.extension import Extension
 
 
 # Set up logging to stderr (stdout is for MCP protocol)
@@ -230,6 +242,52 @@ TOOLS = apply_tool_meta(TOOLS, _TOOL_META, server_icon("secretary"))
 #: keeps the synchronous behaviour described by the tool schema.
 TASK_TOOLS: frozenset[str] = frozenset({"secretary_codebase_report", "secretary_analyse_file"})
 
+#: Files extension (experimental, default off): the single inline-ingest tool.
+_INGEST_FILE_TOOL: Final[str] = "secretary_ingest_file"
+
+#: Types the ingest tool advertises as acceptable.
+_INGEST_FILE_ACCEPT: Final[tuple[str, ...]] = (
+    "application/pdf",
+    "text/csv",
+    "text/plain",
+    "image/png",
+    "image/jpeg",
+)
+
+
+def _ingest_file_tool(files_ext: FilesExtension) -> Tool:
+    """Build ``secretary_ingest_file`` for *files_ext*'s inline budget.
+
+    The single ``file`` argument is a ``FileInput`` object carrying
+    ``x-mcp-file``; the tool accepts inline bytes only.
+    """
+    tool = Tool(
+        name=_INGEST_FILE_TOOL,
+        description=(
+            "Validate an inline file upload (Files extension). Returns its name, MIME type, "
+            "size, SHA-256 digest and the first 32 bytes in hex; the content is never echoed."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file": x_mcp_file_schema(
+                    accept=list(_INGEST_FILE_ACCEPT),
+                    max_size=files_ext.max_inline_bytes,
+                ),
+            },
+            "required": ["file"],
+        },
+    )
+    meta = {
+        _INGEST_FILE_TOOL: ToolMeta(
+            title="Ingest file",
+            annotations=ToolAnnotations(
+                read_only_hint=True, idempotent_hint=True, open_world_hint=False
+            ),
+        )
+    }
+    return apply_tool_meta([tool], meta, server_icon("secretary"))[0]
+
 
 def _as_call_result(
     built: tuple[list[TextContent | ResourceLink], dict[str, Any]],
@@ -250,12 +308,21 @@ def create_server() -> Server:
     # that declared it. Both are 2026-07-28 only.
     extensions = build_protocol_extensions("secretary", store, TASK_TOOLS)
 
+    # Files is experimental and opt-in. With the flag off, both the tool list
+    # and ``capabilities.extensions`` stay exactly what they were before.
+    files_ext = FilesExtension() if files_enabled() else None
+    active_tools: list[Tool] = list(TOOLS)
+    extension_list: list[Extension] = [extensions.skills_ext, extensions.tasks_ext]
+    if files_ext is not None:
+        active_tools.append(_ingest_file_tool(files_ext))
+        extension_list.append(files_ext)
+
     async def list_tools(
         _ctx: ServerRequestContext[Any, Any],
         _params: PaginatedRequestParams | None,
     ) -> ListToolsResult:
         """List available tools."""
-        return ListToolsResult(tools=TOOLS)
+        return ListToolsResult(tools=active_tools)
 
     async def call_tool(
         _ctx: ServerRequestContext[Any, Any],
@@ -310,8 +377,32 @@ def create_server() -> Server:
                 )
                 return _as_call_result(model_result(session_result))
 
+            elif name == _INGEST_FILE_TOOL and files_ext is not None:
+                payload, file = decode_files(arguments, max_inline_bytes=files_ext.max_inline_bytes)
+                body = payload or b""
+                return _as_call_result(
+                    dict_result(
+                        {
+                            "name": file.name or file.id,
+                            "mime_type": file.mime_type,
+                            "size": file.size,
+                            "digest": sha256_digest(body),
+                            "first_bytes_hex": body[:32].hex(),
+                        }
+                    )
+                )
+
             else:
                 raise ValueError(f"Unknown tool: {name}")
+
+        except FileArgumentError as e:
+            # The message is user-safe (no ``data``, no bytes) and the tool did
+            # not run, as the Files extension requires.
+            logger.warning(f"Rejected file argument for {name}: {e}")
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Invalid file argument: {e}")],
+                is_error=True,
+            )
 
         except Exception as e:
             logger.error(f"Error executing tool {name}: {e}", exc_info=True)
@@ -355,7 +446,7 @@ update_documentation: write docs (the only writing tool). session_report: tracke
         on_list_resources=extensions.on_list_resources,
         on_read_resource=extensions.on_read_resource,
     )
-    apply_extensions(server, [extensions.skills_ext, extensions.tasks_ext])
+    apply_extensions(server, extension_list)
     return server
 
 
