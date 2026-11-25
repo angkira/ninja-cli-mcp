@@ -243,6 +243,7 @@ markers = [
     "e2e: End-to-end tests (full system tests)",
     "slow: Slow tests (may take minutes)",
     "agent: Tests requiring AI agent CLI (aider, claude, etc)",
+    "live: requires running ninja-mcp daemons",
 ]
 asyncio_mode = "auto"
 timeout = 300
