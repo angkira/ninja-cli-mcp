@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.0.2 - 2026-11-25
+
+### Fixed
+- Agent task cancellation now stops the work. `tasks/cancel` on `agent_run_and_diagnose`
+  and `agent_exec_pipeline` previously only marked the task `cancelled` after a 15 s grace
+  while the child process kept running to completion. Subprocesses now run in their own
+  process group and are SIGTERM/SIGKILLed as a group; the task is cancelled in about a second.
+- `secretary_file_search` advertised `repo_root` as optional while the request model
+  required it, so any schema-conforming call failed. The schema and description now match
+  the model, and a structural test asserts schema/model agreement for every tool.
+- Framework-level failures (unknown tool, missing or wrong-typed arguments, unhandled
+  handler exceptions) now return `isError: true`. They used to return `isError: false`,
+  so clients branching on that flag read them as success. The JSON body is unchanged.
+- `coder_job_status` and the other job tools reject a non-string `job_id` instead of
+  silently coercing it.
+
+### Changed
+- Tool failure payloads keep the same JSON shape; only the `isError` flag changed.
+
 ## 2.0.1 - 2026-11-25
 
 ### Fixed

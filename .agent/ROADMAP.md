@@ -439,24 +439,53 @@ order — cross-test pollution (leaked env/config from earlier tests).
 
 ### [Bug] `secretary_file_search` schema under-declares required fields
 **Priority:** Medium
-**Status:** OPEN (verified 2026-11-25)
+**Status:** FIXED (2.0.2) — commit `009864e` (schema + structural guard)
 
 **Description:**
 The `secretary_file_search` tool schema marks only `pattern` as required while the
 request model also requires `repo_root`, so a schema-valid call fails validation at
 runtime.
 
+**Fix:** the schema and description now declare `repo_root` required, matching the
+request model, and a structural test asserts schema/model agreement for every tool so
+this class of drift fails in CI instead of at call time.
+
 ---
 
 ### [Bug] Secretary schemas under-expose model capabilities
 **Priority:** Medium
-**Status:** OPEN (verified 2026-11-25)
+**Status:** OPEN (verified 2026-11-25, audit 2026-11-25)
 
 **Description:**
+- `secretary_codebase_report` advertises `include_patterns` / `exclude_patterns` that the
+  request model does not declare **and** that the executor ignores — the arguments are
+  accepted by the schema and silently discarded.
 - `secretary_session_report` schema exposes only `session_id`, while the model also
   accepts `action` / `updates` — those paths are unreachable from MCP clients.
-- `secretary_codebase_report` advertises include/exclude pattern arguments that the
-  executor ignores.
+- `secretary_analyse_file` exposes fewer optional properties than its model accepts.
+- `secretary_file_search` exposes fewer optional properties than its model accepts
+  (`max_results`).
+- `coder_multi_agent_task` exposes fewer optional properties than its model accepts
+  (`allowed_globs` / `deny_globs`).
+
+---
+
+### [Bug] Tasks extension interop footgun — advertising `io.modelcontextprotocol/tasks` without a claim resolver makes the SDK reject the task handle
+**Priority:** Medium
+**Status:** OPEN (client-side; documented 2026-11-25 in `docs/MCP_PROTOCOL_2026.md` §4)
+
+**Description:**
+A client that merely advertises `io.modelcontextprotocol/tasks` (e.g.
+`mcp.client.advertise(TASKS_EXTENSION_ID)`) but does not register a claim resolver
+receives the task handle envelope and then errors out when the SDK tries to claim it —
+the call appears to fail even though the server-side task is running and will complete.
+Only `ninja_common.mcp_ext.tasks_client.TasksClient` wires the resolver and is safe to
+use as-is; everyone else must implement the resolver themselves.
+
+**Fix direction:**
+Keep the warning in `docs/MCP_PROTOCOL_2026.md` §4 next to the client helpers, and
+consider failing fast with an actionable message when the extension is advertised
+without a resolver.
 
 ---
 

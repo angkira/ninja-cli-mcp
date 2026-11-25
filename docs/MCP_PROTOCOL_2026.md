@@ -332,6 +332,16 @@ was cancelled. An unknown id is `-32602`.
 returns the final `CallToolResult`. `mcp.client.advertise(TASKS_EXTENSION_ID)`
 declares the extension but leaves the raw envelope in your hands.
 
+> **Warning — advertise is not enough.** Declaring
+> `io.modelcontextprotocol/tasks` without also registering a claim resolver is a
+> footgun: the server returns a task handle, the SDK tries to claim it, finds no
+> resolver, and rejects the handle, so the call fails even though the task is
+> running server-side and will complete. Advertising the extension only tells the
+> server you understand task envelopes; the resolver is what turns one into a
+> result. Either use `TasksClient` (which wires the resolver for you) or register
+> the resolver yourself before the first task-returning call.
+
+
 ### 4.3 Durable state
 
 Task rows live in SQLite (`NINJA_TASKS_DB`, default `~/.ninja/tasks.db`, WAL +
