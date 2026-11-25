@@ -62,6 +62,7 @@ from ninja_agent.models import (
 from ninja_common.logging_utils import get_logger
 from ninja_common.rate_balancer import rate_balanced
 from ninja_common.security import monitored
+from ninja_common.subprocess_runner import run_cancellable
 
 
 logger = get_logger(__name__)
@@ -939,16 +940,17 @@ class RunnerToolExecutor:
             structured_log_query: ``(module, level, limit, session_id)`` query fn.
             jobs_lister: Async ``(limit)`` fn returning job summaries.
             safety_checker: ``check_safety``-compatible callable for dry-runs.
-            subprocess_runner: ``subprocess.run``-compatible callable (tests).
+            subprocess_runner: ``subprocess.run``-compatible callable for tests.
+                When omitted, commands run through
+                :func:`ninja_common.subprocess_runner.run_cancellable`, which
+                owns a process group and observes task cancellation.
         """
         self._daemon_factory = daemon_factory
         self._resource_monitor_factory = resource_monitor_factory
         self._structured_log_query = structured_log_query
         self._jobs_lister = jobs_lister
         self._safety_checker = safety_checker
-        self._subprocess_runner = subprocess_runner or (
-            lambda *a, **k: subprocess.run(*a, check=False, **k)
-        )
+        self._subprocess_runner = subprocess_runner
 
     def _get_daemon_manager(self) -> Any:
         if self._daemon_factory is not None:
@@ -1036,18 +1038,31 @@ class RunnerToolExecutor:
                 logger.debug("runner safety dry-run skipped: %s", exc)
 
         timeout = max(1, min(int(timeout or DEFAULT_COMMAND_TIMEOUT), 600))
+        completed: Any
         try:
-            completed = await asyncio.to_thread(
-                self._subprocess_runner,
-                cmd,
-                shell=True,
-                cwd=str(target),
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                stdin=subprocess.DEVNULL,
-            )
-        except subprocess.TimeoutExpired:
+            if self._subprocess_runner is None:
+                # Cancellable, process-group-based execution: a tasks/cancel
+                # must stop `sh` *and* its children, not just the await.
+                completed = await run_cancellable(
+                    cmd,
+                    shell=True,
+                    cwd=str(target),
+                    timeout=timeout,
+                )
+            else:
+                # Injected runner (tests): keep the historical synchronous
+                # subprocess.run contract.
+                completed = await asyncio.to_thread(
+                    self._subprocess_runner,
+                    cmd,
+                    shell=True,
+                    cwd=str(target),
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    stdin=subprocess.DEVNULL,
+                )
+        except (subprocess.TimeoutExpired, TimeoutError):
             return RunnerCommandResult(
                 success=False,
                 summary=f"Command timed out after {timeout}s: {cmd[:200]}",
