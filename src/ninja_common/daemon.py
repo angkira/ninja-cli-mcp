@@ -5,7 +5,10 @@ import asyncio
 import json
 import os
 import signal
+import subprocess
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +17,25 @@ from ninja_common.logging_utils import get_logger
 
 
 logger = get_logger(__name__)
+
+#: Template for the per-module systemd *user* unit. The only unit this module
+#: is ever allowed to act on.
+SYSTEMD_UNIT_TEMPLATE = "ninja-mcp@{module}.service"
+
+#: How long `systemctl restart` may take to produce a new MainPID.
+SYSTEMD_RESTART_TIMEOUT_S = 30.0
+
+#: How long `systemctl stop` may take to deactivate the unit.
+SYSTEMD_STOP_TIMEOUT_S = 10.0
+
+#: How long the module's port may take to answer after a restart/start.
+PORT_READY_TIMEOUT_S = 10.0
+
+#: Poll interval used by every bounded wait above.
+SYSTEMD_POLL_INTERVAL_S = 0.25
+
+#: Per-invocation subprocess timeout for `systemctl`.
+SYSTEMCTL_TIMEOUT_S = 10.0
 
 
 async def stdio_to_http_proxy(url: str) -> None:
@@ -179,6 +201,12 @@ class DaemonManager:
         # to each forked daemon through an inherited fd (never via env/argv).
         self._store_password: str | None = None
         self._store_prompted = False
+
+        # Bounded waits for systemd supervision (tests shrink these).
+        self.systemd_restart_timeout = SYSTEMD_RESTART_TIMEOUT_S
+        self.systemd_stop_timeout = SYSTEMD_STOP_TIMEOUT_S
+        self.port_ready_timeout = PORT_READY_TIMEOUT_S
+        self.poll_interval = SYSTEMD_POLL_INTERVAL_S
 
         self.daemon_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -376,26 +404,113 @@ class DaemonManager:
         pid_file = self._get_pid_file(module)
         pid_file.write_text(str(pid))
 
+    def _systemd_unit(self, module: str) -> str:
+        """Return the module-scoped systemd user unit name."""
+        return SYSTEMD_UNIT_TEMPLATE.format(module=module)
+
+    def _run_systemctl(
+        self, *args: str, timeout: float = SYSTEMCTL_TIMEOUT_S
+    ) -> subprocess.CompletedProcess[str] | None:
+        """Run ``systemctl --user <args>`` with captured output and a timeout.
+
+        Always user scope; callers pass exactly one unit-scoped verb (e.g.
+        ``("restart", "ninja-mcp@coder.service")``). This helper never adds
+        ``--all``, never omits the unit, and never disables the shell.
+        Returns ``None`` when systemctl is unavailable or times out.
+        """
+        argv = ["systemctl", "--user", *args]
+        try:
+            return subprocess.run(
+                argv,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError) as e:
+            logger.debug(f"Command failed ({' '.join(argv)}): {e}")
+            return None
+
     def _is_systemd_active(self, module: str) -> bool:
         """Check if the systemd singleton unit for *module* is active.
 
         Best-effort: returns False when systemctl is missing, the user
         bus is unreachable, or the unit does not exist. Never raises.
         """
-        import subprocess
+        result = self._run_systemctl("is-active", self._systemd_unit(module), timeout=2)
+        return result is not None and result.returncode == 0 and result.stdout.strip() == "active"
 
-        unit = f"ninja-mcp@{module}.service"
-        try:
-            result = subprocess.run(
-                ["systemctl", "--user", "is-active", unit],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            return result.returncode == 0 and result.stdout.strip() == "active"
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
+    def _systemd_main_pid(self, module: str) -> int | None:
+        """Return the MainPID reported by the module's user unit, if any."""
+        result = self._run_systemctl("show", "-p", "MainPID", "--value", self._systemd_unit(module))
+        if result is None or result.returncode != 0:
+            return None
+        raw = result.stdout.strip()
+        if not raw.isdigit():
+            return None
+        pid = int(raw)
+        return pid if pid > 0 else None
+
+    def _systemd_owns(self, module: str) -> bool:
+        """True when an active unit with a live MainPID supervises *module*."""
+        if not self._is_systemd_active(module):
             return False
+        pid = self._systemd_main_pid(module)
+        return pid is not None and self._is_running(pid)
+
+    def _systemd_active_enter_time(self, module: str) -> float | None:
+        """Return the unit's ActiveEnterTimestamp as epoch seconds, if parseable."""
+        result = self._run_systemctl(
+            "show",
+            "-p",
+            "ActiveEnterTimestamp",
+            "--value",
+            "--timestamp=unix",
+            self._systemd_unit(module),
+        )
+        if result is None or result.returncode != 0:
+            return None
+        return self._parse_systemd_timestamp(result.stdout)
+
+    @staticmethod
+    def _parse_systemd_timestamp(raw: str) -> float | None:
+        """Parse ``--timestamp=unix`` output; reject empty/non-positive values."""
+        value = raw.strip()
+        if not value:
+            return None
+        try:
+            timestamp = float(value)
+        except ValueError:
+            return None
+        return timestamp if timestamp > 0 else None
+
+    def _wait_for_new_main_pid(
+        self,
+        module: str,
+        previous_pid: int | None,
+        timeout: float,
+        interval: float,
+    ) -> int | None:
+        """Poll MainPID until it changes from *previous_pid* (bounded)."""
+        deadline = time.monotonic() + timeout
+        while True:
+            pid = self._systemd_main_pid(module)
+            if pid is not None and pid != previous_pid:
+                return pid
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(interval)
+
+    def _wait_for_port(self, module: str, timeout: float, interval: float) -> bool:
+        """Poll the module's TCP port until it answers (bounded)."""
+        port = self._get_port(module)
+        deadline = time.monotonic() + timeout
+        while True:
+            if self._is_port_in_use(port):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(interval)
 
     def _find_ninja_owner_pid(self, module: str, port: int) -> int | None:
         """Return the PID serving *port* when it looks like our module server.
@@ -535,8 +650,6 @@ class DaemonManager:
             logger.info(f"Found process {pid} using port {port}, attempting cleanup")
             try:
                 os.kill(pid, signal.SIGTERM)
-                import time
-
                 time.sleep(0.5)
                 if self._is_running(pid):
                     os.kill(pid, signal.SIGKILL)
@@ -662,8 +775,6 @@ class DaemonManager:
                 self._write_pid(module, new_pid)
 
                 # Wait for daemon to start (retry up to 5 seconds)
-                import time
-
                 for attempt in range(10):
                     time.sleep(0.5)
                     if self._is_running(new_pid) and self._is_port_in_use(port):
@@ -687,26 +798,47 @@ class DaemonManager:
     def stop(self, module: str) -> bool:
         """Stop daemon for module.
 
+        Honours systemd ownership: when the module's user unit is active the
+        stop is delegated to ``systemctl --user stop`` and verified. The legacy
+        PID-file path is kept for daemons started by ``daemon start``.
+
         Args:
             module: Module name
 
         Returns:
-            True if stopped successfully
+            True only when the daemon is genuinely no longer running
         """
+        # An explicit live PID file means a `daemon start` process owns the
+        # module; systemd never writes PID files, so take the legacy path
+        # without even probing systemctl.
         pid = self._read_pid(module)
-        if not pid:
-            logger.info(f"{module} daemon not running")
-            return True
+        if pid and self._is_running(pid):
+            return self._stop_pidfile(module, pid)
 
-        if not self._is_running(pid):
+        # Otherwise an active unit owns the module (units have no PID file),
+        # so never claim success without stopping it.
+        if self._is_systemd_active(module):
+            return self._stop_systemd(module)
+
+        port = self._get_port(module)
+        if self._is_port_in_use(port) and self._find_ninja_owner_pid(module, port) is not None:
+            logger.error(
+                f"{module} daemon is serving port {port} but is neither supervised by an "
+                f"active {self._systemd_unit(module)} nor tracked by a PID file; "
+                "refusing to report it stopped"
+            )
+            return False
+
+        if pid:
             logger.info(f"{module} daemon not running (stale PID file)")
             self._get_pid_file(module).unlink(missing_ok=True)
-            return True
+        else:
+            logger.info(f"{module} daemon not running")
+        return True
 
-        # Send SIGTERM
+    def _stop_pidfile(self, module: str, pid: int) -> bool:
+        """Stop a PID-tracked daemon with SIGTERM, escalating to SIGKILL."""
         try:
-            import time
-
             os.kill(pid, signal.SIGTERM)
             # Wait for process to exit
             for _ in range(50):  # 5 seconds
@@ -725,6 +857,33 @@ class DaemonManager:
             logger.error(f"Failed to stop {module} daemon: {e}")
             return False
 
+    def _stop_systemd(self, module: str) -> bool:
+        """Stop an active unit via systemctl and verify it went inactive."""
+        unit = self._systemd_unit(module)
+        old_pid = self._systemd_main_pid(module)
+
+        result = self._run_systemctl("stop", unit)
+        if result is None or result.returncode != 0:
+            detail = result.stderr.strip() if result is not None else "systemctl unavailable"
+            logger.error(f"systemctl --user stop {unit} failed for {module}: {detail}")
+            return False
+
+        deadline = time.monotonic() + self.systemd_stop_timeout
+        while True:
+            still_active = self._is_systemd_active(module)
+            pid_alive = old_pid is not None and self._is_running(old_pid)
+            if not still_active and not pid_alive:
+                self._get_pid_file(module).unlink(missing_ok=True)
+                logger.info(f"Stopped {module} daemon via systemd ({unit})")
+                return True
+            if time.monotonic() >= deadline:
+                logger.error(
+                    f"{module} is still active {self.systemd_stop_timeout:.0f}s after "
+                    f"systemctl --user stop {unit}"
+                )
+                return False
+            time.sleep(self.poll_interval)
+
     def status(self, module: str) -> dict[str, Any]:
         """Get daemon status for module.
 
@@ -733,6 +892,11 @@ class DaemonManager:
         exists but *port* is served by a matching ``ninja_<module>.server``
         process — in particular with an active systemd unit — the daemon
         counts as running so ``daemon connect`` works.
+
+        Version reporting is deliberately honest: ``installed_version`` is
+        the package on disk (all a CLI process can know), ``running_since``
+        is the process/unit start time and ``stale_code`` compares the two.
+        The daemon's in-memory version is never claimed.
 
         Args:
             module: Module name
@@ -743,20 +907,8 @@ class DaemonManager:
         pid = self._read_pid(module)
         port = self._get_port(module)
 
-        # Get version
-        version = self._get_module_version(module)
-
         if pid and self._is_running(pid):
-            running = True
-            return {
-                "running": running,
-                "pid": pid,
-                "port": port,
-                "url": f"http://127.0.0.1:{port}/sse",
-                "log": str(self._get_log_file(module)),
-                "version": version,
-                "source": "pid",
-            }
+            return self._running_status(module, pid, port, "pid")
 
         # No live PID file — fall back to port owner + systemd unit.
         # This is the normal state on machines supervised by systemd,
@@ -765,63 +917,192 @@ class DaemonManager:
             owner_pid = self._find_ninja_owner_pid(module, port)
             if owner_pid is not None:
                 source = "systemd" if self._is_systemd_active(module) else "port"
-                return {
-                    "running": True,
-                    "pid": owner_pid,
-                    "port": port,
-                    "url": f"http://127.0.0.1:{port}/sse",
-                    "log": str(self._get_log_file(module)),
-                    "version": version,
-                    "source": source,
-                }
+                return self._running_status(module, owner_pid, port, source)
 
+        return self._stopped_status(module, port)
+
+    def _stopped_status(self, module: str, port: int) -> dict[str, Any]:
+        """Status payload for a module that is not running."""
         return {
             "running": False,
             "pid": None,
             "port": port,
             "url": f"http://127.0.0.1:{port}/sse",
             "log": str(self._get_log_file(module)),
-            "version": version,
+            "installed_version": self._installed_version(),
+            "running_since": None,
+            "stale_code": None,
             "source": "none",
         }
 
-    def _get_module_version(self, module: str) -> str:
-        """Get version of a module.
+    def _running_status(self, module: str, pid: int, port: int, source: str) -> dict[str, Any]:
+        """Status payload for a running daemon, with freshness verdict."""
+        started = self._process_start_time(module, pid, source)
+        return {
+            "running": True,
+            "pid": pid,
+            "port": port,
+            "url": f"http://127.0.0.1:{port}/sse",
+            "log": str(self._get_log_file(module)),
+            "installed_version": self._installed_version(),
+            "running_since": self._format_timestamp(started),
+            "stale_code": self._is_stale_code(started, self._install_mtime()),
+            "source": source,
+        }
 
-        Args:
-            module: Module name
+    @staticmethod
+    def _format_timestamp(timestamp: float | None) -> str | None:
+        """Render epoch seconds as a local ISO-8601 string."""
+        if timestamp is None:
+            return None
+        return datetime.fromtimestamp(timestamp).astimezone().isoformat(timespec="seconds")
+
+    def _installed_version(self) -> str:
+        """Version of the package on disk.
+
+        This is all a CLI process can honestly know: the daemon may still be
+        running older code, which ``stale_code`` reports separately.
 
         Returns:
             Version string or "unknown"
         """
-        module_map = {
-            "coder": "ninja_coder",
-            "researcher": "ninja_researcher",
-            "secretary": "ninja_secretary",
-            "agent": "ninja_agent",
-        }
+        try:
+            from importlib.metadata import version as get_version
 
-        module_name = module_map.get(module)
-        if not module_name:
+            return get_version("ninja-mcp")
+        except Exception:
             return "unknown"
 
+    def _install_mtime(self) -> float | None:
+        """Modification time of the installed package.
+
+        Uses the ``dist-info`` directory for regular installs and
+        ``pyproject.toml`` for editable installs (where dist-info does not
+        change when the code does).
+
+        Returns:
+            Epoch seconds, or None when it cannot be determined
+        """
         try:
-            mod = __import__(module_name)
-            return getattr(mod, "__version__", "unknown")
-        except (ImportError, AttributeError):
-            return "not installed"
+            from importlib.metadata import distribution
+
+            dist = distribution("ninja-mcp")
+        except Exception:
+            return None
+
+        try:
+            direct_url = dist.read_text("direct_url.json")
+        except Exception:
+            direct_url = None
+
+        if direct_url:
+            try:
+                data = json.loads(direct_url)
+                if data.get("dir_info", {}).get("editable"):
+                    url = str(data.get("url", ""))
+                    if url.startswith("file://"):
+                        pyproject = Path(url[len("file://") :]) / "pyproject.toml"
+                        return pyproject.stat().st_mtime
+            except (json.JSONDecodeError, OSError, TypeError):
+                pass
+
+        dist_path = getattr(dist, "_path", None)
+        if not dist_path:
+            return None
+        try:
+            return Path(dist_path).stat().st_mtime
+        except OSError:
+            return None
+
+    def _process_start_time(self, module: str, pid: int, source: str) -> float | None:
+        """Start time of a daemon process (systemd unit timestamp or psutil)."""
+        if source == "systemd":
+            timestamp = self._systemd_active_enter_time(module)
+            if timestamp is not None:
+                return timestamp
+        try:
+            import psutil
+
+            return float(psutil.Process(pid).create_time())
+        except Exception:
+            return None
+
+    @staticmethod
+    def _is_stale_code(running_since: float | None, installed_mtime: float | None) -> bool | None:
+        """True when the daemon started before the installed package changed.
+
+        Returns None when either timestamp is unknown (never guess).
+        """
+        if running_since is None or installed_mtime is None:
+            return None
+        return running_since < installed_mtime
 
     def restart(self, module: str) -> bool:
         """Restart daemon for module.
+
+        systemd-supervised modules are restarted through their own user unit
+        and verified by observing a new MainPID plus a listening port; PID-file
+        daemons keep the legacy stop+start path. Never reports success without
+        evidence that the daemon actually restarted.
 
         Args:
             module: Module name
 
         Returns:
-            True if restarted successfully
+            True if restart was observed to succeed
         """
+        pid = self._read_pid(module)
+        if pid and self._is_running(pid):
+            # PID-file daemon (started by `daemon start`): legacy path, and
+            # systemd is never consulted.
+            self.stop(module)
+            return self.start(module)
+
+        if self._systemd_owns(module):
+            return self._restart_systemd(module)
+
+        # Active unit without a live MainPID (e.g. failed start): systemctl
+        # restart is still the only module-scoped recovery; verification
+        # accepts the first live MainPID it observes.
+        if self._is_systemd_active(module):
+            return self._restart_systemd(module, previous_pid_unknown=True)
+
         self.stop(module)
         return self.start(module)
+
+    def _restart_systemd(self, module: str, previous_pid_unknown: bool = False) -> bool:
+        """Restart the module's unit and verify a new MainPID plus a live port."""
+        unit = self._systemd_unit(module)
+        old_pid = None if previous_pid_unknown else self._systemd_main_pid(module)
+        if old_pid is None and not previous_pid_unknown:
+            logger.error(f"Cannot restart {module}: {unit} reports no MainPID")
+            return False
+
+        result = self._run_systemctl("restart", unit)
+        if result is None or result.returncode != 0:
+            detail = result.stderr.strip() if result is not None else "systemctl unavailable"
+            logger.error(f"systemctl --user restart {unit} failed for {module}: {detail}")
+            return False
+
+        new_pid = self._wait_for_new_main_pid(
+            module, old_pid, self.systemd_restart_timeout, self.poll_interval
+        )
+        if new_pid is None:
+            logger.error(
+                f"{module} was NOT restarted: {unit} reported no new MainPID within "
+                f"{self.systemd_restart_timeout:.0f}s (previous MainPID: {old_pid})"
+            )
+            return False
+
+        if not self._wait_for_port(module, self.port_ready_timeout, self.poll_interval):
+            logger.error(
+                f"{module} restarted (PID {new_pid}) but port {self._get_port(module)} "
+                "is not answering; not reporting success"
+            )
+            return False
+
+        logger.info(f"Restarted {module} via systemd ({unit}): PID {old_pid} → {new_pid}")
+        return True
 
     def upgrade(self, version: str | None = None) -> bool:
         """Upgrade ninja-mcp from PyPI."""
@@ -871,6 +1152,34 @@ class DaemonManager:
             Dictionary mapping module names to status
         """
         return {module: self.status(module) for module in self.list_modules()}
+
+
+def describe_daemon_versions(manager: DaemonManager | None = None) -> list[str]:
+    """Return one honest line per running daemon.
+
+    Never claims an in-memory version: reports the process start time and
+    whether that predates the installed package (``stale_code``).
+    """
+    mgr = manager or DaemonManager()
+    lines: list[str] = []
+    for module in mgr.list_modules():
+        try:
+            status = mgr.status(module)
+        except Exception:
+            continue
+        if not status.get("running"):
+            continue
+        stale = status.get("stale_code")
+        if stale is True:
+            verdict = "STALE: started before the installed package changed"
+        elif stale is False:
+            verdict = "fresh"
+        else:
+            verdict = "staleness unknown"
+        lines.append(
+            f"  {module:12s} pid {status['pid']}  since {status['running_since']}  {verdict}"
+        )
+    return lines
 
 
 def main() -> int:
@@ -1091,13 +1400,9 @@ def main() -> int:
             sys.exit(1)
 
     elif args.command == "version":
-        from importlib.metadata import version as get_version
-
-        try:
-            v = get_version("ninja-mcp")
-            print(f"ninja-mcp {v}")
-        except Exception:
-            print("ninja-mcp (version unknown)")
+        print(f"ninja-mcp {manager._installed_version()} (installed on disk)")
+        for line in describe_daemon_versions(manager):
+            print(line)
 
     elif args.command == "connect":
         if not _validate_module(args.module):

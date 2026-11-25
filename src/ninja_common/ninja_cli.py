@@ -188,14 +188,22 @@ def _print_usage() -> None:
 
 
 def _print_version() -> None:
-    """Print installed version."""
+    """Print the on-disk version plus honest freshness of running daemons."""
     try:
         from importlib.metadata import version as get_version
 
         v = get_version("ninja-mcp")
     except Exception:
         v = "unknown"
-    print(f"ninja-mcp {v}")
+    print(f"ninja-mcp {v} (installed on disk)")
+    try:
+        from ninja_common.daemon import describe_daemon_versions
+
+        for line in describe_daemon_versions():
+            print(line)
+    except Exception:
+        # Version reporting must never fail because daemon probing did.
+        pass
 
 
 if __name__ == "__main__":
