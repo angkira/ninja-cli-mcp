@@ -8,10 +8,11 @@ The Researcher module provides powerful web search and research capabilities thr
 
 ## Features
 
-### ✅ Web Search
+### ✅ Search-backed answers
 - **DuckDuckGo** (free, no API key required)
-- **Serper.dev** (Google Search API, requires API key)
-- Returns titles, URLs, snippets, and relevance scores
+- **Serper.dev** (Google Search API, requires `SERPER_API_KEY`)
+- Optional **Perplexity** answers when configured
+- `researcher_quick_research` returns a cited answer plus its sources
 
 ### ✅ Deep Research
 - Multi-query research with parallel agents
@@ -71,15 +72,15 @@ ninja-researcher
 
 ### MCP Tools
 
-#### 1. Web Search
+#### 1. Quick Research (search + cited answer)
 
 ```python
 {
-  "tool": "researcher_web_search",
+  "tool": "researcher_quick_research",
   "arguments": {
     "query": "Python async best practices",
     "max_results": 10,
-    "search_provider": "duckduckgo"  # or "serper"
+    "search_provider": "duckduckgo"  # or "serper", "perplexity"; defaults to NINJA_SEARCH_PROVIDER
   }
 }
 ```
@@ -89,17 +90,18 @@ ninja-researcher
 {
   "status": "ok",
   "query": "Python async best practices",
-  "results": [
-    {
-      "title": "...",
-      "url": "...",
-      "snippet": "...",
-      "score": 1.0
-    }
-  ],
-  "provider": "duckduckgo"
+  "provider": "duckduckgo",
+  "model": "…",
+  "answer": "Use asyncio.gather for independent coroutines …",
+  "sources": [
+    { "title": "…", "url": "…", "snippet": "…" }
+  ]
 }
 ```
+
+There is no separate raw "web search" tool: `researcher_quick_research` is the
+single-question entry point, and `researcher_deep_research` is the multi-query
+one.
 
 #### 2. Deep Research
 
@@ -122,7 +124,9 @@ ninja-researcher
   "topic": "MCP protocol implementation",
   "sources_found": 18,
   "sources": [...],
-  "summary": "Found 18 unique sources across 4 queries"
+  "summary": "Found 18 unique sources across 4 queries",
+  "report": "# MCP protocol implementation\n\n…",
+  "provider": "duckduckgo"
 }
 ```
 
@@ -204,15 +208,12 @@ ninja-researcher
 }
 ```
 
-## Rate Limits
+## Rates and pacing
 
-- **Web search**: 30 calls/minute
-- **Deep research**: 10 calls/minute
-- **Generate report**: 5 calls/minute
-- **Fact check**: 10 calls/minute
-- **Summarize sources**: 10 calls/minute
-
-Rate limits are per-client and use token bucket algorithm.
+See the bundled `deep-research-playbook` skill for provider rate-limit handling
+(typed rate-limit errors surface as a structured `error` with a retry hint).
+`researcher_deep_research_batch` paces its up-to-5 topics serially
+(`inter_call_delay_s`).
 
 ## Architecture
 

@@ -9,6 +9,13 @@ This document describes how to cut a release. Two channels are involved:
   that does not match the `ninja-mcp` project name. The local flow uses the
   all-projects token stored in `.env` (`PY_PI_TOKEN`).
 
+## 2.0.0 protocol floor
+
+2.0.0 is a **major** bump: it requires `mcp>=2.3.0,<3.0.0` and targets protocol
+revision `2026-07-28`. The dependency floor and `uv.lock` must move together —
+a 2.x release built against an older SDK will not serve the extension methods
+(`skills/*`, `tasks/*`) and must not be tagged.
+
 ## One command
 
 ```bash

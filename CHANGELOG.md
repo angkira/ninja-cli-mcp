@@ -1,5 +1,137 @@
 # Changelog
 
+## 2.0.0 - 2026-11-25
+
+Port to MCP SDK `2.3.0` and protocol revision `2026-07-28`. One server object
+serves both eras: modern clients get the `io.modelcontextprotocol/skills` and
+`io.modelcontextprotocol/tasks` extensions, legacy clients keep the synchronous
+surface they already had. The extension work lives in
+`src/ninja_common/mcp_ext/`; the protocol guide is
+[docs/MCP_PROTOCOL_2026.md](docs/MCP_PROTOCOL_2026.md).
+
+### Breaking
+- **`mcp>=2.3.0,<3.0.0` is required**, targeting protocol `2026-07-28`. Legacy
+  revisions (`2024-11-05` … `2025-11-25`) are still served by the same server
+  object, but only `2026-07-28` carries the extension surface.
+- **All four servers were rewritten to constructor-registered handlers**
+  (`Server(on_list_tools=…, on_call_tool=…, on_list_resources=…,
+  on_read_resource=…)`) instead of decorator registration. Tool names,
+  arguments, results and annotations are unchanged, so clients see no
+  behavioural difference.
+- **Task handling changed.** The 1.x experimental Tasks API is gone:
+  `server.experimental.enable_tasks`, `ninja_common.mcp_tasks.install_tasks`,
+  `tasks/result` and `tasks/list` no longer exist. Tasks are now the
+  `io.modelcontextprotocol/tasks` extension, bound at `2026-07-28` only, with
+  `tasks/get`, `tasks/update` and `tasks/cancel`; the result comes back inside
+  `tasks/get` (`result` when `completed`, `error` when `failed`). Clients that
+  called `tasks/result` or `tasks/list` must move to `tasks/get`. A task handle
+  is returned only to a client that declared the extension, and only on
+  `2026-07-28`; every other client keeps the synchronous call.
+- **Elicitation on `2026-07-28` is MRTR-based.** There is no server-initiated
+  request mid-call, so `coder_branch_discard` answers with
+  `resultType: "input_required"`, an `inputRequests` map and a sealed
+  `requestState`; the client retries the same call with `inputResponses` and the
+  echoed `requestState`. Push-style elicitation remains only on legacy
+  connections.
+
+### Added
+- **Skills extension** (`io.modelcontextprotocol/skills`) on all four servers:
+  `skills/list` (paginated, 50 per page), `skills/get`, and the optional
+  `resources/directory/read` (defined, not enabled). Skill files are served
+  through the base resources primitive (`resources/list`, `resources/read`,
+  text or base64 blob), addressed by `skill://<skill>/<path>` URIs.
+- **11 packaged skill bundles** in `src/ninja_common/dist/skills/<module>/` —
+  coder 4 (`sequential-plan-authoring`, `submit-and-poll`, `tasks-vs-jobs`,
+  `worktree-review-merge`), researcher 3 (`arxiv-and-papers`,
+  `citation-fact-check`, `deep-research-playbook`), secretary 2
+  (`codebase-orientation`, `session-handoff`), agent 2
+  (`guarded-shell-operations`, `pipeline-diagnosis`). `NINJA_SKILLS_DIR`
+  overrides the served directory; a missing directory yields an empty catalog
+  instead of a startup failure.
+- **Tasks extension** (`io.modelcontextprotocol/tasks`) over the durable SQLite
+  store, shared with the `coder_submit_*` job API: `tasks/get`, `tasks/update`,
+  `tasks/cancel`, 500 ms advertised poll interval, 15 s cooperative cancel wait.
+- **Streamable HTTP transport at `/mcp`** on `--http`, served by the same
+  Starlette app and port as the legacy `/sse` + `/messages` transport.
+- **Opt-in file uploads** (`io.modelcontextprotocol/files`) on ninja-secretary,
+  enabled with `NINJA_MCP_ENABLE_FILE_UPLOADS=1`: inline-only, `maxInlineBytes`
+  8 MiB, one tool (`secretary_ingest_file`) that validates name, MIME type,
+  size, SHA-256 digest and returns the first 32 bytes in hex without echoing
+  content. No out-of-band upload and no download targets; file output travels as
+  embedded resources.
+- [docs/MCP_PROTOCOL_2026.md](docs/MCP_PROTOCOL_2026.md): transports, capability
+  matrix, worked `skills/list` and task-lifecycle exchanges, the MRTR
+  elicitation flow, and the file-upload opt-in, with wire shapes copied from the
+  implementation.
+
+### Changed
+- Task-capable tools are now exactly the `TASK_TOOLS` constants: coder
+  (`coder_simple_task`, `coder_execute_plan_sequential`,
+  `coder_execute_plan_parallel`, `coder_multi_agent_task`), researcher
+  (`researcher_deep_research`, `researcher_deep_research_batch`,
+  `researcher_paper_fetch`), secretary (`secretary_codebase_report`,
+  `secretary_analyse_file`), agent (`agent_run_and_diagnose`,
+  `agent_exec_pipeline`).
+- Tasks and jobs share one durable store (`NINJA_TASKS_DB`), so a task handle
+  and its job row observe the same record; stale `working` rows are reconciled
+  on startup by owner identity.
+- `ninja_common.mcp_tasks` is now SDK-free plumbing (cancellation scope,
+  progress bridge) plus store re-exports; the store and wire models moved to
+  `ninja_common.mcp_ext.tasks_store` / `ninja_common.mcp_ext.models`.
+
+### Fixed
+- `docs/MCP_TASKS.md` documented the removed `tasks/result`, `tasks/list`,
+  `server.experimental.enable_tasks` and `install_tasks`, and listed nine agent
+  tools, four researcher tools and `researcher_generate_report`,
+  `researcher_fact_check`, `researcher_summarize_sources` as task-capable — all
+  rewritten for the extension and the real `TASK_TOOLS`.
+- `docs/RESOURCES_API.md` documented `resource_codebase`, `resource_config` and
+  `resource_docs`; none of those tools exist. Rewritten to describe the real
+  `resources/list` / `resources/read` support (skill files only) and to state
+  that `resources/subscribe`, templates and change notifications are absent.
+- `docs/PROMPTS_API.md` documented `prompt_registry`, `prompt_suggest` and
+  `prompt_chain`; the servers implement no prompts at all
+  (`prompts/list` → `-32601`). Rewritten as a "not implemented" page.
+- `docs/secretary/README.md` advertised `secretary_read_file`,
+  `secretary_grep`, `secretary_file_tree` and git tools that are not served,
+  plus fictional per-tool rate limits. Rewritten for the six served tools, with
+  the verified result shapes, the required-`repo_root` quirk of
+  `secretary_file_search` and the ignored `include_patterns` /
+  `exclude_patterns` arguments of `secretary_codebase_report`.
+- `researcher_web_search` (a tool that never existed) replaced with
+  `researcher_quick_research` in `docs/researcher/README.md`,
+  `docs/RESEARCHER.md`, `docs/RESEARCHER_SPEC.md`,
+  `docs/MCP_ARCHITECTURE.md`, `docs/EDITOR_INTEGRATIONS.md` and the archive
+  notes; the researcher result shapes now match `QuickResearchResult`
+  (`answer` + `sources`, not a raw `results` list).
+- `docs/MCP_ARCHITECTURE.md` claimed MCP runs over stdio only; it now documents
+  `/mcp` plus `/sse` + `/messages` and links the protocol guide.
+- `docs/EDITOR_INTEGRATIONS.md` pointed at `secretary_file_tree` for project
+  structure; it now points at `secretary_codebase_report`.
+- `README.md` described secretary as "git-aware context" (no git tools are
+  served) and researcher as "web search" (no raw search tool exists).
+
+### Removed
+- The experimental SDK task store and helpers the 1.x servers imported from
+  `mcp.server.experimental` / `mcp.shared.experimental`.
+- Protocol surfaces the 2026-07-28 revision dropped and that these servers no
+  longer answer: `ping`, `logging/setLevel`, `roots`, `sampling`,
+  `resources/subscribe`, and server-initiated requests on modern connections
+  (each returns `-32601`).
+- Documentation for the never-shipped `ninja-resources` and `ninja-prompts`
+  modules, replaced with a note in the archive report and real pages for
+  resources and prompts.
+
+### Tests
+- `tests/test_mcp_protocol_extensions.py`: capability advertisement on all four
+  servers, resource listing/reading, the legacy synchronous surface, the task
+  round-trip, and the opt-in files extension.
+- `tests/test_mcp_elicitation.py`: MRTR elicitation of `coder_branch_discard` on
+  `2026-07-28` (sealed `request_state`, declined and forged-state retries) and
+  the legacy push path.
+- `tests/test_common/mcp_ext/`: skills catalog and wire shape per era, task
+  store/extension, client polling, and inline file validation.
+
 ## 1.9.2 - 2026-11-12
 
 Agent write-guard false positives: read-only audits with stderr/null

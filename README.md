@@ -11,8 +11,9 @@ coding, research, and codebase analysis. The current package and release are
 ## What It Includes
 
 - **Coder**: simple tasks plus sequential and parallel execution plans.
-- **Researcher**: web search, deep research, source aggregation, and fact checks.
-- **Secretary**: codebase reports, file analysis, search, and git-aware context.
+- **Researcher**: cited answers, deep research, source aggregation, and fact checks.
+- **Secretary**: codebase reports, file analysis, file search, doc summaries,
+  and session tracking.
 - **Agent**: a CLI orchestrator for plan, analyze, delegate, review, and run.
 - **Config TUI**: Nord-themed setup, model selection, host-auth detection, and
   IDE registration.
@@ -20,6 +21,27 @@ coding, research, and codebase analysis. The current package and release are
   fetch or cancel the result. Works in **every** MCP host via `coder_submit_*` /
   `coder_job_status|result|cancel`, with standard [MCP Tasks](docs/MCP_TASKS.md)
   for hosts that advertise the capability.
+
+## MCP protocol support
+
+All four servers target MCP `2026-07-28` (`mcp>=2.3.0`) and keep serving older
+revisions from the same server object.
+
+| Server | Transports | Extensions advertised | Task-enabled tools |
+| --- | --- | --- | --- |
+| `ninja-coder` | stdio, SSE, Streamable HTTP | Skills, Tasks | 4 |
+| `ninja-researcher` | stdio, SSE, Streamable HTTP | Skills, Tasks | 3 |
+| `ninja-secretary` | stdio, SSE, Streamable HTTP | Skills, Tasks, Files (opt-in) | 2 |
+| `ninja-agent` | stdio, SSE, Streamable HTTP | Skills, Tasks | 2 |
+
+With `--http` one process serves legacy SSE at `/sse` + `/messages` and modern
+Streamable HTTP at `/mcp` on the same port (defaults 8100–8103). Skills
+(`skills/list`, `skills/get`) and the Tasks extension (`tasks/get`,
+`tasks/cancel`) are advertised to modern clients only; clients that do not
+declare `io.modelcontextprotocol/tasks` keep the synchronous tool surface.
+
+Full request/response shapes, the capability matrix, and the elicitation and
+file-upload flows: [MCP protocol 2026-07-28](docs/MCP_PROTOCOL_2026.md).
 
 ## TUI Preview
 
@@ -233,7 +255,8 @@ Use `--dry-run` to preview a supported config change. See
 ## Documentation
 
 - [Docker Quickstart](docs/container-quickstart.md)
-- [Background execution (MCP Tasks)](docs/MCP_TASKS.md)
+- [MCP protocol 2026-07-28 (transports, skills, tasks, elicitation)](docs/MCP_PROTOCOL_2026.md)
+- [Background execution (MCP Tasks extension + submit/poll)](docs/MCP_TASKS.md)
 - [Automatic Safety](docs/AUTOMATIC_SAFETY.md)
 - [CLI Strategies and operators](docs/CLI_STRATEGIES.md)
 - [Model selection](docs/MODEL_SELECTION.md)

@@ -297,13 +297,20 @@ uv run ninja-daemon start prompts
 - `resource_config` - Load config files
 - `resource_docs` - Load documentation
 
+> **Removed in 2.0:** the `ninja-resources` and `ninja-prompts` modules never
+> shipped in a published release. Their advertised tools (`resource_*`,
+> `prompt_registry`, `prompt_suggest`, `prompt_chain`) do not exist; prompts are
+> not implemented and resources serve skill files only. See
+> [RESOURCES_API.md](../RESOURCES_API.md) and [PROMPTS_API.md](../PROMPTS_API.md).
+
 ### ✨ ninja-prompts (3 tools)
 - `prompt_registry` - Manage prompt templates
 - `prompt_suggest` - Get AI suggestions
 - `prompt_chain` - Multi-step workflows
 
 ### 🔍 ninja-researcher (4 tools)
-- `researcher_web_search` - Web search
+- `researcher_quick_research` - Answer a question with citations (the old
+  `researcher_web_search` name was removed in 2.0)
 - `researcher_deep_research` - Multi-query research
 - `researcher_fact_check` - Verify claims
 - `researcher_summarize_sources` - Summarize sources

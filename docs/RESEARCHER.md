@@ -136,40 +136,13 @@ export SERPER_API_KEY='your-key'
 
 ## MCP Tools
 
-### researcher_web_search
-
-Search the web for information.
-
-**Parameters:**
-- `query` (string, required): Search query
-- `max_results` (integer, optional): Maximum results (1-50, default: 10)
-- `search_provider` (string, optional): Provider to use ("duckduckgo" or "serper", default: "duckduckgo")
-
-**Returns:**
-```json
-{
-  "status": "ok",
-  "query": "Python async best practices",
-  "results": [
-    {
-      "title": "Async Python Best Practices",
-      "url": "https://example.com/async-python",
-      "snippet": "Learn the best practices for async Python...",
-      "score": 0.95
-    }
-  ],
-  "provider": "duckduckgo"
-}
-```
-
-**Example:**
-```python
-result = await client.call_tool("researcher_web_search", {
-    "query": "MCP protocol specification",
-    "max_results": 10,
-    "search_provider": "serper"
-})
-```
+The module serves eight tools: `researcher_quick_research`,
+`researcher_deep_research`, `researcher_deep_research_batch`,
+`researcher_generate_report`, `researcher_fact_check`,
+`researcher_summarize_sources`, `researcher_arxiv_search` and
+`researcher_paper_fetch`. There is no standalone raw web-search tool — every
+answer comes back with its sources. Protocol-level detail (skills, tasks
+extension) is in [MCP_PROTOCOL_2026.md](MCP_PROTOCOL_2026.md).
 
 ### researcher_quick_research
 
@@ -295,17 +268,17 @@ Run up to 5 deep-research requests strictly serially.
 
 ## Usage Examples
 
-### Basic Web Search
+### Quick Research
 
 ```python
-# Search with DuckDuckGo (free)
-result = await client.call_tool("researcher_web_search", {
+# Answer with DuckDuckGo (free)
+result = await client.call_tool("researcher_quick_research", {
     "query": "Python asyncio tutorial",
     "max_results": 10
 })
 
-# Search with Serper.dev (Google Search)
-result = await client.call_tool("researcher_web_search", {
+# Same question routed through Serper.dev (Google Search)
+result = await client.call_tool("researcher_quick_research", {
     "query": "Python asyncio tutorial",
     "max_results": 10,
     "search_provider": "serper"
