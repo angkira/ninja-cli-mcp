@@ -432,6 +432,27 @@ class SkillCatalog:
         """Build a catalog from *root* (alias for ``cls(root)``)."""
         return cls(root)
 
+    @classmethod
+    def empty(cls, root: Path) -> SkillCatalog:
+        """Build an empty catalog rooted at *root*.
+
+        Unlike ``cls(root)``, *root* need not exist: a server whose packaged
+        skills directory was never populated still publishes a (empty) catalog
+        instead of failing at startup.
+
+        Args:
+            root: The directory the catalog would have been built from.
+
+        Returns:
+            A catalog with no skills, no files and no directories.
+        """
+        catalog = cls.__new__(cls)
+        catalog._root = Path(root)
+        catalog._skills = {}
+        catalog._files = {}
+        catalog._directories = {}
+        return catalog
+
     # -- public surface ---------------------------------------------------- #
 
     @property
@@ -475,6 +496,19 @@ class SkillCatalog:
                     )
                 )
         return resources
+
+    def mime_type(self, uri: str) -> str | None:
+        """The MIME type of the file served at *uri*, or ``None`` when unknown.
+
+        Mirrors :meth:`read`'s notion of a served file, so a successful lookup
+        always pairs with a successful read.
+        """
+        try:
+            name, relpath = _split_skill_uri(uri)
+        except ValueError:
+            return None
+        entry = self._files.get((name, relpath))
+        return entry.mime_type if entry is not None else None
 
     def list_directory(self, uri: str) -> list[DirectoryEntry] | None:
         """The direct children of the directory resource *uri*, or ``None``."""

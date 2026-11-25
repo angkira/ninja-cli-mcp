@@ -17,7 +17,7 @@ import argparse
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
@@ -54,6 +54,8 @@ from ninja_agent.models import (
 )
 from ninja_agent.tools import AgentToolExecutor
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.mcp_ext.apply import apply_extensions
+from ninja_common.mcp_ext.wiring import build_protocol_extensions
 from ninja_common.mcp_meta import (
     ServerMeta,
     ToolMeta,
@@ -61,7 +63,7 @@ from ninja_common.mcp_meta import (
     server_icon,
     server_kwargs,
 )
-from ninja_common.mcp_tasks import make_session_progress_callback, task_scope
+from ninja_common.mcp_tasks import SqliteTaskStore, make_session_progress_callback, task_scope
 
 
 # Set up logging to stderr (stdout is for MCP protocol)
@@ -376,10 +378,22 @@ _REMOVED_TOOLS = frozenset(
     }
 )
 
+#: Tools a 2026-07-28 client that declared ``io.modelcontextprotocol/tasks``
+#: receives a task handle for instead of a blocking result. Every other client
+#: keeps the synchronous behaviour described by the tool schema.
+TASK_TOOLS: frozenset[str] = frozenset({"agent_run_and_diagnose", "agent_exec_pipeline"})
+
 
 def create_server() -> Server:
     """Create and configure the MCP server."""
     executor = AgentToolExecutor()
+
+    # Durable task store for the Tasks extension; one instance per server.
+    store = SqliteTaskStore()
+    # Skills advertise ``skills/*`` and serve skill files through Resources;
+    # Tasks turns the long-running tools into durable task handles for clients
+    # that declared it. Both are 2026-07-28 only.
+    extensions = build_protocol_extensions("agent", store, TASK_TOOLS)
 
     async def list_tools(
         _ctx: ServerRequestContext[Any, Any],
@@ -544,7 +558,24 @@ def create_server() -> Server:
 
         return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
 
-    return Server(
+    # The lowlevel server runs no extension interceptors, so the Tasks
+    # ``tools/call`` interceptor is composed here. ``call_tool`` itself is left
+    # untouched: it is the straight-through path for every non-declaring client.
+    async def call_tool_with_tasks(
+        ctx: ServerRequestContext[Any, Any],
+        params: CallToolRequestParams,
+    ) -> CallToolResult:
+        """Run ``call_tool`` behind the Tasks extension's interceptor."""
+
+        async def call_next(_ctx: ServerRequestContext[Any, Any]) -> CallToolResult:
+            return await call_tool(ctx, params)
+
+        # A task-augmented call answers with a ``resultType: "task"`` envelope
+        # instead; the wire serializer accepts any result model here.
+        claimed = await extensions.tasks_ext.intercept_tool_call(params, ctx, call_next)
+        return cast("CallToolResult", claimed)
+
+    server = Server(
         "ninja-agent",
         **server_kwargs(
             ServerMeta(
@@ -553,8 +584,12 @@ def create_server() -> Server:
             )
         ),
         on_list_tools=list_tools,
-        on_call_tool=call_tool,
+        on_call_tool=call_tool_with_tasks,
+        on_list_resources=extensions.on_list_resources,
+        on_read_resource=extensions.on_read_resource,
     )
+    apply_extensions(server, [extensions.skills_ext, extensions.tasks_ext])
+    return server
 
 
 async def main_stdio() -> None:

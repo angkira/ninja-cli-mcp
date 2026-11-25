@@ -58,6 +58,8 @@ from ninja_coder.models import (
 from ninja_coder.tools import get_executor
 from ninja_common.jobs import JOB_STATUS_CANCELLED, JOB_STATUS_WORKING, JobManager
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.mcp_ext.apply import apply_extensions
+from ninja_common.mcp_ext.wiring import build_protocol_extensions
 from ninja_common.mcp_meta import (
     ServerMeta,
     ToolMeta,
@@ -133,6 +135,18 @@ JOB_TOOL_NAMES: frozenset[str] = frozenset(
 #: response is unchanged; the row exists for observability/cancellation when
 #: the client disappears mid-flight.
 TRACKED_SYNC_TOOLS: frozenset[str] = frozenset(
+    {
+        "coder_simple_task",
+        "coder_execute_plan_sequential",
+        "coder_execute_plan_parallel",
+        "coder_multi_agent_task",
+    }
+)
+
+#: Tools a 2026-07-28 client that declared ``io.modelcontextprotocol/tasks``
+#: receives a task handle for instead of a blocking result. Every other client
+#: keeps the synchronous behaviour described by the tool schema.
+TASK_TOOLS: frozenset[str] = frozenset(
     {
         "coder_simple_task",
         "coder_execute_plan_sequential",
@@ -871,8 +885,9 @@ def create_server() -> Server:
         Configured MCP Server instance.
     """
     # Durable store shared by the always-available submit/poll job API, so jobs
-    # survive across calls and processes. Standard MCP Tasks scheduling is not
-    # installed here yet; ``coder_submit_*`` is the async story.
+    # survive across calls and processes. The standard MCP Tasks extension
+    # reuses this same store, so its task handles are durable over the same
+    # rows the job API reads.
     store = SqliteTaskStore()
     # A previous daemon run cannot be resumed: any row still 'working' owned by
     # a demonstrably dead process is reconciled to 'failed' so it is observable
@@ -882,6 +897,11 @@ def create_server() -> Server:
     if swept:
         logger.info("Reconciled %d stale working jobs from dead owners", swept)
     jobs = JobManager(store)
+
+    # Skills advertise ``skills/*`` and serve skill files through Resources;
+    # Tasks turns the four long-running tools into durable task handles for
+    # clients that declared it. Both are 2026-07-28 only.
+    extensions = build_protocol_extensions("coder", store, TASK_TOOLS)
 
     # Use the process-global deduplicator for request deduplication
     deduplicator = _get_deduplicator()
@@ -1236,7 +1256,21 @@ def create_server() -> Server:
 
         return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
 
-    return Server(
+    # The lowlevel server runs no extension interceptors, so the Tasks
+    # ``tools/call`` interceptor is composed here. ``call_tool`` itself is left
+    # untouched: it is the straight-through path for every non-declaring client.
+    async def call_tool_with_tasks(
+        ctx: ServerRequestContext[Any, Any],
+        params: CallToolRequestParams,
+    ) -> CallToolResult | dict[str, Any] | None:
+        """Run ``call_tool`` behind the Tasks extension's interceptor."""
+
+        async def call_next(_ctx: ServerRequestContext[Any, Any]) -> CallToolResult:
+            return await call_tool(ctx, params)
+
+        return await extensions.tasks_ext.intercept_tool_call(params, ctx, call_next)
+
+    server = Server(
         "ninja-coder",
         version="0.2.0",
         **server_kwargs(
@@ -1255,8 +1289,12 @@ LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 mi
             )
         ),
         on_list_tools=list_tools,
-        on_call_tool=call_tool,
+        on_call_tool=call_tool_with_tasks,
+        on_list_resources=extensions.on_list_resources,
+        on_read_resource=extensions.on_read_resource,
     )
+    apply_extensions(server, [extensions.skills_ext, extensions.tasks_ext])
+    return server
 
 
 async def main_stdio() -> None:

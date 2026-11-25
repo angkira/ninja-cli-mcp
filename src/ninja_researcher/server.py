@@ -28,6 +28,8 @@ from mcp.types import (
 )
 
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.mcp_ext.apply import apply_extensions
+from ninja_common.mcp_ext.wiring import build_protocol_extensions
 from ninja_common.mcp_meta import (
     ServerMeta,
     ToolMeta,
@@ -37,7 +39,7 @@ from ninja_common.mcp_meta import (
     server_icon,
     server_kwargs,
 )
-from ninja_common.mcp_tasks import make_session_progress_callback, task_scope
+from ninja_common.mcp_tasks import SqliteTaskStore, make_session_progress_callback, task_scope
 from ninja_researcher.models import (
     ArxivSearchRequest,
     ArxivSearchResult,
@@ -418,9 +420,26 @@ _TOOL_META: dict[str, ToolMeta] = {
 
 TOOLS = apply_tool_meta(TOOLS, _TOOL_META, server_icon("researcher"))
 
+#: Tools a 2026-07-28 client that declared ``io.modelcontextprotocol/tasks``
+#: receives a task handle for instead of a blocking result. Every other client
+#: keeps the synchronous behaviour described by the tool schema.
+TASK_TOOLS: frozenset[str] = frozenset(
+    {
+        "researcher_deep_research",
+        "researcher_deep_research_batch",
+        "researcher_paper_fetch",
+    }
+)
+
 
 def create_server() -> Server:
     """Create and configure the MCP server."""
+    # Durable task store for the Tasks extension; one instance per server.
+    store = SqliteTaskStore()
+    # Skills advertise ``skills/*`` and serve skill files through Resources;
+    # Tasks turns the long-running tools into durable task handles for clients
+    # that declared it. Both are 2026-07-28 only.
+    extensions = build_protocol_extensions("researcher", store, TASK_TOOLS)
 
     async def list_tools(
         _ctx: ServerRequestContext[Any, Any],
@@ -509,7 +528,21 @@ def create_server() -> Server:
 
         return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
 
-    return Server(
+    # The lowlevel server runs no extension interceptors, so the Tasks
+    # ``tools/call`` interceptor is composed here. ``call_tool`` itself is left
+    # untouched: it is the straight-through path for every non-declaring client.
+    async def call_tool_with_tasks(
+        ctx: ServerRequestContext[Any, Any],
+        params: CallToolRequestParams,
+    ) -> CallToolResult | dict[str, Any] | None:
+        """Run ``call_tool`` behind the Tasks extension's interceptor."""
+
+        async def call_next(_ctx: ServerRequestContext[Any, Any]) -> CallToolResult:
+            return await call_tool(ctx, params)
+
+        return await extensions.tasks_ext.intercept_tool_call(params, ctx, call_next)
+
+    server = Server(
         "ninja-researcher",
         version="0.3.0",
         **server_kwargs(
@@ -520,8 +553,12 @@ quick_research: single question + cited answer. deep_research: multi-query + rep
             )
         ),
         on_list_tools=list_tools,
-        on_call_tool=call_tool,
+        on_call_tool=call_tool_with_tasks,
+        on_list_resources=extensions.on_list_resources,
+        on_read_resource=extensions.on_read_resource,
     )
+    apply_extensions(server, [extensions.skills_ext, extensions.tasks_ext])
+    return server
 
 
 def _is_client_disconnect(exc: BaseException) -> bool:
