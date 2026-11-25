@@ -127,9 +127,11 @@ async def test_modern_client_sees_both_extensions(module: str) -> None:
 async def test_modern_client_lists_and_reads_resources(module: str) -> None:
     async with Client(create_server(module)) as client:
         listed = await client.list_resources()
-        # No skill bundle is packaged with the source tree, but the handlers
-        # must still be served (the capability is advertised).
-        assert listed.resources == []
+        # Every module ships a packaged skill bundle, so the handlers serve a
+        # non-empty catalog of skill files.
+        assert listed.resources
+        assert all(resource.uri.startswith("skill://") for resource in listed.resources)
+        assert any(resource.uri.endswith("/SKILL.md") for resource in listed.resources)
 
         with pytest.raises(Exception) as excinfo:
             await client.read_resource("skill://nope/SKILL.md")
