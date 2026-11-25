@@ -15,9 +15,18 @@ import asyncio
 import logging
 from typing import Any
 
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, ToolAnnotations
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    ResourceLink,
+    TextContent,
+    Tool,
+    ToolAnnotations,
+)
 
 from ninja_common.logging_utils import get_logger, setup_logging
 from ninja_common.mcp_meta import (
@@ -56,7 +65,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="secretary_analyse_file",
         description="Analyze a file: structure, functions, classes, summary.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "file_path": {
@@ -70,7 +79,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="secretary_file_search",
         description="Search files by glob pattern with optional content-regex filter.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "pattern": {
@@ -92,7 +101,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="secretary_codebase_report",
         description="Report on codebase structure, file counts, languages, and metrics.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "repo_root": {
@@ -116,7 +125,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="secretary_document_summary",
         description="Summarize docs in a directory: headings, sections, key info.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "repo_root": {
@@ -135,7 +144,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="secretary_update_documentation",
         description="Update or create project documentation files.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "module_name": {
@@ -164,7 +173,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="secretary_session_report",
         description="Report current session: tracked ops, file accesses, metadata.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "session_id": {
@@ -181,32 +190,32 @@ TOOLS: list[Tool] = [
 _TOOL_META: dict[str, ToolMeta] = {
     "secretary_analyse_file": ToolMeta(
         title="Analyze file",
-        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+        annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
         result_model=AnalyseFileResult,
     ),
     "secretary_file_search": ToolMeta(
         title="Search files",
-        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+        annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
         result_model=FileSearchResult,
     ),
     "secretary_codebase_report": ToolMeta(
         title="Codebase report",
-        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+        annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
         result_model=CodebaseReportResult,
     ),
     "secretary_document_summary": ToolMeta(
         title="Summarize docs",
-        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+        annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
         result_model=DocumentSummaryResult,
     ),
     "secretary_update_documentation": ToolMeta(
         title="Update documentation",
-        annotations=ToolAnnotations(destructiveHint=True),
+        annotations=ToolAnnotations(destructive_hint=True),
         result_model=UpdateDocResult,
     ),
     "secretary_session_report": ToolMeta(
         title="Session report",
-        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True),
+        annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
         result_model=SessionReport,
     ),
 }
@@ -214,9 +223,94 @@ _TOOL_META: dict[str, ToolMeta] = {
 TOOLS = apply_tool_meta(TOOLS, _TOOL_META, server_icon("secretary"))
 
 
+def _as_call_result(
+    built: tuple[list[TextContent | ResourceLink], dict[str, Any]],
+) -> CallToolResult:
+    """Wrap a ``model_result``/``dict_result`` tuple in a ``CallToolResult``."""
+    texts, structured = built
+    return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
+
+
 def create_server() -> Server:
     """Create and configure the MCP server."""
-    server = Server(
+    executor = SecretaryToolExecutor()
+
+    async def list_tools(
+        _ctx: ServerRequestContext[Any, Any],
+        _params: PaginatedRequestParams | None,
+    ) -> ListToolsResult:
+        """List available tools."""
+        return ListToolsResult(tools=TOOLS)
+
+    async def call_tool(
+        _ctx: ServerRequestContext[Any, Any],
+        params: CallToolRequestParams,
+    ) -> CallToolResult:
+        """Handle tool execution requests synchronously."""
+        name = params.name
+        arguments: dict[str, Any] = dict(params.arguments or {})
+
+        try:
+            client_id = arguments.get("client_id", "default")
+
+            if name == "secretary_analyse_file":
+                analyse_request = AnalyseFileRequest(**arguments)
+                analyse_result: AnalyseFileResult = await executor.analyse_file(
+                    analyse_request, client_id
+                )
+                return _as_call_result(model_result(analyse_result))
+
+            elif name == "secretary_file_search":
+                search_request = FileSearchRequest(**arguments)
+                search_result: FileSearchResult = await executor.file_search(
+                    search_request, client_id
+                )
+                return _as_call_result(model_result(search_result))
+
+            elif name == "secretary_codebase_report":
+                report_request = CodebaseReportRequest(**arguments)
+                report_result: CodebaseReportResult = await executor.codebase_report(
+                    report_request, client_id
+                )
+                return _as_call_result(model_result(report_result))
+
+            elif name == "secretary_document_summary":
+                summary_request = DocumentSummaryRequest(**arguments)
+                summary_result: DocumentSummaryResult = await executor.document_summary(
+                    summary_request, client_id
+                )
+                return _as_call_result(model_result(summary_result))
+
+            elif name == "secretary_update_documentation":
+                update_request = UpdateDocRequest(**arguments)
+                update_result: UpdateDocResult = await executor.update_doc(
+                    update_request, client_id
+                )
+                return _as_call_result(model_result(update_result))
+
+            elif name == "secretary_session_report":
+                session_request = SessionReportRequest(**arguments)
+                session_result: SessionReport = await executor.session_report(
+                    session_request, client_id
+                )
+                return _as_call_result(model_result(session_result))
+
+            else:
+                raise ValueError(f"Unknown tool: {name}")
+
+        except Exception as e:
+            logger.error(f"Error executing tool {name}: {e}", exc_info=True)
+            return _as_call_result(
+                dict_result(
+                    {
+                        "success": False,
+                        "error": str(e),
+                        "tool": name,
+                    }
+                )
+            )
+
+    return Server(
         "ninja-secretary",
         **server_kwargs(
             ServerMeta(
@@ -227,64 +321,9 @@ update_documentation: write docs (the only writing tool). session_report: tracke
                 kind="secretary",
             )
         ),
+        on_list_tools=list_tools,
+        on_call_tool=call_tool,
     )
-    executor = SecretaryToolExecutor()
-
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
-        """List available tools."""
-        return TOOLS
-
-    @server.call_tool()
-    async def call_tool(name: str, arguments: Any) -> Any:
-        """Handle tool execution requests."""
-        try:
-            client_id = arguments.get("client_id", "default")
-
-            if name == "secretary_analyse_file":
-                request = AnalyseFileRequest(**arguments)
-                result = await executor.analyse_file(request, client_id)
-                return model_result(result)
-
-            elif name == "secretary_file_search":
-                request = FileSearchRequest(**arguments)
-                result = await executor.file_search(request, client_id)
-                return model_result(result)
-
-            elif name == "secretary_codebase_report":
-                request = CodebaseReportRequest(**arguments)
-                result = await executor.codebase_report(request, client_id)
-                return model_result(result)
-
-            elif name == "secretary_document_summary":
-                request = DocumentSummaryRequest(**arguments)
-                result = await executor.document_summary(request, client_id)
-                return model_result(result)
-
-            elif name == "secretary_update_documentation":
-                request = UpdateDocRequest(**arguments)
-                result = await executor.update_doc(request, client_id)
-                return model_result(result)
-
-            elif name == "secretary_session_report":
-                request = SessionReportRequest(**arguments)
-                result = await executor.session_report(request, client_id)
-                return model_result(result)
-
-            else:
-                raise ValueError(f"Unknown tool: {name}")
-
-        except Exception as e:
-            logger.error(f"Error executing tool {name}: {e}", exc_info=True)
-            return dict_result(
-                {
-                    "success": False,
-                    "error": str(e),
-                    "tool": name,
-                }
-            )
-
-    return server
 
 
 async def main_stdio() -> None:
@@ -303,34 +342,15 @@ async def main_stdio() -> None:
 
 
 async def main_http(host: str, port: int) -> None:
-    """Run the MCP server over HTTP with SSE."""
+    """Run the MCP server over HTTP (SSE at /sse, streamable HTTP at /mcp)."""
     import uvicorn
-    from mcp.server.sse import SseServerTransport
-    from starlette.requests import Request
-    from starlette.responses import Response
+
+    from ninja_common.mcp_http import build_asgi_app
 
     logger.info(f"Starting ninja-secretary server (HTTP/SSE mode) on {host}:{port}")
 
     server = create_server()
-    sse = SseServerTransport("/messages")
-
-    async def handle_sse(request):
-        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-            await server.run(streams[0], streams[1], server.create_initialization_options())
-        return Response()
-
-    async def handle_messages(scope, receive, send):
-        await sse.handle_post_message(scope, receive, send)
-
-    async def app(scope, receive, send):
-        path = scope.get("path", "")
-        if path == "/sse":
-            request = Request(scope, receive, send)
-            await handle_sse(request)
-        elif path == "/messages" and scope.get("method") == "POST":
-            await handle_messages(scope, receive, send)
-        else:
-            await Response("Not Found", status_code=404)(scope, receive, send)
+    app = build_asgi_app(server, host=host)
 
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     server_instance = uvicorn.Server(config)

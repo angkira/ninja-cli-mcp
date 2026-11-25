@@ -1,81 +1,60 @@
-"""Production-grade MCP Tasks infrastructure shared by all ninja MCP servers.
+"""SDK-free task cancellation and progress plumbing shared by all ninja servers.
 
-The MCP SDK (``mcp==1.24.x``) ships experimental task support with an
-in-memory store and a status helper. This module closes the gaps needed to run
-the feature in production:
+MCP 2.3.0 removed the experimental task support (``mcp.shared.experimental`` and
+``mcp.server.experimental``) that this module used to extend, and moved Tasks to
+an opt-in protocol extension. What remains here is the part that never depended
+on the SDK and that the drivers, servers and job manager still use:
 
-* :class:`SqliteTaskStore` -- durable, process-shared task state (WAL,
-  thread-safe) that survives restarts and is visible across sessions.
 * :class:`TaskCancellation` -- real interruption of running work, wired down to
   CLI subprocess groups via a contextvar.
 * :func:`task_scope` -- binds a running task's cancellation and progress bridge
   to the current asyncio context.
-* :func:`install_tasks` -- one-call server wiring with a robust cancel handler
-  that also interrupts the in-flight work.
-* :func:`emit_progress` -- best-effort ``notifications/progress`` emission that
-  never breaks a run.
+* :func:`emit_progress` -- best-effort progress callbacks that never break a run.
+* :func:`make_session_progress_callback` -- bridge those callbacks to the MCP
+  ``notifications/progress`` wire notifications of a server session.
 
-Nothing in this module patches the installed SDK; it only extends the public
-experimental ``TaskStore`` / ``TaskMessageQueue`` protocols and the
-``server.experimental`` handler decorators.
+Durable task state lives in :mod:`ninja_common.mcp_ext.tasks_store`; the
+extension wire models live in :mod:`ninja_common.mcp_ext.models`. For backwards
+compatibility this module still re-exports the store and the process-identity
+helpers.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import math
 import os
 import signal
-import sqlite3
 import threading
-import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final
 
-import anyio
-import psutil
-from mcp.shared.exceptions import McpError
-from mcp.shared.experimental.tasks.helpers import cancel_task, create_task_state, is_terminal
-from mcp.shared.experimental.tasks.message_queue import InMemoryTaskMessageQueue
-from mcp.shared.experimental.tasks.store import TaskStore
-from mcp.types import (
-    TASK_STATUS_CANCELLED,
-    TASK_STATUS_FAILED,
-    TASK_STATUS_WORKING,
-    CancelTaskRequest,
-    CancelTaskResult,
-    Result,
-    Task,
+from ninja_common.mcp_ext.tasks_store import (
+    DEFAULT_TASKS_DB,
+    SqliteTaskStore,
+    TaskStore,
+    get_current_process_identity,
+    get_process_start_time,
+    is_process_demonstrably_dead,
 )
 
 
 if TYPE_CHECKING:
-    from mcp.server.experimental.task_context import ServerTaskContext
-    from mcp.server.experimental.task_support import TaskSupport
-    from mcp.server.lowlevel.server import Server
     from mcp.server.session import ServerSession
-    from mcp.shared.experimental.tasks.message_queue import TaskMessageQueue
-    from mcp.types import TaskMetadata, TaskStatus
 
 
 logger = logging.getLogger(__name__)
 
-#: Default on-disk location for durable task state.
-DEFAULT_TASKS_DB: Final[str] = "~/.ninja/tasks.db"
-
 #: Milliseconds between progress notifications emitted from the streaming loop.
 PROGRESS_INTERVAL_SECONDS: Final[float] = 10.0
 
-#: TTL used for synthesized cancel results. The SDK serializes responses with
-#: ``exclude_none=True`` while ``Task.ttl`` is required on the client, so a
-#: response carrying a null TTL fails client-side validation. A concrete value
-#: keeps idempotent cancels of unknown tasks valid.
+#: TTL used for synthesized cancel results.
+#:
+#: Kept for callers that still fabricate a cancelled record for an unknown
+#: task id; the Tasks extension models make ``ttl_ms`` optional, so new code
+#: does not need it.
 SYNTHETIC_TASK_TTL_MS: Final[int] = 60000
 
 #: Type of a progress callback installed for a running task.
@@ -251,7 +230,9 @@ async def emit_progress(
 
     Returns ``True`` when a callback was present and completed successfully.
     Progress is strictly best-effort: failures are swallowed and never affect
-    the tool run.
+    the tool run. The callback itself is installed by the caller (see
+    :func:`task_scope` and :func:`make_session_progress_callback`); this module
+    does not send ``notifications/progress`` on its own.
     """
     callback = _current_progress.get()
     if callback is None:
@@ -265,10 +246,16 @@ async def emit_progress(
 
 
 def make_session_progress_callback(
-    session: ServerSession,
-    progress_token: str | int,
+    session: ServerSession, progress_token: str | int
 ) -> ProgressCallback:
-    """Build a callback that sends ``notifications/progress`` via *session*."""
+    """Bridge :func:`emit_progress` calls to MCP ``notifications/progress``.
+
+    The returned callback is installed through :func:`task_scope`, so any
+    ``emit_progress`` call made inside the tool run reaches the client. It
+    forwards to the session's ``send_progress_notification``, which exists on
+    both protocol eras the SDK supports, so the same bridge works whether or not
+    the client negotiated the Tasks extension.
+    """
 
     async def _callback(
         current: float,
@@ -285,583 +272,22 @@ def make_session_progress_callback(
     return _callback
 
 
-@asynccontextmanager
-async def server_task_scope(
-    task: ServerTaskContext,
-    *,
-    session: ServerSession,
-    progress_token: str | int | None = None,
-) -> AsyncIterator[TaskCancellation]:
-    """Bind a :class:`ServerTaskContext` to cancellation and progress.
-
-    The session and progress token are captured by the caller while the request
-    context is still active, so this never depends on request-context
-    propagation into the SDK's background task group.
-    """
-    token = progress_token if progress_token is not None else task.task_id
-    callback = make_session_progress_callback(session, token)
-    async with task_scope(task.task_id, progress=callback) as cancellation:
-        yield cancellation
-
-
-async def refresh_task_after_cancel(task: ServerTaskContext) -> None:
-    """Synchronise the task context with a terminal ``cancelled`` store state.
-
-    The SDK's ``run_task`` auto-completes work by inspecting its locally cached
-    ``Task`` object. When a cancellation raced with the work, that cache is
-    stale and the SDK would try to transition a terminal task, raising and
-    tearing down task support. Refreshing the cached status from the store makes
-    the SDK skip the completion. Best-effort and never fatal.
-    """
-    try:
-        await task.update_status("cancelled")
-    except Exception:
-        logger.debug("Failed to refresh cancelled task %s", task.task_id, exc_info=True)
-
-
-# ---------------------------------------------------------------------------
-# Durable task store
-# ---------------------------------------------------------------------------
-
-
-def _resolve_db_path(db_path: str | Path | None) -> str:
-    """Resolve the SQLite path, honouring ``NINJA_TASKS_DB`` and ``:memory:``."""
-    raw = (
-        str(db_path) if db_path is not None else os.environ.get("NINJA_TASKS_DB", DEFAULT_TASKS_DB)
-    )
-    if raw == ":memory:" or raw.startswith("file::memory:"):
-        return raw
-    return str(Path(raw).expanduser())
-
-
-def _expiry_iso(ttl_ms: int | None) -> str | None:
-    """Return the ISO expiry timestamp for a TTL in milliseconds."""
-    if ttl_ms is None:
-        return None
-    return (datetime.now(UTC) + timedelta(milliseconds=ttl_ms)).isoformat()
-
-
-def get_process_start_time(pid: int) -> float | None:
-    """Return the start time (epoch timestamp) of *pid*, or None if unavailable."""
-    try:
-        proc = psutil.Process(pid)
-        return float(proc.create_time())
-    except (psutil.NoSuchProcess, psutil.ZombieProcess):
-        return None
-    except Exception as exc:
-        logger.debug("Failed to inspect process %d: %s", pid, exc)
-        return None
-
-
-def get_current_process_identity() -> tuple[int, str]:
-    """Return (pid, start_token) for the current process."""
-    pid = os.getpid()
-    create_time = get_process_start_time(pid)
-    token = f"{create_time:.6f}" if create_time is not None else "unknown"
-    return pid, token
-
-
-def is_process_demonstrably_dead(pid: int | None, token: str | None) -> bool:
-    """Determine if a process is demonstrably dead.
-
-    Returns True ONLY if we can prove the process is dead.
-    Returns False if the process is alive, or if ownership is legacy/unknown,
-    or if inspection is inconclusive.
-    """
-    if pid is None or pid <= 0 or not token or token == "unknown":
-        # Legacy or unknown ownership: do not guess dead.
-        return False
-
-    try:
-        proc = psutil.Process(pid)
-        if proc.status() == psutil.STATUS_ZOMBIE:
-            return True
-        create_time = proc.create_time()
-    except (psutil.NoSuchProcess, ProcessLookupError):
-        # Process does not exist in the OS -> demonstrably dead.
-        return True
-    except (psutil.AccessDenied, PermissionError):
-        # Process exists but we lack permission to inspect create_time.
-        # It is either a live system process or foreign process: never guess dead!
-        return False
-    except Exception as exc:
-        logger.debug("Error probing process %d: %s", pid, exc)
-        return False
-
-    # Process exists. Check if PID was reused by comparing start token.
-    try:
-        expected_time = float(token)
-        if not math.isfinite(expected_time):
-            return False
-    except (ValueError, TypeError):
-        return False
-
-    return bool(abs(create_time - expected_time) >= 0.05)
-
-
-_SCHEMA: Final[str] = """
-CREATE TABLE IF NOT EXISTS tasks (
-    task_id         TEXT PRIMARY KEY,
-    status          TEXT NOT NULL,
-    status_message  TEXT,
-    created_at      TEXT NOT NULL,
-    last_updated_at TEXT NOT NULL,
-    ttl             INTEGER,
-    poll_interval   INTEGER,
-    result_json     TEXT,
-    expires_at      TEXT,
-    owner_pid       INTEGER,
-    owner_token     TEXT
-)
-"""
-
-_SENTINEL_OWNER: Final[object] = object()
-
-
-class SqliteTaskStore(TaskStore):
-    """Durable :class:`TaskStore` backed by SQLite.
-
-    Tasks survive process restarts and are shared across sessions and servers
-    that point at the same database file (default ``~/.ninja/tasks.db``,
-    overridable with ``NINJA_TASKS_DB``). Structured fields are JSON-encoded;
-    WAL mode plus a threading lock make access safe from the event loop and
-    worker threads. A ``:memory:`` path is supported for tests.
-    """
-
-    def __init__(self, db_path: str | Path | None = None, *, page_size: int = 10) -> None:
-        self._db_path = _resolve_db_path(db_path)
-        self._page_size = page_size
-        self._lock = threading.Lock()
-        self._update_events: dict[str, anyio.Event] = {}
-        if self._db_path != ":memory:" and not self._db_path.startswith("file::memory:"):
-            Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        # Wait out short write locks instead of failing when several store
-        # instances (servers/sessions) share the same file.
-        self._conn.execute("PRAGMA busy_timeout=5000")
-        self._init_schema()
-
-    # -- internals ----------------------------------------------------------
-
-    def _migrate_schema_locked(self) -> None:
-        cursor = self._conn.execute("PRAGMA table_info(tasks)")
-        columns = {row["name"] for row in cursor.fetchall()}
-        if "owner_pid" not in columns:
-            try:
-                self._conn.execute("ALTER TABLE tasks ADD COLUMN owner_pid INTEGER")
-            except sqlite3.OperationalError as exc:
-                if "duplicate column name" in str(exc).lower():
-                    pass
-                else:
-                    raise
-        if "owner_token" not in columns:
-            try:
-                self._conn.execute("ALTER TABLE tasks ADD COLUMN owner_token TEXT")
-            except sqlite3.OperationalError as exc:
-                if "duplicate column name" in str(exc).lower():
-                    pass
-                else:
-                    raise
-
-    def _set_journal_mode_locked(self) -> None:
-        for _ in range(50):
-            try:
-                mode = self._conn.execute("PRAGMA journal_mode").fetchone()
-                if mode and str(mode[0]).lower() == "wal":
-                    return
-                self._conn.execute("PRAGMA journal_mode=WAL")
-                return
-            except sqlite3.OperationalError as exc:
-                if "locked" in str(exc).lower() or "busy" in str(exc).lower():
-                    time.sleep(0.05)
-                    continue
-                raise
-        self._conn.execute("PRAGMA journal_mode=WAL")
-
-    def _init_schema(self) -> None:
-        with self._lock:
-            self._set_journal_mode_locked()
-            self._conn.execute("PRAGMA synchronous=NORMAL")
-            self._conn.execute("BEGIN IMMEDIATE")
-            try:
-                self._conn.execute(_SCHEMA)
-                self._migrate_schema_locked()
-                self._conn.commit()
-            except Exception:
-                self._conn.rollback()
-                raise
-
-    def _purge_expired_locked(self) -> None:
-        now = datetime.now(UTC).isoformat()
-        self._conn.execute(
-            "DELETE FROM tasks WHERE expires_at IS NOT NULL AND expires_at <= ?",
-            (now,),
-        )
-
-    @staticmethod
-    def _row_to_task(row: sqlite3.Row) -> Task:
-        return Task.model_validate(
-            {
-                "taskId": row["task_id"],
-                "status": row["status"],
-                "statusMessage": row["status_message"],
-                "createdAt": row["created_at"],
-                "lastUpdatedAt": row["last_updated_at"],
-                "ttl": row["ttl"],
-                "pollInterval": row["poll_interval"],
-            }
-        )
-
-    def _fetch_locked(self, task_id: str) -> sqlite3.Row | None:
-        self._purge_expired_locked()
-        cursor = self._conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,))
-        return cast("sqlite3.Row | None", cursor.fetchone())
-
-    # -- TaskStore protocol -------------------------------------------------
-
-    async def create_task(
-        self,
-        metadata: TaskMetadata,
-        task_id: str | None = None,
-        *,
-        owner_pid: int | None | object = _SENTINEL_OWNER,
-        owner_token: str | None | object = _SENTINEL_OWNER,
-    ) -> Task:
-        task = create_task_state(metadata, task_id)
-        eff_owner_pid: int | None
-        eff_owner_token: str | None
-        if owner_pid is _SENTINEL_OWNER and owner_token is _SENTINEL_OWNER:
-            eff_owner_pid, eff_owner_token = get_current_process_identity()
-        else:
-            eff_owner_pid = cast("int | None", None if owner_pid is _SENTINEL_OWNER else owner_pid)
-            eff_owner_token = cast(
-                "str | None", None if owner_token is _SENTINEL_OWNER else owner_token
-            )
-
-        with self._lock, self._conn:
-            self._purge_expired_locked()
-            try:
-                self._conn.execute(
-                    """
-                    INSERT INTO tasks (
-                        task_id, status, status_message, created_at,
-                        last_updated_at, ttl, poll_interval, result_json, expires_at,
-                        owner_pid, owner_token
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        task.taskId,
-                        task.status,
-                        task.statusMessage,
-                        task.createdAt.isoformat(),
-                        task.lastUpdatedAt.isoformat(),
-                        task.ttl,
-                        task.pollInterval,
-                        None,
-                        _expiry_iso(task.ttl),
-                        eff_owner_pid,
-                        eff_owner_token,
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise ValueError(f"Task with ID {task.taskId} already exists") from exc
-        return task
-
-    def get_task_owner(self, task_id: str) -> tuple[int | None, str | None] | None:
-        """Return (owner_pid, owner_token) for *task_id*, or None if task not found."""
-        with self._lock, self._conn:
-            row = self._fetch_locked(task_id)
-        if row is None:
-            return None
-        return (row["owner_pid"], row["owner_token"])
-
-    async def get_task(self, task_id: str) -> Task | None:
-        # ``with self._conn`` commits the lazy-expiry DELETE so reads never
-        # leave a write transaction open (which would lock other instances).
-        with self._lock, self._conn:
-            row = self._fetch_locked(task_id)
-        if row is None:
-            return None
-        return self._row_to_task(row)
-
-    async def update_task(
-        self,
-        task_id: str,
-        status: TaskStatus | None = None,
-        status_message: str | None = None,
-    ) -> Task:
-        status_changed = False
-        with self._lock, self._conn:
-            row = self._fetch_locked(task_id)
-            if row is None:
-                raise ValueError(f"Task with ID {task_id} not found")
-            current = self._row_to_task(row)
-
-            if is_terminal(current.status):
-                # Terminal records are immutable against progress/status-message-only updates
-                # or any late status transitions.
-                logger.warning(
-                    "Ignoring update of terminal task %s (%s, requested status=%s, status_message=%s)",
-                    task_id,
-                    current.status,
-                    status,
-                    status_message,
-                )
-                return current
-
-            new_status = current.status
-            if status is not None and status != current.status:
-                new_status = status
-                status_changed = True
-
-            new_message = status_message if status_message is not None else current.statusMessage
-            now = datetime.now(UTC)
-            expires_at = row["expires_at"]
-            if is_terminal(new_status) and current.ttl is not None:
-                expires_at = _expiry_iso(current.ttl)
-            cursor = self._conn.execute(
-                """
-                UPDATE tasks
-                SET status = ?, status_message = ?, last_updated_at = ?, expires_at = ?
-                WHERE task_id = ? AND status = ?
-                """,
-                (new_status, new_message, now.isoformat(), expires_at, task_id, current.status),
-            )
-            if cursor.rowcount == 0:
-                # Concurrent update occurred. Re-fetch current state.
-                row = self._fetch_locked(task_id)
-                if row is None:
-                    raise ValueError(f"Task with ID {task_id} not found")
-                current = self._row_to_task(row)
-                if is_terminal(current.status):
-                    logger.warning(
-                        "Concurrent update to terminal task %s (%s)",
-                        task_id,
-                        current.status,
-                    )
-                return current
-
-            updated = Task.model_validate(
-                {
-                    "taskId": task_id,
-                    "status": new_status,
-                    "statusMessage": new_message,
-                    "createdAt": current.createdAt,
-                    "lastUpdatedAt": now,
-                    "ttl": current.ttl,
-                    "pollInterval": current.pollInterval,
-                }
-            )
-        if status_changed:
-            await self.notify_update(task_id)
-        return updated
-
-    async def store_result(self, task_id: str, result: Result) -> None:
-        payload = json.dumps(result.model_dump(mode="json", by_alias=True))
-        with self._lock, self._conn:
-            row = self._fetch_locked(task_id)
-            if row is None:
-                raise ValueError(f"Task with ID {task_id} not found")
-            self._conn.execute(
-                "UPDATE tasks SET result_json = ? WHERE task_id = ?",
-                (payload, task_id),
-            )
-
-    async def get_result(self, task_id: str) -> Result | None:
-        with self._lock, self._conn:
-            row = self._fetch_locked(task_id)
-        if row is None:
-            return None
-        raw = row["result_json"]
-        if raw is None:
-            return None
-        return Result.model_validate(json.loads(raw))
-
-    async def list_tasks(
-        self,
-        cursor: str | None = None,
-    ) -> tuple[list[Task], str | None]:
-        with self._lock, self._conn:
-            self._purge_expired_locked()
-            rows = self._conn.execute(
-                "SELECT task_id FROM tasks ORDER BY created_at, rowid"
-            ).fetchall()
-        task_ids = [str(row["task_id"]) for row in rows]
-
-        start_index = 0
-        if cursor is not None:
-            try:
-                start_index = task_ids.index(cursor) + 1
-            except ValueError as exc:
-                raise ValueError(f"Invalid cursor: {cursor}") from exc
-
-        page_ids = task_ids[start_index : start_index + self._page_size]
-        tasks: list[Task] = []
-        for task_id in page_ids:
-            task = await self.get_task(task_id)
-            if task is not None:
-                tasks.append(task)
-
-        next_cursor: str | None = None
-        if page_ids and start_index + self._page_size < len(task_ids):
-            next_cursor = page_ids[-1]
-        return tasks, next_cursor
-
-    async def delete_task(self, task_id: str) -> bool:
-        with self._lock, self._conn:
-            cursor = self._conn.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
-            return cursor.rowcount > 0
-
-    def sweep_stale_working(self, marker: str) -> int:
-        """Reconcile stale ``working`` tasks belonging to dead owners to terminal ``failed``.
-
-        Only tasks whose owner process is demonstrably dead are swept. Foreign
-        live owners and legacy tasks with unknown ownership are preserved.
-
-        Args:
-            marker: Human-readable status message recorded on swept rows.
-
-        Returns:
-            The number of rows swept (0 when there is nothing to reconcile).
-        """
-        # Step 1: Fetch candidate working tasks without holding a long transaction.
-        with self._lock, self._conn:
-            self._purge_expired_locked()
-            cursor = self._conn.execute(
-                "SELECT task_id, owner_pid, owner_token FROM tasks WHERE status = ?",
-                (TASK_STATUS_WORKING,),
-            )
-            candidates = [
-                (str(row["task_id"]), row["owner_pid"], row["owner_token"])
-                for row in cursor.fetchall()
-            ]
-
-        if not candidates:
-            return 0
-
-        # Step 2: Probe candidate processes OUTSIDE database locks/transactions.
-        dead_candidates: list[tuple[str, int | None, str | None]] = []
-        for task_id, owner_pid, owner_token in candidates:
-            if is_process_demonstrably_dead(owner_pid, owner_token):
-                dead_candidates.append((task_id, owner_pid, owner_token))
-
-        if not dead_candidates:
-            return 0
-
-        # Step 3: Optimistically sweep confirmed dead tasks.
-        now = datetime.now(UTC).isoformat()
-        total_swept = 0
-        with self._lock, self._conn:
-            for task_id, owner_pid, owner_token in dead_candidates:
-                cursor = self._conn.execute(
-                    """
-                    UPDATE tasks
-                    SET status = ?,
-                        status_message = ?,
-                        last_updated_at = ?,
-                        expires_at = CASE
-                            WHEN ttl IS NOT NULL
-                            THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+' || ttl || ' milliseconds')
-                            ELSE expires_at
-                        END
-                    WHERE task_id = ? AND status = ? AND owner_pid IS ? AND owner_token IS ?
-                    """,
-                    (
-                        TASK_STATUS_FAILED,
-                        marker,
-                        now,
-                        task_id,
-                        TASK_STATUS_WORKING,
-                        owner_pid,
-                        owner_token,
-                    ),
-                )
-                total_swept += cursor.rowcount
-
-        return total_swept
-
-    async def wait_for_update(self, task_id: str) -> None:
-        if await self.get_task(task_id) is None:
-            raise ValueError(f"Task with ID {task_id} not found")
-        event = anyio.Event()
-        self._update_events[task_id] = event
-        await event.wait()
-
-    async def notify_update(self, task_id: str) -> None:
-        event = self._update_events.get(task_id)
-        if event is not None:
-            event.set()
-
-
-# ---------------------------------------------------------------------------
-# Server wiring
-# ---------------------------------------------------------------------------
-
-
-def install_tasks(
-    server: Server,
-    *,
-    store: TaskStore | None = None,
-    queue: TaskMessageQueue | None = None,
-) -> TaskSupport:
-    """Enable standard MCP Tasks with durable state and real cancellation.
-
-    Wires the durable store and in-memory message queue into the SDK, then
-    overrides the ``tasks/cancel`` handler so that cancelling a task both marks
-    it cancelled in the store and interrupts the running work (including the
-    CLI subprocess group).
-    """
-    task_store = store if store is not None else SqliteTaskStore()
-    task_queue = queue if queue is not None else InMemoryTaskMessageQueue()
-    support = server.experimental.enable_tasks(store=task_store, queue=task_queue)
-
-    @server.experimental.cancel_task()
-    async def _handle_cancel(request: CancelTaskRequest) -> CancelTaskResult:
-        task_id = request.params.taskId
-        # Always stop any live work for this id, even if the store says the
-        # task is already terminal (the worker may still be winding down).
-        request_cancel(task_id)
-        try:
-            return await cancel_task(task_store, task_id)
-        except McpError:
-            # Already-terminal or unknown task: cancellation is idempotent and
-            # must never raise. Report the terminal state when we have it, and a
-            # synthetic cancelled result otherwise.
-            existing = await task_store.get_task(task_id)
-            if existing is not None:
-                data = existing.model_dump()
-                if data.get("ttl") is None:
-                    data["ttl"] = SYNTHETIC_TASK_TTL_MS
-                return CancelTaskResult(**data)
-            logger.info("Cancel requested for unknown task %s (no-op)", task_id)
-            now = datetime.now(UTC)
-            return CancelTaskResult(
-                taskId=task_id,
-                status=TASK_STATUS_CANCELLED,
-                createdAt=now,
-                lastUpdatedAt=now,
-                ttl=SYNTHETIC_TASK_TTL_MS,
-            )
-
-    return support
-
-
 __all__ = [
     "DEFAULT_TASKS_DB",
+    "PROGRESS_INTERVAL_SECONDS",
+    "SYNTHETIC_TASK_TTL_MS",
     "ProgressCallback",
     "SqliteTaskStore",
     "TaskCancellation",
     "TaskCancelledError",
+    "TaskStore",
     "emit_progress",
     "get_current_process_identity",
+    "get_process_start_time",
     "get_progress_callback",
     "get_task_cancellation",
-    "install_tasks",
     "is_process_demonstrably_dead",
     "make_session_progress_callback",
-    "refresh_task_after_cancel",
     "request_cancel",
-    "server_task_scope",
     "task_scope",
 ]

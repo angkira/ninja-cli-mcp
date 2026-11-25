@@ -19,9 +19,17 @@ import json
 import logging
 from typing import Any
 
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
-from mcp.types import CallToolResult, TextContent, Tool, ToolAnnotations, ToolExecution
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+    ToolAnnotations,
+)
 
 from ninja_agent.models import (
     DELEGATE_MIGRATION,
@@ -53,13 +61,7 @@ from ninja_common.mcp_meta import (
     server_icon,
     server_kwargs,
 )
-from ninja_common.mcp_tasks import (
-    install_tasks,
-    make_session_progress_callback,
-    refresh_task_after_cancel,
-    server_task_scope,
-    task_scope,
-)
+from ninja_common.mcp_tasks import make_session_progress_callback, task_scope
 
 
 # Set up logging to stderr (stdout is for MCP protocol)
@@ -71,13 +73,12 @@ logger = get_logger(__name__)
 TOOLS: list[Tool] = [
     Tool(
         name="agent_exec_command",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Single guarded shell command (git status, ls, single test). "
             "Mutations need allow_write=True. Use run_and_diagnose for tests/lints, "
             "pipeline for multi-step."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "command": {
@@ -106,9 +107,8 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_tail_logs",
-        execution=ToolExecution(taskSupport="optional"),
         description="Read-only log tails (max 200). Use distill_logs when you need clusters-errors summary.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "module": {
@@ -133,9 +133,8 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_processes",
-        execution=ToolExecution(taskSupport="optional"),
         description="Daemon statuses plus host resource stats; strictly read-only.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {},
             "required": [],
@@ -143,9 +142,8 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_jobs_overview",
-        execution=ToolExecution(taskSupport="optional"),
         description="Pending background jobs/tasks summary; strictly read-only.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "limit": {
@@ -158,11 +156,10 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_analyze",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Analyze a codebase (structure, counts, syntax errors) via file reads and AST/grep heuristics; optional focus term. Never modifies files."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "repo_root": {
@@ -184,12 +181,11 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_review",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Heuristic static review: syntax errors (critical), empty except/pass (warning). "
             "No style/docstring noise; never modifies."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "repo_root": {
@@ -211,11 +207,10 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_run_and_diagnose",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Run tests/lints and distill failures (counts, file:line, root cause). Prefer over exec_command for verification."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "command": {
@@ -248,11 +243,10 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_exec_pipeline",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Ordered multi-step shell (build-then-test). Fail-fast by default; per-step condensed output."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "steps": {
@@ -301,11 +295,10 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="agent_distill_logs",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Tail logs + cluster repeats + isolate tracebacks. Use instead of tail_logs for noisy failures."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "module": {
@@ -330,14 +323,14 @@ TOOLS: list[Tool] = [
     ),
 ]
 
-_RO = ToolAnnotations(readOnlyHint=True, idempotentHint=True)
+_RO = ToolAnnotations(read_only_hint=True, idempotent_hint=True)
 
 # Tool metadata: titles, behavior hints, and result models for
 # outputSchema + structuredContent.
 _TOOL_META: dict[str, ToolMeta] = {
     "agent_exec_command": ToolMeta(
         title="Run shell command",
-        annotations=ToolAnnotations(destructiveHint=True),
+        annotations=ToolAnnotations(destructive_hint=True),
         result_model=AgentExecCommandResult,
     ),
     "agent_tail_logs": ToolMeta(
@@ -355,12 +348,12 @@ _TOOL_META: dict[str, ToolMeta] = {
     "agent_review": ToolMeta(title="Review files", annotations=_RO, result_model=AgentReviewResult),
     "agent_run_and_diagnose": ToolMeta(
         title="Run and diagnose",
-        annotations=ToolAnnotations(destructiveHint=True),
+        annotations=ToolAnnotations(destructive_hint=True),
         result_model=AgentRunAndDiagnoseResult,
     ),
     "agent_exec_pipeline": ToolMeta(
         title="Run pipeline",
-        annotations=ToolAnnotations(destructiveHint=True),
+        annotations=ToolAnnotations(destructive_hint=True),
         result_model=AgentExecPipelineResult,
     ),
     "agent_distill_logs": ToolMeta(
@@ -369,9 +362,6 @@ _TOOL_META: dict[str, ToolMeta] = {
 }
 
 TOOLS = apply_tool_meta(TOOLS, _TOOL_META, server_icon("agent"))
-
-# Look up tool definitions by name (used for task-mode validation).
-_TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 
 #: Removed tool names kept as explicit migration errors.
 _REMOVED_TOOLS = frozenset(
@@ -389,35 +379,22 @@ _REMOVED_TOOLS = frozenset(
 
 def create_server() -> Server:
     """Create and configure the MCP server."""
-    server = Server(
-        "ninja-agent",
-        **server_kwargs(
-            ServerMeta(
-                instructions="""Ninja Agent: autonomous routine ops. exec_command: single guarded shell (mutations need allow_write). run_and_diagnose: tests/lints with failure distillation. exec_pipeline: ordered multi-step. tail_logs/distill_logs: log tails vs clustered errors. processes/jobs_overview: read-only snapshots. analyze/review: read-only codebase analysis. Long runs emit progress notifications (~every 10s) when the client passes a progressToken — keep the token to avoid client timeouts.""",
-                kind="agent",
-            )
-        ),
-    )
-
-    # Enable standard MCP Tasks (background/asynchronous tool execution) with a
-    # durable store and real cancellation of running work.
-    install_tasks(server)
-
     executor = AgentToolExecutor()
 
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
+    async def list_tools(
+        _ctx: ServerRequestContext[Any, Any],
+        _params: PaginatedRequestParams | None,
+    ) -> ListToolsResult:
         """List available tools."""
-        return TOOLS
+        return ListToolsResult(tools=TOOLS)
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: Any) -> Any:
-        """Handle tool execution requests, synchronously or as a background task."""
-        request_ctx = server.request_context
-        experimental = request_ctx.experimental
-        tool_definition = _TOOLS_BY_NAME.get(name)
-        if tool_definition is not None:
-            experimental.validate_for_tool(tool_definition)
+    async def call_tool(
+        ctx: ServerRequestContext[Any, Any],
+        params: CallToolRequestParams,
+    ) -> CallToolResult:
+        """Handle tool execution requests synchronously."""
+        name = params.name
+        arguments: dict[str, Any] = dict(params.arguments or {})
 
         async def _invoke_text() -> list[TextContent]:
             try:
@@ -555,35 +532,29 @@ def create_server() -> Server:
                     structured = {}
             return texts, structured
 
-        if experimental.is_task:
-            session = request_ctx.session
-            progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
-
-            async def _work(task: Any) -> CallToolResult:
-                async with server_task_scope(
-                    task, session=session, progress_token=progress_token
-                ) as cancellation:
-                    texts, structured = await _invoke()
-                    if cancellation.is_set():
-                        await refresh_task_after_cancel(task)
-                    return CallToolResult(
-                        content=list(texts), structuredContent=structured, isError=False
-                    )
-
-            return await experimental.run_task(_work)
-
-        # Sync path heartbeat: forward driver progress as
-        # notifications/progress when the client passed a progressToken.
-        progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
+        # Progress forwarding: when the caller passed a progress token in
+        # ``_meta``, bridge driver progress to ``notifications/progress``.
+        progress_token = (ctx.meta or {}).get("progress_token")
         if progress_token is not None:
-            session = request_ctx.session
-            callback = make_session_progress_callback(session, progress_token)
+            callback = make_session_progress_callback(ctx.session, progress_token)
             async with task_scope(f"sync-{name}", progress=callback):
-                return await _invoke()
+                texts, structured = await _invoke()
+        else:
+            texts, structured = await _invoke()
 
-        return await _invoke()
+        return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
 
-    return server
+    return Server(
+        "ninja-agent",
+        **server_kwargs(
+            ServerMeta(
+                instructions="""Ninja Agent: autonomous routine ops. exec_command: single guarded shell (mutations need allow_write). run_and_diagnose: tests/lints with failure distillation. exec_pipeline: ordered multi-step. tail_logs/distill_logs: log tails vs clustered errors. processes/jobs_overview: read-only snapshots. analyze/review: read-only codebase analysis. Long runs emit progress notifications (~every 10s) when the client passes a progressToken — keep the token to avoid client timeouts.""",
+                kind="agent",
+            )
+        ),
+        on_list_tools=list_tools,
+        on_call_tool=call_tool,
+    )
 
 
 async def main_stdio() -> None:
@@ -602,34 +573,15 @@ async def main_stdio() -> None:
 
 
 async def main_http(host: str, port: int) -> None:
-    """Run the MCP server over HTTP with SSE."""
+    """Run the MCP server over HTTP (SSE at /sse, streamable HTTP at /mcp)."""
     import uvicorn
-    from mcp.server.sse import SseServerTransport
-    from starlette.requests import Request
-    from starlette.responses import Response
+
+    from ninja_common.mcp_http import build_asgi_app
 
     logger.info(f"Starting ninja-agent server (HTTP/SSE mode) on {host}:{port}")
 
     server = create_server()
-    sse = SseServerTransport("/messages")
-
-    async def handle_sse(request: Any) -> Response:
-        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-            await server.run(streams[0], streams[1], server.create_initialization_options())
-        return Response()
-
-    async def handle_messages(scope: Any, receive: Any, send: Any) -> None:
-        await sse.handle_post_message(scope, receive, send)
-
-    async def app(scope: Any, receive: Any, send: Any) -> None:
-        path = scope.get("path", "")
-        if path == "/sse":
-            request = Request(scope, receive, send)
-            await handle_sse(request)
-        elif path == "/messages" and scope.get("method") == "POST":
-            await handle_messages(scope, receive, send)
-        else:
-            await Response("Not Found", status_code=404)(scope, receive, send)
+    app = build_asgi_app(server, host=host)
 
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     server_instance = uvicorn.Server(config)

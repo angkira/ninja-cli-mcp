@@ -23,15 +23,16 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Any
 
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
 from mcp.types import (
+    CallToolRequestParams,
     CallToolResult,
-    Task,
+    ListToolsResult,
+    PaginatedRequestParams,
     TextContent,
     Tool,
     ToolAnnotations,
-    ToolExecution,
 )
 from pydantic import ValidationError
 
@@ -58,6 +59,7 @@ from ninja_coder.tools import get_executor
 from ninja_common.jobs import JOB_STATUS_CANCELLED, JOB_STATUS_WORKING, JobManager
 from ninja_common.logging_utils import get_logger, setup_logging
 from ninja_common.mcp_meta import (
+    ServerMeta,
     ToolMeta,
     apply_tool_meta,
     dict_result,
@@ -65,14 +67,12 @@ from ninja_common.mcp_meta import (
     model_result,
     patch_resource_link,
     server_icon,
+    server_kwargs,
 )
 from ninja_common.mcp_tasks import (
     ProgressCallback,
     SqliteTaskStore,
-    install_tasks,
     make_session_progress_callback,
-    refresh_task_after_cancel,
-    server_task_scope,
     task_scope,
 )
 from ninja_common.security import RequestDeduplicator
@@ -80,6 +80,8 @@ from ninja_common.security import RequestDeduplicator
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+    from ninja_common.mcp_ext.models import Task
 
 
 # Load config from ~/.ninja-mcp.env into environment variables
@@ -224,7 +226,7 @@ def _result_payload(result: Any) -> CallToolResult:
                     }
                 )
             ],
-            isError=True,
+            is_error=True,
         )
     links = [patch_resource_link(getattr(result, "patch_path", None))]
     return CallToolResult(
@@ -232,26 +234,26 @@ def _result_payload(result: Any) -> CallToolResult:
             TextContent(type="text", text=json.dumps(result.model_dump(), indent=2)),
             *[link for link in links if link is not None],
         ],
-        structuredContent=json.loads(json.dumps(result.model_dump(), default=str)),
-        isError=False,
+        structured_content=json.loads(json.dumps(result.model_dump(), default=str)),
+        is_error=False,
     )
 
 
 def _job_status_payload(task: Task) -> dict[str, Any]:
     """Render a task record as the public job-status payload."""
     return {
-        "job_id": task.taskId,
+        "job_id": task.task_id,
         "status": task.status,
-        "created_at": task.createdAt.isoformat(),
-        "last_updated_at": task.lastUpdatedAt.isoformat(),
-        "status_message": task.statusMessage,
+        "created_at": task.created_at,
+        "last_updated_at": task.last_updated_at,
+        "status_message": task.status_message,
     }
 
 
 def _job_handle_payload(task: Task, poll_interval_ms: int) -> dict[str, Any]:
     """Render the immediate response returned by a ``coder_submit_*`` call."""
     return {
-        "job_id": task.taskId,
+        "job_id": task.task_id,
         "status": task.status,
         "poll_interval_ms": poll_interval_ms,
     }
@@ -293,14 +295,13 @@ def _validation_error_payload(exc: ValidationError) -> dict[str, Any]:
 TOOLS: list[Tool] = [
     Tool(
         name="coder_simple_task",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Tiny 1-2 line fix in one file/function (typo, field, small bugfix), "
             "in-place with safety-commit, no worktree. "
             "Quick model — not for multi-file work, use sequential. "
             "Summary only, no source code." + _REQUEST_KEY_NOTE
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "task": {
@@ -346,12 +347,11 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="coder_execute_plan_sequential",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Ordered multi-step plan (multi-file features, refactors, rewrites). "
             "Heavy model, isolated ninja/* worktree." + _REQUEST_KEY_NOTE
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "repo_root": {
@@ -471,14 +471,13 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="coder_execute_plan_parallel",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Independent steps in parallel (atomic, non-overlapping files). "
             "complexity every call: 'simple' = trivial edits in-place, no worktree; "
             "'complex' = real work in ninja/* worktree. Never mix — split into two calls."
             + _REQUEST_KEY_NOTE
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "repo_root": {
@@ -565,7 +564,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="coder_get_agents",
         description="List specialized agents for multi-agent orchestration.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {},
             "required": [],
@@ -573,12 +572,11 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="coder_multi_agent_task",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Complex task with coordinated specialized agents (full-stack, system design, large refactors)."
             + _REQUEST_KEY_NOTE
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "task": {
@@ -607,7 +605,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="coder_query_logs",
         description="Query JSONL logs for debugging (filter by session, task, CLI, level; limit/offset paging).",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "session_id": {
@@ -674,17 +672,17 @@ TOOLS.extend(
         Tool(
             name="coder_submit_simple",
             description="Submit coder_simple_task as a background job: poll coder_job_status until terminal, then coder_job_result.",
-            inputSchema=dict(_TOOLS_BY_NAME["coder_simple_task"].inputSchema),
+            input_schema=dict(_TOOLS_BY_NAME["coder_simple_task"].input_schema),
         ),
         Tool(
             name="coder_submit_sequential",
             description="Submit coder_execute_plan_sequential as a background job: poll coder_job_status until terminal, then coder_job_result.",
-            inputSchema=dict(_TOOLS_BY_NAME["coder_execute_plan_sequential"].inputSchema),
+            input_schema=dict(_TOOLS_BY_NAME["coder_execute_plan_sequential"].input_schema),
         ),
         Tool(
             name="coder_submit_parallel",
             description="Submit coder_execute_plan_parallel as a background job: poll coder_job_status until terminal, then coder_job_result.",
-            inputSchema=dict(_TOOLS_BY_NAME["coder_execute_plan_parallel"].inputSchema),
+            input_schema=dict(_TOOLS_BY_NAME["coder_execute_plan_parallel"].input_schema),
         ),
         Tool(
             name="coder_job_status",
@@ -692,7 +690,7 @@ TOOLS.extend(
                 "Poll a coder_submit_* job until no longer working (working|completed|failed|"
                 "cancelled), then call coder_job_result."
             ),
-            inputSchema=dict(_JOB_ID_SCHEMA),
+            input_schema=dict(_JOB_ID_SCHEMA),
         ),
         Tool(
             name="coder_job_result",
@@ -700,14 +698,14 @@ TOOLS.extend(
                 "Fetch a coder_submit_* job result (same payload as the sync tool); "
                 "while working returns poll_interval_ms."
             ),
-            inputSchema=dict(_JOB_ID_SCHEMA),
+            input_schema=dict(_JOB_ID_SCHEMA),
         ),
         Tool(
             name="coder_job_cancel",
             description=(
                 "Cancel a running coder_submit_* job; idempotent, safe for unknown or terminal ids."
             ),
-            inputSchema=dict(_JOB_ID_SCHEMA),
+            input_schema=dict(_JOB_ID_SCHEMA),
         ),
         Tool(
             name="coder_branches_list",
@@ -715,7 +713,7 @@ TOOLS.extend(
                 "List ninja/* isolation branches (committed agent work, checkout already "
                 "removed), newest first. Read-only."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "repo_root": {
@@ -732,7 +730,7 @@ TOOLS.extend(
                 "Merge a ninja/* isolation branch into the repo's current branch. "
                 "A conflicting merge is aborted and the repo is left unchanged."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "repo_root": {
@@ -753,7 +751,7 @@ TOOLS.extend(
                 "Delete a ninja/* isolation branch. Refuses unmerged work unless force=true; "
                 "only merge or discard after reviewing the changes."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "repo_root": {
@@ -776,7 +774,7 @@ TOOLS.extend(
         Tool(
             name="coder_jobs_list",
             description="List background jobs oldest-first with cursor pagination.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "cursor": {
@@ -796,10 +794,10 @@ TOOLS.extend(
     ]
 )
 
-_destructive = ToolAnnotations(destructiveHint=True)
-_idempotent = ToolAnnotations(idempotentHint=True)
-_destructive_idempotent = ToolAnnotations(destructiveHint=True, idempotentHint=True)
-_readonly = ToolAnnotations(readOnlyHint=True, idempotentHint=True)
+_destructive = ToolAnnotations(destructive_hint=True)
+_idempotent = ToolAnnotations(idempotent_hint=True)
+_destructive_idempotent = ToolAnnotations(destructive_hint=True, idempotent_hint=True)
+_readonly = ToolAnnotations(read_only_hint=True, idempotent_hint=True)
 
 # Tool metadata: titles, behavior hints, and result models for
 # outputSchema + structuredContent. Job-handle tools return plain dicts.
@@ -858,9 +856,6 @@ _TOOL_META: dict[str, ToolMeta] = {
 
 TOOLS = apply_tool_meta(TOOLS, _TOOL_META, server_icon("coder"))
 
-# Rebuild: apply_tool_meta returns new Tool objects, so earlier entries are stale.
-_TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}
-
 
 def _is_unmerged_refusal(message: str | None) -> bool:
     """Detect a refuse-to-delete-branch outcome caused by unmerged commits."""
@@ -875,30 +870,9 @@ def create_server() -> Server:
     Returns:
         Configured MCP Server instance.
     """
-    server = Server(
-        "ninja-coder",
-        version="0.2.0",
-        instructions="""Ninja Coder: delegate code writing to an AI agent.
-
-CRITICAL: Ninja only writes code — no bash, no tests, no file reading for you. You validate.
-Tools: coder_simple_task = tiny 1-2 line fix, in-place with safety-commit, no worktree;
-coder_execute_plan_sequential = ordered multi-step work in an isolated ninja/* worktree;
-coder_execute_plan_parallel = independent atomic steps; complexity='simple' in-place, 'complex' (default) worktree — never mix in one call.
-Isolated plan work is committed to a ninja/* branch and its checkout is removed right after the run. Review and integrate it with coder_branches_list, coder_branch_merge (ninja/* only, conflicts aborted), and coder_branch_discard.
-Spec format: GOOD = file, symbol, behavior, types, error handling (e.g. "In src/api/routes.py add POST /login ... 401 on failure").
-Ninja returns a summary only (files changed, brief description); you read files, run tests, review. Same request_key retries join the in-flight run.
-LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 min). For anything expected >60s prefer coder_submit_* then poll coder_job_status until terminal, then coder_job_result. Sync calls also emit progress notifications (~every 10s) when the client passes a progressToken — keep the token to avoid client timeouts.""",
-        website_url="https://github.com/angkira/ninja-cli-mcp",
-        icons=[server_icon("coder")],
-    )
-
-    # Enable standard MCP Tasks (background/asynchronous tool execution) with a
-    # durable store and real cancellation of running work. Registers
-    # tasks/get | tasks/result | tasks/list | tasks/cancel and declares the
-    # ServerTasksCapability during initialization.
-    #
-    # The same store backs the always-available submit/poll job API below, so
-    # both views agree on jobs and survive across calls and processes.
+    # Durable store shared by the always-available submit/poll job API, so jobs
+    # survive across calls and processes. Standard MCP Tasks scheduling is not
+    # installed here yet; ``coder_submit_*`` is the async story.
     store = SqliteTaskStore()
     # A previous daemon run cannot be resumed: any row still 'working' owned by
     # a demonstrably dead process is reconciled to 'failed' so it is observable
@@ -907,31 +881,30 @@ LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 mi
     swept = store.sweep_stale_working("lost: daemon restart before completion")
     if swept:
         logger.info("Reconciled %d stale working jobs from dead owners", swept)
-    install_tasks(server, store=store)
     jobs = JobManager(store)
 
     # Use the process-global deduplicator for request deduplication
     deduplicator = _get_deduplicator()
 
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
+    async def list_tools(
+        _ctx: ServerRequestContext[Any, Any],
+        _params: PaginatedRequestParams | None,
+    ) -> ListToolsResult:
         """Return the list of available tools."""
-        return TOOLS
+        return ListToolsResult(tools=TOOLS)
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
-        """Handle tool invocations, synchronously or as a background task.
+    async def call_tool(
+        ctx: ServerRequestContext[Any, Any],
+        params: CallToolRequestParams,
+    ) -> CallToolResult:
+        """Handle tool invocations synchronously.
 
-        When the client sends a task-augmented ``tools/call`` (standard MCP
-        Tasks capability) for a tool marked ``taskSupport="optional"``, the work
-        runs in the background and a ``CreateTaskResult`` handle is returned
-        immediately. Otherwise the tool runs synchronously as before.
+        Long-running tools keep the connection busy; callers that expect more
+        than ~60s use the ``coder_submit_*`` / ``coder_job_status`` /
+        ``coder_job_result`` poll API, which returns a job handle immediately.
         """
-        request_ctx = server.request_context
-        experimental = request_ctx.experimental
-        tool_definition = _TOOLS_BY_NAME.get(name)
-        if tool_definition is not None:
-            experimental.validate_for_tool(tool_definition)
+        name = params.name
+        arguments: dict[str, Any] = dict(params.arguments or {})
 
         async def _handle_job_tool() -> tuple[list, dict[str, Any] | None]:
             """Serve the always-available submit/poll background-job tools."""
@@ -1009,7 +982,34 @@ LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 mi
                 handle = await _submit_or_join(request_key, _submit_parallel)
                 return dict_result(handle)
 
-            job_id = str(arguments.get("job_id", ""))
+            if name == "coder_jobs_list":
+                try:
+                    listed, next_cursor = await jobs.list_jobs(
+                        arguments.get("cursor"), arguments.get("limit")
+                    )
+                except ValueError as exc:
+                    return dict_result(
+                        {"status": "error", "error": str(exc), "error_type": "InvalidCursor"}
+                    )
+                return dict_result(
+                    {
+                        "jobs": [_job_status_payload(job) for job in listed],
+                        "next_cursor": next_cursor,
+                    }
+                )
+
+            job_id = str(arguments.get("job_id") or "").strip()
+            if not job_id:
+                # The SDK no longer validates ``input_schema`` before dispatch,
+                # so the required ``job_id`` is enforced here.
+                return dict_result(
+                    {
+                        "job_id": "",
+                        "status": "error",
+                        "error": "job_id is required",
+                        "error_type": "InvalidInput",
+                    }
+                )
             unknown_payload = {
                 "job_id": job_id,
                 "status": "error",
@@ -1042,7 +1042,7 @@ LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 mi
                         {
                             "job_id": job_id,
                             "status": task.status,
-                            "status_message": task.statusMessage,
+                            "status_message": task.status_message,
                         }
                     )
                 if stored_structured is None:
@@ -1062,21 +1062,7 @@ LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 mi
                     return dict_result({"job_id": job_id, "status": JOB_STATUS_CANCELLED})
                 return dict_result(_job_status_payload(task))
 
-            # coder_jobs_list
-            try:
-                listed, next_cursor = await jobs.list_jobs(
-                    arguments.get("cursor"), arguments.get("limit")
-                )
-            except ValueError as exc:
-                return dict_result(
-                    {"status": "error", "error": str(exc), "error_type": "InvalidCursor"}
-                )
-            return dict_result(
-                {
-                    "jobs": [_job_status_payload(job) for job in listed],
-                    "next_cursor": next_cursor,
-                }
-            )
+            raise ValueError(f"Unknown job tool: {name}")
 
         async def _invoke() -> tuple[list, dict[str, Any] | None]:
             if name in JOB_TOOL_NAMES:
@@ -1123,8 +1109,11 @@ LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 mi
                     request = BranchDiscardRequest(**arguments)
                     result = await executor.discard_branch(request, client_id=client_id)
                     if not request.force and _is_unmerged_refusal(result.message):
+                        # Elicitation only works on legacy connections; on
+                        # 2026-07-28 there is no back-channel mid-call and this
+                        # returns None, so we keep refusing.
                         confirmed = await elicit_confirm(
-                            request_ctx.session,
+                            ctx.session,
                             f"Branch '{request.branch}' has unmerged commits. Delete it anyway?",
                             item_label=f"delete branch {request.branch}",
                         )
@@ -1146,9 +1135,9 @@ LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 mi
                     raise ValueError(f"Unknown tool: {name}")
 
             async def _execute() -> Any:
-                # Standard task-augmented calls already have a durable row from
-                # the SDK; only inline (sync) executions need their own.
-                if name not in TRACKED_SYNC_TOOLS or experimental.is_task:
+                # Every sync execution registers its own durable row so it stays
+                # observable and cancellable if the client disappears mid-flight.
+                if name not in TRACKED_SYNC_TOOLS:
                     return await _dispatch()
 
                 captured: list[Any] = []
@@ -1232,41 +1221,42 @@ LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 mi
                     {"status": "error", "error": str(e), "error_type": type(e).__name__}
                 )
 
-        if experimental.is_task:
-            session = request_ctx.session
-            progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
-
-            async def _work(task: Any) -> CallToolResult:
-                async with server_task_scope(
-                    task, session=session, progress_token=progress_token
-                ) as cancellation:
-                    texts, structured = await _invoke()
-                    if cancellation.is_set():
-                        # The task was cancelled while work was in flight. Sync
-                        # the SDK's cached status so it skips auto-completion of
-                        # an already-terminal task (avoids tearing down tasks).
-                        await refresh_task_after_cancel(task)
-                    return CallToolResult(
-                        content=list(texts), structuredContent=structured, isError=False
-                    )
-
-            return await experimental.run_task(_work)
-
         # Sync path: when the client passed a progressToken, bind a progress
         # scope so the ~10s streaming heartbeats from the driver reach the
         # client as notifications/progress instead of silence. This keeps
         # long sync calls (3-15 min) from hitting client timeouts. Without a
         # token there is nothing to send to — prefer coder_submit_* there.
-        progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
+        progress_token = (ctx.meta or {}).get("progress_token")
         if progress_token is not None:
-            session = request_ctx.session
-            callback = make_session_progress_callback(session, progress_token)
+            callback = make_session_progress_callback(ctx.session, progress_token)
             async with task_scope(f"sync-{name}", progress=callback):
-                return await _invoke()
+                texts, structured = await _invoke()
+        else:
+            texts, structured = await _invoke()
 
-        return await _invoke()
+        return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
 
-    return server
+    return Server(
+        "ninja-coder",
+        version="0.2.0",
+        **server_kwargs(
+            ServerMeta(
+                instructions="""Ninja Coder: delegate code writing to an AI agent.
+
+CRITICAL: Ninja only writes code — no bash, no tests, no file reading for you. You validate.
+Tools: coder_simple_task = tiny 1-2 line fix, in-place with safety-commit, no worktree;
+coder_execute_plan_sequential = ordered multi-step work in an isolated ninja/* worktree;
+coder_execute_plan_parallel = independent atomic steps; complexity='simple' in-place, 'complex' (default) worktree — never mix in one call.
+Isolated plan work is committed to a ninja/* branch and its checkout is removed right after the run. Review and integrate it with coder_branches_list, coder_branch_merge (ninja/* only, conflicts aborted), and coder_branch_discard.
+Spec format: GOOD = file, symbol, behavior, types, error handling (e.g. "In src/api/routes.py add POST /login ... 401 on failure").
+Ninja returns a summary only (files changed, brief description); you read files, run tests, review. Same request_key retries join the in-flight run.
+LONG TASKS: sync tools block the MCP connection for the whole run (often 3-15 min). For anything expected >60s prefer coder_submit_* then poll coder_job_status until terminal, then coder_job_result. Sync calls also emit progress notifications (~every 10s) when the client passes a progressToken — keep the token to avoid client timeouts.""",
+                kind="coder",
+            )
+        ),
+        on_list_tools=list_tools,
+        on_call_tool=call_tool,
+    )
 
 
 async def main_stdio() -> None:
@@ -1285,34 +1275,15 @@ async def main_stdio() -> None:
 
 
 async def main_http(host: str, port: int) -> None:
-    """Run the MCP server over HTTP with SSE."""
+    """Run the MCP server over HTTP (SSE at /sse, streamable HTTP at /mcp)."""
     import uvicorn
-    from mcp.server.sse import SseServerTransport
-    from starlette.requests import Request
-    from starlette.responses import Response
+
+    from ninja_common.mcp_http import build_asgi_app
 
     logger.info(f"Starting ninja-coder server (HTTP/SSE mode) on {host}:{port}")
 
     server = create_server()
-    sse = SseServerTransport("/messages")
-
-    async def handle_sse(request):
-        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-            await server.run(streams[0], streams[1], server.create_initialization_options())
-        return Response()
-
-    async def handle_messages(scope, receive, send):
-        await sse.handle_post_message(scope, receive, send)
-
-    async def app(scope, receive, send):
-        path = scope.get("path", "")
-        if path == "/sse":
-            request = Request(scope, receive, send)
-            await handle_sse(request)
-        elif path == "/messages" and scope.get("method") == "POST":
-            await handle_messages(scope, receive, send)
-        else:
-            await Response("Not Found", status_code=404)(scope, receive, send)
+    app = build_asgi_app(server, host=host)
 
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     server_instance = uvicorn.Server(config)

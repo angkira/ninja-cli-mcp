@@ -93,10 +93,7 @@ def test_cli_run_and_diagnose_success_live(tmp_path):
 def test_cli_run_and_diagnose_pytest_success_live(tmp_path):
     """Test live CLI execution of pytest passing scenario."""
     test_file = tmp_path / "test_sample.py"
-    test_file.write_text(
-        "def test_ok():\n"
-        "    assert 1 + 1 == 2\n"
-    )
+    test_file.write_text("def test_ok():\n    assert 1 + 1 == 2\n")
     proc = _run_cli_subprocess(
         [
             "run-and-diagnose",
@@ -115,7 +112,11 @@ def test_cli_run_and_diagnose_failure_and_root_cause_live(tmp_path):
     """Test live CLI execution of a failing command, verifying diagnosis and error extraction."""
     # Python assertion failure
     proc = _run_cli_subprocess(
-        ["run-and-diagnose", "--command", f"{sys.executable} -c 'assert 1 == 2, \"mismatch error\"'"],
+        [
+            "run-and-diagnose",
+            "--command",
+            f"{sys.executable} -c 'assert 1 == 2, \"mismatch error\"'",
+        ],
         cwd=tmp_path,
     )
     assert proc.returncode == 1
@@ -270,7 +271,9 @@ def test_cli_distill_logs_real_files_and_json(tmp_path, monkeypatch):
     def _custom_manager():
         return DaemonManager(cache_dir=tmp_path)
 
-    monkeypatch.setattr("ninja_agent.runner.RunnerToolExecutor._get_daemon_manager", lambda self: _custom_manager())
+    monkeypatch.setattr(
+        "ninja_agent.runner.RunnerToolExecutor._get_daemon_manager", lambda self: _custom_manager()
+    )
 
     # Test in-process CLI to verify integration with mocked daemon cache directory
     import io
@@ -350,7 +353,7 @@ async def test_live_mcp_server_stdio_client_invocation():
     async with stdio_client(params) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
             init_res = await session.initialize()
-            assert init_res.serverInfo.name == "ninja-agent"
+            assert init_res.server_info.name == "ninja-agent"
 
             # 1. agent_run_and_diagnose
             call_diag = await session.call_tool(
