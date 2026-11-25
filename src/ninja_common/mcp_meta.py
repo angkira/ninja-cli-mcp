@@ -34,6 +34,8 @@ from mcp.types import (
 
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from pydantic import BaseModel
 
 
@@ -275,11 +277,42 @@ async def elicit_confirm(
         return None
 
 
-def error_text_payload(error: str, error_type: str = "UpstreamError") -> CallToolResult:
-    """Minimal error payload (no outputSchema validation involved)."""
+def tool_call_result(
+    built: tuple[Sequence[TextContent | ResourceLink], dict[str, Any] | None],
+    *,
+    is_error: bool = False,
+) -> CallToolResult:
+    """Wrap a ``model_result``/``dict_result`` tuple in a ``CallToolResult``.
+
+    ``is_error`` marks *framework* failures only: an unknown tool name, a
+    request-model validation failure, or an unhandled exception escaping a
+    handler. The content block and ``structured_content`` stay identical to the
+    success shape so payload-parsing clients are unaffected. A tool that ran
+    and reports a business error inside its own envelope keeps
+    ``is_error=False``.
+    """
+    texts, structured = built
+    return CallToolResult(
+        content=list(texts),
+        structured_content=structured,
+        is_error=is_error,
+    )
+
+
+def error_text_payload(
+    error: str,
+    error_type: str = "UpstreamError",
+    *,
+    is_error: bool = True,
+) -> CallToolResult:
+    """Minimal error payload (no outputSchema validation involved).
+
+    ``is_error`` defaults to True because this shape is only used for failures;
+    pass False for a business-logic envelope that must stay a successful call.
+    """
     return CallToolResult(
         content=[pretty_json_text({"status": "error", "error": error, "error_type": error_type})],
-        is_error=True,
+        is_error=is_error,
     )
 
 

@@ -38,6 +38,7 @@ from ninja_common.mcp_meta import (
     model_result,
     server_icon,
     server_kwargs,
+    tool_call_result,
 )
 from ninja_common.mcp_tasks import SqliteTaskStore, make_session_progress_callback, task_scope
 from ninja_researcher.models import (
@@ -456,7 +457,7 @@ def create_server() -> Server:
         name = params.name
         arguments: dict[str, Any] = dict(params.arguments or {})
 
-        async def _invoke() -> tuple[list, dict[str, Any]]:
+        async def _invoke() -> tuple[list, dict[str, Any], bool]:
             client_id = "default"
             logger.info(f"[{client_id}] Tool called: {name}")
 
@@ -496,7 +497,8 @@ def create_server() -> Server:
                     result = await executor.deep_research_batch(request, client_id=client_id)
 
                 else:
-                    return dict_result({"error": f"Unknown tool: {name}"})
+                    texts, structured = dict_result({"error": f"Unknown tool: {name}"})
+                    return texts, structured, True
 
                 # Serialize result to JSON
                 result_json = result.model_dump()
@@ -504,17 +506,22 @@ def create_server() -> Server:
                     f"[{client_id}] Tool {name} completed with status: {result_json.get('status', 'unknown')}"
                 )
 
-                return model_result(result)
+                texts, structured = model_result(result)
+                return texts, structured, False
 
             except Exception as e:
+                # Framework-level failure (request-model validation or an
+                # unhandled handler exception): keep the envelope, mark the call
+                # as an error so clients branching on is_error see the failure.
                 logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
-                return dict_result(
+                texts, structured = dict_result(
                     {
                         "status": "error",
                         "error": str(e),
                         "error_type": type(e).__name__,
                     }
                 )
+                return texts, structured, True
 
         # Sync path heartbeat: forward progress as notifications/progress
         # when the client passed a progressToken (keeps long runs alive).
@@ -522,11 +529,11 @@ def create_server() -> Server:
         if progress_token is not None:
             callback = make_session_progress_callback(ctx.session, progress_token)
             async with task_scope(f"sync-{name}", progress=callback):
-                texts, structured = await _invoke()
+                texts, structured, is_error = await _invoke()
         else:
-            texts, structured = await _invoke()
+            texts, structured, is_error = await _invoke()
 
-        return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
+        return tool_call_result((texts, structured), is_error=is_error)
 
     # The lowlevel server runs no extension interceptors, so the Tasks
     # ``tools/call`` interceptor is composed here. ``call_tool`` itself is left

@@ -62,6 +62,7 @@ from ninja_common.mcp_meta import (
     apply_tool_meta,
     server_icon,
     server_kwargs,
+    tool_call_result,
 )
 from ninja_common.mcp_tasks import SqliteTaskStore, make_session_progress_callback, task_scope
 
@@ -410,7 +411,7 @@ def create_server() -> Server:
         name = params.name
         arguments: dict[str, Any] = dict(params.arguments or {})
 
-        async def _invoke_text() -> list[TextContent]:
+        async def _invoke_text() -> tuple[list[TextContent], bool]:
             try:
                 client_id = arguments.get("client_id", "default")
 
@@ -423,7 +424,7 @@ def create_server() -> Server:
                         TextContent(
                             type="text", text=json.dumps(exec_result.model_dump(), indent=2)
                         )
-                    ]
+                    ], False
 
                 elif name == "agent_tail_logs":
                     logs_request = AgentTailLogsRequest(**arguments)
@@ -434,7 +435,7 @@ def create_server() -> Server:
                         TextContent(
                             type="text", text=json.dumps(logs_result.model_dump(), indent=2)
                         )
-                    ]
+                    ], False
 
                 elif name == "agent_processes":
                     procs_request = AgentProcessesRequest(**arguments)
@@ -445,7 +446,7 @@ def create_server() -> Server:
                         TextContent(
                             type="text", text=json.dumps(procs_result.model_dump(), indent=2)
                         )
-                    ]
+                    ], False
 
                 elif name == "agent_jobs_overview":
                     jobs_request = AgentJobsOverviewRequest(**arguments)
@@ -456,7 +457,7 @@ def create_server() -> Server:
                         TextContent(
                             type="text", text=json.dumps(jobs_result.model_dump(), indent=2)
                         )
-                    ]
+                    ], False
 
                 elif name == "agent_analyze":
                     analyze_request = AgentAnalyzeRequest(**arguments)
@@ -467,7 +468,7 @@ def create_server() -> Server:
                         TextContent(
                             type="text", text=json.dumps(analyze_result.model_dump(), indent=2)
                         )
-                    ]
+                    ], False
 
                 elif name == "agent_review":
                     review_request = AgentReviewRequest(**arguments)
@@ -478,7 +479,7 @@ def create_server() -> Server:
                         TextContent(
                             type="text", text=json.dumps(review_result.model_dump(), indent=2)
                         )
-                    ]
+                    ], False
 
                 elif name == "agent_run_and_diagnose":
                     diag_request = AgentRunAndDiagnoseRequest(**arguments)
@@ -489,7 +490,7 @@ def create_server() -> Server:
                         TextContent(
                             type="text", text=json.dumps(diag_result.model_dump(), indent=2)
                         )
-                    ]
+                    ], False
 
                 elif name == "agent_exec_pipeline":
                     pipe_request = AgentExecPipelineRequest(**arguments)
@@ -500,7 +501,7 @@ def create_server() -> Server:
                         TextContent(
                             type="text", text=json.dumps(pipe_result.model_dump(), indent=2)
                         )
-                    ]
+                    ], False
 
                 elif name == "agent_distill_logs":
                     distill_request = AgentDistillLogsRequest(**arguments)
@@ -511,7 +512,7 @@ def create_server() -> Server:
                         TextContent(
                             type="text", text=json.dumps(distill_result.model_dump(), indent=2)
                         )
-                    ]
+                    ], False
 
                 elif name in _REMOVED_TOOLS:
                     raise ValueError(DELEGATE_MIGRATION)
@@ -520,6 +521,10 @@ def create_server() -> Server:
                     raise ValueError(f"Unknown tool: {name}")
 
             except Exception as e:
+                # Framework-level failure: unknown tool, request-model
+                # validation, or an unhandled exception escaping the handler.
+                # The body is unchanged; the call is marked as an error so
+                # clients branching on is_error do not read it as success.
                 logger.error(f"Error executing tool {name}: {e}", exc_info=True)
                 return [
                     TextContent(
@@ -532,10 +537,10 @@ def create_server() -> Server:
                             }
                         ),
                     )
-                ]
+                ], True
 
-        async def _invoke() -> tuple[list[TextContent], dict[str, Any]]:
-            texts = await _invoke_text()
+        async def _invoke() -> tuple[list[TextContent], dict[str, Any], bool]:
+            texts, is_error = await _invoke_text()
             structured: dict[str, Any] = {}
             if texts and getattr(texts[0], "type", "") == "text":
                 try:
@@ -544,7 +549,7 @@ def create_server() -> Server:
                         structured = parsed
                 except (json.JSONDecodeError, TypeError):
                     structured = {}
-            return texts, structured
+            return texts, structured, is_error
 
         # Progress forwarding: when the caller passed a progress token in
         # ``_meta``, bridge driver progress to ``notifications/progress``.
@@ -552,11 +557,11 @@ def create_server() -> Server:
         if progress_token is not None:
             callback = make_session_progress_callback(ctx.session, progress_token)
             async with task_scope(f"sync-{name}", progress=callback):
-                texts, structured = await _invoke()
+                texts, structured, is_error = await _invoke()
         else:
-            texts, structured = await _invoke()
+            texts, structured, is_error = await _invoke()
 
-        return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
+        return tool_call_result((texts, structured), is_error=is_error)
 
     # The lowlevel server runs no extension interceptors, so the Tasks
     # ``tools/call`` interceptor is composed here. ``call_tool`` itself is left

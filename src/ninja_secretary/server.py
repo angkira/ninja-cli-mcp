@@ -47,6 +47,7 @@ from ninja_common.mcp_meta import (
     model_result,
     server_icon,
     server_kwargs,
+    tool_call_result,
 )
 from ninja_common.mcp_tasks import SqliteTaskStore
 from ninja_secretary.models import (
@@ -107,10 +108,10 @@ TOOLS: list[Tool] = [
                 },
                 "repo_root": {
                     "type": "string",
-                    "description": "Repository root path (defaults to current directory)",
+                    "description": "Repository root path to search under (required)",
                 },
             },
-            "required": ["pattern"],
+            "required": ["pattern", "repo_root"],
         },
     ),
     Tool(
@@ -291,10 +292,11 @@ def _ingest_file_tool(files_ext: FilesExtension) -> Tool:
 
 def _as_call_result(
     built: tuple[list[TextContent | ResourceLink], dict[str, Any]],
+    *,
+    is_error: bool = False,
 ) -> CallToolResult:
     """Wrap a ``model_result``/``dict_result`` tuple in a ``CallToolResult``."""
-    texts, structured = built
-    return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
+    return tool_call_result(built, is_error=is_error)
 
 
 def create_server() -> Server:
@@ -405,6 +407,10 @@ def create_server() -> Server:
             )
 
         except Exception as e:
+            # Framework-level failure: unknown tool, request-model validation,
+            # or an exception escaping the handler. The body is unchanged, but
+            # the call is marked as an error so clients branching on is_error
+            # do not read it as success.
             logger.error(f"Error executing tool {name}: {e}", exc_info=True)
             return _as_call_result(
                 dict_result(
@@ -413,7 +419,8 @@ def create_server() -> Server:
                         "error": str(e),
                         "tool": name,
                     }
-                )
+                ),
+                is_error=True,
             )
 
     # The lowlevel server runs no extension interceptors, so the Tasks

@@ -79,6 +79,7 @@ from ninja_common.mcp_meta import (
     patch_resource_link,
     server_icon,
     server_kwargs,
+    tool_call_result,
 )
 from ninja_common.mcp_tasks import (
     ProgressCallback,
@@ -1117,7 +1118,7 @@ def create_server() -> Server:
         name = params.name
         arguments: dict[str, Any] = dict(params.arguments or {})
 
-        async def _handle_job_tool() -> tuple[list, dict[str, Any] | None]:
+        async def _handle_job_tool() -> tuple[list, dict[str, Any] | None, bool]:
             """Serve the always-available submit/poll background-job tools."""
             executor = get_executor()
             request_key = str(arguments.get("request_key") or "") or None
@@ -1126,7 +1127,8 @@ def create_server() -> Server:
                 try:
                     simple_request = SimpleTaskRequest(**arguments)
                 except ValidationError as exc:
-                    return dict_result(_validation_error_payload(exc))
+                    texts, structured = dict_result(_validation_error_payload(exc))
+                    return texts, structured, True
 
                 async def _simple_work() -> CallToolResult:
                     result = await executor.simple_task(simple_request, client_id="default")
@@ -1141,13 +1143,15 @@ def create_server() -> Server:
                     return _job_handle_payload(task, jobs.poll_interval_ms)
 
                 handle = await _submit_or_join(request_key, _submit_simple)
-                return dict_result(handle)
+                texts, structured = dict_result(handle)
+                return texts, structured, False
 
             if name == "coder_submit_sequential":
                 try:
                     sequential_request = SequentialPlanRequest(**arguments)
                 except ValidationError as exc:
-                    return dict_result(_validation_error_payload(exc))
+                    texts, structured = dict_result(_validation_error_payload(exc))
+                    return texts, structured, True
 
                 async def _sequential_work() -> CallToolResult:
                     result = await executor.execute_plan_sequential(
@@ -1166,13 +1170,15 @@ def create_server() -> Server:
                     return _job_handle_payload(task, jobs.poll_interval_ms)
 
                 handle = await _submit_or_join(request_key, _submit_sequential)
-                return dict_result(handle)
+                texts, structured = dict_result(handle)
+                return texts, structured, False
 
             if name == "coder_submit_parallel":
                 try:
                     parallel_request = ParallelPlanRequest(**arguments)
                 except ValidationError as exc:
-                    return dict_result(_validation_error_payload(exc))
+                    texts, structured = dict_result(_validation_error_payload(exc))
+                    return texts, structured, True
 
                 async def _parallel_work() -> CallToolResult:
                     result = await executor.execute_plan_parallel(
@@ -1191,7 +1197,8 @@ def create_server() -> Server:
                     return _job_handle_payload(task, jobs.poll_interval_ms)
 
                 handle = await _submit_or_join(request_key, _submit_parallel)
-                return dict_result(handle)
+                texts, structured = dict_result(handle)
+                return texts, structured, False
 
             if name == "coder_jobs_list":
                 try:
@@ -1199,21 +1206,38 @@ def create_server() -> Server:
                         arguments.get("cursor"), arguments.get("limit")
                     )
                 except ValueError as exc:
-                    return dict_result(
+                    # Tool-level (business) error envelope: the call itself
+                    # succeeded, so it stays a non-error result.
+                    texts, structured = dict_result(
                         {"status": "error", "error": str(exc), "error_type": "InvalidCursor"}
                     )
-                return dict_result(
+                    return texts, structured, False
+                texts, structured = dict_result(
                     {
                         "jobs": [_job_status_payload(job) for job in listed],
                         "next_cursor": next_cursor,
                     }
                 )
+                return texts, structured, False
 
-            job_id = str(arguments.get("job_id") or "").strip()
+            raw_job_id = arguments.get("job_id")
+            if raw_job_id is not None and not isinstance(raw_job_id, str):
+                # The schema declares job_id as a string; coercing 12345 to
+                # "12345" hides a client bug behind a confusing UnknownJob.
+                texts, structured = dict_result(
+                    {
+                        "job_id": "",
+                        "status": "error",
+                        "error": "job_id must be a string",
+                        "error_type": "InvalidInput",
+                    }
+                )
+                return texts, structured, True
+            job_id = (raw_job_id or "").strip()
             if not job_id:
                 # The SDK no longer validates ``input_schema`` before dispatch,
                 # so the required ``job_id`` is enforced here.
-                return dict_result(
+                texts, structured = dict_result(
                     {
                         "job_id": "",
                         "status": "error",
@@ -1221,6 +1245,7 @@ def create_server() -> Server:
                         "error_type": "InvalidInput",
                     }
                 )
+                return texts, structured, True
             unknown_payload = {
                 "job_id": job_id,
                 "status": "error",
@@ -1231,31 +1256,36 @@ def create_server() -> Server:
             if name == "coder_job_status":
                 task = await jobs.status(job_id)
                 if task is None:
-                    return dict_result(unknown_payload)
-                return dict_result(_job_status_payload(task))
+                    texts, structured = dict_result(unknown_payload)
+                    return texts, structured, False
+                texts, structured = dict_result(_job_status_payload(task))
+                return texts, structured, False
 
             if name == "coder_job_result":
                 task = await jobs.status(job_id)
                 if task is None:
-                    return dict_result(unknown_payload)
+                    texts, structured = dict_result(unknown_payload)
+                    return texts, structured, False
                 if task.status == JOB_STATUS_WORKING:
-                    return dict_result(
+                    texts, structured = dict_result(
                         {
                             "job_id": job_id,
                             "status": task.status,
                             "poll_interval_ms": jobs.poll_interval_ms,
                         }
                     )
+                    return texts, structured, False
                 stored = await jobs.result(job_id)
                 stored_text, stored_structured = _stored_result(stored)
                 if stored_text is None:
-                    return dict_result(
+                    texts, structured = dict_result(
                         {
                             "job_id": job_id,
                             "status": task.status,
                             "status_message": task.status_message,
                         }
                     )
+                    return texts, structured, False
                 if stored_structured is None:
                     try:
                         parsed = json.loads(stored_text)
@@ -1265,17 +1295,21 @@ def create_server() -> Server:
                     except (json.JSONDecodeError, TypeError):
                         stored_structured = {"text": stored_text}
                 blocks: list = [TextContent(type="text", text=stored_text)]
-                return blocks, stored_structured
+                return blocks, stored_structured, False
 
             if name == "coder_job_cancel":
                 task = await jobs.cancel(job_id)
                 if task is None:
-                    return dict_result({"job_id": job_id, "status": JOB_STATUS_CANCELLED})
-                return dict_result(_job_status_payload(task))
+                    texts, structured = dict_result(
+                        {"job_id": job_id, "status": JOB_STATUS_CANCELLED}
+                    )
+                    return texts, structured, False
+                texts, structured = dict_result(_job_status_payload(task))
+                return texts, structured, False
 
             raise ValueError(f"Unknown job tool: {name}")
 
-        async def _invoke() -> tuple[list, dict[str, Any] | None] | InputRequiredResult:
+        async def _invoke() -> tuple[list, dict[str, Any] | None, bool] | InputRequiredResult:
             if name in JOB_TOOL_NAMES:
                 return await _handle_job_tool()
             client_id = "default"
@@ -1373,13 +1407,14 @@ def create_server() -> Server:
                     logger.error(
                         f"[{client_id}] Tool {name} returned invalid result: {type(result).__name__}"
                     )
-                    return dict_result(
+                    texts, structured = dict_result(
                         {
                             "status": "error",
                             "error": f"Tool {name} produced no result (internal error)",
                             "error_type": "InternalError",
                         }
                     )
+                    return texts, structured, True
 
                 result_json = result.model_dump()
                 logger.info(
@@ -1389,7 +1424,7 @@ def create_server() -> Server:
                 texts, structured = model_result(
                     result, extra_blocks=[link for link in links if link is not None]
                 )
-                return texts, structured
+                return texts, structured, False
 
             except ValidationError as e:
                 # Surface our friendly, indexed plan errors instead of pydantic's
@@ -1402,17 +1437,19 @@ def create_server() -> Server:
                         messages.append(msg)
                 detail = "\n".join(messages) or "Invalid tool input."
                 logger.warning(f"[{client_id}] Tool {name} input rejected: {detail}")
-                return dict_result(
+                texts, structured = dict_result(
                     {
                         "status": "error",
                         "error": detail,
                         "error_type": "InvalidPlanInput",
                     }
                 )
+                return texts, structured, True
 
             except ValueError as e:
                 if "Unknown tool" in str(e):
-                    return dict_result({"error": str(e)})
+                    texts, structured = dict_result({"error": str(e)})
+                    return texts, structured, True
                 raise
 
             except MCPError:
@@ -1422,10 +1459,12 @@ def create_server() -> Server:
                 raise
 
             except Exception as e:
+                # Unhandled exception escaping the handler: framework-level.
                 logger.error(f"[{client_id}] Tool {name} failed: {e}", exc_info=True)
-                return dict_result(
+                texts, structured = dict_result(
                     {"status": "error", "error": str(e), "error_type": type(e).__name__}
                 )
+                return texts, structured, True
 
         # Sync path: when the client passed a progressToken, bind a progress
         # scope so the ~10s streaming heartbeats from the driver reach the
@@ -1442,8 +1481,8 @@ def create_server() -> Server:
 
         if isinstance(outcome, InputRequiredResult):
             return outcome
-        texts, structured = outcome
-        return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
+        texts, structured, is_error = outcome
+        return tool_call_result((texts, structured), is_error=is_error)
 
     # The lowlevel server runs no extension interceptors, so the Tasks
     # ``tools/call`` interceptor is composed here. ``call_tool`` itself is left
