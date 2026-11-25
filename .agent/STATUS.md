@@ -2,10 +2,89 @@
 
 ## Session Information
 
-**Session ID:** pi-cli-integration-20261011
-**Started At:** 2026-10-11
-**Last Updated:** 2026-10-11
-**Session Type:** Feature - Pi (pi.dev) CLI operator & MCP init target integration
+**Session ID:** mcp-2026-07-28
+**Started At:** 2026-11-25
+**Last Updated:** 2026-11-25
+**Session Type:** Feature/Major release - MCP SDK 2.3.0 port + protocol 2026-07-28 (Skills, Tasks, Elicitation, File Uploads)
+
+## Latest Session (2026-11-25): mcp-2026-07-28 — MCP SDK 2.3.0 port + Skills/Tasks/Elicitation/File-Uploads
+
+**Active Task:** Port all four servers to MCP SDK `2.3.0` / protocol revision
+`2026-07-28` and implement the four capabilities shipped on top of it (Skills over
+MCP, Tasks extension, MRTR elicitation, experimental File Uploads).
+**Status:** COMPLETED and released. **v2.0.0** tagged and pushed, published to PyPI;
+`main` == `origin/main` at `91ab555`.
+
+**Deliverables:**
+1. **Shared protocol-extension package — `src/ninja_common/mcp_ext/`:**
+   - `protocol.py` — `2026-07-28` version constant, client-extension gating
+     (`client_declares`, `require_extension`).
+   - `models.py` — wire models for skills/tasks/files (snake_case attrs, camelCase wire).
+   - `tasks_store.py` — `TaskStore` port + `SqliteTaskStore` (reuses the `tasks` table,
+     MCP `taskId` == existing job id) + `InMemoryTaskStore`.
+   - `tasks.py` — `TasksExtension`: `tasks/get`, `tasks/update`, `tasks/cancel`.
+   - `tasks_client.py` — client-side task helper used by tests and examples.
+   - `skills.py` — `SkillsExtension` + `SkillCatalog`: `skills/list`, `skills/get`,
+     sha256/size manifests, files served through Resources.
+   - `apply.py` — applies `Extension` objects to the lowlevel `Server`: registers
+     `methods()` bindings, advertises `settings()`, refuses to replace handlers
+     (the composition-tier `MCPServer` behavior, done by hand).
+   - `wiring.py` — per-module skill root resolution (`NINJA_SKILLS_DIR` override),
+     catalog loading, resource handlers, `build_protocol_extensions`.
+   - `files.py` — `FileUploads`: `x-mcp-file` schema helper, inline decode + digest/size
+     validation, download targets in `_meta` only.
+2. **Transports — `src/ninja_common/mcp_http.py`:** `build_asgi_app` serves modern
+   Streamable HTTP at `/mcp` side by side with the legacy `/sse` + `/messages` on the
+   same port; used by all four modules.
+3. **All four `src/ninja_*/server.py`** ported to the v2 lowlevel API
+   (constructor-registered handlers, `on_list_tools`/`on_call_tool`/…), serving both
+   the `2026-07-28` and legacy revisions from one server object.
+4. **Skill bundles — `src/ninja_common/dist/skills/<module>/`:** 11 `SKILL.md`
+   directories (coder 4, researcher 3, secretary 2, agent 2).
+5. **Tests:** `tests/test_mcp_protocol_extensions.py`, `tests/test_mcp_elicitation.py`,
+   `tests/test_common/mcp_ext/` (`test_tasks.py`, `test_skills.py`,
+   `test_skill_bundles.py`, `test_files.py`).
+6. **Docs:** new `docs/MCP_PROTOCOL_2026.md`; `docs/MCP_TASKS.md` rewritten for the
+   extension verbs; corrected `docs/RESOURCES_API.md`, `docs/PROMPTS_API.md`, and the
+   secretary/researcher docs that described surfaces which did not exist.
+
+**Commits (main, pushed):** `0705f20` … `d068025` (merge of `feat/mcp-2026-07-28`),
+`91ab555` chore(release): bump version to 2.0.0 (tag `v2.0.0`).
+
+**Verification:**
+- Full suite in the primary checkout: **1953 passed, 26 skipped**, plus 5 known
+  pre-existing environment failures (see below) — none caused by this port.
+- `ruff check src` / `ruff format --check src`: clean (131 files formatted);
+  `mypy src`: no issues in 127 source files. (Ruff/mypy project config excludes
+  `tests/`.)
+- Live `/mcp` handshake with a `2026-07-28` client proven against a running server
+  (`server/discover`, extension advertisement, `resultType` envelope).
+- PyPI `ninja-mcp==2.0.0` published and verified via the JSON API.
+- Known pre-existing failures (environment, not regressions):
+  1. `tests/test_integration.py::test_multi_agent_task_execution`
+  2. `tests/test_integration.py::test_structured_logging_integration`
+  3. `tests/test_auto_updater.py::test_find_editable_repo_detects_real_layout`
+  4. `tests/test_ninja_fixed.py::test_no_old_servers_running`
+  5. `tests/test_coder/test_opencode_e2e.py::TestMetadata::test_metadata_structure`
+     and `::TestCommandStructure::test_command_order` (full-suite order only)
+
+**Decisions (non-obvious ones):**
+1. **Skills and Tasks are hand-written extensions.** `mcp 2.3.0` ships no `Skills`
+   class and no tasks dispatch (`mcp_types` has the task models, nothing routes
+   `tasks/*`). Both are implemented as our own `Extension`s in `mcp_ext/` rather than
+   waiting for SDK support.
+2. **Tasks and custom `resultType` are `2026-07-28` only.** Returning them to a legacy
+   client errors inside the SDK, so task creation and `resultType` are gated on the
+   client declaring the extension in `_meta`.
+3. **File uploads are inline-only and opt-in** (`NINJA_MCP_ENABLE_FILE_UPLOADS=1`).
+   Out-of-band upload was rejected: extensions cannot add HTTP routes and the SDK's
+   `custom_route` is unauthenticated, so accepting an upload URL would be an
+   unauthenticated write path.
+4. **Elicitation uses MRTR on `2026-07-28`** (`InputRequiredResult` + sealed
+   `request_state`, client retries with `inputResponses`) and push elicitation on
+   legacy connections; one code path, era-dependent behavior.
+5. **`tasks/result` and `tasks/list` no longer exist** in the extension. Results are
+   returned inside `tasks/get` when the task reaches a terminal state.
 
 ## Latest Session (2026-10-11): Pi integration (pi.dev)
 

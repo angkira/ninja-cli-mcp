@@ -2,6 +2,29 @@
 
 ## Active Milestones
 
+### Milestone: MCP 2.0 — SDK 2.3.0 / protocol 2026-07-28
+**Priority:** High
+**Status:** COMPLETED 2026-11-25 (released v2.0.0, commit `91ab555`, tag pushed, PyPI published)
+
+**Description:**
+Port all four servers to `mcp>=2.3.0` and serve protocol revision `2026-07-28`
+alongside legacy revisions from one server object, implementing the four
+capabilities shipped on that revision: Skills over MCP, the Tasks extension, MRTR
+elicitation, and experimental inline file uploads.
+
+**Files:**
+- [x] `src/ninja_common/mcp_ext/` — `protocol.py`, `models.py`, `tasks_store.py`, `tasks.py`, `tasks_client.py`, `skills.py`, `apply.py`, `wiring.py`, `files.py`
+- [x] `src/ninja_common/mcp_http.py` — `build_asgi_app`: `/mcp` Streamable HTTP + legacy `/sse`
+- [x] `src/ninja_{coder,researcher,secretary,agent}/server.py` — v2 lowlevel constructor-registered handlers
+- [x] `src/ninja_common/dist/skills/<module>/` — 11 `SKILL.md` bundles (coder 4, researcher 3, secretary 2, agent 2)
+- [x] `tests/test_mcp_protocol_extensions.py`, `tests/test_mcp_elicitation.py`, `tests/test_common/mcp_ext/*`
+- [x] `docs/MCP_PROTOCOL_2026.md`; `docs/MCP_TASKS.md` rewritten; `RESOURCES_API`/`PROMPTS_API`/secretary/researcher docs corrected
+
+**Verification:** full suite 1953 passed / 26 skipped + 5 pre-existing environment
+failures; `ruff`/`mypy` clean on `src`; live `/mcp` 2026-07-28 handshake; PyPI 2.0.0.
+
+---
+
 ### Task: Pi (pi.dev) CLI operator & MCP init integration
 **Priority:** High
 **Status:** COMPLETED 2026-10-11
@@ -333,6 +356,99 @@ Create detailed implementation plan with:
 ---
 
 ## Backlog
+
+### [Bug] QA model routing resolves `quick` to `qwen/qwen3-coder` (rejected by operator)
+**Priority:** HIGH
+**Status:** OPEN (verified 2026-11-25 during MCP 2.0 work, not fixed)
+
+**Description:**
+QA model routing resolves `task_type=quick` to `qwen/qwen3-coder`, which the
+operator rejects: `exit_code 1`, 173-byte stdout, 0.2s runtime. This breaks
+`tests/test_integration.py::test_structured_logging_integration` and
+`tests/test_integration.py::test_multi_agent_task_execution` on **every** commit,
+including pre-2.0.0 commits. The root cause lies outside this repo's routing files.
+
+---
+
+### [Bug] `test_find_editable_repo_detects_real_layout` is checkout-name dependent
+**Priority:** Low
+**Status:** OPEN (verified 2026-11-25)
+
+**Description:**
+`tests/test_auto_updater.py::test_find_editable_repo_detects_real_layout` asserts on
+the real repository layout and fails in any worktree whose directory name differs
+from the expected checkout name.
+
+---
+
+### [Bug] `test_no_old_servers_running` conflicts with the user's own daemons
+**Priority:** Low
+**Status:** OPEN (verified 2026-11-25)
+
+**Description:**
+`tests/test_ninja_fixed.py::test_no_old_servers_running` treats the operator's
+`uv/tools/ninja-mcp` daemons (ports 8100/8101/8106/8107) as "old servers" and fails
+whenever they are running. Environment conflict, not a code regression.
+
+---
+
+### [Bug] `test_opencode_e2e` fails only in full-suite order
+**Priority:** Low
+**Status:** OPEN (verified 2026-11-25)
+
+**Description:**
+`tests/test_coder/test_opencode_e2e.py::TestMetadata::test_metadata_structure` and
+`::TestCommandStructure::test_command_order` pass in isolation but fail in full-suite
+order — cross-test pollution (leaked env/config from earlier tests).
+
+---
+
+### [Bug] `secretary_file_search` schema under-declares required fields
+**Priority:** Medium
+**Status:** OPEN (verified 2026-11-25)
+
+**Description:**
+The `secretary_file_search` tool schema marks only `pattern` as required while the
+request model also requires `repo_root`, so a schema-valid call fails validation at
+runtime.
+
+---
+
+### [Bug] Secretary schemas under-expose model capabilities
+**Priority:** Medium
+**Status:** OPEN (verified 2026-11-25)
+
+**Description:**
+- `secretary_session_report` schema exposes only `session_id`, while the model also
+  accepts `action` / `updates` — those paths are unreachable from MCP clients.
+- `secretary_codebase_report` advertises include/exclude pattern arguments that the
+  executor ignores.
+
+---
+
+### [Refactor] Deduplicate stdio + `/sse` + `/mcp` wiring; legacy-only daemon bridge
+**Priority:** Medium
+**Status:** OPEN (verified 2026-11-25)
+
+**Description:**
+The module stdio + `/sse` + `/mcp` transport stack is duplicated per server through
+`mcp_http.build_asgi_app`. The daemon bridge still speaks legacy SSE, so the
+daemon-served path does not expose `2026-07-28`-only features (Skills, Tasks, MRTR
+elicitation, file uploads) to clients routed through it.
+
+---
+
+### [Ops] Upgrade the live `uv/tools/ninja-mcp` install from 1.9.2 to 2.0.0
+**Priority:** Medium
+**Status:** OPEN — manual user action required (verified 2026-11-25)
+
+**Description:**
+The live uv-tool install (`~/.local/share/uv/tools/ninja-mcp`, ports
+8100/8101/8106/8107) is still 1.9.2 and serves the pre-2.0 code. It needs a manual
+`uv tool upgrade ninja-mcp` plus a daemon restart by the user; the release itself did
+not touch running processes.
+
+---
 
 ### [Research] Oh My OpenCode Integration Analysis
 **Priority:** HIGH
