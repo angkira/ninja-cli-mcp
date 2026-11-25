@@ -357,6 +357,40 @@ Create detailed implementation plan with:
 
 ## Backlog
 
+### [Bug] `daemon restart` is a silent no-op under systemd
+**Priority:** HIGH
+**Status:** OPEN (observed 2026-11-25)
+
+**Description:**
+`src/ninja_common/daemon.py` `restart()` (≈:814) is `stop()` + `start()`. `stop()`
+(≈:687) only acts on PID files; systemd-managed units (`ninja-mcp@<module>.service`)
+have none, so it logs "not running" and returns `True` without doing anything.
+`start()` (≈:547) then sees the port already served and returns immediately.
+
+Observed 2026-11-25: `ninja-mcp daemon restart` printed `✓` for all four modules
+while every MainPID stayed unchanged; the process kept running ~6-hour-old 1.9.x
+code after an upgrade to 2.0.0. The only `systemctl` call in the codebase is
+read-only `is-active` (≈:390); there is no systemd restart path in `ninja-mcp` or
+`ninja-daemon`.
+
+**Fix direction:**
+Detect systemd ownership (unit active + MainPID present) and restart via the user
+unit; otherwise fall back to the PID-file path. Add a test.
+
+---
+
+### [Bug] `ninja-mcp version` / `daemon status` report the wrong version for running daemons
+**Priority:** Medium
+**Status:** OPEN (observed 2026-11-25)
+
+**Description:**
+The reported version comes from `__import__(module).__version__` inside the CLI
+process, so after an upgrade it reports the new version while the running daemon
+is still the old code. Report the version the live process actually loaded (or
+clearly label it as the on-disk version).
+
+---
+
 ### [Bug] QA model routing resolves `quick` to `qwen/qwen3-coder` (rejected by operator)
 **Priority:** HIGH
 **Status:** OPEN (verified 2026-11-25 during MCP 2.0 work, not fixed)
