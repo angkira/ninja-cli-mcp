@@ -1,325 +1,199 @@
 # Ninja Secretary Module
 
-📋 Codebase exploration, documentation, and session tracking via MCP.
+📋 Codebase reports, file analysis, search, and session tracking via MCP.
 
 ## Overview
 
-The Secretary module provides comprehensive codebase exploration and documentation capabilities through the Model Context Protocol (MCP). It enables AI assistants to read files, search codebases, generate reports, track sessions, and manage documentation.
+The Secretary module serves **six** MCP tools. It reads and reports; it never
+writes source code. Documentation edits are the one write it performs, and only
+inside `docs/`.
 
-## Features
-
-### ✅ File Reading
-- Read entire files or specific line ranges
-- UTF-8 with error handling for binary files
-- Relative path support
-- File access tracking
-
-### ✅ File Search
-- Glob pattern matching (`**/*.py`, `src/**/*.ts`)
-- File metadata (size, modified time)
-- Result limiting and sorting
-- Fast recursive search
-
-### ✅ Content Search (Grep)
-- Regex pattern matching
-- Context lines before/after matches
-- File pattern filtering
-- Line number tracking
-
-### ✅ File Tree Generation
-- Hierarchical directory structure
-- File sizes and metadata
-- Configurable depth (1-10 levels)
-- Auto-filters hidden files and common directories
-
-### ✅ Codebase Reports
-- Project structure analysis
-- Code metrics (lines, file types)
-- Dependency detection
-- Markdown formatted output
-
-### ✅ Documentation Summary
-- Auto-discover README, CONTRIBUTING, markdown files
-- Per-document summaries
-- Combined overview
-- Configurable patterns
-
-### ✅ Session Tracking
-- One report per session
-- Track tools used and files accessed
-- Persistent session state
-- Summary updates
-
-### ✅ Documentation Management
-- Update README, API docs, CHANGELOG
-- Three modes: replace, append, prepend
-- Auto-create directories
-- Module-specific paths
+> Earlier versions of this page advertised `secretary_read_file`,
+> `secretary_grep`, `secretary_file_tree` and git tools (`secretary_git_status`,
+> `secretary_git_diff`, …). Those tools are **not served** — the request models
+> still exist in `models.py`, but no server method exposes them. Use
+> `secretary_analyse_file` (whole file) and `secretary_file_search` (glob +
+> optional content regex) instead.
 
 ## Installation
 
 ```bash
-# Install with secretary dependencies
-pip install -e ".[secretary]"
-
-# Or install all modules
-pip install -e ".[all]"
+pip install -e ".[secretary]"     # secretary dependencies
+pip install -e ".[all]"           # everything
 ```
 
 ## Usage
 
-### Start the Server
-
 ```bash
-# Run as standalone server
-python -m ninja_secretary.server
-
-# Or use the entry point
+# stdio (default)
 ninja-secretary
+
+# HTTP: streamable at /mcp, legacy SSE at /sse + /messages
+ninja-secretary --http --port 8102
 ```
 
-### MCP Tools
+## MCP Tools
 
-#### 1. Read File
+### 1. `secretary_analyse_file`
 
-```python
-{
-  "tool": "secretary_read_file",
-  "arguments": {
-    "file_path": "src/main.py",
-    "start_line": 10,  # Optional
-    "end_line": 50     # Optional
-  }
-}
+Analyse one file: language, line count, structure (functions, classes, imports),
+a preview, and a short model-written summary.
+
+```json
+{ "file_path": "/path/to/project/src/app.py" }
 ```
 
-**Returns:**
 ```json
 {
   "status": "ok",
-  "file_path": "src/main.py",
-  "content": "...",
-  "line_count": 234
-}
-```
-
-#### 2. File Search
-
-```python
-{
-  "tool": "secretary_file_search",
-  "arguments": {
-    "pattern": "**/test_*.py",
-    "repo_root": "/path/to/repo",
-    "max_results": 100
+  "message": "File analysis completed successfully",
+  "result": {
+    "file": "/path/to/project/src/app.py",
+    "language": "python",
+    "lines_total": 7,
+    "structure": {
+      "functions": [{ "name": "add" }, { "name": "hello" }],
+      "classes": [{ "name": "Greeter" }],
+      "imports": []
+    },
+    "summary": "{\"status\":\"ok\",\"summary\":\"A 7-line Python module providing …\",\"touched_paths\":[]}",
+    "preview": "def add(a, b):\n    return a + b\n…"
   }
 }
 ```
 
-**Returns:**
+- `file_path` must exist and be a file; otherwise `status: "error"` with the
+  reason and an empty `result`.
+- Reads UTF-8 with replacement, so a binary file does not crash the call.
+- Task-enabled for 2026-07-28 clients that declared
+  `io.modelcontextprotocol/tasks` (see [MCP_PROTOCOL_2026.md](../MCP_PROTOCOL_2026.md)).
+
+### 2. `secretary_file_search`
+
+Find files by glob, optionally filtered by a content regex.
+
+```json
+{
+  "pattern": "**/*.py",
+  "repo_root": "/path/to/project",
+  "content_regex": "async def \\w+"
+}
+```
+
 ```json
 {
   "status": "ok",
   "matches": [
-    {
-      "path": "tests/test_main.py",
-      "size": 4567,
-      "modified": "2024-01-15T10:30:00"
-    }
+    { "path": "src/app.py", "size": 90, "modified": "2026-11-25T17:16:32.119644" }
   ],
-  "total_count": 23,
-  "truncated": false
+  "total_count": 1,
+  "truncated": false,
+  "message": ""
 }
 ```
 
-#### 3. Grep
+- `repo_root` is **required** by the implementation even though the advertised
+  schema lists only `pattern` as required; omitting it returns
+  `{"success": false, "error": "1 validation error … repo_root Field required"}`.
+- Paths in `matches` are relative to `repo_root`.
+- `.git`, `node_modules`, `__pycache__`, `venv` and `.venv` are skipped, as are
+  files over 5 MiB.
+- An invalid `content_regex` returns `status: "error"` with the regex problem in
+  `message`; it never raises.
 
-```python
-{
-  "tool": "secretary_grep",
-  "arguments": {
-    "pattern": "def \\w+\\(",
-    "repo_root": "/path/to/repo",
-    "file_pattern": "**/*.py",
-    "context_lines": 2,
-    "max_results": 100
-  }
-}
+### 3. `secretary_codebase_report`
+
+Project structure, file counts, language mix, metrics, and a model-written
+architecture summary in Markdown.
+
+```json
+{ "repo_root": "/path/to/project" }
 ```
 
-**Returns:**
 ```json
 {
   "status": "ok",
-  "pattern": "def \\w+\\(",
-  "matches": [
-    {
-      "file_path": "src/main.py",
-      "line_number": 42,
-      "line_content": "def process_data(input):",
-      "context_before": ["", "    # Process the input data"],
-      "context_after": ["    result = transform(input)", "    return result"]
-    }
-  ],
-  "total_count": 87,
-  "truncated": false
-}
-```
-
-#### 4. File Tree
-
-```python
-{
-  "tool": "secretary_file_tree",
-  "arguments": {
-    "repo_root": "/path/to/repo",
-    "max_depth": 3,
-    "include_sizes": true,
-    "include_git_status": false
-  }
-}
-```
-
-**Returns:**
-```json
-{
-  "status": "ok",
-  "tree": {
-    "name": "repo",
-    "path": ".",
-    "type": "directory",
-    "children": [...]
-  },
-  "total_files": 234,
-  "total_dirs": 45,
-  "total_size": 1234567
-}
-```
-
-#### 5. Codebase Report
-
-```python
-{
-  "tool": "secretary_codebase_report",
-  "arguments": {
-    "repo_root": "/path/to/repo",
-    "include_metrics": true,
-    "include_dependencies": true,
-    "include_structure": true
-  }
-}
-```
-
-**Returns:**
-```json
-{
-  "status": "ok",
-  "report": "# Codebase Report: repo\n\n...",
+  "report": "# Codebase Report: project\n\n**Generated:** …\n\n## Project Structure\n…",
   "metrics": {
-    "file_count": 234,
-    "total_lines": 15234,
-    "extensions": {".py": 120, ".js": 45}
+    "file_count": 2,
+    "dir_count": 0,
+    "total_size_mb": 2.57e-05,
+    "total_lines": 2,
+    "extensions": { "md": 1, "py": 1 },
+    "dependencies": []
   },
-  "file_count": 234
+  "file_count": 2
 }
 ```
 
-#### 6. Document Summary
+- The tool schema also advertises `include_patterns` / `exclude_patterns`; the
+  executor ignores both (the request model has no such fields). Use
+  `secretary_file_search` to scope a subset.
+- Task-enabled on 2026-07-28 for declaring clients.
 
-```python
+### 4. `secretary_document_summary`
+
+Summarise documentation: per-file headings/first paragraphs plus a combined
+overview.
+
+```json
 {
-  "tool": "secretary_document_summary",
-  "arguments": {
-    "repo_root": "/path/to/repo",
-    "doc_patterns": ["**/*.md", "**/README*", "**/CONTRIBUTING*"]
-  }
+  "repo_root": "/path/to/project",
+  "doc_patterns": ["**/*.md", "**/README*", "**/CONTRIBUTING*"]
 }
 ```
 
-**Returns:**
 ```json
 {
   "status": "ok",
   "summaries": [
-    {
-      "path": "README.md",
-      "title": "README.md",
-      "summary": "...",
-      "size": 4567
-    }
+    { "path": "README.md", "title": "README.md", "summary": "# Demo", "size": 43 }
   ],
-  "combined_summary": "...",
-  "doc_count": 12
+  "combined_summary": "**README.md**: # Demo",
+  "doc_count": 1
 }
 ```
 
-#### 7. Session Report
+### 5. `secretary_session_report`
 
-```python
-# Create new session
-{
-  "tool": "secretary_session_report",
-  "arguments": {
-    "session_id": "my-session-123",
-    "action": "create",
-    "updates": {
-      "metadata": {"user": "alice", "task": "code-review"}
-    }
-  }
-}
+Read the tracked session state: start time, last update, tools used, files
+accessed, summary, metadata.
 
-# Update session
-{
-  "tool": "secretary_session_report",
-  "arguments": {
-    "session_id": "my-session-123",
-    "action": "update",
-    "updates": {
-      "tools_used": ["read_file", "grep"],
-      "files_accessed": ["src/main.py", "tests/test_main.py"],
-      "summary": "Reviewed authentication implementation"
-    }
-  }
-}
-
-# Get session
-{
-  "tool": "secretary_session_report",
-  "arguments": {
-    "session_id": "my-session-123",
-    "action": "get"
-  }
-}
+```json
+{ "session_id": "my-session" }
 ```
 
-**Returns:**
 ```json
 {
-  "session_id": "my-session-123",
-  "started_at": "2024-01-15T10:00:00",
-  "last_updated": "2024-01-15T10:30:00",
-  "tools_used": ["read_file", "grep", "file_search"],
-  "files_accessed": ["src/main.py", "tests/test_main.py"],
-  "summary": "Reviewed authentication implementation",
-  "metadata": {"user": "alice", "task": "code-review"}
+  "session_id": "my-session",
+  "started_at": "2026-11-25T17:18:28.889640",
+  "last_updated": "2026-11-25T17:18:28.889647",
+  "tools_used": [],
+  "files_accessed": [],
+  "summary": "No session data",
+  "metadata": {}
 }
 ```
 
-#### 8. Update Documentation
+- Omitting `session_id` returns an index of known sessions.
+- The request model also accepts `action` (`get` | `update` | `create`, default
+  `get`) and `updates`, but the advertised schema exposes only `session_id`;
+  treat those as internal.
 
-```python
+### 6. `secretary_update_documentation`
+
+Write documentation under `docs/<module_name>/`: `README.md`, `API.md` or
+`CHANGELOG.md`, with `mode` = `replace` | `append` | `prepend`.
+
+```json
 {
-  "tool": "secretary_update_doc",
-  "arguments": {
-    "module_name": "coder",
-    "doc_type": "readme",  # or "api", "changelog"
-    "content": "# New Content\n\nUpdated documentation...",
-    "mode": "replace"  # or "append", "prepend"
-  }
+  "module_name": "coder",
+  "doc_type": "readme",
+  "content": "# New Content\n",
+  "mode": "replace"
 }
 ```
 
-**Returns:**
 ```json
 {
   "status": "ok",
@@ -328,214 +202,84 @@ ninja-secretary
 }
 ```
 
-## Rate Limits
+This is the only tool in the module that mutates the filesystem, and it is
+marked destructive in its annotations.
 
-- **Read file**: 60 calls/minute
-- **File search**: 30 calls/minute
-- **Grep**: 30 calls/minute
-- **File tree**: 10 calls/minute
-- **Codebase report**: 5 calls/minute
-- **Document summary**: 10 calls/minute
-- **Session report**: No limit (in-memory)
-- **Update doc**: No limit
+### Opt-in: `secretary_ingest_file`
 
-Rate limits are per-client and use token bucket algorithm.
+Available only with `NINJA_MCP_ENABLE_FILE_UPLOADS=1`. Validates one inline
+file upload (≤ 8 MiB) and returns its name, MIME type, size, SHA-256 digest and
+first 32 bytes in hex — the content is never echoed. See
+[MCP_PROTOCOL_2026.md](../MCP_PROTOCOL_2026.md#6-file-uploads-iomodelcontextprotocolfiles-opt-in).
+
+## Resources and extensions
+
+- **Skills**: 2 bundles (`codebase-orientation`, `session-handoff`) served via
+  `skills/list` / `skills/get`; the files are readable through
+  `resources/read`.
+- **Tasks**: `secretary_codebase_report` and `secretary_analyse_file` become
+  durable tasks for 2026-07-28 clients that declared the extension.
+- **Files**: off by default, secretary only.
 
 ## Architecture
 
 ```
 ninja_secretary/
 ├── __init__.py     # Module exports
-├── models.py       # Pydantic models for requests/responses
-├── server.py       # MCP server implementation
-└── tools.py        # Tool execution logic
+├── models.py       # Pydantic request/result models (some unused, see above)
+├── server.py       # Lowlevel Server: tool list, dispatch, extensions
+├── tools.py        # SecretaryToolExecutor: the actual implementations
+└── hooks_cli.py    # Hook entry points used by hosts
 ```
 
-### Key Components
-
-- **SecretaryToolExecutor**: Main executor class with all tool implementations
-- **Session tracking**: In-memory dict, indexed by session_id
-- **File operations**: Uses pathlib for cross-platform compatibility
-- **Pattern matching**: Uses glob for file search, re for grep
-
-## Dependencies
-
-```toml
-secretary = [
-    "tree-sitter>=0.21.0",
-    "tree-sitter-python>=0.21.0",
-    "tree-sitter-javascript>=0.21.0",
-    "pygments>=2.17.0",
-]
-```
-
-Note: Tree-sitter dependencies are installed but not yet utilized in current implementation. Future versions will include AST-based code analysis.
+- `SecretaryToolExecutor` owns every implementation; `server.py` only validates
+  arguments and shapes results.
+- Session state is an in-process dict keyed by `session_id`; it does not survive
+  a restart.
+- Tree-sitter dependencies are installed but not used by the current
+  implementation.
 
 ## Examples
 
-### Example 1: Explore New Codebase
+### Orient in an unfamiliar repo
 
 ```python
-# 1. Get project structure
-tree = await secretary_file_tree({
-    "repo_root": "/path/to/new/project",
-    "max_depth": 3
-})
-
-# 2. Find main entry points
-main_files = await secretary_file_search({
-    "pattern": "**/main.*",
-    "repo_root": "/path/to/new/project"
-})
-
-# 3. Read primary file
-content = await secretary_read_file({
-    "file_path": main_files["matches"][0]["path"]
-})
-
-# 4. Generate codebase report
-report = await secretary_codebase_report({
-    "repo_root": "/path/to/new/project",
-    "include_metrics": true,
-    "include_dependencies": true
-})
-```
-
-### Example 2: Find and Analyze Functions
-
-```python
-# Find all async function definitions
-functions = await secretary_grep({
-    "pattern": "async def \\w+",
+report = await client.call_tool("secretary_codebase_report", {
     "repo_root": "/path/to/project",
-    "file_pattern": "**/*.py",
-    "context_lines": 5
 })
-
-# Read each function's file
-for match in functions["matches"]:
-    file_content = await secretary_read_file({
-        "file_path": match["file_path"],
-        "start_line": match["line_number"],
-        "end_line": match["line_number"] + 20
-    })
+files = await client.call_tool("secretary_file_search", {
+    "pattern": "**/main.*", "repo_root": "/path/to/project",
+})
+detail = await client.call_tool("secretary_analyse_file", {
+    "file_path": "/path/to/project/" + files.structured_content["matches"][0]["path"],
+})
 ```
 
-### Example 3: Session Tracking
+### Close a session
 
 ```python
-# Start session
-session = await secretary_session_report({
-    "session_id": "code-review-123",
-    "action": "create"
-})
-
-# During work, update session
-await secretary_session_report({
+await client.call_tool("secretary_session_report", {
     "session_id": "code-review-123",
     "action": "update",
-    "updates": {
-        "tools_used": ["read_file"],
-        "files_accessed": ["src/auth.py"],
-        "summary": "Started reviewing authentication module"
-    }
+    "updates": {"summary": "Reviewed authentication", "files_accessed": ["src/auth.py"]},
 })
-
-# Later, get full session report
-final_report = await secretary_session_report({
-    "session_id": "code-review-123",
-    "action": "get"
+final = await client.call_tool("secretary_session_report", {"session_id": "code-review-123"})
+await client.call_tool("secretary_update_documentation", {
+    "module_name": "auth",
+    "doc_type": "readme",
+    "content": "# Auth module\n",
 })
-```
-
-### Example 4: Documentation Discovery
-
-```python
-# Find all documentation
-docs = await secretary_document_summary({
-    "repo_root": "/path/to/project",
-    "doc_patterns": ["**/*.md", "**/docs/**/*"]
-})
-
-# docs["summaries"] contains per-file summaries
-# docs["combined_summary"] contains overview
-```
-
-## Best Practices
-
-### File Reading
-- Use line ranges for large files to reduce memory usage
-- Check file existence before reading (errors handled gracefully)
-- Binary files return error status with appropriate message
-
-### Pattern Matching
-- Use specific patterns to reduce results: `src/**/*.py` vs `**/*.py`
-- Combine file_search with read_file for efficient exploration
-- Use max_results to limit memory usage
-
-### Session Tracking
-- Create session at start of task
-- Update incrementally during work
-- Include meaningful summaries for later reference
-- Use metadata for task-specific information
-
-### Codebase Reports
-- Generate once per session for overview
-- Include all sections (metrics, dependencies, structure)
-- Use for onboarding, documentation, or analysis
-
-## Development
-
-### Running Tests
-
-```bash
-pytest tests/test_secretary.py -v
-```
-
-### Type Checking
-
-```bash
-mypy src/ninja_secretary --strict
-```
-
-### Linting
-
-```bash
-ruff check src/ninja_secretary
 ```
 
 ## Troubleshooting
 
-### Issue: "File not found"
-
-**Solution**: Check that file_path is relative to repo_root, not absolute.
-
-### Issue: Grep returns too many results
-
-**Solutions**:
-- Make regex pattern more specific
-- Use file_pattern to filter files
-- Reduce max_results parameter
-
-### Issue: File tree too large
-
-**Solutions**:
-- Reduce max_depth parameter
-- Filter results after generation
-- Use file_search for specific patterns instead
-
-### Issue: Binary file error
-
-**Solution**: Secretary auto-detects binary files and returns error status. This is expected behavior.
-
-## Future Enhancements
-
-- AST-based code analysis using tree-sitter
-- Git integration for file status
-- Code quality metrics
-- Dependency graph generation
-- Persistent session storage
+| Symptom | Cause / fix |
+| --- | --- |
+| `status: "error"`, "File not found" | `file_path` is resolved relative to the server's cwd; pass an absolute path or a path relative to `repo_root` |
+| `truncated: true` in a search | Narrow the glob, add `content_regex`, or search a subtree |
+| Empty `matches` | The pattern is glob-style (`**/*.py`), not a shell expansion; check `repo_root` |
+| Report has no "AI Insights" | The report is still valid; the model summary is best-effort |
 
 ## License
 
-MIT License - see main project LICENSE file.
+MIT License - see the main project LICENSE file.

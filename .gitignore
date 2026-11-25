@@ -11,6 +11,10 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+# The line above ignores the build output in ./dist; the packaged, versioned
+# assets that ship inside the wheel live in src/ninja_common/dist and must
+# stay tracked.
+!src/ninja_common/dist/
 downloads/
 eggs/
 .eggs/

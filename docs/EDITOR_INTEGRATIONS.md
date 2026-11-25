@@ -106,10 +106,10 @@ If you prefer manual setup or need to reconfigure, follow the editor-specific gu
 Please use ninja_coder to implement user authentication
 
 # Use Researcher module
-Use researcher_web_search to find information about Python asyncio
+Use researcher_quick_research to find information about Python asyncio
 
 # Use Secretary module
-Use secretary_file_tree to show me the project structure
+Use secretary_codebase_report to show me the project structure
 ```
 
 ---

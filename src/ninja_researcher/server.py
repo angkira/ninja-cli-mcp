@@ -16,11 +16,20 @@ import sys
 from typing import Any
 
 import anyio
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
-from mcp.types import CallToolResult, Tool, ToolAnnotations, ToolExecution
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    Tool,
+    ToolAnnotations,
+)
 
 from ninja_common.logging_utils import get_logger, setup_logging
+from ninja_common.mcp_ext.apply import apply_extensions
+from ninja_common.mcp_ext.wiring import build_protocol_extensions
 from ninja_common.mcp_meta import (
     ServerMeta,
     ToolMeta,
@@ -30,13 +39,7 @@ from ninja_common.mcp_meta import (
     server_icon,
     server_kwargs,
 )
-from ninja_common.mcp_tasks import (
-    install_tasks,
-    make_session_progress_callback,
-    refresh_task_after_cancel,
-    server_task_scope,
-    task_scope,
-)
+from ninja_common.mcp_tasks import SqliteTaskStore, make_session_progress_callback, task_scope
 from ninja_researcher.models import (
     ArxivSearchRequest,
     ArxivSearchResult,
@@ -67,11 +70,10 @@ logger = get_logger(__name__)
 TOOLS: list[Tool] = [
     Tool(
         name="researcher_quick_research",
-        execution=ToolExecution(taskSupport="optional"),
         description=(
             "Single-question research with cited answer. Use deep_research for multi-query reports."
         ),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "query": {
@@ -116,9 +118,8 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="researcher_deep_research",
-        execution=ToolExecution(taskSupport="optional"),
         description="Multi-query research with written report. Use quick_research for single questions; batch for multiple topics.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "topic": {
@@ -187,9 +188,8 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="researcher_generate_report",
-        execution=ToolExecution(taskSupport="optional"),
         description="Synthesize provided sources into a cited report (comprehensive, summary, technical, executive).",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "topic": {
@@ -231,9 +231,8 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="researcher_fact_check",
-        execution=ToolExecution(taskSupport="optional"),
         description=("Verify a claim via LLM verdict over sources (verified|disputed|uncertain)."),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "claim": {
@@ -252,9 +251,8 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="researcher_summarize_sources",
-        execution=ToolExecution(taskSupport="optional"),
         description=("Summarize URLs into per-source plus combined summaries."),
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "urls": {
@@ -275,9 +273,8 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="researcher_arxiv_search",
-        execution=ToolExecution(taskSupport="optional"),
         description="Search arXiv papers; categories default [cs.RO, cs.LG] ANDed with the query.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
@@ -311,9 +308,8 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="researcher_paper_fetch",
-        execution=ToolExecution(taskSupport="optional"),
         description="Fetch an arXiv paper or web page; extract sections and numbers with context.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "source": {
@@ -336,9 +332,8 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="researcher_deep_research_batch",
-        execution=ToolExecution(taskSupport="optional"),
         description="Batch up to 5 deep-research topics serially.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {
                 "requests": {
@@ -389,8 +384,8 @@ TOOLS: list[Tool] = [
     ),
 ]
 
-_RO = ToolAnnotations(readOnlyHint=True, idempotentHint=True)
-_RO_WEB = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=True)
+_RO = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
+_RO_WEB = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=True)
 
 # Tool metadata: titles, behavior hints, and result models for
 # outputSchema + structuredContent.
@@ -425,41 +420,41 @@ _TOOL_META: dict[str, ToolMeta] = {
 
 TOOLS = apply_tool_meta(TOOLS, _TOOL_META, server_icon("researcher"))
 
-# Look up tool definitions by name (used for task-mode validation).
-_TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
+#: Tools a 2026-07-28 client that declared ``io.modelcontextprotocol/tasks``
+#: receives a task handle for instead of a blocking result. Every other client
+#: keeps the synchronous behaviour described by the tool schema.
+TASK_TOOLS: frozenset[str] = frozenset(
+    {
+        "researcher_deep_research",
+        "researcher_deep_research_batch",
+        "researcher_paper_fetch",
+    }
+)
 
 
 def create_server() -> Server:
     """Create and configure the MCP server."""
-    server = Server(
-        "ninja-researcher",
-        version="0.3.0",
-        **server_kwargs(
-            ServerMeta(
-                instructions="""Ninja Researcher: cited web research.
-quick_research: single question + cited answer. deep_research: multi-query + report. generate_report: synthesize given sources. fact_check: LLM verdict. arxiv_search/paper_fetch: papers. batch: up to 5 topics serially.""",
-                kind="researcher",
-            )
-        ),
-    )
+    # Durable task store for the Tasks extension; one instance per server.
+    store = SqliteTaskStore()
+    # Skills advertise ``skills/*`` and serve skill files through Resources;
+    # Tasks turns the long-running tools into durable task handles for clients
+    # that declared it. Both are 2026-07-28 only.
+    extensions = build_protocol_extensions("researcher", store, TASK_TOOLS)
 
-    # Enable standard MCP Tasks (background/asynchronous tool execution) with a
-    # durable store and real cancellation of running work.
-    install_tasks(server)
-
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
+    async def list_tools(
+        _ctx: ServerRequestContext[Any, Any],
+        _params: PaginatedRequestParams | None,
+    ) -> ListToolsResult:
         """Return the list of available tools."""
-        return TOOLS
+        return ListToolsResult(tools=TOOLS)
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
-        """Handle tool invocations, synchronously or as a background task."""
-        request_ctx = server.request_context
-        experimental = request_ctx.experimental
-        tool_definition = _TOOLS_BY_NAME.get(name)
-        if tool_definition is not None:
-            experimental.validate_for_tool(tool_definition)
+    async def call_tool(
+        ctx: ServerRequestContext[Any, Any],
+        params: CallToolRequestParams,
+    ) -> CallToolResult:
+        """Handle tool invocations synchronously."""
+        name = params.name
+        arguments: dict[str, Any] = dict(params.arguments or {})
 
         async def _invoke() -> tuple[list, dict[str, Any]]:
             client_id = "default"
@@ -521,34 +516,48 @@ quick_research: single question + cited answer. deep_research: multi-query + rep
                     }
                 )
 
-        if experimental.is_task:
-            session = request_ctx.session
-            progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
-
-            async def _work(task: Any) -> CallToolResult:
-                async with server_task_scope(
-                    task, session=session, progress_token=progress_token
-                ) as cancellation:
-                    texts, structured = await _invoke()
-                    if cancellation.is_set():
-                        await refresh_task_after_cancel(task)
-                    return CallToolResult(
-                        content=list(texts), structuredContent=structured, isError=False
-                    )
-
-            return await experimental.run_task(_work)
-
         # Sync path heartbeat: forward progress as notifications/progress
         # when the client passed a progressToken (keeps long runs alive).
-        progress_token = request_ctx.meta.progressToken if request_ctx.meta else None
+        progress_token = (ctx.meta or {}).get("progress_token")
         if progress_token is not None:
-            session = request_ctx.session
-            callback = make_session_progress_callback(session, progress_token)
+            callback = make_session_progress_callback(ctx.session, progress_token)
             async with task_scope(f"sync-{name}", progress=callback):
-                return await _invoke()
+                texts, structured = await _invoke()
+        else:
+            texts, structured = await _invoke()
 
-        return await _invoke()
+        return CallToolResult(content=list(texts), structured_content=structured, is_error=False)
 
+    # The lowlevel server runs no extension interceptors, so the Tasks
+    # ``tools/call`` interceptor is composed here. ``call_tool`` itself is left
+    # untouched: it is the straight-through path for every non-declaring client.
+    async def call_tool_with_tasks(
+        ctx: ServerRequestContext[Any, Any],
+        params: CallToolRequestParams,
+    ) -> CallToolResult | dict[str, Any] | None:
+        """Run ``call_tool`` behind the Tasks extension's interceptor."""
+
+        async def call_next(_ctx: ServerRequestContext[Any, Any]) -> CallToolResult:
+            return await call_tool(ctx, params)
+
+        return await extensions.tasks_ext.intercept_tool_call(params, ctx, call_next)
+
+    server = Server(
+        "ninja-researcher",
+        version="0.3.0",
+        **server_kwargs(
+            ServerMeta(
+                instructions="""Ninja Researcher: cited web research.
+quick_research: single question + cited answer. deep_research: multi-query + report. generate_report: synthesize given sources. fact_check: LLM verdict. arxiv_search/paper_fetch: papers. batch: up to 5 topics serially.""",
+                kind="researcher",
+            )
+        ),
+        on_list_tools=list_tools,
+        on_call_tool=call_tool_with_tasks,
+        on_list_resources=extensions.on_list_resources,
+        on_read_resource=extensions.on_read_resource,
+    )
+    apply_extensions(server, [extensions.skills_ext, extensions.tasks_ext])
     return server
 
 
@@ -582,34 +591,15 @@ async def main_stdio() -> None:
 
 
 async def main_http(host: str, port: int) -> None:
-    """Run the MCP server over HTTP with SSE."""
+    """Run the MCP server over HTTP (SSE at /sse, streamable HTTP at /mcp)."""
     import uvicorn
-    from mcp.server.sse import SseServerTransport
-    from starlette.requests import Request
-    from starlette.responses import Response
+
+    from ninja_common.mcp_http import build_asgi_app
 
     logger.info(f"Starting ninja-researcher server (HTTP/SSE mode) on {host}:{port}")
 
     server = create_server()
-    sse = SseServerTransport("/messages")
-
-    async def handle_sse(request):
-        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-            await server.run(streams[0], streams[1], server.create_initialization_options())
-        return Response()
-
-    async def handle_messages(scope, receive, send):
-        await sse.handle_post_message(scope, receive, send)
-
-    async def app(scope, receive, send):
-        path = scope.get("path", "")
-        if path == "/sse":
-            request = Request(scope, receive, send)
-            await handle_sse(request)
-        elif path == "/messages" and scope.get("method") == "POST":
-            await handle_messages(scope, receive, send)
-        else:
-            await Response("Not Found", status_code=404)(scope, receive, send)
+    app = build_asgi_app(server, host=host)
 
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     server_instance = uvicorn.Server(config)

@@ -381,7 +381,7 @@ async def test_run_tracked_records_completion_and_result(tmp_path: Path) -> None
 
     async def work() -> types.CallToolResult:
         return types.CallToolResult(
-            content=[types.TextContent(type="text", text="done")], isError=False
+            content=[types.TextContent(type="text", text="done")], is_error=False
         )
 
     await jobs.run_tracked(work, status_message="unit-task")
@@ -389,7 +389,7 @@ async def test_run_tracked_records_completion_and_result(tmp_path: Path) -> None
     listed, _ = await jobs.list_jobs()
     assert len(listed) == 1
     assert listed[0].status == "completed"
-    stored = await jobs.result(listed[0].taskId)
+    stored = await jobs.result(listed[0].task_id)
     assert stored is not None
     assert _result_text(stored) == "done"
 
@@ -408,7 +408,7 @@ async def test_run_tracked_marks_failed_on_exception(tmp_path: Path) -> None:
     listed, _ = await jobs.list_jobs()
     assert len(listed) == 1
     assert listed[0].status == "failed"
-    assert "boom" in (listed[0].statusMessage or "")
+    assert "boom" in (listed[0].status_message or "")
 
 
 async def test_run_tracked_is_visible_and_cancellable_mid_flight(tmp_path: Path) -> None:
@@ -423,7 +423,7 @@ async def test_run_tracked_is_visible_and_cancellable_mid_flight(tmp_path: Path)
         while cancellation is not None and not cancellation.is_set():
             await asyncio.sleep(0.02)
         return types.CallToolResult(
-            content=[types.TextContent(type="text", text="unreachable")], isError=False
+            content=[types.TextContent(type="text", text="unreachable")], is_error=False
         )
 
     runner = asyncio.create_task(jobs.run_tracked(work, status_message="slow"))
@@ -432,7 +432,7 @@ async def test_run_tracked_is_visible_and_cancellable_mid_flight(tmp_path: Path)
     listed, _ = await jobs.list_jobs()
     assert len(listed) == 1
     assert listed[0].status == "working"
-    job_id = listed[0].taskId
+    job_id = listed[0].task_id
 
     cancelled = await jobs.cancel(job_id)
     assert cancelled is not None
@@ -543,17 +543,17 @@ async def test_progress_factory_refreshes_status_message(tmp_path: Path) -> None
     store = SqliteTaskStore(tmp_path / "tasks.db")
     factory = _make_job_progress_factory(store, "unit")
     callback = factory("job-progress")
-    await store.create_task(types.TaskMetadata(ttl=60000), task_id="job-progress")
+    await store.create_task(task_id="job-progress", ttl_ms=60000)
 
     await callback(1.0, 3.0, "step 1")
     task = await store.get_task("job-progress")
     assert task is not None
-    assert task.statusMessage == "unit: step 1"
+    assert task.status_message == "unit: step 1"
 
     await callback(2.0, 3.0, "step 2")
     task = await store.get_task("job-progress")
     assert task is not None
-    assert task.statusMessage == "unit: step 2"
+    assert task.status_message == "unit: step 2"
 
 
 async def test_progress_factory_swallows_store_failure(tmp_path: Path) -> None:
@@ -574,14 +574,14 @@ async def test_progress_factory_does_not_overwrite_terminal_failure(tmp_path: Pa
     store = SqliteTaskStore(tmp_path / "tasks.db")
     factory = _make_job_progress_factory(store, "unit")
     callback = factory("job-terminal")
-    await store.create_task(types.TaskMetadata(ttl=60000), task_id="job-terminal")
+    await store.create_task(task_id="job-terminal", ttl_ms=60000)
     await store.update_task("job-terminal", status="failed", status_message="fatal: out of memory")
 
     await callback(1.0, 3.0, "step after fail")
     task = await store.get_task("job-terminal")
     assert task is not None
     assert task.status == "failed"
-    assert task.statusMessage == "fatal: out of memory"
+    assert task.status_message == "fatal: out of memory"
 
 
 # --- status fidelity: failed payloads mark the job failed ------------------
@@ -602,7 +602,7 @@ async def test_run_tracked_failed_payload_marks_status_failed_with_reason(
                     text=json.dumps({"overall_status": "failed", "error": "boom"}),
                 )
             ],
-            isError=False,
+            is_error=False,
         )
 
     await jobs.run_tracked(work, status_message="unit-task")
@@ -610,9 +610,9 @@ async def test_run_tracked_failed_payload_marks_status_failed_with_reason(
     listed, _ = await jobs.list_jobs()
     assert len(listed) == 1
     assert listed[0].status == "failed"
-    assert "boom" in (listed[0].statusMessage or "")
+    assert "boom" in (listed[0].status_message or "")
     # The payload is still stored for clients that read the result.
-    assert await jobs.result(listed[0].taskId) is not None
+    assert await jobs.result(listed[0].task_id) is not None
 
 
 async def test_run_tracked_failed_payload_uses_reason_fallback(tmp_path: Path) -> None:
@@ -628,13 +628,13 @@ async def test_run_tracked_failed_payload_uses_reason_fallback(tmp_path: Path) -
                     text=json.dumps({"overall_status": "failed", "reason": "nope"}),
                 )
             ],
-            isError=False,
+            is_error=False,
         )
 
     await jobs.run_tracked(work, status_message="unit-task")
     listed, _ = await jobs.list_jobs()
     assert listed[0].status == "failed"
-    assert "nope" in (listed[0].statusMessage or "")
+    assert "nope" in (listed[0].status_message or "")
 
 
 async def test_run_tracked_status_error_marks_failed(tmp_path: Path) -> None:
@@ -647,13 +647,13 @@ async def test_run_tracked_status_error_marks_failed(tmp_path: Path) -> None:
             content=[
                 types.TextContent(type="text", text=json.dumps({"status": "error", "error": "bad"}))
             ],
-            isError=False,
+            is_error=False,
         )
 
     await jobs.run_tracked(work, status_message="unit-task")
     listed, _ = await jobs.list_jobs()
     assert listed[0].status == "failed"
-    assert "bad" in (listed[0].statusMessage or "")
+    assert "bad" in (listed[0].status_message or "")
 
 
 async def test_run_tracked_partial_payload_stays_completed(tmp_path: Path) -> None:
@@ -666,7 +666,7 @@ async def test_run_tracked_partial_payload_stays_completed(tmp_path: Path) -> No
             content=[
                 types.TextContent(type="text", text=json.dumps({"overall_status": "partial"}))
             ],
-            isError=False,
+            is_error=False,
         )
 
     await jobs.run_tracked(work, status_message="unit-task")
@@ -682,7 +682,7 @@ async def test_run_tracked_non_dict_payload_stays_completed(tmp_path: Path) -> N
     async def work() -> types.CallToolResult:
         return types.CallToolResult(
             content=[types.TextContent(type="text", text="plain text output")],
-            isError=False,
+            is_error=False,
         )
 
     await jobs.run_tracked(work, status_message="unit-task")
@@ -702,5 +702,5 @@ async def test_run_tracked_dict_payload_failure_marks_failed(tmp_path: Path) -> 
 
     listed, _ = await jobs.list_jobs()
     assert listed[0].status == "failed"
-    assert "dict-reason" in (listed[0].statusMessage or "")
-    assert await jobs.result(listed[0].taskId) is not None
+    assert "dict-reason" in (listed[0].status_message or "")
+    assert await jobs.result(listed[0].task_id) is not None

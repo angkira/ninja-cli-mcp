@@ -39,7 +39,7 @@ def test_every_tool_has_title_annotations_schema_and_icon():
         for tool in mod.TOOLS:
             assert tool.title, f"{name}/{tool.name} missing title"
             assert tool.annotations is not None, f"{name}/{tool.name} missing annotations"
-            assert tool.outputSchema is not None, f"{name}/{tool.name} missing outputSchema"
+            assert tool.output_schema is not None, f"{name}/{tool.name} missing output_schema"
             assert tool.icons, f"{name}/{tool.name} missing icons"
             assert tool.icons[0].src.startswith("data:image/svg+xml,"), (
                 f"{name}/{tool.name} icon is not an SVG data URI"
@@ -51,10 +51,10 @@ def test_readonly_tools_marked():
     from ninja_coder import server as coder_server
 
     by_name = {t.name: t for t in coder_server.TOOLS}
-    assert by_name["coder_branches_list"].annotations.readOnlyHint is True
-    assert by_name["coder_branch_discard"].annotations.destructiveHint is True
-    assert by_name["coder_branch_merge"].annotations.destructiveHint is True
-    assert by_name["coder_simple_task"].annotations.destructiveHint is True
+    assert by_name["coder_branches_list"].annotations.read_only_hint is True
+    assert by_name["coder_branch_discard"].annotations.destructive_hint is True
+    assert by_name["coder_branch_merge"].annotations.destructive_hint is True
+    assert by_name["coder_simple_task"].annotations.destructive_hint is True
 
 
 def test_structured_results_validate_against_tool_schemas():
@@ -82,7 +82,7 @@ def test_structured_results_validate_against_tool_schemas():
             assert texts and texts[0].type == "text"
             # Same JSON in text and structured form.
             assert json.loads(texts[0].text) == structured
-            jsonschema.validate(structured, tool.outputSchema)
+            jsonschema.validate(structured, tool.output_schema)
 
 
 def test_dict_result_validates():
@@ -101,13 +101,13 @@ def test_patch_resource_link(tmp_path):
     link = patch_resource_link(str(patch))
     assert link is not None
     assert str(link.uri).startswith("file://")
-    assert link.mimeType == "text/x-patch"
+    assert link.mime_type == "text/x-patch"
     assert link.size and link.size > 0
 
 
 def test_server_icon_is_svg_data_uri():
     icon = server_icon("coder")
-    assert icon.mimeType == "image/svg+xml"
+    assert icon.mime_type == "image/svg+xml"
     assert icon.src.startswith("data:image/svg+xml,")
     assert icon.sizes == ["64x64"]
 
@@ -145,7 +145,7 @@ def test_elicit_confirm_no_session_capability():
 
 
 def test_elicit_confirm_accept_and_decline():
-    """Accepted confirmations pass True; declines pass False."""
+    """Accepted confirmations pass True; declines pass False; errors fall back to None."""
 
     class FakeResult:
         def __init__(self, action, content):
@@ -153,16 +153,16 @@ def test_elicit_confirm_accept_and_decline():
             self.content = content
 
     class AcceptSession:
-        async def elicit_form(self, message, schema, related_request_id=None):
-            assert "confirm" in schema["required"]
+        async def elicit(self, message, requested_schema):
+            assert "confirm" in requested_schema["required"]
             return FakeResult("accept", {"confirm": True})
 
     class DeclineSession:
-        async def elicit_form(self, message, schema, related_request_id=None):
-            return FakeResult("decline", {})
+        async def elicit(self, message, requested_schema):
+            return FakeResult("decline", None)
 
     class BoomSession:
-        async def elicit_form(self, message, schema, related_request_id=None):
+        async def elicit(self, message, requested_schema):
             raise RuntimeError("no client back-channel")
 
     assert _run(elicit_confirm(AcceptSession(), "Delete branch?")) is True

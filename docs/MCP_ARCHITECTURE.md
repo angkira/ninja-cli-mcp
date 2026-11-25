@@ -23,6 +23,11 @@ MCP uses **stdio (standard input/output)** for communication:
 - **Server** (ninja-researcher, ninja-secretary): Processes requests and returns results
 - **Protocol**: JSON-RPC 2.0 over stdio
 
+stdio is the default transport. One process can also serve HTTP: streamable HTTP
+at `/mcp` (`2026-07-28`) plus legacy SSE at `/sse` + `/messages`, on one port.
+See [MCP_PROTOCOL_2026.md](MCP_PROTOCOL_2026.md) for the transports, the
+capability matrix, and the Skills/Tasks extensions.
+
 ### Server Lifecycle
 
 1. **Launch**: Client spawns server process with configured command
@@ -172,8 +177,8 @@ ps aux | grep ninja-researcher
 2. **Tool Execution**:
    ```
    User: "Search for Python tutorials"
-   Claude: Uses researcher_web_search tool
-   Client → call_tool(name="researcher_web_search", args={...})
+   Claude: Uses researcher_quick_research tool
+   Client → call_tool(name="researcher_quick_research", args={...})
    Server → processes → returns results
    Claude: Synthesizes results into response
    ```
@@ -227,7 +232,7 @@ ninja-mcp daemon restart coder
 
 ## Request/Response Flow
 
-### Example: Web Search
+### Example: Quick Research
 
 ```
 ┌──────────────┐
@@ -243,7 +248,7 @@ ninja-mcp daemon restart coder
     └───────┬────────┘
             │
             │ 2. call_tool(
-            │      name="researcher_web_search",
+            │      name="researcher_quick_research",
             │      args={"query": "Python tutorials", ...}
             │    )
             ▼
@@ -281,7 +286,7 @@ ninja-mcp daemon restart coder
   "id": 1,
   "method": "tools/call",
   "params": {
-    "name": "researcher_web_search",
+    "name": "researcher_quick_research",
     "arguments": {
       "query": "Python tutorials",
       "max_results": 10,

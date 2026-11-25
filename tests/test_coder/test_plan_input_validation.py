@@ -91,7 +91,7 @@ def test_empty_steps_is_accepted_as_noop() -> None:
 
 
 def test_declared_tool_schema_does_not_require_id_or_title() -> None:
-    """The MCP inputSchema must match the model: only task is required."""
+    """The MCP input_schema must match the model: only task is required."""
     from ninja_coder.server import TOOLS
 
     for tool_name in (
@@ -99,7 +99,7 @@ def test_declared_tool_schema_does_not_require_id_or_title() -> None:
         "coder_execute_plan_parallel",
     ):
         tool = next(t for t in TOOLS if t.name == tool_name)
-        step_items = tool.inputSchema["properties"]["steps"]["items"]
+        step_items = tool.input_schema["properties"]["steps"]["items"]
         assert step_items.get("required", []) == [], tool_name
         assert "id" in step_items["properties"], tool_name
         assert "title" in step_items["properties"], tool_name

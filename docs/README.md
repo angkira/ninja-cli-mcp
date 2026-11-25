@@ -1,10 +1,13 @@
 # Documentation Index
 
-Start here for the current `1.3.1` behavior:
+Start here for current behavior:
 
 - [Project quickstart](../README.md)
 - [Docker quickstart](container-quickstart.md)
-- [Background execution with MCP Tasks](MCP_TASKS.md)
+- [MCP protocol 2026-07-28 (transports, skills, tasks, elicitation)](MCP_PROTOCOL_2026.md)
+- [Background execution (MCP Tasks extension + submit/poll)](MCP_TASKS.md)
+- [Resources (skill files)](RESOURCES_API.md)
+- [Prompts (not implemented)](PROMPTS_API.md)
 - [Automatic safety, worktrees, and timeouts](AUTOMATIC_SAFETY.md)
 - [CLI strategies and host authentication](CLI_STRATEGIES.md)
 - [Model selection and autocomplete](MODEL_SELECTION.md)

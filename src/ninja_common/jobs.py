@@ -1,12 +1,12 @@
 """Submit/poll background jobs layered on the shared MCP task store.
 
-Standard MCP Tasks (:func:`ninja_common.mcp_tasks.install_tasks`) let a client
+The protocol Tasks extension (``io.modelcontextprotocol/tasks``) lets a client
 start a long tool call in the background and poll it, but only clients that
-advertise the experimental ``tasks`` capability can use it. This module provides
-an always-available alternative that works in *any* MCP host:
+advertise the extension can use it. This module provides an always-available
+alternative that works in *any* MCP host:
 
 * :class:`JobManager` creates a durable task record in the shared
-  :class:`~ninja_common.mcp_tasks.SqliteTaskStore`, then runs the work as an
+  :class:`~ninja_common.mcp_ext.tasks_store.SqliteTaskStore`, then runs the work as an
   asyncio task bound to :func:`~ninja_common.mcp_tasks.task_scope`. That makes
   cancellation (:func:`~ninja_common.mcp_tasks.request_cancel`) and progress
   reach the running work exactly like the standard task path.
@@ -30,17 +30,18 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING
 
-from mcp.shared.experimental.tasks.helpers import is_terminal
-from mcp.types import (
+from mcp_types import Result
+
+from ninja_common.mcp_ext.models import (
     TASK_STATUS_CANCELLED,
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
     TASK_STATUS_WORKING,
-    Result,
+    StoredResult,
     Task,
-    TaskMetadata,
+    TaskStatus,
+    is_terminal,
 )
-
 from ninja_common.mcp_tasks import (
     ProgressCallback,
     TaskCancelledError,
@@ -50,8 +51,7 @@ from ninja_common.mcp_tasks import (
 
 
 if TYPE_CHECKING:
-    from mcp.shared.experimental.tasks.store import TaskStore
-    from mcp.types import TaskStatus
+    from ninja_common.mcp_ext.tasks_store import TaskStore
 
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,9 @@ def _storable_result(result: object) -> Result:
     if hasattr(result, "model_dump"):
         return result  # type: ignore[return-value]
     if isinstance(result, Mapping):
-        return Result.model_validate(dict(result))
+        # ``StoredResult`` (unlike the 2.x base ``Result``) keeps unknown
+        # fields, so a plain mapping payload survives the store round-trip.
+        return StoredResult.model_validate(dict(result))
     return result  # type: ignore[return-value]
 
 
@@ -161,7 +163,7 @@ class JobManager:
     """Run tool work in the background and expose it through a durable store.
 
     A single instance lives for the lifetime of a server. It shares one
-    :class:`~ninja_common.mcp_tasks.SqliteTaskStore` with the standard MCP Tasks
+    :class:`~ninja_common.mcp_ext.tasks_store.SqliteTaskStore` with the standard MCP Tasks
     support, so ``coder_jobs_list`` / ``coder_job_status`` see both jobs created
     through this manager and tasks created by the standard path.
     """
@@ -215,8 +217,8 @@ class JobManager:
         Returns:
             The freshly created (``working``) task record.
         """
-        task = await self._store.create_task(TaskMetadata(ttl=self._ttl_ms))
-        job_id = task.taskId
+        task = await self._store.create_task(ttl_ms=self._ttl_ms)
+        job_id = task.task_id
         if status_message is not None:
             task = await self._store.update_task(job_id, status_message=status_message)
 
@@ -260,8 +262,8 @@ class JobManager:
             Exception: Re-raises whatever *work* raised, after marking the job
                 ``failed``.
         """
-        task = await self._store.create_task(TaskMetadata(ttl=self._ttl_ms))
-        job_id = task.taskId
+        task = await self._store.create_task(ttl_ms=self._ttl_ms)
+        job_id = task.task_id
         if status_message is not None:
             task = await self._store.update_task(job_id, status_message=status_message)
 
@@ -334,7 +336,7 @@ class JobManager:
             collected.extend(page[:remaining])
             if len(page) > remaining:
                 # The limit lands inside this page: resume from the last item.
-                next_cursor = collected[-1].taskId
+                next_cursor = collected[-1].task_id
                 break
             page_cursor = page_next
             next_cursor = page_next

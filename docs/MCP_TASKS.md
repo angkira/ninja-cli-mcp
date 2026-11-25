@@ -1,60 +1,73 @@
-# Background Execution (MCP Tasks + submit/poll)
+# Background Execution (MCP Tasks extension + submit/poll)
 
 Ninja's long-running tools can run **in the background**: the call returns a
 handle immediately, the host keeps working, and the result is fetched later.
 
-There are two ways, and the server provides both:
+Two independent paths exist, and the servers provide both:
 
 | Path | Works in | API |
 | --- | --- | --- |
-| **Standard MCP Tasks** | hosts that advertise the `tasks` capability | `tools/call` (+`task`) → `tasks/get`/`result`/`cancel` |
-| **submit/poll jobs** | **every** MCP host | `coder_submit_*` → `coder_job_status`/`result`/`cancel` |
+| **Tasks extension** | clients that declare `io.modelcontextprotocol/tasks` on protocol `2026-07-28` | `tools/call` → `resultType: "task"` → `tasks/get` / `tasks/cancel` |
+| **submit/poll jobs** | **every** MCP host, every protocol revision | `coder_submit_*` → `coder_job_status` / `coder_job_result` / `coder_job_cancel` |
 
-> As of writing, the common hosts (opencode 1.18, Claude Code 2.1, Codex 0.154,
-> Antigravity v1.0) initialize with `capabilities.tasks = null`, i.e. they do not
-> use the standard Tasks path yet. **Use submit/poll for background work today**;
-> Tasks will light up automatically when a host enables it.
+> Host support for the extension is opt-in: most hosts today still initialize
+> without the extension, so **use submit/poll for background work unless your
+> client declares it**. Tasks light up automatically once a host does.
 
-## Why
+Wire-level detail (request shapes, polling envelope, cancel semantics) lives in
+[MCP_PROTOCOL_2026.md](MCP_PROTOCOL_2026.md#4-tasks-iomodelcontextprotocoltasks).
 
-A coder plan (sequential/parallel) can run for minutes. Without tasks, the MCP
-host blocks on `tools/call` until the model finishes. With tasks, you start the
-run, get an id, and continue; the run proceeds in the server.
+## How the extension works
 
-## How it works
+- All four servers advertise `io.modelcontextprotocol/tasks` in
+  `capabilities.extensions` on `2026-07-28`. There is no startup switch and no
+  `install_tasks` hook: the extension is built by
+  `ninja_common.mcp_ext.wiring.build_protocol_extensions()` and applied with
+  `ninja_common.mcp_ext.apply.apply_extensions()`.
+- A task handle is returned **only** when the client declared the extension
+  *and* the connection negotiated `2026-07-28`. Every other call runs
+  synchronously, exactly as before.
+- The extension's methods are `tasks/get`, `tasks/update` and `tasks/cancel`.
+  There is **no** `tasks/result` and **no** `tasks/list`: the result is returned
+  inside `tasks/get` when the task is `completed`.
 
-- Servers enable tasks at startup (`server.experimental.enable_tasks`, wired via
-  `ninja_common.mcp_tasks.install_tasks`).
-- Long tools advertise `execution.taskSupport = "optional"` in `tools/list`.
-- If the client sends a task-augmented `tools/call` (a `task` field with a TTL),
-  the tool runs in the background and the response is a **task handle**
-  (`CreateTaskResult`). Otherwise the tool runs **synchronously**, exactly as
-  before — clients without the Tasks capability are unaffected.
+### Task-enabled tools
 
-### Task-capable tools
+Exactly these tools run as tasks (`TASK_TOOLS` in each `server.py`):
 
 | Server | Tools |
 | --- | --- |
 | coder | `coder_simple_task`, `coder_execute_plan_sequential`, `coder_execute_plan_parallel`, `coder_multi_agent_task` |
-| agent | `agent_exec_command`, `agent_tail_logs`, `agent_processes`, `agent_jobs_overview`, `agent_analyze`, `agent_review`, `agent_run_and_diagnose`, `agent_exec_pipeline`, `agent_distill_logs` |
-| researcher | `researcher_deep_research`, `researcher_generate_report`, `researcher_fact_check`, `researcher_summarize_sources` |
+| researcher | `researcher_deep_research`, `researcher_deep_research_batch`, `researcher_paper_fetch` |
+| secretary | `secretary_codebase_report`, `secretary_analyse_file` |
+| agent | `agent_run_and_diagnose`, `agent_exec_pipeline` |
+
+Everything else — `researcher_quick_research`, `researcher_generate_report`,
+`researcher_fact_check`, `researcher_summarize_sources`,
+`researcher_arxiv_search`, `secretary_file_search`,
+`secretary_document_summary`, `secretary_session_report`,
+`secretary_update_documentation`, `agent_exec_command`, `agent_tail_logs`,
+`agent_processes`, `agent_jobs_overview`, `agent_analyze`, `agent_review`,
+`agent_distill_logs`, and the whole `coder_submit_*` / `coder_job_*` family — is
+always synchronous.
 
 ### Task lifecycle
 
 | Request | Purpose |
 | --- | --- |
-| `tools/call` (+ `task: {ttl}`) | Start the work; returns a task handle |
-| `tasks/get` | Poll status (`working` → `completed` / `failed` / `cancelled`) |
-| `tasks/result` | Fetch the final `CallToolResult` payload |
-| `tasks/list` | List known tasks |
-| `tasks/cancel` | Cancel; **actually interrupts** the running work |
+| `tools/call` (task-enabled tool) | Start the work; a declaring client gets `resultType: "task"` + `taskId` |
+| `tasks/get` | Poll status; on `completed` carries `result`, on `failed` carries `error` |
+| `tasks/update` | Answer `inputRequests`; acknowledgement only |
+| `tasks/cancel` | Cooperative cancel; **interrupts the running work** |
 
-The server also emits `notifications/tasks/status` (from the SDK) and
-`notifications/progress` (see below).
+Statuses: `working` → `completed` / `failed` / `cancelled` (plus
+`input_required`, which the ninja servers do not raise today). A cancel of an
+already-terminal task returns its current state instead of failing; an unknown
+id is `-32602 INVALID_PARAMS`.
 
-## Background without Tasks: submit/poll (all hosts)
+## Background without the extension: submit/poll (all hosts)
 
-This is the recommended way to run in the background from opencode, Claude Code,
+This is the portable way to run in the background from opencode, Claude Code,
 Codex, Antigravity, or any other host — it only uses ordinary tool calls.
 
 | Tool | Purpose |
@@ -63,11 +76,7 @@ Codex, Antigravity, or any other host — it only uses ordinary tool calls.
 | `coder_job_status` | `{job_id, status, created_at, last_updated_at, status_message}` |
 | `coder_job_result` | Final payload (or a `working` hint with `poll_interval_ms`) |
 | `coder_job_cancel` | Cancel; **interrupts** the running work (CLI process group) |
-| `coder_jobs_list` | List known jobs |
-
-The submit call returns in well under a second; the run continues in the server
-and its state lives in the durable store, so it is reachable from later calls
-(even a different session/process).
+| `coder_jobs_list` | List known jobs, cursor pagination |
 
 ```
 1. coder_submit_sequential {repo_root, steps}   -> {job_id, status:"working"}
@@ -81,75 +90,70 @@ and its state lives in the durable store, so it is reachable from later calls
 cancelled job actually stops; cancelling an unknown or finished job is a no-op.
 Job state is durable (`NINJA_TASKS_DB`), so jobs survive restarts.
 
-## Client usage (standard MCP Tasks)
+## Client usage (Tasks extension)
 
-### OpenCode / MCP TS clients
-
-Tools with `execution.taskSupport` of `optional`/`required` are called through
-the task API (`client.experimental.tasks.callToolStream()`), then polled via
-`tasks/get` / `tasks/result`.
-
-### Python client
+### Python
 
 ```python
-from mcp import types
-from mcp.client.experimental.task_handlers import ExperimentalTaskHandlers
-from mcp.client.session import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp import Client
 
-params = StdioServerParameters(command="ninja-coder", args=[])
-handlers = ExperimentalTaskHandlers()  # declares the client tasks capability
+from ninja_common.mcp_ext.tasks_client import TasksClient
+from ninja_coder.server import create_server
 
-async with stdio_client(params) as (read, write):
-    async with ClientSession(read, write, experimental_task_handlers=handlers) as session:
-        await session.initialize()
-
-        create = await session.experimental.call_tool_as_task(
-            "coder_execute_plan_sequential",
-            {"repo_root": ".", "steps": [{"id": "s1", "task": "Add a docstring"}]},
-            ttl=600_000,
-        )
-        task_id = create.task.taskId            # handle returned immediately
-
-        async for task in session.experimental.poll_task(task_id):
-            ...                                  # working → completed
-
-        result = await session.experimental.get_task_result(task_id, types.CallToolResult)
-        print(result.content[0].text)
+tasks = TasksClient()  # declares io.modelcontextprotocol/tasks and polls tasks/get
+async with Client(create_server(), extensions=[tasks]) as client:
+    result = await client.call_tool(
+        "coder_execute_plan_sequential",
+        {"repo_root": ".", "steps": [{"id": "s1", "task": "Add a docstring"}]},
+    )
+    print(result.structured_content)
 ```
+
+`TasksClient` hides the polling loop. To drive it by hand, declare the extension
+with `mcp.client.advertise("io.modelcontextprotocol/tasks")` and send
+`tasks/get` yourself; the raw envelopes are documented in
+[MCP_PROTOCOL_2026.md](MCP_PROTOCOL_2026.md).
+
+### TypeScript / OpenCode
+
+Hosts with extension support call the tool normally and resolve the
+`resultType: "task"` claim through `tasks/get`; there is no separate task API to
+migrate to. If your host used the 1.x experimental Tasks API
+(`client.experimental.tasks…`, `tasks/result`, `tasks/list`), that API no longer
+exists — poll `tasks/get` instead.
 
 ## Cancellation interrupts work
 
-`tasks/cancel` is not just a status flag. The server terminates the running CLI
-subprocess **group** (SIGTERM, then SIGKILL after a short grace), so the model
-run stops and resources are freed. Cancelling an unknown or already-terminal
-task is a safe no-op.
+`tasks/cancel` and `coder_job_cancel` are not status flags. The server
+terminates the running CLI subprocess **group** (SIGTERM, then SIGKILL after a
+short grace), so the model run stops and resources are freed.
 
 ## Durable task state
 
-Tasks are stored in SQLite so they survive a server restart and are visible
-across sessions (servers, daemons, `--http`).
+Tasks and jobs share one SQLite store, so state survives a server restart and is
+visible across sessions (servers, daemons, `--http`).
 
 | Env var | Default | Meaning |
 | --- | --- | --- |
-| `NINJA_TASKS_DB` | `~/.ninja/tasks.db` | SQLite path for task state (`:memory:` / `file::memory:` supported) |
+| `NINJA_TASKS_DB` | `~/.ninja/tasks.db` | SQLite path for task/job state (`:memory:` / `file::memory:` supported) |
 
 State uses WAL, a busy timeout, and lazy TTL expiry. A task created with a TTL
 expires automatically after it becomes terminal.
 
 ### Owner tracking & stale reconciliation
 
-Each task record stores owner identity metadata (`owner_pid` and `owner_token`,
-derived from the creating process PID and its OS process start timestamp via `psutil`).
-When a server starts up, it reconciles stale `working` tasks via `sweep_stale_working()`:
-- Only tasks whose owner process is **demonstrably dead** (the process no longer
-  exists, or its PID was recycled by the OS for a different process with a newer
-  creation timestamp) are transitioned to `failed`.
-- Tasks belonging to live concurrent sibling processes (e.g. coexisting stdio
-  servers or background daemons) remain `working` and are never swept.
-- Legacy tasks with unknown or missing ownership are never guessed dead.
-- Terminal task records are immutable against progress and status-message updates,
-  ensuring terminal failure reasons are never overwritten by late heartbeats.
+Each record stores owner identity metadata (`owner_pid` and `owner_token`,
+derived from the creating process PID and its OS process start timestamp via
+`psutil`). On startup a server calls `sweep_stale_working()`:
+
+- Only records whose owner process is **demonstrably dead** (the process is
+  gone, or its PID was recycled by a different process with a newer creation
+  timestamp) are transitioned to `failed`.
+- Records belonging to live concurrent sibling processes (coexisting stdio
+  servers or background daemons) stay `working` and are never swept.
+- Legacy rows with unknown or missing ownership are never guessed dead.
+- Terminal records are immutable against progress and status-message updates,
+  so a late heartbeat cannot overwrite the recorded failure reason.
 
 ## Progress notifications
 
@@ -162,26 +166,30 @@ affects the run.
 
 | Env var | Default | Notes |
 | --- | --- | --- |
-| `NINJA_TASKS_DB` | `~/.ninja/tasks.db` | Durable task store path |
+| `NINJA_TASKS_DB` | `~/.ninja/tasks.db` | Durable task/job store path |
 | `NINJA_INACTIVITY_TIMEOUT[_QUICK/_SEQUENTIAL/_PARALLEL]` | 90/180/180s | Watchdog; independent of tasks |
 
 ## Limitations
 
-- Task store is local SQLite; it is not a distributed queue.
-- Live `tasks/result` waiters are in-process (`InMemoryTaskMessageQueue`);
-  durability is shared via SQLite, live wake-ups are not.
-- **Owner-based reconciliation limits**: task owner tracking uses host-local PID
-  and creation timestamps. Liveness inspection is valid only within the local
-  host's PID namespace. If `NINJA_TASKS_DB` is mounted across different machines
-  or container boundaries without a shared PID namespace, foreign process liveness
-  cannot be inspected and their tasks will not be guessed dead.
-- The MCP Tasks capability is *experimental* in the SDK/protocol; capability
-  detection is per client. Servers keep the synchronous path for clients that do
-  not advertise it.
+- The store is local SQLite; it is not a distributed queue.
+- Live wake-ups are in-process; durability is shared through SQLite.
+- **Owner-based reconciliation limits**: liveness inspection is valid only
+  within the local host's PID namespace. If `NINJA_TASKS_DB` is mounted across
+  machines or container boundaries without a shared PID namespace, foreign
+  process liveness cannot be inspected and those records are never guessed dead.
+- Extension support is per client and per connection: on a legacy connection,
+  or from a client that did not declare `io.modelcontextprotocol/tasks`, the
+  same tool runs synchronously.
 
 ## Reference
 
-- `src/ninja_common/mcp_tasks.py` — `install_tasks`, `SqliteTaskStore`,
-  `task_scope`, `request_cancel`, `emit_progress`.
-- `tests/test_mcp_tasks.py` — create/poll/result, cancel-interrupts-work,
-  persistence across restart, progress, synchronous fallback.
+- `src/ninja_common/mcp_ext/tasks.py` — `TasksExtension` (`tasks/get`,
+  `tasks/update`, `tasks/cancel`, `tools/call` interception).
+- `src/ninja_common/mcp_ext/tasks_store.py` — `SqliteTaskStore`, TTL expiry,
+  stale-owner reconciliation.
+- `src/ninja_common/mcp_ext/tasks_client.py` — `TasksClient` (client-side
+  polling).
+- `src/ninja_common/mcp_tasks.py` — cancellation scope, progress bridging,
+  re-exports of the store.
+- `tests/test_mcp_protocol_extensions.py`, `tests/test_common/mcp_ext/` —
+  task lifecycle on the wire.

@@ -44,7 +44,7 @@ MCP servers are automatically configured. Just use them:
 
 | Tool | What It Does | Example |
 |------|--------------|---------|
-| `researcher_web_search` | Search the web | Search for "Python tutorials" |
+| `researcher_quick_research` | Search the web and answer with citations | Ask "Python tutorials" |
 | `researcher_deep_research` | Multi-query parallel research | Research "FastAPI framework" with 20 sources |
 | `researcher_generate_report` | Create markdown reports | Generate technical report from sources |
 | `researcher_fact_check` | Verify claims | Check if "Python was released in 1991" |
@@ -54,14 +54,17 @@ MCP servers are automatically configured. Just use them:
 
 | Tool | What It Does | Example |
 |------|--------------|---------|
-| `secretary_read_file` | Read files | Read src/main.py lines 10-50 |
-| `secretary_file_search` | Find files | Find all `**/*.py` files |
-| `secretary_grep` | Search content | Find all `def .*async` functions |
-| `secretary_file_tree` | Directory tree | Show project structure (depth 3) |
+> **Note (2.0):** secretary serves six tools. There is no read-file, grep or
+> file-tree tool; `secretary_analyse_file` returns a whole file with structure.
+
+| Tool | What It Does | Example |
+|------|--------------|---------|
+| `secretary_analyse_file` | Analyze one file (structure + summary) | Analyze src/main.py |
+| `secretary_file_search` | Find files (glob + content regex) | Find all `**/*.py` files |
 | `secretary_codebase_report` | Analyze codebase | Generate full metrics report |
 | `secretary_document_summary` | Summarize docs | Summarize all .md files |
-| `secretary_session_report` | Track sessions | Track files accessed and tools used |
-| `secretary_update_doc` | Update docs | Update README.md |
+| `secretary_session_report` | Track sessions | Read tracked ops and files |
+| `secretary_update_documentation` | Update docs | Update README.md |
 
 ## Example Workflows
 
@@ -80,11 +83,11 @@ Result: Comprehensive markdown report with citations
 ### Codebase Analysis
 
 ```
-1. "Show me the file structure of this project"
-   → Uses secretary_file_tree
+1. "Show me the structure of this project"
+   → Uses secretary_codebase_report
 
 2. "Find all async functions in the codebase"
-   → Uses secretary_grep
+   → Uses secretary_file_search (content_regex)
 
 3. "Generate a codebase analysis report"
    → Uses secretary_codebase_report

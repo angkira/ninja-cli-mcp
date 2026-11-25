@@ -21,8 +21,7 @@ import sys
 import time
 from pathlib import Path
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import Client, StdioServerParameters
 
 
 REPO = Path(os.environ.get("REPO_PATH", "/tmp/opencode/e2e_battle_repo"))
@@ -45,10 +44,10 @@ def _setup_repo() -> None:
 def _extract_json(result) -> dict:
     """Pull the structured result from an MCP tool call.
 
-    Prefers ``structuredContent``; falls back to parsing the JSON embedded in
+    Prefers ``structured_content``; falls back to parsing the JSON embedded in
     ``content[].text`` (which is what the ninja servers return).
     """
-    structured = getattr(result, "structuredContent", None) or {}
+    structured = getattr(result, "structured_content", None) or {}
     if structured:
         return structured
 
@@ -65,10 +64,10 @@ def _extract_json(result) -> dict:
         return {"_text": text}
 
 
-async def _tool_call(session: ClientSession, name: str, args: dict) -> dict:
+async def _tool_call(client: Client, name: str, args: dict) -> dict:
     print(f"\n>>> calling {name}")
     t0 = time.time()
-    result = await session.call_tool(name, args)
+    result = await client.call_tool(name, args)
     dt = time.time() - t0
     print(f"    [took {dt:.1f}s]")
     data = _extract_json(result)
@@ -77,9 +76,9 @@ async def _tool_call(session: ClientSession, name: str, args: dict) -> dict:
     return data
 
 
-async def _coder_sequential(session: ClientSession) -> dict:
+async def _coder_sequential(client: Client) -> dict:
     return await _tool_call(
-        session,
+        client,
         "coder_execute_plan_sequential",
         {
             "repo_root": str(REPO),
@@ -108,9 +107,9 @@ async def _coder_sequential(session: ClientSession) -> dict:
     )
 
 
-async def _coder_parallel(session: ClientSession) -> dict:
+async def _coder_parallel(client: Client) -> dict:
     return await _tool_call(
-        session,
+        client,
         "coder_execute_plan_parallel",
         {
             "repo_root": str(REPO),
@@ -134,9 +133,9 @@ async def _coder_parallel(session: ClientSession) -> dict:
     )
 
 
-async def _coder_quick(session: ClientSession) -> dict:
+async def _coder_quick(client: Client) -> dict:
     return await _tool_call(
-        session,
+        client,
         "coder_simple_task",
         {
             "repo_root": str(REPO),
@@ -164,10 +163,8 @@ async def main() -> None:
         print("\n" + "=" * 70)
         print("E2E 1: coder_execute_plan_sequential")
         print("=" * 70)
-        async with stdio_client(coder_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                results["sequential"] = await _coder_sequential(session)
+        async with Client(coder_params) as client:
+            results["sequential"] = await _coder_sequential(client)
         seq = results["sequential"]
         print("\nSEQUENTIAL overall_status:", seq.get("overall_status"))
         print("SEQUENTIAL steps:", [(s.get("id"), s.get("status")) for s in seq.get("steps", [])])
@@ -176,10 +173,8 @@ async def main() -> None:
         print("\n" + "=" * 70)
         print("E2E 2: coder_execute_plan_parallel")
         print("=" * 70)
-        async with stdio_client(coder_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                results["parallel"] = await _coder_parallel(session)
+        async with Client(coder_params) as client:
+            results["parallel"] = await _coder_parallel(client)
         par = results["parallel"]
         print("\nPARALLEL overall_status:", par.get("overall_status"))
         print("PARALLEL steps:", [(s.get("id"), s.get("status")) for s in par.get("steps", [])])
@@ -188,10 +183,8 @@ async def main() -> None:
         print("\n" + "=" * 70)
         print("E2E 3: coder_simple_task (utils.py)")
         print("=" * 70)
-        async with stdio_client(coder_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                results["quick"] = await _coder_quick(session)
+        async with Client(coder_params) as client:
+            results["quick"] = await _coder_quick(client)
         print("\nQUICK status:", results["quick"].get("status"))
 
     print("\n" + "=" * 70)

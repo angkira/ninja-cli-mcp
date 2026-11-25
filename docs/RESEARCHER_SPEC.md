@@ -65,8 +65,7 @@
 - Serialize responses
 
 **Tools Exposed:**
-- `researcher_web_search` - Web search
-- `researcher_quick_research` - Single-pass cited answer
+- `researcher_quick_research` - Single-question research with cited answer
 - `researcher_deep_research` - Multi-query research + written report
 - `researcher_generate_report` - Report generation
 - `researcher_fact_check` - Fact checking
@@ -516,11 +515,11 @@ Metrics stored in `~/.cache/ninja-mcp/researcher/metrics/`:
 
 ## Usage Examples
 
-### Example 1: Simple Web Search
+### Example 1: Simple Question
 
 ```python
-# Search with DuckDuckGo (free)
-result = await client.call_tool("researcher_web_search", {
+# Answer with DuckDuckGo (free)
+result = await client.call_tool("researcher_quick_research", {
     "query": "Python async best practices",
     "max_results": 10,
     "search_provider": "duckduckgo"
@@ -530,15 +529,15 @@ result = await client.call_tool("researcher_web_search", {
 {
   "status": "ok",
   "query": "Python async best practices",
-  "results": [
+  "provider": "duckduckgo",
+  "answer": "Use asyncio.gather for independent coroutines …",
+  "sources": [
     {
       "title": "Async Python Best Practices",
       "url": "https://example.com/async",
-      "snippet": "Learn the best practices...",
-      "score": 0.95
+      "snippet": "Learn the best practices..."
     }
-  ],
-  "provider": "duckduckgo"
+  ]
 }
 ```
 

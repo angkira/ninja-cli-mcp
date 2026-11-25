@@ -31,7 +31,6 @@ from mcp.types import (
     Tool,
     ToolAnnotations,
 )
-from pydantic import AnyUrl
 
 
 if TYPE_CHECKING:
@@ -60,7 +59,7 @@ def svg_icon(letter: str, bg: str) -> Icon:
     )
     return Icon(
         src=f"data:image/svg+xml,{quote(svg, safe='')}",
-        mimeType="image/svg+xml",
+        mime_type="image/svg+xml",
         sizes=["64x64"],
     )
 
@@ -103,7 +102,13 @@ def output_schema_for(model: type[BaseModel] | None) -> dict[str, Any]:
         return {"type": "object"}
     schema = model.model_json_schema()
     defs = schema.pop("$defs", None)
-    wrapped: dict[str, Any] = {"anyOf": [schema, ERROR_ENVELOPE_SCHEMA, BARE_ERROR_SCHEMA]}
+    # ``type: object`` at the root is mandatory on the 2025-11-25 wire (its
+    # ``OutputSchema`` model declares it as a required field) and is implied by
+    # every branch of the ``anyOf`` below, so it narrows nothing.
+    wrapped: dict[str, Any] = {
+        "type": "object",
+        "anyOf": [schema, ERROR_ENVELOPE_SCHEMA, BARE_ERROR_SCHEMA],
+    }
     if defs:
         wrapped["$defs"] = defs
     return wrapped
@@ -123,7 +128,7 @@ def apply_tool_meta(
     meta: dict[str, ToolMeta],
     icon: Icon,
 ) -> list[Tool]:
-    """Return copies of *tools* with title/annotations/outputSchema/icons set.
+    """Return copies of *tools* with title/annotations/output_schema/icons set.
 
     Tools missing from *meta* keep their definition but still get the icon.
     """
@@ -134,7 +139,7 @@ def apply_tool_meta(
         if entry is not None:
             update["title"] = entry.title
             update["annotations"] = entry.annotations
-            update["outputSchema"] = output_schema_for(entry.result_model)
+            update["output_schema"] = output_schema_for(entry.result_model)
         branded.append(tool.model_copy(update=update))
     return branded
 
@@ -197,10 +202,10 @@ def file_resource_link(
             return None
         uri = f"file://{pathname2url(str(resolved.resolve()))}"
         return ResourceLink(
-            uri=AnyUrl(uri),
+            uri=uri,
             name=name,
             title=title or name,
-            mimeType=mime_type,
+            mime_type=mime_type,
             size=resolved.stat().st_size,
             type="resource_link",
         )
@@ -226,8 +231,14 @@ async def elicit_confirm(
 ) -> bool | None:
     """Ask the user for confirmation via elicitation.
 
+    Push-style elicitation (a server-initiated request mid-call) is only
+    available on legacy connections; 2026-07-28 replaces it with the
+    ``resolve`` flow, where the server returns an ``input_required`` result and
+    the client answers on a later request. Until the call sites migrate, this
+    keeps the legacy shape. A later stage replaces it with ``Resolve``.
+
     Args:
-        session: MCP server session (must expose ``elicit_form``).
+        session: MCP server session (must expose ``elicit``).
         message: Human-readable confirmation prompt.
         item_label: Label interpolated into the confirm field description.
 
@@ -235,13 +246,13 @@ async def elicit_confirm(
         True when the user confirmed, False when they declined, None when
         elicitation is unsupported or failed (caller must fall back).
     """
-    elicit = getattr(session, "elicit_form", None)
+    elicit = getattr(session, "elicit", None)
     if not callable(elicit):
         return None
     try:
         result = await elicit(
-            message,
-            {
+            message=message,
+            requested_schema={
                 "type": "object",
                 "properties": {
                     "confirm": {
@@ -268,7 +279,7 @@ def error_text_payload(error: str, error_type: str = "UpstreamError") -> CallToo
     """Minimal error payload (no outputSchema validation involved)."""
     return CallToolResult(
         content=[pretty_json_text({"status": "error", "error": error, "error_type": error_type})],
-        isError=True,
+        is_error=True,
     )
 
 
