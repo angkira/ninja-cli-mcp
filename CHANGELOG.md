@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.1.0 - 2026-11-26
+
+### Added
+- `secretary_codebase_report` now honours `include_patterns` and `exclude_patterns`
+  (gitignore-style globs via pathspec). Filtering is applied once, and every aggregate
+  (`file_count`, `total_size`, `extensions`, `total_lines`) is derived from the filtered
+  set, so the numbers agree.
+- Tool schemas now expose options the executors already implemented: `analyse_file`
+  (`search_pattern`, `include_structure`, `include_preview`), `file_search`
+  (`max_results`), `codebase_report` (`include_metrics`, `include_dependencies`,
+  `include_structure`), `session_report` (`action`, `updates`), `multi_agent_task`
+  (`allowed_globs`, `deny_globs`).
+
+### Fixed
+- Task model resolution now falls back to the persisted config when `NINJA_MODEL_QUICK` /
+  `_SEQUENTIAL` / `_PARALLEL` (and the `MODEL_CLASS_*` keys) are absent from the
+  environment. Direct-driver callers previously used only `os.environ` and could resolve
+  to an unrelated `NINJA_MODEL`, which is how a QA task ended up on an unavailable
+  provider model. Server entry points were unaffected.
+- `secretary_session_report` rejects `action=update|create` without `session_id` instead
+  of silently returning the index.
+- The test suite no longer depends on the developer's ambient model environment by
+  accident.
+
+### Changed
+- `exclude_patterns` / `include_patterns` now actually filter; previously they were
+  advertised but silently ignored, so an existing call that passed them will now return a
+  smaller, filtered report.
+
 ## 2.0.2 - 2026-11-25
 
 ### Fixed

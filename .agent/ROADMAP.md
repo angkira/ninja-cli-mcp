@@ -113,7 +113,7 @@ that made module state read stale.
 - [x] `tests/test_modern_tui_modules.py` — 5 tests
 
 **Follow-ups (backlog):**
-- [ ] Relax `test_no_old_servers_running` to allow the user's own uv/tools daemons
+- [x] Relax `test_no_old_servers_running` to allow the user's own uv/tools daemons (2.1.0: skips when an active `ninja-mcp@*` systemd user unit owns the process)
 - [ ] `ninja-*` module config surface parity: add `ninja-agent` to `config/mcp-modules.json`
 
 ---
@@ -393,36 +393,89 @@ clearly label it as the on-disk version).
 
 ### [Bug] QA model routing resolves `quick` to `qwen/qwen3-coder` (rejected by operator)
 **Priority:** HIGH
-**Status:** OPEN (verified 2026-11-25 during MCP 2.0 work, not fixed)
+**Status:** FIXED (2.1.0) — commit `d8bdb0d` (`fix(coder): resolve task models from config when the env var is absent`)
 
 **Description:**
-QA model routing resolves `task_type=quick` to `qwen/qwen3-coder`, which the
-operator rejects: `exit_code 1`, 173-byte stdout, 0.2s runtime. This breaks
+QA model routing resolved `task_type=quick` to `qwen/qwen3-coder`, which the
+operator rejects: `exit_code 1`, 173-byte stdout, 0.2s runtime. This broke
 `tests/test_integration.py::test_structured_logging_integration` and
 `tests/test_integration.py::test_multi_agent_task_execution` on **every** commit,
-including pre-2.0.0 commits. The root cause lies outside this repo's routing files.
+including pre-2.0.0 commits.
+
+**Root cause:** two independent causes stacked.
+1. The operator shell exported an ambient `NINJA_MODEL=qwen/qwen3-coder` (pinned for a
+   different integration in `~/.config/zed/settings.json:56`). `ModelSelector` read only
+   `os.environ`, and `NinjaConfig.from_env()` prefers `NINJA_MODEL` for direct-driver
+   callers, so an unset/inherited task model silently became that unrelated id.
+2. Task-specific keys (`NINJA_MODEL_QUICK` / `_SEQUENTIAL` / `_PARALLEL`, `MODEL_CLASS_*`)
+   were only read from the environment; the persisted `~/.ninja-mcp.env` fallback that
+   server entry points get from `ConfigManager.export_env()` never applied to direct
+   callers.
+
+**Fix:** `ModelSelector` now falls back to the persisted config for per-task and
+model-class keys, so a `quick` task resolves to the configured quick model
+(`opencode-go/deepseek-v4.1-flash`) even with an ambient `NINJA_MODEL` present. Covered by
+`tests/test_coder/test_model_config_fallback.py`; the two integration tests now pass
+(`test_multi_agent_task_execution` additionally fixed its worktree assertion — see its own entry below).
+
+**Residual action for the operator (not a code issue):**
+- `unset NINJA_MODEL` in the operator shell so direct-driver runs stop inheriting a model
+  pinned for another integration.
+- `~/.config/zed/settings.json:56` still pins `NINJA_MODEL=qwen/qwen3-coder` for the Zed
+  MCP entry. That server now resolves task models from config, but the ambient value should
+  be removed there too if the provider is unavailable.
+
+---
+
+### [Bug] `test_multi_agent_task_execution` asserted on the wrong tree (worktree isolation)
+**Priority:** Medium
+**Status:** FIXED (2.1.0) — `tests/test_integration.py`
+
+**Description:**
+The task itself succeeded, but the test read `test_repo/calculator.py`. Sequential tasks
+run in an isolated `ninja/*` worktree and the agent's output is committed on the branch
+there, so the file is deliberately absent from the caller's working tree. The assertion
+could never pass in worktree mode.
+
+**Fix:** the test now resolves the artifact from the driver's structured result
+(`suspected_touched_paths`, git-derived in worktree mode) and reads the file from the
+reported `worktree_branch` with `git show <branch>:<path>`, falling back to the working
+tree only for an in-place run. Isolation behaviour remains covered by
+`tests/test_worktree.py`; `NINJA_WORKTREE_MODE` is not overridden, so the real multi-agent
+path is exercised.
 
 ---
 
 ### [Bug] `test_find_editable_repo_detects_real_layout` is checkout-name dependent
 **Priority:** Low
-**Status:** OPEN (verified 2026-11-25)
+**Status:** RESOLVED (2.1.0) — no code change needed; test already tolerant
 
 **Description:**
-`tests/test_auto_updater.py::test_find_editable_repo_detects_real_layout` asserts on
-the real repository layout and fails in any worktree whose directory name differs
+`tests/test_auto_updater.py::test_find_editable_repo_detects_real_layout` asserted on
+the real repository layout and failed in any worktree whose directory name differed
 from the expected checkout name.
+
+**Resolution (verified 2026-11-26):** the assertion is now
+`found is None or found.name == "ninja-cli-mcp"`, so a checkout under any other name
+(e.g. an OpenCode worktree) passes via the `None` branch. Green in this worktree
+(`mcp-2026-07-28`); nothing to fix.
 
 ---
 
 ### [Bug] `test_no_old_servers_running` conflicts with the user's own daemons
 **Priority:** Low
-**Status:** OPEN (verified 2026-11-25)
+**Status:** FIXED (2.1.0) — `tests/test_ninja_fixed.py`
 
 **Description:**
-`tests/test_ninja_fixed.py::test_no_old_servers_running` treats the operator's
-`uv/tools/ninja-mcp` daemons (ports 8100/8101/8106/8107) as "old servers" and fails
-whenever they are running. Environment conflict, not a code regression.
+`tests/test_ninja_fixed.py::test_no_old_servers_running` treated the operator's
+`uv/tools/ninja-mcp` daemons (ports 8100/8101/8106/8107) as "old servers" and failed
+whenever they were running. Environment conflict, not a code regression.
+
+**Fix:** the test now inspects processes with psutil and skips (with the offending PIDs
+and unit names in the reason) when a `uv/tools` server is owned by an **active**
+`ninja-mcp@<module>.service` user unit or by a process whose cgroup belongs to one.
+Servers with no active unit are still genuinely stale and still fail the assertion.
+Read-only checks only (`systemctl --user is-active`, `/proc/<pid>/cgroup`).
 
 ---
 
@@ -454,7 +507,28 @@ this class of drift fails in CI instead of at call time.
 
 ### [Bug] Secretary schemas under-expose model capabilities
 **Priority:** Medium
-**Status:** OPEN (verified 2026-11-25, audit 2026-11-25)
+**Status:** FIXED (2.1.0) — commit `1f86894` (`feat(secretary): honour include/exclude globs in codebase_report and expose implemented options`)
+
+**Description:**
+- `secretary_codebase_report` advertises `include_patterns` / `exclude_patterns` that the
+  request model does not declare **and** that the executor ignores — the arguments are
+  accepted by the schema and silently discarded.
+- `secretary_session_report` schema exposes only `session_id`, while the model also
+  accepts `action` / `updates` — those paths are unreachable from MCP clients.
+- `secretary_analyse_file` exposes fewer optional properties than its model accepts.
+- `secretary_file_search` exposes fewer optional properties than its model accepts
+  (`max_results`).
+- `coder_multi_agent_task` exposes fewer optional properties than its model accepts
+  (`allowed_globs` / `deny_globs`).
+
+**Fix:** the globs are now applied (gitignore-style, via `pathspec`) and every aggregate in
+the report is derived from the filtered set; the schemas now advertise the options the
+executors already implemented (`analyse_file`: `search_pattern`, `include_structure`,
+`include_preview`; `file_search`: `max_results`; `codebase_report`: `include_metrics`,
+`include_dependencies`, `include_structure`; `session_report`: `action`, `updates`;
+`multi_agent_task`: `allowed_globs`, `deny_globs`). `session_report` now rejects
+`action=update|create` without `session_id` instead of silently returning the index.
+Covered by `tests/test_secretary/test_codebase_filters.py`.
 
 **Description:**
 - `secretary_codebase_report` advertises `include_patterns` / `exclude_patterns` that the
