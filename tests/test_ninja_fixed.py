@@ -1,6 +1,7 @@
 """Integration tests for the Ninja MCP daemon lifecycle."""
 
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -13,6 +14,12 @@ from ninja_common.daemon import DaemonManager
 
 
 SERVER_MODULES = ("coder", "researcher", "secretary")
+
+#: Matches the module name in a ``ninja_<module>.server`` / ``ninja_<module>`` cmdline.
+_SERVER_MODULE_RE = re.compile(r"ninja_(coder|researcher|secretary|agent)\b")
+
+#: Matches a systemd user unit name (without the ``.service`` suffix) in a cgroup.
+_SYSTEMD_UNIT_RE = re.compile(r"(ninja-mcp@[A-Za-z0-9_.-]+)\.service")
 
 
 def _uses_current_python_environment(process: psutil.Process) -> bool:
@@ -90,25 +97,84 @@ def test_servers_restarted(running_daemons: DaemonManager):
         assert f"ninja_{module}.server" in " ".join(process.cmdline())
 
 
+def _systemd_unit_active(unit: str) -> bool:
+    """Return whether a user systemd unit is active (read-only query)."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-active", unit],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.stdout.strip() == "active"
+
+
+def _process_cgroup_units(pid: int) -> set[str]:
+    """Return the ``ninja-mcp@*`` user units named in a process's cgroup chain."""
+    try:
+        cgroup = Path(f"/proc/{pid}/cgroup").read_text()
+    except OSError:
+        return set()
+    return set(_SYSTEMD_UNIT_RE.findall(cgroup))
+
+
+def _owned_by_active_systemd_unit(process: psutil.Process, module: str | None) -> bool:
+    """Return whether a server runs under an active ``ninja-mcp@<module>`` unit.
+
+    The server started by a unit may run in a child process (wrappers, shells),
+    so every ancestor's cgroup is inspected as well: children inherit the unit
+    cgroup. Purely read-only — no process is ever signalled.
+    """
+    if module and _systemd_unit_active(f"ninja-mcp@{module}.service"):
+        return True
+    ancestors = [process, *process.parents()]
+    for ancestor in ancestors:
+        for unit in _process_cgroup_units(ancestor.pid):
+            if _systemd_unit_active(f"{unit}.service"):
+                return True
+    return False
+
+
 def test_no_old_servers_running():
-    """Test that no old servers from uv/tools are still running."""
-    result = subprocess.run(
-        ["ps", "aux"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    """Test that no stale servers from uv/tools are still running.
 
-    # Check for old servers from uv/tools
-    old_servers = [
-        line
-        for line in result.stdout.splitlines()
-        if "ninja_" in line and "server" in line and "uv/tools" in line and "grep" not in line
-    ]
+    A server installed by ``uv tool install`` and started by an active
+    ``ninja-mcp@<module>.service`` user unit is the intended production state,
+    not a stale leftover, so those are skipped. Servers with no active unit
+    behind them are genuinely orphaned and still fail the test.
+    """
+    stale_servers: list[str] = []
+    managed_servers: list[str] = []
+    for process in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            cmdline = " ".join(process.info["cmdline"] or ())
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        if not ("ninja_" in cmdline and "server" in cmdline and "uv/tools" in cmdline):
+            continue
+        module_match = _SERVER_MODULE_RE.search(cmdline)
+        module = module_match.group(1) if module_match else None
+        entry = f"pid {process.pid}: {cmdline}"
+        try:
+            managed = _owned_by_active_systemd_unit(process, module)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            managed = False
+        (managed_servers if managed else stale_servers).append(entry)
 
-    assert len(old_servers) == 0, (
-        f"Found {len(old_servers)} old servers still running from uv/tools: {old_servers}"
-    )
+    if stale_servers:
+        raise AssertionError(
+            f"Found {len(stale_servers)} stale servers still running from uv/tools "
+            f"with no active systemd unit: {stale_servers}"
+        )
+
+    if managed_servers:
+        pytest.skip(
+            f"{len(managed_servers)} server(s) from uv/tools run under an active "
+            f"ninja-mcp systemd user unit: {managed_servers}"
+        )
 
 
 def test_daemon_pid_files_exist(running_daemons: DaemonManager):
