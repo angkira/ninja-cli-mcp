@@ -258,14 +258,32 @@ async def test_multi_agent_task_execution(
     assert result.success is True, f"Task failed: {result.summary}"
     assert result.model_used is not None
     assert len(result.suspected_touched_paths) >= 1, "No files were created"
-    assert any(Path(p).name == "calculator.py" for p in result.suspected_touched_paths)
+    calc_paths = [p for p in result.suspected_touched_paths if Path(p).name == "calculator.py"]
+    assert calc_paths, f"calculator.py missing from touched paths: {result.suspected_touched_paths}"
 
-    # Verify the calculator module was created
-    calc_file = test_repo / "calculator.py"
-    assert calc_file.exists(), "calculator.py was not created"
+    # The driver isolates sequential tasks in a git worktree and commits the
+    # agent's output on a ninja/* branch there, so the artifact is deliberately
+    # absent from test_repo's working tree (isolation itself is covered by
+    # tests/test_worktree.py). Read it from the reported branch when one was
+    # used, and from the working tree only for an in-place run.
+    import subprocess
 
-    # Verify it has the required functions
-    calc_content = calc_file.read_text()
+    calc_rel = Path(calc_paths[0]).as_posix()
+    if result.worktree_branch:
+        shown = subprocess.run(
+            ["git", "-C", str(test_repo), "show", f"{result.worktree_branch}:{calc_rel}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert shown.returncode == 0, (
+            f"calculator.py not found on branch {result.worktree_branch}: {shown.stderr}"
+        )
+        calc_content = shown.stdout
+    else:
+        calc_file = test_repo / calc_rel
+        assert calc_file.exists(), "calculator.py was not created"
+        calc_content = calc_file.read_text()
     assert "def add(" in calc_content
     assert "def subtract(" in calc_content
     assert "def multiply(" in calc_content
