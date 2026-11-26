@@ -38,6 +38,44 @@ MODEL_CLASS_DEFAULTS = {
 }
 
 
+def _persisted_settings() -> dict[str, str]:
+    """Read model settings from the persisted config file, degrading silently.
+
+    The MCP servers export ``~/.ninja-mcp.env`` into the process environment at
+    startup, but direct-driver and test paths may never do so. Reading the file
+    here keeps task-specific model routing correct in both cases.
+
+    Returns:
+        Parsed config mapping, or an empty mapping when the file is missing,
+        unreadable, or the config layer is unavailable.
+    """
+    try:
+        # Imported lazily: keeps ``ninja_coder`` importable without the config
+        # layer and avoids any import cycle at module load time.
+        from ninja_common.config_manager import ConfigManager
+
+        return ConfigManager().read_config()
+    except Exception:  # config is optional; never break model selection
+        logger.debug("Persisted model config unavailable; using environment only")
+        return {}
+
+
+def _setting(name: str, persisted: dict[str, str]) -> str | None:
+    """Resolve a setting from the environment, then the persisted config.
+
+    Args:
+        name: Environment variable / config key name.
+        persisted: Persisted config mapping (read once by the caller).
+
+    Returns:
+        The configured value, or ``None`` when neither source defines it.
+    """
+    value = os.environ.get(name)
+    if value:
+        return value
+    return persisted.get(name) or None
+
+
 @dataclass
 class ModelRecommendation:
     """Model recommendation with reasoning."""
@@ -118,7 +156,7 @@ class ModelSelector:
                 f"Expected one of: {', '.join(MODEL_CLASS_ENV)}"
             )
 
-        model = os.environ.get(MODEL_CLASS_ENV[key]) or MODEL_CLASS_DEFAULTS[key]
+        model = _setting(MODEL_CLASS_ENV[key], _persisted_settings()) or MODEL_CLASS_DEFAULTS[key]
         model = self._enforce_operator(model, f"model class '{key}'")
         return self._recommend_specific_model(model, f"model class '{key}'")
 
@@ -154,18 +192,22 @@ class ModelSelector:
         prefer_quality: bool = False,
     ) -> ModelRecommendation:
         """Unconstrained model selection (operator filter applied by caller)."""
-        # Check for task-specific model overrides first
+        # Check for task-specific model overrides first. The env var wins; when
+        # absent, fall back to the persisted config (~/.ninja-mcp.env) so
+        # direct-driver and test paths route like the MCP servers do.
+        persisted = _persisted_settings()
         task_specific_model = None
         if complexity == TaskComplexity.PARALLEL:
-            task_specific_model = os.environ.get("NINJA_MODEL_PARALLEL")
+            task_specific_model = _setting("NINJA_MODEL_PARALLEL", persisted)
         elif complexity == TaskComplexity.SEQUENTIAL:
-            task_specific_model = os.environ.get("NINJA_MODEL_SEQUENTIAL")
+            task_specific_model = _setting("NINJA_MODEL_SEQUENTIAL", persisted)
         elif complexity == TaskComplexity.QUICK:
-            task_specific_model = os.environ.get("NINJA_MODEL_QUICK")
+            task_specific_model = _setting("NINJA_MODEL_QUICK", persisted)
 
         if task_specific_model:
             return self._recommend_specific_model(
-                task_specific_model, f"task-specific env var for {complexity.value}"
+                task_specific_model,
+                f"task-specific model for {complexity.value} (env var or persisted config)",
             )
 
         # If default model is set and no preference, use it

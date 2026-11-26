@@ -46,7 +46,17 @@ def skip_if_no_opencode():
 
 @pytest.fixture
 def real_driver():
-    """Create NinjaDriver with real configuration from environment."""
+    """Create NinjaDriver with real configuration from environment.
+
+    Mirrors production initialisation: every server entry point exports the
+    persisted ``~/.ninja-mcp.env`` config into the environment before building
+    the driver config. ``export_env`` never overrides already-set variables, so
+    ambient values (e.g. ``NINJA_MODEL``) still win; task-specific routing is
+    resolved from the persisted config by ``ModelSelector``.
+    """
+    from ninja_common.config_manager import ConfigManager
+
+    ConfigManager().export_env()
     config = NinjaConfig.from_env()
 
     # Verify config is valid

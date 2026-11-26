@@ -42,6 +42,38 @@ def _isolate_environ() -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_persisted_model_config(
+    request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    """Point the default ``ConfigManager()`` at an absent config file.
+
+    ``ModelSelector`` falls back to ``~/.ninja-mcp.env`` when a
+    ``NINJA_MODEL_*`` environment variable is absent, so a developer's real
+    config would otherwise make model-resolution tests machine dependent.
+    Tests that need persisted settings pass their own ``config_file`` (explicit
+    paths are still honoured) or patch ``ConfigManager`` themselves.
+
+    Integration tests are exempt: they deliberately mirror production
+    initialisation via ``ConfigManager().export_env()``.
+    """
+    if request.node.get_closest_marker("integration"):
+        return
+
+    import ninja_common.config_manager as config_manager_module
+
+    real_manager = config_manager_module.ConfigManager
+    absent_config = str(tmp_path / "ninja-mcp.env")
+
+    class IsolatedConfigManager(real_manager):  # type: ignore[misc, valid-type]
+        """ConfigManager whose default path is an absent temp file."""
+
+        def __init__(self, config_file: str | None = None) -> None:
+            super().__init__(config_file=config_file or absent_config)
+
+    monkeypatch.setattr(config_manager_module, "ConfigManager", IsolatedConfigManager)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_secret_store(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> Generator[None, None, None]:
