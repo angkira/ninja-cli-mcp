@@ -16,6 +16,40 @@ import pytest
 from ninja_coder.strategies.opencode_strategy import OpenCodeStrategy
 
 
+#: Environment variables that steer how ``build_command`` resolves the model,
+#: its provider prefix and the timeout. They must not be inherited from the
+#: developer's shell or config file: ``tests/test_mcp_elicitation.py`` imports
+#: ``ninja_coder.server`` at *collection* time, and that module calls
+#: ``ConfigManager().export_env()`` (server.py), which copies
+#: ``~/.ninja-mcp.env`` into ``os.environ`` before any fixture runs -- e.g.
+#: ``NINJA_CODER_OPENCODE_PROVIDER=opencode-go``. The autouse
+#: ``_isolate_environ`` fixture in ``tests/conftest.py`` snapshots the
+#: environment after that import, so it faithfully restores the leaked values,
+#: making them "ambient" in a full-suite run while absent when this file runs
+#: alone. Pinning them here keeps every assertion below independent of the
+#: developer's machine and of test collection order.
+_AMBIENT_MODEL_ENV_VARS: tuple[str, ...] = (
+    "NINJA_MODEL",
+    "NINJA_MODEL_QUICK",
+    "NINJA_MODEL_SEQUENTIAL",
+    "NINJA_MODEL_PARALLEL",
+    "NINJA_MODEL_CLASS_SMART",
+    "NINJA_MODEL_CLASS_BALANCED",
+    "NINJA_MODEL_CLASS_FAST",
+    "NINJA_CODER_MODEL",
+    "NINJA_CODE_BIN",
+    "NINJA_CODER_OPENCODE_PROVIDER",
+    "NINJA_OPENCODE_TIMEOUT",
+)
+
+
+@pytest.fixture(autouse=True)
+def isolate_ambient_model_env(monkeypatch):
+    """Clear ambient model/provider/timeout settings for every test here."""
+    for key in _AMBIENT_MODEL_ENV_VARS:
+        monkeypatch.delenv(key, raising=False)
+
+
 @pytest.fixture
 def config():
     """Create test config."""
