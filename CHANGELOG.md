@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.1 - 2026-11-26
+
+### Fixed
+- Importing a server module no longer mutates `os.environ`. `ninja_coder.server` called
+  `ConfigManager().export_env()` at import time, so merely importing it copied the user's
+  `~/.ninja-mcp.env` into the process environment — which silently changed the behaviour of
+  unrelated code and tests in the same process. The call now happens in the CLI entry
+  point, where the server actually starts.
+- `test_structured_logging_integration` counted log entries with a fixed `limit=1000`,
+  which saturated once the log file grew past 1000 lines, so the test failed regardless of
+  the run. It now counts entries for the specific task id.
+
 ## 2.1.0 - 2026-11-26
 
 ### Added
