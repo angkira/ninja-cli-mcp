@@ -88,6 +88,20 @@ TOOLS: list[Tool] = [
                     "type": "string",
                     "description": "Path to the file to analyze",
                 },
+                "search_pattern": {
+                    "type": "string",
+                    "description": "Optional regex pattern to search within the file",
+                },
+                "include_structure": {
+                    "type": "boolean",
+                    "description": "Include file structure analysis (functions, classes)",
+                    "default": True,
+                },
+                "include_preview": {
+                    "type": "boolean",
+                    "description": "Include a preview of the first lines",
+                    "default": True,
+                },
             },
             "required": ["file_path"],
         },
@@ -110,6 +124,13 @@ TOOLS: list[Tool] = [
                     "type": "string",
                     "description": "Repository root path to search under (required)",
                 },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return",
+                    "default": 100,
+                    "minimum": 1,
+                    "maximum": 1000,
+                },
             },
             "required": ["pattern", "repo_root"],
         },
@@ -127,12 +148,36 @@ TOOLS: list[Tool] = [
                 "include_patterns": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Patterns to include (e.g., ['**/*.py', '**/*.js'])",
+                    "description": (
+                        "Gitignore-style globs a file must match, relative to repo_root "
+                        "(e.g. ['**/*.py', 'src/**/*.ts']). Empty means all files."
+                    ),
+                    "default": [],
                 },
                 "exclude_patterns": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Patterns to exclude (e.g., ['**/node_modules/**', '**/__pycache__/**'])",
+                    "description": (
+                        "Gitignore-style globs that exclude files from the report "
+                        "(e.g. ['**/node_modules/**', '**/__pycache__/**']). Empty means "
+                        "exclude nothing."
+                    ),
+                    "default": [],
+                },
+                "include_metrics": {
+                    "type": "boolean",
+                    "description": "Include code metrics (lines, extensions)",
+                    "default": True,
+                },
+                "include_dependencies": {
+                    "type": "boolean",
+                    "description": "Include dependency manifest analysis",
+                    "default": True,
+                },
+                "include_structure": {
+                    "type": "boolean",
+                    "description": "Include project structure summary (files, directories, size)",
+                    "default": True,
                 },
             },
             "required": ["repo_root"],
@@ -194,7 +239,23 @@ TOOLS: list[Tool] = [
             "properties": {
                 "session_id": {
                     "type": "string",
-                    "description": "Session identifier (defaults to 'default')",
+                    "description": "Session identifier. Omit to list all sessions.",
+                },
+                "updates": {
+                    "type": "object",
+                    "description": (
+                        "Per-session fields to merge when action is 'update' or 'create' "
+                        "(tools_used, files_accessed, summary, metadata)"
+                    ),
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["get", "update", "create"],
+                    "description": (
+                        "Action to perform. 'update'/'create' require session_id; "
+                        "omitting session_id lists sessions (get only)"
+                    ),
+                    "default": "get",
                 },
             },
         },

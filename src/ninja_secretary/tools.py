@@ -7,10 +7,12 @@ This module contains the business logic for all secretary-related MCP tools.
 from __future__ import annotations
 
 import datetime
+import os
 import re
 from pathlib import Path
 
 from ninja_common.logging_utils import get_logger
+from ninja_common.path_utils import build_path_matcher, normalize_globs
 from ninja_common.rate_balancer import rate_balanced
 from ninja_common.security import monitored
 from ninja_secretary.models import (
@@ -378,28 +380,63 @@ class SecretaryToolExecutor:
             report_parts.append(f"# Codebase Report: {repo_root.name}\n\n")
             report_parts.append(f"**Generated:** {datetime.datetime.now().isoformat()}\n\n")
 
-            # Analyze directory structure
-            file_count = 0
+            # Build the include/exclude predicate once. Absolute patterns are
+            # made repo-relative by normalize_globs; invalid syntax is reported
+            # as a clean error, mirroring file_search's invalid-regex handling.
+            try:
+                path_matches = build_path_matcher(
+                    normalize_globs(request.include_patterns, repo_root),
+                    normalize_globs(request.exclude_patterns, repo_root),
+                )
+            except ValueError as exc:
+                logger.warning(f"Invalid codebase report pattern: {exc}")
+                return CodebaseReportResult(
+                    status="error",
+                    report="",
+                    metrics={},
+                    file_count=0,
+                    message=str(exc),
+                )
+
+            # Single walk: prune the skip directories, count directories, and
+            # materialise the matched files once. file_count, total_size,
+            # extensions and total_lines derive from the filtered list so they
+            # agree; dir_count describes the walked tree (skip dirs pruned) and
+            # is intentionally unaffected by file globs, matching the previous
+            # report.
+            skip_dirs = {".git", "node_modules", "__pycache__", "venv"}
+            files: list[tuple[Path, str, int]] = []
             dir_count = 0
-            total_size = 0
 
+            for dirpath, dirnames, filenames in os.walk(repo_root):
+                dirnames[:] = sorted(d for d in dirnames if d not in skip_dirs)
+                current = Path(dirpath)
+                if current != repo_root:
+                    dir_count += 1
+
+                for filename in sorted(filenames):
+                    path = current / filename
+                    rel_posix = path.relative_to(repo_root).as_posix()
+                    if not path_matches(rel_posix):
+                        continue
+                    try:
+                        size = path.stat().st_size
+                    except OSError:
+                        continue
+                    files.append((path, rel_posix, size))
+
+            file_count = len(files)
+            total_size = sum(size for _path, _rel, size in files)
+
+            metrics["file_count"] = file_count
+
+            # Analyze directory structure
             if request.include_structure:
-                for path in repo_root.rglob("*"):
-                    if not any(
-                        p in path.parts for p in [".git", "node_modules", "__pycache__", "venv"]
-                    ):
-                        if path.is_dir():
-                            dir_count += 1
-                        elif path.is_file():
-                            file_count += 1
-                            total_size += path.stat().st_size
-
                 report_parts.append("## Project Structure\n\n")
                 report_parts.append(f"- **Total Files:** {file_count}\n")
                 report_parts.append(f"- **Total Directories:** {dir_count}\n")
                 report_parts.append(f"- **Total Size:** {total_size / 1024 / 1024:.2f} MB\n\n")
 
-                metrics["file_count"] = file_count
                 metrics["dir_count"] = dir_count
                 metrics["total_size_mb"] = total_size / 1024 / 1024
 
@@ -407,33 +444,22 @@ class SecretaryToolExecutor:
             if request.include_metrics:
                 report_parts.append("## Code Metrics\n\n")
 
-                # Count files by extension
+                # Count files by extension and lines over the filtered list.
                 extensions: dict[str, int] = {}
                 total_lines = 0
+                code_suffixes = {".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs"}
 
-                for path in repo_root.rglob("*"):
-                    if path.is_file() and not any(
-                        p in path.parts for p in [".git", "node_modules", "__pycache__", "venv"]
-                    ):
-                        ext = path.suffix.lstrip(".") or "no_extension"
-                        extensions[ext] = extensions.get(ext, 0) + 1
+                for path, _rel, _size in files:
+                    ext = path.suffix.lstrip(".") or "no_extension"
+                    extensions[ext] = extensions.get(ext, 0) + 1
 
-                        # Count lines for text files
-                        if path.suffix in [
-                            ".py",
-                            ".js",
-                            ".ts",
-                            ".jsx",
-                            ".tsx",
-                            ".java",
-                            ".go",
-                            ".rs",
-                        ]:
-                            try:
-                                with path.open(encoding="utf-8", errors="replace") as f:
-                                    total_lines += sum(1 for _ in f)
-                            except Exception:
-                                pass
+                    # Count lines for text files
+                    if path.suffix in code_suffixes:
+                        try:
+                            with path.open(encoding="utf-8", errors="replace") as f:
+                                total_lines += sum(1 for _ in f)
+                        except Exception:
+                            pass
 
                 report_parts.append(f"- **Total Lines of Code:** ~{total_lines:,}\n")
                 report_parts.append("\n### Files by Extension\n\n")
@@ -444,7 +470,9 @@ class SecretaryToolExecutor:
                 metrics["total_lines"] = total_lines
                 metrics["extensions"] = extensions
 
-            # Dependencies analysis
+            # Dependencies analysis. Intentionally unfiltered: dependency
+            # manifests at the repo root are reported regardless of the
+            # include/exclude globs, since they describe the whole project.
             if request.include_dependencies:
                 report_parts.append("\n## Dependencies\n\n")
 
@@ -496,12 +524,14 @@ class SecretaryToolExecutor:
                 logger.debug("secretary report operator enrichment skipped: %s", e)
 
             return CodebaseReportResult(
-                status="ok", report=report, metrics=metrics, file_count=metrics.get("file_count", 0)
+                status="ok", report=report, metrics=metrics, file_count=file_count
             )
 
         except Exception as e:
             logger.error(f"Codebase report failed for client {client_id}: {e}")
-            return CodebaseReportResult(status="error", report="", metrics={}, file_count=0)
+            return CodebaseReportResult(
+                status="error", report="", metrics={}, file_count=0, message=str(e)
+            )
 
     @rate_balanced(
         max_calls=5, time_window=60, max_retries=3, initial_backoff=2.0, max_backoff=60.0
@@ -596,7 +626,22 @@ class SecretaryToolExecutor:
             Session report.
         """
         # When session_id is omitted, return an index of available sessions.
+        # ``get`` keeps the index behaviour; mutating actions without a target
+        # session would silently do nothing, so reject them explicitly.
         if request.session_id is None:
+            if request.action in ("update", "create"):
+                now = datetime.datetime.now().isoformat()
+                return SessionReport(
+                    session_id="",
+                    started_at=now,
+                    last_updated=now,
+                    summary="",
+                    status="error",
+                    message=(
+                        f"session_id is required for action='{request.action}'; "
+                        "omit it only for action='get' to list sessions"
+                    ),
+                )
             return SessionReport(
                 session_id="__index__",
                 started_at=datetime.datetime.now().isoformat(),

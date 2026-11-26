@@ -43,6 +43,14 @@ class CodebaseReportRequest(BaseModel):
     """Request to generate a codebase analysis report."""
 
     repo_root: str = Field(..., description="Repository root path")
+    include_patterns: list[str] = Field(
+        default_factory=list,
+        description="Glob patterns to include (empty = all files)",
+    )
+    exclude_patterns: list[str] = Field(
+        default_factory=list,
+        description="Glob patterns to exclude (empty = exclude nothing)",
+    )
     include_metrics: bool = Field(default=True, description="Include code metrics")
     include_dependencies: bool = Field(default=True, description="Include dependency analysis")
     include_structure: bool = Field(default=True, description="Include project structure")
@@ -170,6 +178,7 @@ class CodebaseReportResult(BaseModel):
     report: str = Field(..., description="Markdown report")
     metrics: dict = Field(default_factory=dict, description="Code metrics")
     file_count: int = Field(default=0, description="Total files analyzed")
+    message: str = Field(default="", description="Error or informational message")
 
 
 class DocumentSummaryResult(BaseModel):
@@ -191,6 +200,8 @@ class SessionReport(BaseModel):
     files_accessed: list[str] = Field(default_factory=list, description="Files read/written")
     summary: str = Field(default="", description="Session summary")
     metadata: dict = Field(default_factory=dict, description="Additional metadata")
+    status: Literal["ok", "error"] = Field(default="ok", description="Report status")
+    message: str = Field(default="", description="Error or informational message")
 
 
 class UpdateDocResult(BaseModel):

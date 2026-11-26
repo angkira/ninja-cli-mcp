@@ -10,6 +10,14 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from pathspec import PathSpec
+from pathspec.patterns.gitwildmatch import GitWildMatchPatternError
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
 
 class PathTraversalError(Exception):
@@ -227,6 +235,53 @@ def is_path_within(path: str | Path, root: str | Path) -> bool:
         return True
     except (ValueError, OSError):
         return False
+
+
+def build_path_matcher(include: Sequence[str], exclude: Sequence[str]) -> Callable[[str], bool]:
+    """
+    Build a predicate over repo-relative paths from gitignore-style globs.
+
+    Semantics:
+        - A path matches when it matches at least one ``include`` pattern and
+          no ``exclude`` pattern (intersection minus exclusion).
+        - An empty ``include`` means "match everything"; an empty ``exclude``
+          means "exclude nothing". Blank patterns are ignored.
+        - Patterns use gitignore (``gitwildmatch``) semantics: ``*`` and ``?``
+          stay within one path segment, ``**`` crosses segments, a pattern
+          without a slash matches a basename at any depth, and a trailing
+          ``/`` or ``/**`` targets a directory's contents. Later patterns in
+          the same list override earlier ones, so ``!pattern`` negates within
+          that list.
+        - The predicate takes forward-slash paths relative to the repo root
+          (repo-relative POSIX form) and performs no filesystem access.
+
+    Args:
+        include: Patterns a path must match (empty = everything).
+        exclude: Patterns that veto a path (empty = nothing).
+
+    Returns:
+        A predicate mapping a repo-relative POSIX path to ``True``/``False``.
+
+    Raises:
+        ValueError: If a pattern is not valid ``gitwildmatch`` syntax.
+    """
+    include_patterns = [pattern for pattern in include if pattern.strip()]
+    exclude_patterns = [pattern for pattern in exclude if pattern.strip()]
+
+    try:
+        include_spec = PathSpec.from_lines("gitwildmatch", include_patterns or ["**/*"])
+        exclude_spec = (
+            PathSpec.from_lines("gitwildmatch", exclude_patterns) if exclude_patterns else None
+        )
+    except GitWildMatchPatternError as exc:
+        raise ValueError(f"Invalid glob pattern: {exc}") from exc
+
+    def matches(relative_path: str) -> bool:
+        if not include_spec.match_file(relative_path):
+            return False
+        return exclude_spec is None or not exclude_spec.match_file(relative_path)
+
+    return matches
 
 
 def normalize_globs(globs: list[str], repo_root: str | Path) -> list[str]:

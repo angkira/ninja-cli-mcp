@@ -623,6 +623,24 @@ TOOLS: list[Tool] = [
                     "description": "Files/directories for context",
                     "default": [],
                 },
+                "allowed_globs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Glob patterns for files the agents should focus on. "
+                        "Prompt-level guidance only: this is NOT an enforced sandbox."
+                    ),
+                    "default": ["**/*"],
+                },
+                "deny_globs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Glob patterns for files the agents should avoid. "
+                        "Prompt-level guidance only: this is NOT an enforced sandbox."
+                    ),
+                    "default": [],
+                },
                 "request_key": _REQUEST_KEY_SCHEMA,
             },
             "required": ["task", "repo_root"],
