@@ -98,17 +98,10 @@ if TYPE_CHECKING:
     from ninja_common.mcp_ext.models import Task
 
 
-# Load config from ~/.ninja-mcp.env into environment variables
-try:
-    from ninja_common.config_manager import ConfigManager
-
-    ConfigManager().export_env()
-except FileNotFoundError:
-    pass  # Config file may not exist, will use env vars directly
-except Exception as e:
-    import sys
-
-    print(f"WARNING: Failed to load config from ~/.ninja-mcp.env: {e}", file=sys.stderr)
+# NOTE: importing this module must NOT touch ``os.environ``. Config export
+# (~/.ninja-mcp.env -> env) happens in :func:`run`, i.e. only when the server
+# process is actually started. Tests import ``create_server`` for schema and
+# in-memory client inspection, and must not inherit a developer's config.
 
 # Set up logging to stderr (stdout is for MCP protocol)
 setup_logging(level=logging.INFO)

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import uuid
 from pathlib import Path
 
 import pytest
@@ -354,16 +355,20 @@ async def test_session_continuation(skip_if_no_api_key, real_driver, test_repo):
 @pytest.mark.asyncio
 async def test_structured_logging_integration(skip_if_no_api_key, real_driver, test_repo):
     """Test that structured logging works during task execution."""
-    # Clear previous logs
-    initial_log_count = len(real_driver.structured_logger.query_logs(limit=1000))
+    # The daily JSONL file grows past any fixed ``limit``, so a truncated
+    # ``query_logs(limit=N)`` before/after count saturates and always reports
+    # zero new entries. Instead give this run a unique task id and count the
+    # entries tagged with it (``count_logs`` scans the whole file, no limit).
+    step_id = f"integration-test-logging-{uuid.uuid4().hex[:12]}"
+    initial_log_count = real_driver.structured_logger.count_logs(task_id=step_id)
 
-    print(f"\n✓ Initial log count: {initial_log_count}")
+    print(f"\n✓ Initial log count for {step_id}: {initial_log_count}")
 
     # Execute task
     result = await real_driver.execute_with_session(
         task="Add a comment at the top of example.py explaining what the file does",
         repo_root=str(test_repo),
-        step_id="integration-test-logging",
+        step_id=step_id,
         context_paths=["example.py"],
         allowed_globs=["*.py"],
         deny_globs=[],
@@ -377,12 +382,12 @@ async def test_structured_logging_integration(skip_if_no_api_key, real_driver, t
     # Verify task succeeded
     assert result.success is True, f"Task failed: {result.summary}"
 
-    # Check that logs were created
-    final_log_count = len(real_driver.structured_logger.query_logs(limit=1000))
+    # Check that logs were created for this run's task id
+    final_log_count = real_driver.structured_logger.count_logs(task_id=step_id)
     new_logs = final_log_count - initial_log_count
 
     print(f"\n✓ Logs created during execution: {new_logs}")
-    print(f"  Total logs: {final_log_count}")
+    print(f"  Total logs for {step_id}: {final_log_count}")
 
     # Should have created at least a few log entries
     assert new_logs > 0, "No logs were created during task execution"
